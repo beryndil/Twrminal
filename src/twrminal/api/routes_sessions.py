@@ -1,25 +1,41 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+
+from twrminal.api.models import SessionCreate, SessionOut
+from twrminal.db import store
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
-@router.get("")
-async def list_sessions() -> dict[str, str]:
-    raise HTTPException(status_code=501, detail="not implemented")
+@router.post("", response_model=SessionOut)
+async def create_session(body: SessionCreate, request: Request) -> SessionOut:
+    row = await store.create_session(
+        request.app.state.db,
+        working_dir=body.working_dir,
+        model=body.model,
+        title=body.title,
+    )
+    return SessionOut(**row)
 
 
-@router.post("")
-async def create_session() -> dict[str, str]:
-    raise HTTPException(status_code=501, detail="not implemented")
+@router.get("", response_model=list[SessionOut])
+async def list_sessions(request: Request) -> list[SessionOut]:
+    rows = await store.list_sessions(request.app.state.db)
+    return [SessionOut(**r) for r in rows]
 
 
-@router.get("/{session_id}")
-async def get_session(session_id: str) -> dict[str, str]:
-    raise HTTPException(status_code=501, detail="not implemented")
+@router.get("/{session_id}", response_model=SessionOut)
+async def get_session(session_id: str, request: Request) -> SessionOut:
+    row = await store.get_session(request.app.state.db, session_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return SessionOut(**row)
 
 
 @router.delete("/{session_id}")
-async def delete_session(session_id: str) -> dict[str, str]:
-    raise HTTPException(status_code=501, detail="not implemented")
+async def delete_session(session_id: str, request: Request) -> dict[str, bool]:
+    ok = await store.delete_session(request.app.state.db, session_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"deleted": True}
