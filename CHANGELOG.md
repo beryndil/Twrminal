@@ -5,7 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.1] - Unreleased
+## [0.1.2] - 2026-04-18
+
+### Added
+
+- `GET /api/sessions/{session_id}/messages` — history playback endpoint
+  returning `MessageOut[]`.
+- `twrminal send --session <id> <prompt>` — CLI subcommand opens a WebSocket
+  to a running server, streams events to stdout as JSON lines, exits 0 on
+  `message_complete`, 1 on `error`.
+- `ToolCallEnd` event: `AgentSession.stream` now translates
+  `ToolResultBlock` (carried on `UserMessage.content`) into a `ToolCallEnd`
+  event with `ok`/`output`/`error` derived from `is_error` + `content`.
+- Tool-call persistence: `store.insert_tool_call_start`, `finish_tool_call`,
+  `list_tool_calls`. WS handler writes rows as events stream.
+
+## [0.1.1] - 2026-04-18
 
 ### Added
 

@@ -8,11 +8,14 @@ import pytest
 from twrminal.db.store import (
     create_session,
     delete_session,
+    finish_tool_call,
     get_session,
     init_db,
     insert_message,
+    insert_tool_call_start,
     list_messages,
     list_sessions,
+    list_tool_calls,
 )
 
 
@@ -141,6 +144,90 @@ async def test_insert_message_returns_row(tmp_path: Path) -> None:
         assert row["role"] == "user"
         assert row["content"] == "prompt"
         assert row["created_at"]
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_insert_tool_call_start_returns_row(tmp_path: Path) -> None:
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        sess = await create_session(conn, working_dir="/x", model="m", title=None)
+        row = await insert_tool_call_start(
+            conn,
+            session_id=sess["id"],
+            tool_call_id="t-1",
+            name="Read",
+            input_json='{"path":"/etc/hosts"}',
+        )
+        assert row["id"] == "t-1"
+        assert row["session_id"] == sess["id"]
+        assert row["name"] == "Read"
+        assert row["input"] == '{"path":"/etc/hosts"}'
+        assert row["started_at"]
+        assert row["finished_at"] is None
+        assert row["output"] is None
+        assert row["error"] is None
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_finish_tool_call_updates_output(tmp_path: Path) -> None:
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        sess = await create_session(conn, working_dir="/x", model="m", title=None)
+        await insert_tool_call_start(
+            conn, session_id=sess["id"], tool_call_id="t-ok", name="R", input_json="{}"
+        )
+        assert await finish_tool_call(conn, tool_call_id="t-ok", output="done", error=None)
+        rows = await list_tool_calls(conn, sess["id"])
+        assert rows[0]["output"] == "done"
+        assert rows[0]["error"] is None
+        assert rows[0]["finished_at"]
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_finish_tool_call_records_error(tmp_path: Path) -> None:
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        sess = await create_session(conn, working_dir="/x", model="m", title=None)
+        await insert_tool_call_start(
+            conn, session_id=sess["id"], tool_call_id="t-err", name="R", input_json="{}"
+        )
+        assert await finish_tool_call(conn, tool_call_id="t-err", output=None, error="boom")
+        row = (await list_tool_calls(conn, sess["id"]))[0]
+        assert row["output"] is None
+        assert row["error"] == "boom"
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_finish_tool_call_returns_false_when_missing(tmp_path: Path) -> None:
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        assert await finish_tool_call(conn, tool_call_id="nope", output="x", error=None) is False
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_list_tool_calls_orders_oldest_first(tmp_path: Path) -> None:
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        sess = await create_session(conn, working_dir="/x", model="m", title=None)
+        await insert_tool_call_start(
+            conn, session_id=sess["id"], tool_call_id="a", name="R", input_json="{}"
+        )
+        await asyncio.sleep(0.002)
+        await insert_tool_call_start(
+            conn, session_id=sess["id"], tool_call_id="b", name="W", input_json="{}"
+        )
+        rows = await list_tool_calls(conn, sess["id"])
+        assert [r["id"] for r in rows] == ["a", "b"]
     finally:
         await conn.close()
 

@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import json
+import sys
 from collections.abc import Sequence
+from typing import IO, Any
+
+from websockets.asyncio.client import connect as ws_connect
 
 from twrminal import __version__
 from twrminal.config import load_settings
@@ -17,9 +23,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     send = sub.add_parser("send", help="Send a one-shot prompt to an agent session")
     send.add_argument("--session", required=True, help="Session id")
+    send.add_argument("--host", default=None, help="Server host (default: from config)")
+    send.add_argument("--port", type=int, default=None, help="Server port (default: from config)")
     send.add_argument("message", help="Prompt text")
 
     return parser
+
+
+async def _run_send(url: str, prompt: str, out: IO[str]) -> int:
+    async with ws_connect(url) as ws:
+        await ws.send(json.dumps({"type": "prompt", "content": prompt}))
+        async for raw in ws:
+            event: dict[str, Any] = json.loads(raw)
+            print(json.dumps(event), file=out)
+            if event.get("type") == "message_complete":
+                return 0
+            if event.get("type") == "error":
+                return 1
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -46,6 +67,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "send":
-        raise SystemExit("send is not implemented in v0.1.0 — see TODO.md")
+        cfg = load_settings()
+        host = args.host or cfg.server.host
+        port = args.port or cfg.server.port
+        url = f"ws://{host}:{port}/ws/sessions/{args.session}"
+        return asyncio.run(_run_send(url, args.message, sys.stdout))
 
     return 1

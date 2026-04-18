@@ -52,3 +52,15 @@ def test_delete_then_get_404(client: TestClient) -> None:
 def test_delete_missing_returns_404(client: TestClient) -> None:
     resp = client.delete("/api/sessions/" + "0" * 32)
     assert resp.status_code == 404
+
+
+def test_get_messages_empty_for_new_session(client: TestClient) -> None:
+    created = _create(client)
+    resp = client.get(f"/api/sessions/{created['id']}/messages")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_get_messages_missing_session_returns_404(client: TestClient) -> None:
+    resp = client.get("/api/sessions/" + "0" * 32 + "/messages")
+    assert resp.status_code == 404

@@ -118,3 +118,55 @@ async def list_messages(conn: aiosqlite.Connection, session_id: str) -> list[dic
         (session_id,),
     ) as cursor:
         return [dict(row) async for row in cursor]
+
+
+async def insert_tool_call_start(
+    conn: aiosqlite.Connection,
+    *,
+    session_id: str,
+    tool_call_id: str,
+    name: str,
+    input_json: str,
+) -> dict[str, Any]:
+    now = _now()
+    await conn.execute(
+        "INSERT INTO tool_calls (id, session_id, name, input, started_at) VALUES (?, ?, ?, ?, ?)",
+        (tool_call_id, session_id, name, input_json, now),
+    )
+    await conn.commit()
+    return {
+        "id": tool_call_id,
+        "session_id": session_id,
+        "message_id": None,
+        "name": name,
+        "input": input_json,
+        "output": None,
+        "error": None,
+        "started_at": now,
+        "finished_at": None,
+    }
+
+
+async def finish_tool_call(
+    conn: aiosqlite.Connection,
+    *,
+    tool_call_id: str,
+    output: str | None,
+    error: str | None,
+) -> bool:
+    cursor = await conn.execute(
+        "UPDATE tool_calls SET output = ?, error = ?, finished_at = ? WHERE id = ?",
+        (output, error, _now(), tool_call_id),
+    )
+    await conn.commit()
+    return cursor.rowcount > 0
+
+
+async def list_tool_calls(conn: aiosqlite.Connection, session_id: str) -> list[dict[str, Any]]:
+    async with conn.execute(
+        "SELECT id, session_id, message_id, name, input, output, error, "
+        "started_at, finished_at "
+        "FROM tool_calls WHERE session_id = ? ORDER BY started_at ASC, id ASC",
+        (session_id,),
+    ) as cursor:
+        return [dict(row) async for row in cursor]

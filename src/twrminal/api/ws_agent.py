@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketDisconnect
 
-from twrminal.agent.events import MessageComplete, Token
+from twrminal.agent.events import MessageComplete, Token, ToolCallEnd, ToolCallStart
 from twrminal.agent.session import AgentSession
 from twrminal.db import store
 
@@ -34,6 +36,21 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:
                 await websocket.send_text(event.model_dump_json())
                 if isinstance(event, Token):
                     buf.append(event.text)
+                elif isinstance(event, ToolCallStart):
+                    await store.insert_tool_call_start(
+                        conn,
+                        session_id=session_id,
+                        tool_call_id=event.tool_call_id,
+                        name=event.name,
+                        input_json=json.dumps(event.input),
+                    )
+                elif isinstance(event, ToolCallEnd):
+                    await store.finish_tool_call(
+                        conn,
+                        tool_call_id=event.tool_call_id,
+                        output=event.output,
+                        error=event.error,
+                    )
                 elif isinstance(event, MessageComplete):
                     await store.insert_message(
                         conn,

@@ -7,7 +7,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from twrminal.agent.events import AgentEvent, MessageComplete, Token
+from twrminal.agent.events import (
+    AgentEvent,
+    MessageComplete,
+    Token,
+    ToolCallEnd,
+    ToolCallStart,
+)
 from twrminal.agent.session import AgentSession
 from twrminal.config import Settings, StorageCfg
 from twrminal.server import create_app
@@ -39,5 +45,26 @@ def mock_agent_stream(monkeypatch: pytest.MonkeyPatch) -> None:
         yield Token(session_id=self.session_id, text="hello ")
         yield Token(session_id=self.session_id, text="world")
         yield MessageComplete(session_id=self.session_id, message_id="mock-msg")
+
+    monkeypatch.setattr("twrminal.agent.session.AgentSession.stream", fake)
+
+
+@pytest.fixture
+def mock_agent_tool_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake(self: AgentSession, prompt: str) -> AsyncIterator[AgentEvent]:
+        yield ToolCallStart(
+            session_id=self.session_id,
+            tool_call_id="tool-1",
+            name="Read",
+            input={"path": "/etc/hosts"},
+        )
+        yield ToolCallEnd(
+            session_id=self.session_id,
+            tool_call_id="tool-1",
+            ok=True,
+            output="127.0.0.1 localhost",
+            error=None,
+        )
+        yield MessageComplete(session_id=self.session_id, message_id="mock-tool-msg")
 
     monkeypatch.setattr("twrminal.agent.session.AgentSession.stream", fake)

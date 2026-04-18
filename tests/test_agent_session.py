@@ -4,9 +4,22 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
+from claude_agent_sdk import (
+    AssistantMessage,
+    ResultMessage,
+    TextBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+    UserMessage,
+)
 
-from twrminal.agent.events import ErrorEvent, MessageComplete, Token, ToolCallStart
+from twrminal.agent.events import (
+    ErrorEvent,
+    MessageComplete,
+    Token,
+    ToolCallEnd,
+    ToolCallStart,
+)
 from twrminal.agent.session import AgentSession
 
 
@@ -94,6 +107,56 @@ async def test_stream_translates_tool_use_block(monkeypatch: pytest.MonkeyPatch)
     assert call.tool_call_id == "tool-1"
     assert call.name == "Read"
     assert call.input == {"path": "/etc/hosts"}
+
+
+@pytest.mark.asyncio
+async def test_stream_translates_tool_result_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_client(
+        monkeypatch,
+        [
+            _assistant(ToolUseBlock(id="t-1", name="Read", input={"path": "/x"})),
+            UserMessage(
+                content=[
+                    ToolResultBlock(tool_use_id="t-1", content="file contents", is_error=False)
+                ]
+            ),
+            _result(),
+        ],
+    )
+    session = AgentSession("s", working_dir="/tmp", model="m")
+    events = [ev async for ev in session.stream("read it")]
+    types = [type(e).__name__ for e in events]
+    assert types == ["ToolCallStart", "ToolCallEnd", "MessageComplete"]
+    end = events[1]
+    assert isinstance(end, ToolCallEnd)
+    assert end.tool_call_id == "t-1"
+    assert end.ok is True
+    assert end.output == "file contents"
+    assert end.error is None
+
+
+@pytest.mark.asyncio
+async def test_stream_marks_tool_result_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_client(
+        monkeypatch,
+        [
+            _assistant(ToolUseBlock(id="t-err", name="Bash", input={"cmd": "false"})),
+            UserMessage(
+                content=[ToolResultBlock(tool_use_id="t-err", content="exit 1", is_error=True)]
+            ),
+            _result(),
+        ],
+    )
+    session = AgentSession("s", working_dir="/tmp", model="m")
+    events = [ev async for ev in session.stream("run it")]
+    end = next(e for e in events if isinstance(e, ToolCallEnd))
+    assert end.ok is False
+    assert end.error == "exit 1"
+    assert end.output is None
 
 
 @pytest.mark.asyncio

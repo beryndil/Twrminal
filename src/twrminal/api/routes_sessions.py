@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
-from twrminal.api.models import SessionCreate, SessionOut
+from twrminal.api.models import MessageOut, SessionCreate, SessionOut
 from twrminal.db import store
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -39,3 +39,12 @@ async def delete_session(session_id: str, request: Request) -> dict[str, bool]:
     if not ok:
         raise HTTPException(status_code=404, detail="session not found")
     return {"deleted": True}
+
+
+@router.get("/{session_id}/messages", response_model=list[MessageOut])
+async def list_messages(session_id: str, request: Request) -> list[MessageOut]:
+    conn = request.app.state.db
+    if await store.get_session(conn, session_id) is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    rows = await store.list_messages(conn, session_id)
+    return [MessageOut(**r) for r in rows]
