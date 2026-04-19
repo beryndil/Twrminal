@@ -8,6 +8,13 @@ from twrminal import metrics
 from twrminal.config import Settings
 
 
+def _default_tag_id(client: TestClient) -> int:
+    existing = client.get("/api/tags").json()
+    if existing:
+        return int(existing[0]["id"])
+    return int(client.post("/api/tags", json={"name": "default"}).json()["id"])
+
+
 def test_metrics_endpoint_emits_registry(client: TestClient) -> None:
     resp = client.get("/metrics")
     assert resp.status_code == 200
@@ -15,19 +22,21 @@ def test_metrics_endpoint_emits_registry(client: TestClient) -> None:
 
 
 def test_sessions_created_counter_increments(client: TestClient) -> None:
+    tag_id = _default_tag_id(client)
     before = metrics.sessions_created._value.get()
     client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "title": None},
+        json={"working_dir": "/tmp", "model": "m", "title": None, "tag_ids": [tag_id]},
     )
     after = metrics.sessions_created._value.get()
     assert after == before + 1
 
 
 def test_ws_counters_update(client: TestClient, mock_agent_stream: None) -> None:
+    tag_id = _default_tag_id(client)
     resp = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "title": None},
+        json={"working_dir": "/tmp", "model": "m", "title": None, "tag_ids": [tag_id]},
     )
     sid = resp.json()["id"]
 
@@ -73,9 +82,10 @@ def test_ws_counters_update(client: TestClient, mock_agent_stream: None) -> None
 def test_tool_call_counters_label_success(
     client: TestClient, mock_agent_tool_stream: None, tmp_settings: Settings
 ) -> None:
+    tag_id = _default_tag_id(client)
     resp = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "title": None},
+        json={"working_dir": "/tmp", "model": "m", "title": None, "tag_ids": [tag_id]},
     )
     sid = resp.json()["id"]
 

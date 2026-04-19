@@ -9,6 +9,11 @@ class SessionCreate(BaseModel):
     title: str | None = None
     description: str | None = None
     max_budget_usd: float | None = None
+    # v0.2.13: every session must carry ≥1 tag. The POST route
+    # validates, the store layer doesn't (import_session and internal
+    # fixtures still create tag-less rows — only external API-driven
+    # creation is gated).
+    tag_ids: list[int] = []
 
 
 class SessionUpdate(BaseModel):

@@ -77,9 +77,19 @@ def test_health_and_metrics_stay_open_under_auth(auth_client: TestClient) -> Non
 def test_ws_missing_token_closes_4401(auth_client: TestClient) -> None:
     # Can't create a session without a token, so use the DB directly via
     # the Bearer path just to get a valid session id.
+    tag = auth_client.post(
+        "/api/tags",
+        json={"name": "default"},
+        headers={"Authorization": "Bearer s3cret"},
+    ).json()
     sid = auth_client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "title": None},
+        json={
+            "working_dir": "/tmp",
+            "model": "m",
+            "title": None,
+            "tag_ids": [tag["id"]],
+        },
         headers={"Authorization": "Bearer s3cret"},
     ).json()["id"]
 
@@ -90,9 +100,19 @@ def test_ws_missing_token_closes_4401(auth_client: TestClient) -> None:
 
 
 def test_ws_bad_token_closes_4401(auth_client: TestClient) -> None:
+    tag = auth_client.post(
+        "/api/tags",
+        json={"name": "default"},
+        headers={"Authorization": "Bearer s3cret"},
+    ).json()
     sid = auth_client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "title": None},
+        json={
+            "working_dir": "/tmp",
+            "model": "m",
+            "title": None,
+            "tag_ids": [tag["id"]],
+        },
         headers={"Authorization": "Bearer s3cret"},
     ).json()["id"]
 
@@ -105,9 +125,19 @@ def test_ws_bad_token_closes_4401(auth_client: TestClient) -> None:
 def test_ws_good_token_accepts_and_streams(
     auth_client: TestClient, mock_agent_stream: None
 ) -> None:
+    tag = auth_client.post(
+        "/api/tags",
+        json={"name": "default"},
+        headers={"Authorization": "Bearer s3cret"},
+    ).json()
     sid = auth_client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "title": None},
+        json={
+            "working_dir": "/tmp",
+            "model": "m",
+            "title": None,
+            "tag_ids": [tag["id"]],
+        },
         headers={"Authorization": "Bearer s3cret"},
     ).json()["id"]
 

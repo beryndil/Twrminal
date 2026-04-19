@@ -348,6 +348,23 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
   API + session_instructions round-trip) plus 2 agent-session
   cases pinning the system_prompt wire-through.
 
+## v0.2.13 — shipped (closes v0.2)
+
+- [x] `POST /api/sessions` requires `tag_ids: list[int]` with
+  `len ≥ 1`. Unknown tag id → 400. Empty list → 400.
+- [x] SessionList new-session form: tag chip input with attach /
+  create-and-attach UX mirroring SessionEdit. Submit gated on ≥1
+  attached tag.
+- [x] Tag defaults pre-fill `working_dir` / `model` as tags are
+  attached in the form (precedence matches tag-memory order).
+- [x] Conversation header renders attached tag chips (pinned-first,
+  ★ glyph).
+- [x] README rewritten for the tags-only design: tags, memories,
+  defaults, ≥1-tag rule, upgrade notes.
+- [x] All test helpers auto-seed a default tag for the ≥1
+  requirement. 2 new pytest cases pin the enforcement (empty tags
+  → 400, unknown tag → 400).
+
 ## v0.2.12 — shipped
 
 - [x] Inline session_instructions editor in the Inspector Context
@@ -424,8 +441,6 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 Plan file: `~/.claude/plans/vectorized-leaping-pretzel.md`. Slice
 numbering shifted from the original 12-slice plan because spec
 step 1 ended up needing four slices, not three.
-- [ ] **v0.2.13** — New-session gate (≥1 tag) + header badges +
-  README update.
 
 ## Decisions pending
 

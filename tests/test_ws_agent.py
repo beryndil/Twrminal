@@ -12,9 +12,21 @@ from twrminal.config import Settings
 
 
 def _create_session(client: TestClient) -> str:
+    # v0.2.13: /api/sessions requires ≥1 tag_id. Auto-seed a default
+    # tag for the test client and include its id.
+    existing = client.get("/api/tags").json()
+    if existing:
+        tag_id = existing[0]["id"]
+    else:
+        tag_id = client.post("/api/tags", json={"name": "default"}).json()["id"]
     resp = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "title": None},
+        json={
+            "working_dir": "/tmp",
+            "model": "m",
+            "title": None,
+            "tag_ids": [tag_id],
+        },
     )
     assert resp.status_code == 200
     return resp.json()["id"]

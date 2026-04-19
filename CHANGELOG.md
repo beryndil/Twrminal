@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.13] - 2026-04-19
+
+Closes out v0.2. Enforces the "every session has ≥1 tag" rule at
+the API boundary and the new-session UI, adds attached-tag chips
+to the Conversation header, and rewrites the README for the
+tags-only design.
+
+### Added
+
+- `SessionCreate.tag_ids: list[int] = []` — POST /api/sessions
+  requires at least one id. The route validates that every tag id
+  exists (400 on empty or on any missing tag), inserts the session,
+  then attaches the tags.
+- SessionList new-session form: attached-tag chips with ✕, inline
+  input that filters global tags (click to attach, Enter on a
+  novel name to create-and-attach, same UX as SessionEdit).
+  Submit disabled + tooltip until ≥1 tag is attached.
+- Attaching a tag with defaults to the form pre-fills
+  `working_dir` / `model` (precedence = canonical tag order, last
+  wins). Opening the form seeds the chip list from the active
+  sidebar tag filter.
+- Conversation header tag chip row — pinned-first tag order, with
+  ★ on pinned, rendered under the model/working_dir/cost line.
+  Hover title shows the tag's defaults when present.
+- README rewritten end-to-end for v0.2: tags as the one primitive,
+  tag memories with sort-order-wins precedence, tag defaults, ≥1
+  tag rule, and layer inspection via the Inspector Context tab.
+
+### Changed
+
+- `store.create_session` is unchanged (still tag-agnostic) — the
+  enforcement is at the HTTP boundary so internal callers
+  (`import_session`, direct store usage in tests that exercise the
+  prompt assembler, etc.) can still create tag-less rows.
+- All test helpers (`test_routes_sessions._create`, `_create_session`
+  in `test_tags` / `test_ws_agent` / `test_tag_memories`, ad-hoc
+  POSTs in `test_auth`, `test_metrics`, `test_routes_history`) auto-
+  seed a `default` tag per test client and include its id.
+- `tests/test_routes_sessions.py` gets 2 new cases pinning the
+  enforcement: empty `tag_ids` → 400, unknown tag id → 400.
+
+### Why
+
+Tags were already the organizational primitive post-teardown.
+Without the gate, a session could exist with no context hooks at
+all — no memories, no defaults, nothing distinguishing it. The
+rule makes the one-primitive design honest: there's always at
+least one tag carrying context for the agent.
+
 ## [0.2.12] - 2026-04-19
 
 Session instructions inline editor inside the Inspector Context

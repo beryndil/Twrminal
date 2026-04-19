@@ -4,12 +4,24 @@ from fastapi.testclient import TestClient
 
 
 def _create(client: TestClient, title: str = "t") -> str:
+    # v0.2.13: tag_ids required. Seed one default tag per client.
+    existing = client.get("/api/tags").json()
+    if existing:
+        tag_id = existing[0]["id"]
+    else:
+        tag_id = client.post("/api/tags", json={"name": "default"}).json()["id"]
     resp = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "title": title},
+        json={
+            "working_dir": "/tmp",
+            "model": "m",
+            "title": title,
+            "tag_ids": [tag_id],
+        },
     )
     assert resp.status_code == 200
-    return resp.json()["id"]
+    session_id: str = resp.json()["id"]
+    return session_id
 
 
 def test_export_returns_all_sections(client: TestClient) -> None:

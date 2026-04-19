@@ -180,18 +180,106 @@
     return { workingDir, model };
   }
 
+  // Tag-chip state inside the new-session form. v0.2.13 requires ≥1
+  // attached tag before the form can submit. Starts empty; the active
+  // sidebar filter seeds it on open as a convenience.
+  let newTagIds = $state<number[]>([]);
+  let newTagDraft = $state('');
+  let newTagError = $state<string | null>(null);
+
+  const attachedNewTags = $derived(
+    newTagIds
+      .map((id) => tags.list.find((t) => t.id === id))
+      .filter((t): t is api.Tag => t !== undefined)
+  );
+
+  const attachedNewSet = $derived(new Set(newTagIds));
+
+  const newTagDraftLower = $derived(newTagDraft.trim().toLowerCase());
+
+  const newTagSuggestions = $derived(
+    newTagDraftLower === ''
+      ? []
+      : tags.list.filter(
+          (t) =>
+            !attachedNewSet.has(t.id) && t.name.toLowerCase().includes(newTagDraftLower)
+        )
+  );
+
+  const newTagExactMatch = $derived(
+    tags.list.find((t) => t.name.toLowerCase() === newTagDraftLower) ?? null
+  );
+
+  /** Precedence-aware defaults from the tags currently attached to the
+   * new-session form. Mirrors tag-memory precedence (canonical list
+   * order, last wins). Returns nulls for fields no attached tag sets. */
+  function attachedTagDefaults(): { workingDir: string | null; model: string | null } {
+    let workingDir: string | null = null;
+    let model: string | null = null;
+    // Iterate in canonical order — tags.list is already pinned/sort/id.
+    for (const t of tags.list) {
+      if (!attachedNewSet.has(t.id)) continue;
+      if (t.default_working_dir) workingDir = t.default_working_dir;
+      if (t.default_model) model = t.default_model;
+    }
+    return { workingDir, model };
+  }
+
   function toggleNewForm() {
     if (showNewForm) {
       showNewForm = false;
       return;
     }
-    // Precedence: active tag filter's defaults → user prefs → prior
-    // form value. Tag defaults win because they encode project-like
-    // context; prefs are a global fallback.
-    const td = tagFilterDefaults();
+    // Seed attached tags from the active sidebar filter. User can add
+    // or remove from this list before submitting.
+    newTagIds = [...tags.selected];
+    newTagDraft = '';
+    newTagError = null;
+    // Precedence: attached-tag defaults → user prefs → prior form value.
+    const td = attachedTagDefaults();
     newWorkingDir = td.workingDir || prefs.defaultWorkingDir || newWorkingDir;
     newModel = td.model || prefs.defaultModel || newModel;
     showNewForm = true;
+  }
+
+  function attachNewTag(tag: api.Tag) {
+    if (attachedNewSet.has(tag.id)) return;
+    newTagIds = [...newTagIds, tag.id];
+    newTagDraft = '';
+    newTagError = null;
+    // Apply this tag's defaults if the field is empty — don't clobber
+    // a value the user already typed.
+    if (!newWorkingDir.trim() && tag.default_working_dir) {
+      newWorkingDir = tag.default_working_dir;
+    }
+    if (tag.default_model) newModel = tag.default_model;
+  }
+
+  function detachNewTag(id: number) {
+    newTagIds = newTagIds.filter((x) => x !== id);
+  }
+
+  async function createAndAttachNewTag() {
+    const name = newTagDraft.trim();
+    if (name === '') return;
+    newTagError = null;
+    const created = await tags.create({ name });
+    if (!created) {
+      newTagError = tags.error;
+      return;
+    }
+    attachNewTag(created);
+  }
+
+  function onNewTagKey(e: KeyboardEvent) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (newTagExactMatch) {
+      if (!attachedNewSet.has(newTagExactMatch.id)) attachNewTag(newTagExactMatch);
+      else newTagDraft = '';
+      return;
+    }
+    createAndAttachNewTag();
   }
   const confirm = $state<{ id: string | null }>({ id: null });
   let confirmTimer: ReturnType<typeof setTimeout> | null = null;
@@ -252,12 +340,18 @@
   });
 
   async function onCreate() {
+    if (newTagIds.length === 0) {
+      newTagError = 'Attach at least one tag before creating a session.';
+      return;
+    }
     submitting = true;
+    const tagIds = [...newTagIds];
     const created = await sessions.create({
       working_dir: newWorkingDir.trim() || prefs.defaultWorkingDir || '/tmp',
       model: newModel.trim() || prefs.defaultModel || 'claude-sonnet-4-6',
       title: newTitle.trim() || null,
-      max_budget_usd: parseBudget(newBudget)
+      max_budget_usd: parseBudget(newBudget),
+      tag_ids: tagIds
     });
     submitting = false;
     if (created) {
@@ -265,6 +359,8 @@
       newWorkingDir = '';
       newTitle = '';
       newBudget = '';
+      newTagIds = [];
+      for (const id of tagIds) tags.bumpCount(id, +1);
       await agent.connect(created.id);
     }
   }
@@ -458,10 +554,70 @@
           bind:value={newBudget}
         />
       </label>
+
+      <section class="flex flex-col gap-1 text-xs">
+        <span class="text-slate-400">Tags <span class="text-rose-400">*</span></span>
+        {#if attachedNewTags.length > 0}
+          <ul class="flex flex-wrap gap-1" aria-label="Attached tags">
+            {#each attachedNewTags as tag (tag.id)}
+              <li class="flex items-center gap-1 rounded bg-slate-900 px-2 py-0.5">
+                {#if tag.pinned}
+                  <span class="text-amber-400" aria-label="pinned">★</span>
+                {/if}
+                <span>{tag.name}</span>
+                <button
+                  type="button"
+                  class="text-slate-500 hover:text-rose-400"
+                  aria-label={`Detach ${tag.name}`}
+                  onclick={() => detachNewTag(tag.id)}
+                >
+                  ✕
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        <input
+          type="text"
+          class="rounded bg-slate-950 px-2 py-1 text-sm"
+          placeholder="Add a tag (Enter to attach or create)"
+          aria-label="New-session tag name"
+          bind:value={newTagDraft}
+          onkeydown={onNewTagKey}
+        />
+        {#if newTagSuggestions.length > 0}
+          <ul class="flex flex-wrap gap-1" aria-label="Tag suggestions">
+            {#each newTagSuggestions as tag (tag.id)}
+              <li>
+                <button
+                  type="button"
+                  class="rounded bg-slate-900 hover:bg-slate-700 px-2 py-0.5"
+                  onclick={() => attachNewTag(tag)}
+                >
+                  + {tag.name}
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {:else if newTagDraft.trim() !== '' && !newTagExactMatch}
+          <button
+            type="button"
+            class="self-start rounded bg-emerald-700 hover:bg-emerald-600 px-2 py-0.5"
+            onclick={createAndAttachNewTag}
+          >
+            + Create "{newTagDraft.trim()}"
+          </button>
+        {/if}
+        {#if newTagError}
+          <p class="text-rose-400">{newTagError}</p>
+        {/if}
+      </section>
+
       <button
         type="submit"
         class="rounded bg-emerald-600 hover:bg-emerald-500 px-2 py-1 text-sm mt-1 disabled:opacity-50"
-        disabled={submitting}
+        disabled={submitting || newTagIds.length === 0}
+        title={newTagIds.length === 0 ? 'Attach at least one tag' : ''}
       >
         {submitting ? 'Creating…' : 'Create session'}
       </button>

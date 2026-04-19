@@ -244,19 +244,18 @@ async def test_list_sessions_empty_filter_returns_all(tmp_path: Path) -> None:
 
 
 def test_api_list_sessions_filters_by_tag(client: TestClient) -> None:
-    # Seed: two sessions, each with one distinct tag.
+    # Seed: two sessions, each with one distinct tag. v0.2.13 makes
+    # tag_ids mandatory on POST /api/sessions so we attach at create.
+    t1 = client.post("/api/tags", json={"name": "infra"}).json()
+    t2 = client.post("/api/tags", json={"name": "bug"}).json()
     s1 = client.post(
         "/api/sessions",
-        json={"working_dir": "/a", "model": "claude-sonnet-4-6"},
+        json={"working_dir": "/a", "model": "claude-sonnet-4-6", "tag_ids": [t1["id"]]},
     ).json()
     s2 = client.post(
         "/api/sessions",
-        json={"working_dir": "/b", "model": "claude-sonnet-4-6"},
+        json={"working_dir": "/b", "model": "claude-sonnet-4-6", "tag_ids": [t2["id"]]},
     ).json()
-    t1 = client.post("/api/tags", json={"name": "infra"}).json()
-    t2 = client.post("/api/tags", json={"name": "bug"}).json()
-    client.post(f"/api/sessions/{s1['id']}/tags/{t1['id']}")
-    client.post(f"/api/sessions/{s2['id']}/tags/{t2['id']}")
 
     any_hits = client.get(f"/api/sessions?tags={t1['id']},{t2['id']}&mode=any").json()
     assert {r["id"] for r in any_hits} == {s1["id"], s2["id"]}
@@ -290,10 +289,20 @@ async def test_delete_session_cascades_session_tags(tmp_path: Path) -> None:
 
 
 def _create_session(client: TestClient, **kwargs: object) -> dict:
+    # v0.2.13: seed a default tag so the gate is satisfied. Tests that
+    # care about a specific tag pass `tag_ids=` explicitly.
+    if "tag_ids" not in kwargs:
+        existing = client.get("/api/tags").json()
+        if existing:
+            default_id = existing[0]["id"]
+        else:
+            default_id = client.post("/api/tags", json={"name": "default"}).json()["id"]
+        kwargs["tag_ids"] = [default_id]
     body = {"working_dir": "/tmp", "model": "claude-sonnet-4-6", "title": None, **kwargs}
     resp = client.post("/api/sessions", json=body)
     assert resp.status_code == 200, resp.text
-    return resp.json()
+    data: dict[str, object] = resp.json()
+    return data
 
 
 def test_get_tags_empty(client: TestClient) -> None:
@@ -366,8 +375,10 @@ def test_delete_tag_missing_is_404(client: TestClient) -> None:
 
 
 def test_attach_session_tag_returns_tag_list(client: TestClient) -> None:
-    sess = _create_session(client)
+    # Attach the tag at create time (v0.2.13 enforcement). A second
+    # POST to the attach endpoint is a no-op via INSERT OR IGNORE.
     tag = client.post("/api/tags", json={"name": "infra"}).json()
+    sess = _create_session(client, tag_ids=[tag["id"]])
     resp = client.post(f"/api/sessions/{sess['id']}/tags/{tag['id']}")
     assert resp.status_code == 200
     body = resp.json()
@@ -378,9 +389,9 @@ def test_attach_session_tag_returns_tag_list(client: TestClient) -> None:
 
 
 def test_attach_is_idempotent_via_api(client: TestClient) -> None:
-    sess = _create_session(client)
     tag = client.post("/api/tags", json={"name": "infra"}).json()
-    client.post(f"/api/sessions/{sess['id']}/tags/{tag['id']}")
+    sess = _create_session(client, tag_ids=[tag["id"]])
+    # Attach again — idempotent (already attached at create time).
     resp = client.post(f"/api/sessions/{sess['id']}/tags/{tag['id']}")
     assert resp.status_code == 200
     assert len(resp.json()) == 1
@@ -401,11 +412,9 @@ def test_attach_missing_tag_is_404(client: TestClient) -> None:
 
 
 def test_detach_session_tag_returns_remaining(client: TestClient) -> None:
-    sess = _create_session(client)
     t1 = client.post("/api/tags", json={"name": "infra"}).json()
     t2 = client.post("/api/tags", json={"name": "bug-repro"}).json()
-    client.post(f"/api/sessions/{sess['id']}/tags/{t1['id']}")
-    client.post(f"/api/sessions/{sess['id']}/tags/{t2['id']}")
+    sess = _create_session(client, tag_ids=[t1["id"], t2["id"]])
     resp = client.delete(f"/api/sessions/{sess['id']}/tags/{t1['id']}")
     assert resp.status_code == 200
     assert [t["id"] for t in resp.json()] == [t2["id"]]
@@ -417,11 +426,9 @@ def test_detach_missing_session_is_404(client: TestClient) -> None:
 
 
 def test_list_session_tags_returns_attached(client: TestClient) -> None:
-    sess = _create_session(client)
     t1 = client.post("/api/tags", json={"name": "a", "sort_order": 2}).json()
     t2 = client.post("/api/tags", json={"name": "b", "pinned": True}).json()
-    client.post(f"/api/sessions/{sess['id']}/tags/{t1['id']}")
-    client.post(f"/api/sessions/{sess['id']}/tags/{t2['id']}")
+    sess = _create_session(client, tag_ids=[t1["id"], t2["id"]])
     resp = client.get(f"/api/sessions/{sess['id']}/tags")
     assert resp.status_code == 200
     # Pinned first.

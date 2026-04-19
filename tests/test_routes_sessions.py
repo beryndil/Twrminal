@@ -3,11 +3,47 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 
+def _default_tag(client: TestClient) -> int:
+    """Every session must carry ≥1 tag (v0.2.13). The tests don't
+    particularly care which tag, so we seed a single "default" tag
+    per client and hand out its id. Per-test client fixtures start
+    with an empty DB, so the POST only creates once per test."""
+    existing = client.get("/api/tags").json()
+    if existing:
+        tag_id: int = existing[0]["id"]
+        return tag_id
+    created = client.post("/api/tags", json={"name": "default"})
+    return int(created.json()["id"])
+
+
 def _create(client: TestClient, **kwargs: object) -> dict:
-    body = {"working_dir": "/tmp", "model": "claude-sonnet-4-6", "title": None, **kwargs}
+    tag_ids = kwargs.pop("tag_ids", None) or [_default_tag(client)]
+    body = {
+        "working_dir": "/tmp",
+        "model": "claude-sonnet-4-6",
+        "title": None,
+        "tag_ids": tag_ids,
+        **kwargs,
+    }
     resp = client.post("/api/sessions", json=body)
     assert resp.status_code == 200, resp.text
     return resp.json()
+
+
+def test_post_rejects_session_without_tags(client: TestClient) -> None:
+    resp = client.post(
+        "/api/sessions",
+        json={"working_dir": "/tmp", "model": "m", "tag_ids": []},
+    )
+    assert resp.status_code == 400
+
+
+def test_post_rejects_nonexistent_tag_id(client: TestClient) -> None:
+    resp = client.post(
+        "/api/sessions",
+        json={"working_dir": "/tmp", "model": "m", "tag_ids": [9999]},
+    )
+    assert resp.status_code == 400
 
 
 def test_post_create_returns_session(client: TestClient) -> None:

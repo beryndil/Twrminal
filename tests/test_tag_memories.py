@@ -91,6 +91,15 @@ async def test_delete_tag_cascades_tag_memories(tmp_path: Path) -> None:
 # --- API -------------------------------------------------------------
 
 
+def _default_tag_id(client: TestClient) -> int:
+    """Every session must carry ≥1 tag (v0.2.13). Auto-seed one for
+    tests that don't care about a specific tag."""
+    existing = client.get("/api/tags").json()
+    if existing:
+        return int(existing[0]["id"])
+    return int(client.post("/api/tags", json={"name": "default"}).json()["id"])
+
+
 def test_get_tag_memory_missing_is_404(client: TestClient) -> None:
     tag = client.post("/api/tags", json={"name": "infra"}).json()
     resp = client.get(f"/api/tags/{tag['id']}/memory")
@@ -147,7 +156,11 @@ def test_delete_tag_memory_missing_is_404(client: TestClient) -> None:
 def test_patch_session_accepts_session_instructions(client: TestClient) -> None:
     sess = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "claude-sonnet-4-6"},
+        json={
+            "working_dir": "/tmp",
+            "model": "claude-sonnet-4-6",
+            "tag_ids": [_default_tag_id(client)],
+        },
     ).json()
     assert sess["session_instructions"] is None
     resp = client.patch(
@@ -174,9 +187,11 @@ def test_system_prompt_missing_session_is_404(client: TestClient) -> None:
 
 
 def test_system_prompt_base_only(client: TestClient) -> None:
+    # Session has a tag, but the tag has no memory row → no tag_memory
+    # layer. Base is the only layer emitted.
     sess = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m"},
+        json={"working_dir": "/tmp", "model": "m", "tag_ids": [_default_tag_id(client)]},
     ).json()
     resp = client.get(f"/api/sessions/{sess['id']}/system_prompt")
     assert resp.status_code == 200
@@ -188,12 +203,11 @@ def test_system_prompt_base_only(client: TestClient) -> None:
 
 
 def test_system_prompt_full_stack(client: TestClient) -> None:
+    tag = client.post("/api/tags", json={"name": "infra"}).json()
     sess = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m"},
+        json={"working_dir": "/tmp", "model": "m", "tag_ids": [tag["id"]]},
     ).json()
-    tag = client.post("/api/tags", json={"name": "infra"}).json()
-    client.post(f"/api/sessions/{sess['id']}/tags/{tag['id']}")
     client.put(f"/api/tags/{tag['id']}/memory", json={"content": "Prefer nftables."})
     client.patch(
         f"/api/sessions/{sess['id']}",

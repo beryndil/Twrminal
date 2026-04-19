@@ -23,6 +23,8 @@ export type SessionCreate = {
   title?: string | null;
   description?: string | null;
   max_budget_usd?: number | null;
+  /** v0.2.13 requires at least one tag on every new session. */
+  tag_ids: number[];
 };
 
 export type SessionUpdate = {

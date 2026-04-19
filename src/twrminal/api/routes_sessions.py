@@ -28,16 +28,37 @@ router = APIRouter(
 
 @router.post("", response_model=SessionOut)
 async def create_session(body: SessionCreate, request: Request) -> SessionOut:
+    # v0.2.13: require ≥1 tag on every externally-created session.
+    # Tags carry the project-like defaults + memories, so a tag-less
+    # session has no context hooks at all — guard rail against that.
+    if not body.tag_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="at least one tag_id is required (sessions must be tagged)",
+        )
+    conn = request.app.state.db
+    # Validate every tag exists before inserting the session — avoids a
+    # partial state where the session row is created but some tags fail
+    # to attach.
+    for tag_id in body.tag_ids:
+        if await store.get_tag(conn, tag_id) is None:
+            raise HTTPException(status_code=400, detail=f"tag_id {tag_id} does not exist")
     row = await store.create_session(
-        request.app.state.db,
+        conn,
         working_dir=body.working_dir,
         model=body.model,
         title=body.title,
         description=body.description,
         max_budget_usd=body.max_budget_usd,
     )
+    for tag_id in body.tag_ids:
+        await store.attach_tag(conn, row["id"], tag_id)
     metrics.sessions_created.inc()
-    return SessionOut(**row)
+    # Re-fetch so the returned row carries any updated_at bump from
+    # the attach step, for frontend sort consistency.
+    refreshed = await store.get_session(conn, row["id"])
+    assert refreshed is not None
+    return SessionOut(**refreshed)
 
 
 @router.get("", response_model=list[SessionOut])

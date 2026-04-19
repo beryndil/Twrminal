@@ -12,6 +12,39 @@
   let editingSession = $state(false);
   let exporting = $state(false);
 
+  // Tag chips rendered in the header next to the session title. Small
+  // local state — other components already have their own tag views
+  // (sidebar SessionEdit, TagEdit) and don't share this shape.
+  let sessionTags = $state<api.Tag[]>([]);
+  let sessionTagsLoadedFor = $state<string | null>(null);
+
+  async function loadSessionTags(sid: string): Promise<void> {
+    try {
+      sessionTags = await api.listSessionTags(sid);
+      sessionTagsLoadedFor = sid;
+    } catch {
+      // Non-fatal — the chip row is cosmetic. Leave whatever we had.
+    }
+  }
+
+  $effect(() => {
+    const sid = sessions.selected?.id ?? null;
+    if (!sid) {
+      sessionTags = [];
+      sessionTagsLoadedFor = null;
+      return;
+    }
+    // Refetch on session change, and when updated_at bumps (attach/
+    // detach through SessionEdit bumps the server's updated_at).
+    void sessions.selected?.updated_at;
+    if (sid !== sessionTagsLoadedFor) {
+      void loadSessionTags(sid);
+    } else {
+      // Same session but updated — re-load to reflect attach/detach.
+      void loadSessionTags(sid);
+    }
+  });
+
   async function onExport() {
     const sid = sessions.selectedId;
     if (!sid || exporting) return;
@@ -174,6 +207,24 @@
           select or create a session to start
         {/if}
       </p>
+      {#if sessions.selected && sessionTags.length > 0}
+        <ul class="flex flex-wrap gap-1 mt-1.5" aria-label="Session tags">
+          {#each sessionTags as tag (tag.id)}
+            <li
+              class="inline-flex items-center gap-1 rounded bg-slate-800 px-1.5 py-0.5
+                text-[10px] font-mono text-slate-300"
+              title={tag.default_working_dir || tag.default_model
+                ? `defaults: ${tag.default_working_dir ?? ''} ${tag.default_model ?? ''}`.trim()
+                : tag.name}
+            >
+              {#if tag.pinned}
+                <span class="text-amber-400" aria-hidden="true">★</span>
+              {/if}
+              <span>{tag.name}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
       {#if sessions.selected?.description}
         <p class="text-xs text-slate-400 mt-1 whitespace-pre-wrap break-words">
           {sessions.selected.description}
