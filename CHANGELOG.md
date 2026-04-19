@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.39] - 2026-04-19
+
+Docs/housekeeping only — no code change. Brings the two pieces of
+project documentation that drifted during the v0.1 sprint back in
+line with reality.
+
+### Changed
+
+- `README.md` rewritten: removed the "v0.1.0 scaffold… stubbed" prose
+  that had survived 38 shipped versions, added a Features summary
+  (streaming, CRUD, import/export, auth, budgets, metrics, search,
+  shortcuts, CLI `send`), and widened the config table to cover
+  `auth.token`.
+- `TODO.md` reconciled: the three "v0.1.7+" stragglers (auth gate,
+  graceful shutdown, budget cap) had all shipped — ticked and moved
+  under a "Stale items resolved in earlier slices" subsection with
+  pointers to the slice that landed each one.
+
 ## [0.1.38] - 2026-04-19
 
 Closes out v0.1. Two tweaks and the first testing-notes pass.

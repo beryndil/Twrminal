@@ -220,13 +220,22 @@ See `V0.2.0_SPEC.md`. First numbered step: tag primitives (tags
 table, session_tags join, pinned/sort_order columns, basic CRUD).
 Then projects + tag memories on top. Build order lives in the spec.
 
-## v0.1.7+
+## v0.1.39 — shipped
 
-- [ ] Auth gate: enable `auth.enabled` path (currently no-op).
-- [ ] Kill switch / graceful shutdown signal in the WS handler so
-  `twrminal serve` under systemd stops cleanly with in-flight streams.
-- [ ] Rate-limit or soft-cap `max_budget_usd` per session via
-  `ClaudeAgentOptions` so an agent loop doesn't burn unbounded tokens.
+- [x] Housekeeping: tick stale TODO items that actually shipped in
+  earlier v0.1.x slices (auth gate, graceful shutdown, budget cap).
+- [x] README refreshed from v0.1.0 scaffold prose to current v0.1.x
+  capability surface.
+
+## Stale items resolved in earlier slices (ticked in v0.1.39)
+
+- [x] Auth gate: enable `auth.enabled` path — opt-in bearer token
+  wired in v0.1.11 (REST/WS/CLI/frontend) + AuthGate modal in v0.1.12.
+- [x] Kill switch / graceful shutdown signal in the WS handler —
+  shipped in v0.1.9 (lifespan-exit 1001 Going Away broadcast).
+- [x] Rate-limit / soft-cap `max_budget_usd` per session via
+  `ClaudeAgentOptions` — wired in `AgentSession.stream()`
+  (`session.py:67-68`). Per-session column lands in v0.1.8.
 
 ## Decisions pending
 

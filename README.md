@@ -6,8 +6,29 @@ history across restarts.
 
 ## Status
 
-Alpha — v0.1.0 scaffold. Route surface is wired; session, streaming, and
-persistence implementations are stubbed.
+Alpha — `0.1.x` development. The v0.1 line is feature-complete and
+closed out at v0.1.38; v0.1.39 is documentation/housekeeping. The v0.2
+milestone (projects, tags, memory-backed system prompts) is specced in
+`V0.2.0_SPEC.md`.
+
+## Features (v0.1.x)
+
+- Streaming Claude agent sessions via `claude-agent-sdk`: token
+  deltas, thinking blocks, tool-call start/end, message-complete cost.
+- Session CRUD, rename, delete, JSON import/export (single + bulk
+  drag-drop), Enter-to-send / Shift+Enter newline, Stop button (SDK
+  `interrupt()`), ⌘/Ctrl+K sidebar search with match highlighting,
+  `?` cheat-sheet modal, message pagination.
+- Per-session `max_budget_usd` cap enforced via `ClaudeAgentOptions`;
+  running total cost stored on the session and rendered with amber/rose
+  pressure coloring at ≥80% / ≥100%.
+- Opt-in bearer-token auth (`auth.token`) across REST + WS + CLI +
+  frontend AuthGate modal; 401/4401 flips the store back to `invalid`.
+- Prometheus `/metrics` (sessions, messages, tool calls, WS events,
+  active connections) + JSON history export/daily/search routes.
+- CLI subcommands: `twrminal serve | init | send`. `send` supports
+  `--format=pretty` for human-readable output and `--token` for
+  authenticated servers.
 
 ## Requirements
 
@@ -56,7 +77,8 @@ keys you need.
 |------------|----------------------|----------------------------------|----------------------------------|
 | `server`   | `host`               | `127.0.0.1`                      | Bind address                     |
 | `server`   | `port`               | `8787`                           | Bind port                        |
-| `auth`     | `enabled`            | `false`                          | Future token/key gate            |
+| `auth`     | `enabled`            | `false`                          | Gate REST + WS behind bearer     |
+| `auth`     | `token`              | *(unset)*                        | Shared secret when `enabled`     |
 | `agent`    | `working_dir`        | `~/`                             | CWD for agent sessions           |
 | `agent`    | `model`              | `claude-opus-4-7`                | Default model                    |
 | `storage`  | `db_path`            | `~/.local/share/twrminal/db.sqlite` | Persistence                 |
