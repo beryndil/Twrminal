@@ -21,28 +21,54 @@
   let submitting = $state(false);
   let importInput: HTMLInputElement | undefined = $state();
   let importError = $state<string | null>(null);
+  let importProgress = $state<{ done: number; total: number } | null>(null);
   let dragging = $state(false);
 
-  async function importFromFile(file: File) {
+  async function importOne(file: File): Promise<api.Session> {
+    const text = await file.text();
+    const payload = JSON.parse(text);
+    return api.importSession(payload);
+  }
+
+  async function importFromFiles(files: File[]) {
+    if (files.length === 0) return;
     importError = null;
-    try {
-      const text = await file.text();
-      const payload = JSON.parse(text);
-      const created = await api.importSession(payload);
-      // Put it at the top of the list + auto-open.
-      sessions.list = [created, ...sessions.list.filter((s) => s.id !== created.id)];
-      sessions.select(created.id);
-      await agent.connect(created.id);
-    } catch (err) {
-      importError = err instanceof Error ? err.message : String(err);
+    const failures: { name: string; error: string }[] = [];
+    const created: api.Session[] = [];
+    importProgress = { done: 0, total: files.length };
+    for (const file of files) {
+      try {
+        created.push(await importOne(file));
+      } catch (err) {
+        failures.push({
+          name: file.name,
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+      importProgress = { done: created.length + failures.length, total: files.length };
+    }
+    importProgress = null;
+
+    // Prepend everything that landed — last-imported ends up on top.
+    if (created.length > 0) {
+      const keep = sessions.list.filter((s) => !created.some((c) => c.id === s.id));
+      sessions.list = [...created.reverse(), ...keep];
+      const focus = created[0]; // the last one imported (after reverse)
+      sessions.select(focus.id);
+      await agent.connect(focus.id);
+    }
+    if (failures.length > 0) {
+      importError = failures
+        .map((f) => `${f.name}: ${f.error}`)
+        .join('; ');
     }
   }
 
   async function onImportFile(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
+    const files = Array.from(input.files ?? []);
     input.value = '';
-    if (file) await importFromFile(file);
+    if (files.length > 0) await importFromFiles(files);
   }
 
   function hasFiles(e: DragEvent): boolean {
@@ -68,8 +94,8 @@
   async function onDrop(e: DragEvent) {
     e.preventDefault();
     dragging = false;
-    const file = e.dataTransfer?.files[0];
-    if (file) await importFromFile(file);
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    if (files.length > 0) await importFromFiles(files);
   }
 
   let searchQuery = $state('');
@@ -267,6 +293,7 @@
       <input
         type="file"
         accept="application/json,.json"
+        multiple
         class="hidden"
         bind:this={importInput}
         onchange={onImportFile}
@@ -368,6 +395,11 @@
 
   {#if sessions.error}
     <p class="text-xs text-rose-400">{sessions.error}</p>
+  {/if}
+  {#if importProgress}
+    <p class="text-xs text-emerald-300">
+      Importing {importProgress.done} of {importProgress.total}…
+    </p>
   {/if}
   {#if importError}
     <p class="text-xs text-rose-400">import: {importError}</p>

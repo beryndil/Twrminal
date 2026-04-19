@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.37] - 2026-04-19
+
+### Added
+
+- Multi-file session import: drop a directory's worth of
+  `session-*.json` onto the sidebar (or pick several in the ⇡ file
+  dialog) and they import serially. `<input type="file" multiple>`
+  is set on the hidden picker; `onDrop` reads every file from
+  `dataTransfer.files`.
+- `Importing N of M…` emerald status line while the loop runs.
+  Per-file failures collect and render as `name: error; name: error`
+  in the existing rose-colored error banner; successes land in the
+  sidebar with the last-imported selected.
+
 ## [0.1.36] - 2026-04-19
 
 ### Added

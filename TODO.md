@@ -204,13 +204,17 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 
 - [x] Drag-drop session import with emerald-ring drop-zone overlay.
 
-## v0.1.37 — next slice
+## v0.1.37 — shipped
+
+- [x] Multi-file drop / picker for session import.
+
+## v0.1.38 — next slice
 
 - [ ] SessionList search debounce test (fake timers).
 - [ ] Verify interrupt() behavior against a real agent running a
   Bash(sleep 10) tool.
-- [ ] Multi-file drop — importing a directory full of exported
-  sessions in one go.
+- [ ] Bulk export: "Download all sessions" → zip or single JSON of
+  every session.
 
 ## v0.1.7+
 
