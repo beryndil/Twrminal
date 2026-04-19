@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 from uuid import uuid4
 
 import aiosqlite
@@ -47,16 +47,10 @@ def _new_id() -> str:
 
 _SESSION_BASE_COLS = (
     "id, created_at, updated_at, working_dir, model, title, description, "
-    "max_budget_usd, total_cost_usd, project_id, session_instructions"
+    "max_budget_usd, total_cost_usd, session_instructions"
 )
 _SESSION_COUNT = "(SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count"
 _SESSION_COLS_WITH_COUNT = f"s.{_SESSION_BASE_COLS.replace(', ', ', s.')}, {_SESSION_COUNT}"
-
-# Sentinel for `list_sessions(project_id=...)` meaning "only sessions with
-# no project assigned" — i.e. WHERE project_id IS NULL. Python's literal
-# None already means "no filter", so we need a separate token.
-NO_PROJECT: Literal["none"] = "none"
-ProjectFilter = int | Literal["none"] | None
 
 
 async def create_session(
@@ -67,26 +61,15 @@ async def create_session(
     title: str | None = None,
     description: str | None = None,
     max_budget_usd: float | None = None,
-    project_id: int | None = None,
 ) -> dict[str, Any]:
     session_id = _new_id()
     now = _now()
     await conn.execute(
         "INSERT INTO sessions "
         "(id, created_at, updated_at, working_dir, model, title, description, "
-        "max_budget_usd, project_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            session_id,
-            now,
-            now,
-            working_dir,
-            model,
-            title,
-            description,
-            max_budget_usd,
-            project_id,
-        ),
+        "max_budget_usd) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (session_id, now, now, working_dir, model, title, description, max_budget_usd),
     )
     await conn.commit()
     row = await get_session(conn, session_id)
@@ -99,49 +82,45 @@ async def list_sessions(
     *,
     tag_ids: list[int] | None = None,
     mode: str = "any",
-    project_id: ProjectFilter = None,
 ) -> list[dict[str, Any]]:
-    """List sessions, newest-first. Optional filters compose with AND:
+    """List sessions, newest-first. Optional tag filter:
 
-    - `tag_ids=None`/empty: no tag filter. `mode="any"`/`"all"` otherwise.
-    - `project_id=None`: no project filter.
-    - `project_id="none"`: only sessions with `project_id IS NULL`.
-    - `project_id=<int>`: only sessions in that project.
+    - `tag_ids=None`/empty: no filter.
+    - `mode="any"`: sessions carrying any listed tag.
+    - `mode="all"`: sessions carrying every listed tag.
 
-    Ordering stays `updated_at DESC, id DESC` regardless of filters.
+    Ordering stays `updated_at DESC, id DESC`.
     """
-    where: list[str] = []
-    params: list[Any] = []
+    if not tag_ids:
+        sql = (
+            f"SELECT {_SESSION_COLS_WITH_COUNT} FROM sessions s "
+            "ORDER BY s.updated_at DESC, s.id DESC"
+        )
+        async with conn.execute(sql) as cursor:
+            return [dict(row) async for row in cursor]
 
-    if project_id == NO_PROJECT:
-        where.append("s.project_id IS NULL")
-    elif project_id is not None:
-        where.append("s.project_id = ?")
-        params.append(project_id)
-
-    tag_join = ""
-    having = ""
-    distinct = ""
-    if tag_ids:
-        placeholders = ",".join("?" for _ in tag_ids)
-        tag_join = "JOIN session_tags st ON st.session_id = s.id "
-        where.append(f"st.tag_id IN ({placeholders})")
-        params.extend(tag_ids)
-        if mode == "all":
-            # HAVING COUNT(DISTINCT tag_id) == len(tag_ids) ensures every
-            # required tag is present on the session.
-            having = "GROUP BY s.id HAVING COUNT(DISTINCT st.tag_id) = ? "
-            params.append(len(tag_ids))
-        else:
-            distinct = "DISTINCT "
-
-    where_sql = ("WHERE " + " AND ".join(where) + " ") if where else ""
-    sql = (
-        f"SELECT {distinct}{_SESSION_COLS_WITH_COUNT} FROM sessions s "
-        f"{tag_join}{where_sql}{having}"
-        "ORDER BY s.updated_at DESC, s.id DESC"
-    )
-    async with conn.execute(sql, tuple(params)) as cursor:
+    placeholders = ",".join("?" for _ in tag_ids)
+    if mode == "all":
+        # HAVING COUNT(DISTINCT tag_id) == len(tag_ids) ensures every
+        # required tag is present on the session.
+        sql = (
+            f"SELECT {_SESSION_COLS_WITH_COUNT} FROM sessions s "
+            f"JOIN session_tags st ON st.session_id = s.id "
+            f"WHERE st.tag_id IN ({placeholders}) "
+            f"GROUP BY s.id HAVING COUNT(DISTINCT st.tag_id) = ? "
+            "ORDER BY s.updated_at DESC, s.id DESC"
+        )
+        params: tuple[Any, ...] = (*tag_ids, len(tag_ids))
+    else:
+        # mode == "any" — DISTINCT + IN (...).
+        sql = (
+            f"SELECT DISTINCT {_SESSION_COLS_WITH_COUNT} FROM sessions s "
+            f"JOIN session_tags st ON st.session_id = s.id "
+            f"WHERE st.tag_id IN ({placeholders}) "
+            "ORDER BY s.updated_at DESC, s.id DESC"
+        )
+        params = tuple(tag_ids)
+    async with conn.execute(sql, params) as cursor:
         return [dict(row) async for row in cursor]
 
 
@@ -161,14 +140,13 @@ async def update_session(
     fields: dict[str, Any],
 ) -> dict[str, Any] | None:
     """Apply a partial update. `fields` maps column name → new value;
-    only `title`, `description`, `max_budget_usd`, `project_id`, and
+    only `title`, `description`, `max_budget_usd`, and
     `session_instructions` are accepted. Bumps updated_at. Returns
     the refreshed row, or None if the session doesn't exist."""
     allowed = {
         "title",
         "description",
         "max_budget_usd",
-        "project_id",
         "session_instructions",
     }
     filtered = {k: v for k, v in fields.items() if k in allowed}
@@ -638,113 +616,6 @@ async def list_session_tags(conn: aiosqlite.Connection, session_id: str) -> list
         (session_id,),
     ) as cursor:
         return [dict(row) async for row in cursor]
-
-
-# --- Projects (v0.2.6) ------------------------------------------------
-
-_PROJECT_BASE_COLS = (
-    "id, name, description, system_prompt, working_dir, default_model, "
-    "pinned, sort_order, created_at, updated_at"
-)
-_PROJECT_COUNT = "(SELECT COUNT(*) FROM sessions s WHERE s.project_id = p.id) AS session_count"
-_PROJECT_COLS_WITH_COUNT = f"p.{_PROJECT_BASE_COLS.replace(', ', ', p.')}, {_PROJECT_COUNT}"
-# Pinned first, then ascending sort_order, then id — same canonical
-# shape used for tags so the sidebar renders both lists consistently.
-_PROJECT_ORDER = "p.pinned DESC, p.sort_order ASC, p.id ASC"
-
-
-async def create_project(
-    conn: aiosqlite.Connection,
-    *,
-    name: str,
-    description: str | None = None,
-    system_prompt: str | None = None,
-    working_dir: str | None = None,
-    default_model: str | None = None,
-    pinned: bool = False,
-    sort_order: int = 0,
-) -> dict[str, Any]:
-    now = _now()
-    cursor = await conn.execute(
-        "INSERT INTO projects "
-        "(name, description, system_prompt, working_dir, default_model, "
-        "pinned, sort_order, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            name,
-            description,
-            system_prompt,
-            working_dir,
-            default_model,
-            1 if pinned else 0,
-            sort_order,
-            now,
-            now,
-        ),
-    )
-    await conn.commit()
-    project_id = cursor.lastrowid
-    assert project_id is not None  # just inserted
-    row = await get_project(conn, project_id)
-    assert row is not None
-    return row
-
-
-async def list_projects(conn: aiosqlite.Connection) -> list[dict[str, Any]]:
-    async with conn.execute(
-        f"SELECT {_PROJECT_COLS_WITH_COUNT} FROM projects p ORDER BY {_PROJECT_ORDER}"
-    ) as cursor:
-        return [dict(row) async for row in cursor]
-
-
-async def get_project(conn: aiosqlite.Connection, project_id: int) -> dict[str, Any] | None:
-    async with conn.execute(
-        f"SELECT {_PROJECT_COLS_WITH_COUNT} FROM projects p WHERE p.id = ?",
-        (project_id,),
-    ) as cursor:
-        row = await cursor.fetchone()
-    return dict(row) if row is not None else None
-
-
-async def update_project(
-    conn: aiosqlite.Connection,
-    project_id: int,
-    *,
-    fields: dict[str, Any],
-) -> dict[str, Any] | None:
-    """Apply a partial update. Only `name`, `description`, `system_prompt`,
-    `working_dir`, `default_model`, `pinned`, `sort_order` are accepted.
-    Bumps `updated_at`. Returns None if the project is gone."""
-    allowed = {
-        "name",
-        "description",
-        "system_prompt",
-        "working_dir",
-        "default_model",
-        "pinned",
-        "sort_order",
-    }
-    filtered = {k: v for k, v in fields.items() if k in allowed}
-    if "pinned" in filtered:
-        filtered["pinned"] = 1 if filtered["pinned"] else 0
-    if not filtered:
-        return await get_project(conn, project_id)
-    assignments = ", ".join(f"{col} = ?" for col in filtered)
-    params = (*filtered.values(), _now(), project_id)
-    cursor = await conn.execute(
-        f"UPDATE projects SET {assignments}, updated_at = ? WHERE id = ?",
-        params,
-    )
-    await conn.commit()
-    if cursor.rowcount == 0:
-        return None
-    return await get_project(conn, project_id)
-
-
-async def delete_project(conn: aiosqlite.Connection, project_id: int) -> bool:
-    cursor = await conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
-    await conn.commit()
-    return cursor.rowcount > 0
 
 
 # --- Tag memories (v0.2.7) -------------------------------------------

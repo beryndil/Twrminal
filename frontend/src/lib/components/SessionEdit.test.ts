@@ -23,7 +23,6 @@ function session(overrides: Partial<Session> = {}): Session {
     max_budget_usd: null,
     total_cost_usd: 0,
     message_count: 0,
-    project_id: null,
     session_instructions: null,
     ...overrides
   };

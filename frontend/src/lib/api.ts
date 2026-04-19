@@ -14,7 +14,6 @@ export type Session = {
   max_budget_usd: number | null;
   total_cost_usd: number;
   message_count: number;
-  project_id: number | null;
   session_instructions: string | null;
 };
 
@@ -24,14 +23,12 @@ export type SessionCreate = {
   title?: string | null;
   description?: string | null;
   max_budget_usd?: number | null;
-  project_id?: number | null;
 };
 
 export type SessionUpdate = {
   title?: string | null;
   description?: string | null;
   max_budget_usd?: number | null;
-  project_id?: number | null;
   session_instructions?: string | null;
 };
 

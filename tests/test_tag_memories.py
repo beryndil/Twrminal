@@ -188,13 +188,9 @@ def test_system_prompt_base_only(client: TestClient) -> None:
 
 
 def test_system_prompt_full_stack(client: TestClient) -> None:
-    proj = client.post(
-        "/api/projects",
-        json={"name": "Twrminal", "system_prompt": "Prefer SQL over ORMs."},
-    ).json()
     sess = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "project_id": proj["id"]},
+        json={"working_dir": "/tmp", "model": "m"},
     ).json()
     tag = client.post("/api/tags", json={"name": "infra"}).json()
     client.post(f"/api/sessions/{sess['id']}/tags/{tag['id']}")
@@ -205,9 +201,8 @@ def test_system_prompt_full_stack(client: TestClient) -> None:
     )
     body = client.get(f"/api/sessions/{sess['id']}/system_prompt").json()
     kinds = [layer["kind"] for layer in body["layers"]]
-    assert kinds == ["base", "project", "tag_memory", "session"]
+    assert kinds == ["base", "tag_memory", "session"]
     contents = [layer["content"] for layer in body["layers"]]
-    assert "Prefer SQL over ORMs." in contents
     assert "Prefer nftables." in contents
     assert "Be concise." in contents
     # total_tokens is exactly the sum of per-layer counts.

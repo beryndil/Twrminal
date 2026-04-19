@@ -10,11 +10,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     description TEXT,
     max_budget_usd REAL,
     total_cost_usd REAL NOT NULL DEFAULT 0,
-    project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
     session_instructions TEXT
 );
-
-CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
 
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
@@ -58,19 +55,6 @@ CREATE TABLE IF NOT EXISTS session_tags (
 );
 
 CREATE INDEX IF NOT EXISTS idx_session_tags_tag ON session_tags(tag_id);
-
-CREATE TABLE IF NOT EXISTS projects (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    description TEXT,
-    system_prompt TEXT,
-    working_dir TEXT,
-    default_model TEXT,
-    pinned INTEGER NOT NULL DEFAULT 0,
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
 
 CREATE TABLE IF NOT EXISTS tag_memories (
     tag_id INTEGER PRIMARY KEY REFERENCES tags(id) ON DELETE CASCADE,

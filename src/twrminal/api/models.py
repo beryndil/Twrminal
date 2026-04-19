@@ -9,7 +9,6 @@ class SessionCreate(BaseModel):
     title: str | None = None
     description: str | None = None
     max_budget_usd: float | None = None
-    project_id: int | None = None
 
 
 class SessionUpdate(BaseModel):
@@ -19,7 +18,6 @@ class SessionUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     max_budget_usd: float | None = None
-    project_id: int | None = None
     session_instructions: str | None = None
     # Distinguishes "not provided" from "set to null" for the nullable
     # columns. Pydantic writes `model_fields_set` so routes can dispatch
@@ -37,7 +35,6 @@ class SessionOut(BaseModel):
     max_budget_usd: float | None = None
     total_cost_usd: float = 0.0
     message_count: int = 0
-    project_id: int | None = None
     session_instructions: str | None = None
 
 
@@ -96,43 +93,6 @@ class TagOut(BaseModel):
     pinned: bool
     sort_order: int
     created_at: str
-    session_count: int = 0
-
-
-class ProjectCreate(BaseModel):
-    name: str
-    description: str | None = None
-    system_prompt: str | None = None
-    working_dir: str | None = None
-    default_model: str | None = None
-    pinned: bool = False
-    sort_order: int = 0
-
-
-class ProjectUpdate(BaseModel):
-    """Partial update for an existing project. Any unset field is left
-    unchanged; explicit `None` clears nullable fields."""
-
-    name: str | None = None
-    description: str | None = None
-    system_prompt: str | None = None
-    working_dir: str | None = None
-    default_model: str | None = None
-    pinned: bool | None = None
-    sort_order: int | None = None
-
-
-class ProjectOut(BaseModel):
-    id: int
-    name: str
-    description: str | None = None
-    system_prompt: str | None = None
-    working_dir: str | None = None
-    default_model: str | None = None
-    pinned: bool
-    sort_order: int
-    created_at: str
-    updated_at: str
     session_count: int = 0
 
 

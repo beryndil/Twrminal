@@ -35,7 +35,6 @@ async def create_session(body: SessionCreate, request: Request) -> SessionOut:
         title=body.title,
         description=body.description,
         max_budget_usd=body.max_budget_usd,
-        project_id=body.project_id,
     )
     metrics.sessions_created.inc()
     return SessionOut(**row)
@@ -46,10 +45,6 @@ async def list_sessions(
     request: Request,
     tags: str | None = Query(None, description="Comma-separated tag ids"),
     mode: str = Query("any", pattern="^(any|all)$"),
-    project_id: str | None = Query(
-        None,
-        description="Project filter: an integer id, or 'none' for sessions with no project",
-    ),
 ) -> list[SessionOut]:
     tag_ids: list[int] | None = None
     if tags:
@@ -59,23 +54,10 @@ async def list_sessions(
             raise HTTPException(
                 status_code=400, detail="tags must be comma-separated integers"
             ) from exc
-    project_filter: store.ProjectFilter = None
-    if project_id is not None:
-        if project_id == store.NO_PROJECT:
-            project_filter = store.NO_PROJECT
-        else:
-            try:
-                project_filter = int(project_id)
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=400,
-                    detail="project_id must be an integer or 'none'",
-                ) from exc
     rows = await store.list_sessions(
         request.app.state.db,
         tag_ids=tag_ids,
         mode=mode,
-        project_id=project_filter,
     )
     return [SessionOut(**r) for r in rows]
 

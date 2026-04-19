@@ -10,33 +10,6 @@ from twrminal.agent.prompt import assemble_prompt
 from twrminal.db.store import attach_tag, create_session, create_tag, init_db
 
 
-async def _insert_project(
-    conn: aiosqlite.Connection,
-    *,
-    name: str,
-    system_prompt: str | None = None,
-) -> int:
-    cursor = await conn.execute(
-        "INSERT INTO projects (name, system_prompt, created_at, updated_at) "
-        "VALUES (?, ?, datetime('now'), datetime('now'))",
-        (name, system_prompt),
-    )
-    await conn.commit()
-    pid = cursor.lastrowid
-    assert pid is not None
-    return pid
-
-
-async def _set_session_project(
-    conn: aiosqlite.Connection, session_id: str, project_id: int
-) -> None:
-    await conn.execute(
-        "UPDATE sessions SET project_id = ? WHERE id = ?",
-        (project_id, session_id),
-    )
-    await conn.commit()
-
-
 async def _set_session_instructions(
     conn: aiosqlite.Connection, session_id: str, instructions: str
 ) -> None:
@@ -76,7 +49,7 @@ def test_estimate_tokens_scales_with_length() -> None:
 
 
 @pytest.mark.asyncio
-async def test_only_base_when_no_project_tags_or_instructions(tmp_path: Path) -> None:
+async def test_only_base_when_no_tags_or_instructions(tmp_path: Path) -> None:
     conn = await init_db(tmp_path / "db.sqlite")
     try:
         sess = await create_session(conn, working_dir="/x", model="m", title=None)
@@ -94,35 +67,6 @@ async def test_missing_session_returns_base_only(tmp_path: Path) -> None:
     conn = await init_db(tmp_path / "db.sqlite")
     try:
         result = await assemble_prompt(conn, "does-not-exist")
-    finally:
-        await conn.close()
-    assert [layer.kind for layer in result.layers] == ["base"]
-
-
-@pytest.mark.asyncio
-async def test_project_layer_uses_system_prompt(tmp_path: Path) -> None:
-    conn = await init_db(tmp_path / "db.sqlite")
-    try:
-        sess = await create_session(conn, working_dir="/x", model="m", title=None)
-        pid = await _insert_project(conn, name="Twrminal", system_prompt="Prefer SQL over ORMs.")
-        await _set_session_project(conn, sess["id"], pid)
-        result = await assemble_prompt(conn, sess["id"])
-    finally:
-        await conn.close()
-    assert [layer.kind for layer in result.layers] == ["base", "project"]
-    assert result.layers[1].name == "Twrminal"
-    assert result.layers[1].content == "Prefer SQL over ORMs."
-    assert "<!-- layer: project[Twrminal] -->" in result.text
-
-
-@pytest.mark.asyncio
-async def test_project_without_system_prompt_is_skipped(tmp_path: Path) -> None:
-    conn = await init_db(tmp_path / "db.sqlite")
-    try:
-        sess = await create_session(conn, working_dir="/x", model="m", title=None)
-        pid = await _insert_project(conn, name="Empty", system_prompt=None)
-        await _set_session_project(conn, sess["id"], pid)
-        result = await assemble_prompt(conn, sess["id"])
     finally:
         await conn.close()
     assert [layer.kind for layer in result.layers] == ["base"]
@@ -173,8 +117,6 @@ async def test_session_instructions_always_last(tmp_path: Path) -> None:
     conn = await init_db(tmp_path / "db.sqlite")
     try:
         sess = await create_session(conn, working_dir="/x", model="m", title=None)
-        pid = await _insert_project(conn, name="Proj", system_prompt="Project prompt.")
-        await _set_session_project(conn, sess["id"], pid)
         tag = await create_tag(conn, name="t")
         await _set_tag_memory(conn, tag["id"], "Tag memory.")
         await attach_tag(conn, sess["id"], tag["id"])
@@ -182,7 +124,7 @@ async def test_session_instructions_always_last(tmp_path: Path) -> None:
         result = await assemble_prompt(conn, sess["id"])
     finally:
         await conn.close()
-    assert [layer.kind for layer in result.layers] == ["base", "project", "tag_memory", "session"]
+    assert [layer.kind for layer in result.layers] == ["base", "tag_memory", "session"]
     assert result.layers[-1].content == "Override everything above."
 
 
@@ -191,8 +133,6 @@ async def test_text_contains_every_layer_header_verbatim(tmp_path: Path) -> None
     conn = await init_db(tmp_path / "db.sqlite")
     try:
         sess = await create_session(conn, working_dir="/x", model="m", title=None)
-        pid = await _insert_project(conn, name="Proj", system_prompt="p")
-        await _set_session_project(conn, sess["id"], pid)
         tag = await create_tag(conn, name="infra")
         await _set_tag_memory(conn, tag["id"], "tm")
         await attach_tag(conn, sess["id"], tag["id"])

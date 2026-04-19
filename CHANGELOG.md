@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9] - 2026-04-19
+
+Teardown of projects. Course correction — projects were the wrong
+primitive. Tags with memories (already shipped in v0.2.7) carry
+the role; tag-level `default_working_dir` and `default_model`
+land in v0.2.10 to close the gap. Pinned tag = "project". See
+`V0.2.0_SPEC.md` (rewritten this slice).
+
+### Removed
+
+- Migration `0008_drop_projects.sql`: wipes existing sessions
+  (none in production at teardown time, per Dave's call), drops
+  `idx_sessions_project`, drops `sessions.project_id` column
+  (SQLite 3.35+ DROP COLUMN), drops the `projects` table.
+- `src/twrminal/api/routes_projects.py` — entire file.
+- `src/twrminal/db/store.py` — `create_project` / `list_projects`
+  / `get_project` / `update_project` / `delete_project` and their
+  helper constants. `NO_PROJECT` sentinel + `ProjectFilter` alias.
+- `ProjectCreate` / `ProjectUpdate` / `ProjectOut` DTOs.
+- `SessionCreate.project_id` / `SessionUpdate.project_id` /
+  `SessionOut.project_id` (backend + frontend TS).
+- `GET /api/sessions?project_id=` query filter.
+- Project layer in `agent/prompt.py`. The assembler is now 3-layer:
+  base → tag memories → session instructions.
+- `tests/test_projects.py` and `tests/test_migration_0007.py`
+  (the latter asserted the post-0007 shape which no longer matches
+  end state; the 0007 migration file itself stays in
+  `migrations/` so `schema_migrations` stays consistent).
+- Frontend `Session.project_id` field.
+
+### Changed
+
+- `V0.2.0_SPEC.md` rewritten to describe the tags-only design.
+  The old projects-included version led this slice's teardown —
+  preserved only in git history.
+- `db/schema.sql` reconciled — no `projects` table, no
+  `project_id` column, no `idx_sessions_project`.
+- Prompt-assembler tests trimmed to match the 3-layer shape.
+- System-prompt API test trimmed to match.
+
+### Why
+
+Tags carry shared system-prompt content (as memories), shared
+working-dir defaults, shared model defaults, and sidebar-pin
+behavior. A pinned `twrminal` tag IS the Twrminal project.
+Maintaining a second "projects" primitive alongside that was
+duplicating surface for no additional capability. Cheaper-than-
+expected memory stacking (short pointers, not mirrored document
+libraries) closed the gap that projects were meant to fill.
+
 ## [0.2.8] - 2026-04-19
 
 Inspector Context tab — read-only view of the assembled system

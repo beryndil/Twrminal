@@ -348,6 +348,20 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
   API + session_instructions round-trip) plus 2 agent-session
   cases pinning the system_prompt wire-through.
 
+## v0.2.9 — shipped (teardown)
+
+- [x] Migration `0008_drop_projects.sql` — wipes sessions, drops
+  `idx_sessions_project`, drops `sessions.project_id`, drops the
+  `projects` table.
+- [x] Removed `routes_projects.py`, project DTOs, project store
+  helpers, `NO_PROJECT` / `ProjectFilter`.
+- [x] Removed `project_id` from Session DTOs + query filter +
+  frontend TS.
+- [x] Assembler is 3-layer (base → tag memories → session).
+- [x] Deleted `tests/test_projects.py`, `tests/test_migration_0007.py`.
+- [x] `V0.2.0_SPEC.md` rewritten to the tags-only design.
+- [x] 161 backend + 34 frontend tests pass; ruff + mypy green.
+
 ## v0.2.8 — shipped
 
 - [x] `GET /api/sessions/{id}/system_prompt` — `{layers,
@@ -368,10 +382,13 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 Plan file: `~/.claude/plans/vectorized-leaping-pretzel.md`. Slice
 numbering shifted from the original 12-slice plan because spec
 step 1 ended up needing four slices, not three.
-- [ ] **v0.2.9** — Projects sidebar + management view.
-- [ ] **v0.2.10** — Tag memory editor (markdown + live preview).
-- [ ] **v0.2.11** — Session instructions inline editor.
-- [ ] **v0.2.12** — Conversation header badges + README update.
+- [ ] **v0.2.10** — Tag defaults: migration adds
+  `tags.default_working_dir` + `tags.default_model` + CRUD +
+  new-session pre-fill from attached tags.
+- [ ] **v0.2.11** — Tag memory editor (markdown + live preview).
+- [ ] **v0.2.12** — Session instructions inline editor.
+- [ ] **v0.2.13** — New-session gate (≥1 tag) + header badges +
+  README update.
 
 ## Decisions pending
 
