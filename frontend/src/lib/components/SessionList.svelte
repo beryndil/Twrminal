@@ -24,6 +24,28 @@
   let searchResults = $state<api.SearchHit[]>([]);
   let searchError = $state<string | null>(null);
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
+  let searchInput: HTMLInputElement | undefined = $state();
+
+  $effect(() => {
+    function onDocKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInput?.focus();
+        searchInput?.select();
+      }
+    }
+    document.addEventListener('keydown', onDocKey);
+    return () => document.removeEventListener('keydown', onDocKey);
+  });
+
+  function onSearchKey(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      searchQuery = '';
+      searchResults = [];
+      searchInput?.blur();
+    }
+  }
 
   function runSearch(q: string) {
     if (searchTimer !== null) clearTimeout(searchTimer);
@@ -186,10 +208,12 @@
 
   <input
     type="search"
-    placeholder="Search messages…"
+    placeholder="Search messages (⌘/Ctrl+K)"
     class="rounded bg-slate-950 border border-slate-800 px-2 py-1.5 text-sm
       focus:outline-none focus:border-slate-600"
     bind:value={searchQuery}
+    bind:this={searchInput}
+    onkeydown={onSearchKey}
   />
 
   {#if showNewForm}
