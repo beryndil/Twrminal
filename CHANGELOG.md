@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-04-19
+
+Schema migration **0007** — projects, tag memories, session
+instructions. Fifth v0.2 slice. No routes yet; CRUD + prompt
+assembly land in v0.2.5+.
+
+### Added
+
+- Migration `0007_projects_and_memories.sql`:
+  - `projects` (id, name UNIQUE, description, system_prompt,
+    working_dir, default_model, pinned, sort_order, created_at,
+    updated_at).
+  - `sessions.project_id INTEGER REFERENCES projects(id) ON
+    DELETE SET NULL` + `idx_sessions_project`.
+  - `tag_memories` (tag_id PK/FK, content, updated_at), FK
+    `ON DELETE CASCADE` tied to `tags`.
+  - `sessions.session_instructions TEXT` nullable — session-level
+    override for the assembled system prompt (prompt assembler
+    lands in v0.2.5).
+- Canonical `db/schema.sql` caught up to the full applied shape
+  (tags, session_tags, projects, tag_memories).
+- 4 new pytest cases: migration applies (tables + index), columns
+  present on `sessions`, project delete NULLs `sessions.project_id`,
+  tag delete cascades `tag_memories` rows.
+
 ## [0.2.3] - 2026-04-19
 
 Sidebar **click-filter** — fourth v0.2 slice. Closes out the

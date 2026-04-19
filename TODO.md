@@ -293,6 +293,15 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 - [x] SessionList re-fetches sessions on filter change.
 - [x] 5 new pytest cases + 3 new vitest cases.
 
+## v0.2.4 — shipped
+
+- [x] Migration `0007_projects_and_memories.sql` (projects table,
+  `sessions.project_id` + `idx_sessions_project`, `tag_memories`,
+  `sessions.session_instructions`).
+- [x] `db/schema.sql` reconciled with the full applied shape
+  (tags, session_tags, projects, tag_memories).
+- [x] 4 new pytest cases (migration + cascade behavior).
+
 ## v0.2.x — remaining slice plan
 
 See `V0.2.0_SPEC.md` §"Build order" and plan file
