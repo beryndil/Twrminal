@@ -32,6 +32,9 @@
   }
 
   function connectionLabel(state: typeof agent.state): string {
+    if (agent.reconnectDelayMs !== null) {
+      return `retrying in ${Math.ceil(agent.reconnectDelayMs / 1000)}s`;
+    }
     switch (state) {
       case 'idle':
         return 'idle';

@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-04-18
+
+### Added
+
+- Shiki syntax highlighting in conversation markdown code blocks
+  (python, typescript, bash, json, yaml, rust, go, and more); wired via a
+  custom marked renderer. Pre-initialized at module load via top-level
+  await so `renderMarkdown` stays synchronous.
+- Tool-call finish time: `LiveToolCall.finishedAt` set on
+  `tool_call_end`; Inspector now shows final duration ("123ms" / "2.4s")
+  after completion instead of ticking "running".
+- Session selection persists in `localStorage`
+  (`twrminal:selectedSessionId`); auto-connects on boot if the stored id
+  still exists in the session list.
+- WebSocket auto-reconnect with exponential backoff (1s/2s/4s/8s/…,
+  capped at 30s); Conversation header shows `retrying in Ns`. Triggers
+  on abnormal closes, skipped for `4404 session not found` and normal
+  `1000` close. Resets on successful open; cancelled on explicit
+  `agent.close()`.
+- Inline two-click delete confirmation: first click on ✕ swaps to
+  "Confirm?" for 3 seconds; second click deletes. No more `window.confirm`
+  dialog — UI is fully scriptable.
+
+### Changed
+
+- `vite.config.ts` build target bumped to `es2022` so top-level await in
+  `render.ts` (shiki WASM init) compiles cleanly.
+- `SessionList` confirm state switched to `$state` object property
+  (`confirm.id`) rather than a bare `$state` variable; event-handler
+  closures see fresh values reliably.
+
 ## [0.1.3] - 2026-04-18
 
 ### Added

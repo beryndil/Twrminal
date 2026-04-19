@@ -7,11 +7,14 @@
     return { label: 'error', classes: 'bg-rose-900 text-rose-300' };
   }
 
-  function elapsed(startedAt: number, ok: boolean | null): string {
-    if (ok === null) return 'running';
-    const ms = Date.now() - startedAt;
+  function formatDuration(ms: number): string {
     if (ms < 1000) return `${ms}ms`;
     return `${(ms / 1000).toFixed(1)}s`;
+  }
+
+  function elapsed(startedAt: number, finishedAt: number | null): string {
+    if (finishedAt === null) return 'running';
+    return formatDuration(finishedAt - startedAt);
   }
 </script>
 
@@ -31,7 +34,7 @@
               {badge.label}
             </span>
           </div>
-          <div class="text-[10px] text-slate-500 mt-0.5">{elapsed(call.startedAt, call.ok)}</div>
+          <div class="text-[10px] text-slate-500 mt-0.5">{elapsed(call.startedAt, call.finishedAt)}</div>
 
           <details class="mt-2">
             <summary class="cursor-pointer text-slate-400 text-[11px]">input</summary>

@@ -3,14 +3,29 @@
   import { sessions } from '$lib/stores/sessions.svelte';
   import { agent } from '$lib/agent.svelte';
 
+  const CONFIRM_TIMEOUT_MS = 3_000;
+
   let showNewForm = $state(false);
   let newWorkingDir = $state('');
   let newModel = $state('claude-sonnet-4-6');
   let newTitle = $state('');
   let submitting = $state(false);
+  const confirm = $state<{ id: string | null }>({ id: null });
+  let confirmTimer: ReturnType<typeof setTimeout> | null = null;
 
-  onMount(() => {
-    sessions.refresh();
+  function clearConfirm() {
+    if (confirmTimer !== null) {
+      clearTimeout(confirmTimer);
+      confirmTimer = null;
+    }
+    confirm.id = null;
+  }
+
+  onMount(async () => {
+    await sessions.refresh();
+    if (sessions.selectedId) {
+      await agent.connect(sessions.selectedId);
+    }
   });
 
   async function onCreate() {
@@ -36,8 +51,13 @@
 
   async function onDelete(e: MouseEvent, id: string) {
     e.stopPropagation();
-    if (!confirm('Delete this session? All messages and tool calls will be removed.'))
+    if (confirm.id !== id) {
+      confirm.id = id;
+      if (confirmTimer !== null) clearTimeout(confirmTimer);
+      confirmTimer = setTimeout(clearConfirm, CONFIRM_TIMEOUT_MS);
       return;
+    }
+    clearConfirm();
     if (agent.sessionId === id) agent.close();
     await sessions.remove(id);
   }
@@ -141,12 +161,15 @@
           </button>
           <button
             type="button"
-            class="px-2 text-slate-500 hover:text-rose-400 text-xs
-              opacity-0 group-hover:opacity-100 transition"
-            aria-label="Delete session"
+            class="px-2 text-xs transition {confirm.id === session.id
+              ? 'text-rose-400 font-medium'
+              : 'text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100'}"
+            aria-label={confirm.id === session.id
+              ? 'Confirm delete session'
+              : 'Delete session'}
             onclick={(e) => onDelete(e, session.id)}
           >
-            ✕
+            {confirm.id === session.id ? 'Confirm?' : '✕'}
           </button>
         </li>
       {/each}

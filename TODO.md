@@ -29,28 +29,34 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 - [x] Markdown rendering (marked + typography plugin).
 - [x] Browser-exercised: create session → WS connects → UI shows connected.
 
-## v0.1.4 — next slice
+## v0.1.4 — shipped
 
-- [ ] Syntax-highlight code blocks in conversation (integrate `shiki`;
-  already in deps but unused).
-- [ ] Dialog-free delete confirm: replace `confirm()` with an inline
-  "are you sure" affordance so UI is scriptable.
-- [ ] Show tool-call timing once finished (`startedAt` → elapsed even
-  after end). Currently only "running" elapsed is meaningful.
-- [ ] Persist selected session across reloads (localStorage).
-- [ ] Auto-reconnect WS on disconnect; surface retry state in UI.
-- [ ] Frontend unit tests (vitest + @testing-library/svelte).
+- [x] Shiki syntax highlighting in conversation code blocks.
+- [x] Tool-call final duration after `tool_call_end`.
+- [x] `localStorage` persistence for selected session + auto-connect on boot.
+- [x] WebSocket auto-reconnect with exponential backoff.
+- [x] Inline two-click delete confirmation (no `window.confirm`).
 
-## v0.1.5+
+## v0.1.5 — next slice
 
 - [ ] Prometheus collectors for `/metrics` route (currently empty registry).
-- [ ] `routes_history.py` — implement `/api/history/export` and
-  `/api/history/daily/{date}`.
-- [ ] CI frontend build artifact test — verify `npm run build` actually
-  produces files under `src/twrminal/web/dist/`.
-- [ ] Auth gate: enable `auth.enabled` path (currently no-op).
+  Counters: sessions_created, messages_persisted, tool_calls_started; gauges
+  for active WS connections.
+- [ ] `routes_history.py` — implement `/api/history/export` (JSON dump of
+  all sessions + messages) and `/api/history/daily/{date}`.
+- [ ] CI frontend build artifact test — add a step that verifies
+  `src/twrminal/web/dist/index.html` exists after `npm run build`.
 - [ ] Wire `message_id` on tool_calls rows (currently always NULL on
-  insert; could be backfilled at `MessageComplete` time).
+  insert; backfill at `MessageComplete` time).
+
+## v0.1.6+
+
+- [ ] Frontend unit tests (vitest + @testing-library/svelte).
+- [ ] Auth gate: enable `auth.enabled` path (currently no-op).
+- [ ] Messages-endpoint pagination (limit + cursor) once conversations
+  grow long.
+- [ ] Render tool-call history in Inspector for loaded sessions (currently
+  only live WS events populate it).
 
 ## Decisions pending
 

@@ -1,5 +1,26 @@
 import * as api from '$lib/api';
 
+const STORAGE_KEY = 'twrminal:selectedSessionId';
+
+function readStoredId(): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredId(id: string | null): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (id === null) localStorage.removeItem(STORAGE_KEY);
+    else localStorage.setItem(STORAGE_KEY, id);
+  } catch {
+    // Quota/privacy-mode: ignore — selection is a convenience.
+  }
+}
+
 class SessionStore {
   list = $state<api.Session[]>([]);
   selectedId = $state<string | null>(null);
@@ -13,6 +34,10 @@ class SessionStore {
     this.error = null;
     try {
       this.list = await api.listSessions();
+      const stored = readStoredId();
+      if (stored && this.list.some((s) => s.id === stored) && this.selectedId === null) {
+        this.selectedId = stored;
+      }
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -25,7 +50,7 @@ class SessionStore {
     try {
       const created = await api.createSession(body);
       this.list = [created, ...this.list];
-      this.selectedId = created.id;
+      this.select(created.id);
       return created;
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
@@ -38,7 +63,7 @@ class SessionStore {
     try {
       await api.deleteSession(id);
       this.list = this.list.filter((s) => s.id !== id);
-      if (this.selectedId === id) this.selectedId = null;
+      if (this.selectedId === id) this.select(null);
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
     }
@@ -46,6 +71,7 @@ class SessionStore {
 
   select(id: string | null): void {
     this.selectedId = id;
+    writeStoredId(id);
   }
 }
 

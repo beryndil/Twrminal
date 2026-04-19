@@ -8,6 +8,7 @@ export type LiveToolCall = {
   error: string | null;
   ok: boolean | null; // null until tool_call_end arrives
   startedAt: number;
+  finishedAt: number | null;
 };
 
 class ConversationStore {
@@ -66,14 +67,21 @@ class ConversationStore {
             output: null,
             error: null,
             ok: null,
-            startedAt: Date.now()
+            startedAt: Date.now(),
+            finishedAt: null
           }
         ];
         return;
       case 'tool_call_end':
         this.toolCalls = this.toolCalls.map((tc) =>
           tc.id === event.tool_call_id
-            ? { ...tc, ok: event.ok, output: event.output, error: event.error }
+            ? {
+                ...tc,
+                ok: event.ok,
+                output: event.output,
+                error: event.error,
+                finishedAt: Date.now()
+              }
             : tc
         );
         return;
