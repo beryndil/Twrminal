@@ -153,7 +153,11 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 
 - [x] `⌘/Ctrl+K` focuses sidebar search; `Esc` inside search clears.
 
-## v0.1.26 — next slice
+## v0.1.26 — shipped
+
+- [x] `?` cheat-sheet modal listing shortcuts.
+
+## v0.1.27 — next slice
 
 - [ ] Component tests (jsdom + @testing-library/svelte; start with
   `AuthGate.svelte`).
@@ -161,8 +165,6 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 - [ ] Verify interrupt() behavior against a real agent running a
   Bash(sleep 10) tool — only a live SDK run confirms the CLI actually
   aborts the subprocess.
-- [ ] Keyboard hint overlay (`?` shows a cheat-sheet modal with the
-  shortcuts we accumulated: ⌘K, Esc, ⌘/Ctrl+Enter).
 
 ## v0.1.7+
 
