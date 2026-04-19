@@ -133,16 +133,22 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 - [x] `highlightText` util + tests.
 - [x] Sidebar search snippets render amber-highlighted matches.
 
-## v0.1.22 — next slice
+## v0.1.22 — shipped
+
+- [x] `highlight` Svelte action — DOM-walks text nodes and wraps
+  case-insensitive matches in `<mark>`.
+- [x] `conversation.highlightQuery` wire-up: sidebar result click →
+  highlight + scroll in the Conversation body.
+
+## v0.1.23 — next slice
 
 - [ ] Component tests (jsdom + @testing-library/svelte; start with
-  `AuthGate.svelte` visibility / form submission).
+  `AuthGate.svelte`).
 - [ ] Messages-endpoint pagination (limit + cursor).
 - [ ] Interrupt during tool execution: the SDK has `client.interrupt()`;
   wire it when a stop lands mid-`tool_use` so the tool can abort too.
-- [ ] Also highlight matches in the Conversation message body when a
-  search result is jumped to — today the hit highlights only in the
-  sidebar snippet.
+- [ ] Clear-highlight button or keyboard shortcut once the user has
+  found what they were looking for.
 
 ## v0.1.7+
 

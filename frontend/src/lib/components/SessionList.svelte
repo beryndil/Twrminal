@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { sessions } from '$lib/stores/sessions.svelte';
   import { prefs } from '$lib/stores/prefs.svelte';
+  import { conversation } from '$lib/stores/conversation.svelte';
   import { agent } from '$lib/agent.svelte';
   import * as api from '$lib/api';
   import { parseBudget } from '$lib/utils/budget';
@@ -46,10 +47,14 @@
   });
 
   async function onPickResult(sid: string) {
+    const q = searchQuery.trim();
     searchQuery = '';
     searchResults = [];
     sessions.select(sid);
     await agent.connect(sid);
+    // agent.connect → conversation.load clears highlightQuery via
+    // reset(); set it *after* the load so rendered messages pick it up.
+    conversation.highlightQuery = q;
   }
 
   function toggleNewForm() {

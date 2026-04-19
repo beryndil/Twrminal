@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.22] - 2026-04-19
+
+### Added
+
+- `$lib/actions/highlight.ts` — Svelte action that DOM-walks text
+  nodes, wraps case-insensitive matches of `query` in
+  `<mark class="search-mark">`, and scrolls the first match into view.
+  Unwraps previous marks on `update` so repeated queries stay stable.
+- `conversation.highlightQuery` — set when a sidebar search result is
+  clicked; Conversation's per-message prose div applies the action to
+  that query so matches jump out in the message body, not only the
+  sidebar snippet.
+- Scoped `mark.search-mark` styling matches the amber tint used in
+  the sidebar (`yellow-500 @ 35%` background / `yellow-300` text).
+
+### Changed
+
+- `conversation.pushUserMessage` clears `highlightQuery` — sending a
+  new prompt shouldn't leave a stale search highlight behind.
+
 ## [0.1.21] - 2026-04-19
 
 ### Added

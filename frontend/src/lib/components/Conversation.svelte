@@ -3,6 +3,7 @@
   import { sessions } from '$lib/stores/sessions.svelte';
   import { agent } from '$lib/agent.svelte';
   import { renderMarkdown } from '$lib/render';
+  import { highlight } from '$lib/actions/highlight';
   import SessionEdit from '$lib/components/SessionEdit.svelte';
 
   let promptText = $state('');
@@ -145,7 +146,10 @@
                 class="mt-1 whitespace-pre-wrap text-xs text-slate-400 font-sans">{msg.thinking}</pre>
             </details>
           {/if}
-          <div class="prose prose-invert prose-sm max-w-none">
+          <div
+            class="prose prose-invert prose-sm max-w-none"
+            use:highlight={conversation.highlightQuery}
+          >
             {@html renderMarkdown(msg.content)}
           </div>
         </article>
@@ -211,3 +215,12 @@
     </button>
   </form>
 </section>
+
+<style>
+  :global(mark.search-mark) {
+    background-color: rgb(234 179 8 / 0.35);
+    color: rgb(253 224 71);
+    border-radius: 0.125rem;
+    padding: 0 0.125rem;
+  }
+</style>

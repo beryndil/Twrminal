@@ -41,6 +41,7 @@ class ConversationStore {
   streamingActive = $state(false);
   toolCalls = $state<LiveToolCall[]>([]);
   totalCost = $state(0);
+  highlightQuery = $state('');
   error = $state<string | null>(null);
 
   async load(sessionId: string): Promise<void> {
@@ -84,6 +85,8 @@ class ConversationStore {
     this.streamingText = '';
     this.streamingThinking = '';
     this.streamingActive = true;
+    // Sending a new prompt clears a stale "jumped from search" hint.
+    this.highlightQuery = '';
   }
 
   handleEvent(event: api.AgentEvent): void {
