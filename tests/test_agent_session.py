@@ -73,6 +73,45 @@ def test_agent_session_constructs() -> None:
     assert session.session_id == "abc"
     assert session.working_dir == "/tmp"
     assert session.model == "claude-opus-4-7"
+    assert session.max_budget_usd is None
+
+
+@pytest.mark.asyncio
+async def test_stream_omits_budget_when_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class CapturingClient(FakeClient):
+        def __init__(self, messages: list[Any], options: Any = None) -> None:
+            super().__init__(messages, options)
+            captured["options"] = options
+
+    def factory(options: Any = None) -> CapturingClient:
+        return CapturingClient([_result()], options)
+
+    monkeypatch.setattr("twrminal.agent.session.ClaudeSDKClient", factory)
+    session = AgentSession("s", working_dir="/tmp", model="m")
+    _ = [ev async for ev in session.stream("hi")]
+    opts = captured["options"]
+    assert opts.max_budget_usd is None
+
+
+@pytest.mark.asyncio
+async def test_stream_passes_budget_to_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class CapturingClient(FakeClient):
+        def __init__(self, messages: list[Any], options: Any = None) -> None:
+            super().__init__(messages, options)
+            captured["options"] = options
+
+    def factory(options: Any = None) -> CapturingClient:
+        return CapturingClient([_result()], options)
+
+    monkeypatch.setattr("twrminal.agent.session.ClaudeSDKClient", factory)
+    session = AgentSession("s", working_dir="/tmp", model="m", max_budget_usd=0.25)
+    _ = [ev async for ev in session.stream("hi")]
+    opts = captured["options"]
+    assert opts.max_budget_usd == 0.25
 
 
 @pytest.mark.asyncio

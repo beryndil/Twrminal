@@ -45,19 +45,24 @@ def _new_id() -> str:
     return uuid4().hex
 
 
+_SESSION_COLS = "id, created_at, updated_at, working_dir, model, title, max_budget_usd"
+
+
 async def create_session(
     conn: aiosqlite.Connection,
     *,
     working_dir: str,
     model: str,
     title: str | None = None,
+    max_budget_usd: float | None = None,
 ) -> dict[str, Any]:
     session_id = _new_id()
     now = _now()
     await conn.execute(
-        "INSERT INTO sessions (id, created_at, updated_at, working_dir, model, title) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (session_id, now, now, working_dir, model, title),
+        "INSERT INTO sessions "
+        "(id, created_at, updated_at, working_dir, model, title, max_budget_usd) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (session_id, now, now, working_dir, model, title, max_budget_usd),
     )
     await conn.commit()
     row = await get_session(conn, session_id)
@@ -67,15 +72,14 @@ async def create_session(
 
 async def list_sessions(conn: aiosqlite.Connection) -> list[dict[str, Any]]:
     async with conn.execute(
-        "SELECT id, created_at, updated_at, working_dir, model, title "
-        "FROM sessions ORDER BY created_at DESC, id DESC"
+        f"SELECT {_SESSION_COLS} FROM sessions ORDER BY created_at DESC, id DESC"
     ) as cursor:
         return [dict(row) async for row in cursor]
 
 
 async def get_session(conn: aiosqlite.Connection, session_id: str) -> dict[str, Any] | None:
     async with conn.execute(
-        "SELECT id, created_at, updated_at, working_dir, model, title FROM sessions WHERE id = ?",
+        f"SELECT {_SESSION_COLS} FROM sessions WHERE id = ?",
         (session_id,),
     ) as cursor:
         row = await cursor.fetchone()
@@ -196,28 +200,41 @@ async def list_tool_calls(conn: aiosqlite.Connection, session_id: str) -> list[d
         return [dict(row) async for row in cursor]
 
 
-def _date_filter(column: str, date_prefix: str | None) -> tuple[str, tuple[str, ...]]:
-    if date_prefix is None:
+def _date_filter(
+    column: str, date_from: str | None, date_to: str | None
+) -> tuple[str, tuple[str, ...]]:
+    clauses: list[str] = []
+    params: list[str] = []
+    if date_from is not None:
+        clauses.append(f"substr({column}, 1, 10) >= ?")
+        params.append(date_from)
+    if date_to is not None:
+        clauses.append(f"substr({column}, 1, 10) <= ?")
+        params.append(date_to)
+    if not clauses:
         return "", ()
-    return f" WHERE substr({column}, 1, 10) = ?", (date_prefix,)
+    return " WHERE " + " AND ".join(clauses), tuple(params)
 
 
 async def list_all_sessions(
-    conn: aiosqlite.Connection, *, date_prefix: str | None = None
+    conn: aiosqlite.Connection,
+    *,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> list[dict[str, Any]]:
-    where, params = _date_filter("created_at", date_prefix)
-    sql = (
-        "SELECT id, created_at, updated_at, working_dir, model, title "
-        "FROM sessions" + where + " ORDER BY created_at ASC, id ASC"
-    )
+    where, params = _date_filter("created_at", date_from, date_to)
+    sql = f"SELECT {_SESSION_COLS} FROM sessions{where} ORDER BY created_at ASC, id ASC"
     async with conn.execute(sql, params) as cursor:
         return [dict(row) async for row in cursor]
 
 
 async def list_all_messages(
-    conn: aiosqlite.Connection, *, date_prefix: str | None = None
+    conn: aiosqlite.Connection,
+    *,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> list[dict[str, Any]]:
-    where, params = _date_filter("created_at", date_prefix)
+    where, params = _date_filter("created_at", date_from, date_to)
     sql = (
         "SELECT id, session_id, role, content, created_at "
         "FROM messages" + where + " ORDER BY created_at ASC, id ASC"
@@ -227,9 +244,12 @@ async def list_all_messages(
 
 
 async def list_all_tool_calls(
-    conn: aiosqlite.Connection, *, date_prefix: str | None = None
+    conn: aiosqlite.Connection,
+    *,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> list[dict[str, Any]]:
-    where, params = _date_filter("started_at", date_prefix)
+    where, params = _date_filter("started_at", date_from, date_to)
     sql = (
         "SELECT id, session_id, message_id, name, input, output, error, "
         "started_at, finished_at "

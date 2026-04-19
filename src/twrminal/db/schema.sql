@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     updated_at TEXT NOT NULL,
     working_dir TEXT NOT NULL,
     model TEXT NOT NULL,
-    title TEXT
+    title TEXT,
+    max_budget_usd REAL
 );
 
 CREATE TABLE IF NOT EXISTS messages (

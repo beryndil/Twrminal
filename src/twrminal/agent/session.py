@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 from claude_agent_sdk import (
@@ -39,17 +40,27 @@ class AgentSession:
     is created for each `stream()` call.
     """
 
-    def __init__(self, session_id: str, working_dir: str, model: str) -> None:
+    def __init__(
+        self,
+        session_id: str,
+        working_dir: str,
+        model: str,
+        max_budget_usd: float | None = None,
+    ) -> None:
         self.session_id = session_id
         self.working_dir = working_dir
         self.model = model
+        self.max_budget_usd = max_budget_usd
 
     async def stream(self, prompt: str) -> AsyncIterator[AgentEvent]:
-        options = ClaudeAgentOptions(
-            cwd=self.working_dir,
-            model=self.model,
-            include_partial_messages=True,
-        )
+        options_kwargs: dict[str, Any] = {
+            "cwd": self.working_dir,
+            "model": self.model,
+            "include_partial_messages": True,
+        }
+        if self.max_budget_usd is not None:
+            options_kwargs["max_budget_usd"] = self.max_budget_usd
+        options = ClaudeAgentOptions(**options_kwargs)
         message_id = uuid4().hex
         try:
             async with ClaudeSDKClient(options=options) as client:

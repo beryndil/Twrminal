@@ -9,6 +9,7 @@
   let newWorkingDir = $state('');
   let newModel = $state('claude-sonnet-4-6');
   let newTitle = $state('');
+  let newBudget = $state('');
   let submitting = $state(false);
   const confirm = $state<{ id: string | null }>({ id: null });
   let confirmTimer: ReturnType<typeof setTimeout> | null = null;
@@ -30,16 +31,20 @@
 
   async function onCreate() {
     submitting = true;
+    const budgetTrimmed = newBudget.trim();
+    const budget = budgetTrimmed ? Number(budgetTrimmed) : null;
     const created = await sessions.create({
       working_dir: newWorkingDir.trim() || '/tmp',
       model: newModel.trim() || 'claude-sonnet-4-6',
-      title: newTitle.trim() || null
+      title: newTitle.trim() || null,
+      max_budget_usd: budget !== null && Number.isFinite(budget) ? budget : null
     });
     submitting = false;
     if (created) {
       showNewForm = false;
       newWorkingDir = '';
       newTitle = '';
+      newBudget = '';
       await agent.connect(created.id);
     }
   }
@@ -115,6 +120,20 @@
           type="text"
           class="rounded bg-slate-950 px-2 py-1 text-sm"
           bind:value={newTitle}
+        />
+      </label>
+      <label class="flex flex-col text-xs gap-1">
+        <span class="text-slate-400"
+          >Budget USD <span class="text-slate-600">(optional)</span></span
+        >
+        <input
+          type="number"
+          inputmode="decimal"
+          step="0.01"
+          min="0"
+          placeholder="no cap"
+          class="rounded bg-slate-950 px-2 py-1 text-sm font-mono"
+          bind:value={newBudget}
         />
       </label>
       <button

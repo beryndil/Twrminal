@@ -44,7 +44,14 @@ async def test_init_db_is_idempotent(tmp_path: Path) -> None:
     try:
         async with conn2.execute("SELECT count(*) FROM schema_migrations") as cursor:
             row = await cursor.fetchone()
-        assert row is not None and row[0] == 1
+        # Count tracks the migrations shipped in `src/twrminal/db/migrations/`.
+        migrations_dir = Path(__file__).parent.parent / "src/twrminal/db/migrations"
+        expected = len(list(migrations_dir.glob("*.sql")))
+        assert row is not None and row[0] == expected
+        # Re-initializing should not duplicate migration records.
+        async with conn2.execute("SELECT count(*) FROM schema_migrations") as cursor:
+            row2 = await cursor.fetchone()
+        assert row2 is not None and row2[0] == expected
     finally:
         await conn2.close()
 

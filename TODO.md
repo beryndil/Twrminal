@@ -55,15 +55,22 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
   new `attach_tool_calls_to_message` store helper.
 - [x] Frontend `AgentEvent` union picks up `MessageStartEvent`.
 
-## v0.1.8 — next slice
+## v0.1.8 — shipped
+
+- [x] `max_budget_usd` per-session cap (column, API, ClaudeAgentOptions
+  wiring, frontend form field).
+- [x] `/api/history/export?from=&to=` range filter.
+
+## v0.1.9 — next slice
 
 - [ ] Frontend unit tests (vitest + @testing-library/svelte).
 - [ ] Messages-endpoint pagination (limit + cursor) once conversations
   grow long.
-- [ ] `/api/history/export` query params: `?from=YYYY-MM-DD&to=YYYY-MM-DD`
-  for a range filter.
-- [ ] `max_budget_usd` per-session cap so a runaway agent can't burn
-  unbounded tokens.
+- [ ] Show `max_budget_usd` in the Conversation header (+ a running
+  cost once the SDK `ResultMessage.total_cost_usd` is surfaced).
+- [ ] Graceful WS shutdown signal so `twrminal serve` under systemd
+  stops cleanly with in-flight streams.
+- [ ] Auth gate: enable `auth.enabled` path (currently no-op).
 
 ## v0.1.7+
 

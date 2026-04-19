@@ -58,3 +58,27 @@ def test_daily_rejects_bad_date(client: TestClient) -> None:
     assert resp.status_code == 400
     resp = client.get("/api/history/daily/2026-13-40")
     assert resp.status_code == 400
+
+
+def test_export_accepts_from_to_range(client: TestClient) -> None:
+    sid = _create(client, "ranged")
+    today = client.get(f"/api/sessions/{sid}").json()["created_at"][:10]
+
+    # Both bounds include the session.
+    inside = client.get(f"/api/history/export?from={today}&to={today}").json()
+    assert any(s["id"] == sid for s in inside["sessions"])
+
+    # from = tomorrow would exclude it — use a date guaranteed to be past.
+    after = client.get("/api/history/export?from=2099-01-01").json()
+    assert after["sessions"] == []
+
+    # to = yesterday excludes.
+    before = client.get("/api/history/export?to=2000-01-01").json()
+    assert before["sessions"] == []
+
+
+def test_export_rejects_bad_range(client: TestClient) -> None:
+    resp = client.get("/api/history/export?from=bogus")
+    assert resp.status_code == 400
+    resp = client.get("/api/history/export?to=2026-99-99")
+    assert resp.status_code == 400

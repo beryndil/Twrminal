@@ -7,6 +7,7 @@ class SessionCreate(BaseModel):
     working_dir: str
     model: str
     title: str | None = None
+    max_budget_usd: float | None = None
 
 
 class SessionOut(BaseModel):
@@ -16,6 +17,7 @@ class SessionOut(BaseModel):
     working_dir: str
     model: str
     title: str | None = None
+    max_budget_usd: float | None = None
 
 
 class MessageOut(BaseModel):

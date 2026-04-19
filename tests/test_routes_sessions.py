@@ -16,8 +16,16 @@ def test_post_create_returns_session(client: TestClient) -> None:
     assert data["working_dir"] == "/tmp"
     assert data["model"] == "claude-sonnet-4-6"
     assert data["title"] == "hello"
+    assert data["max_budget_usd"] is None
     assert data["created_at"]
     assert data["updated_at"]
+
+
+def test_post_create_persists_budget(client: TestClient) -> None:
+    data = _create(client, title="bounded", max_budget_usd=1.25)
+    assert data["max_budget_usd"] == 1.25
+    roundtrip = client.get(f"/api/sessions/{data['id']}").json()
+    assert roundtrip["max_budget_usd"] == 1.25
 
 
 def test_get_list_includes_created(client: TestClient) -> None:

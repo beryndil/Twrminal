@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-04-19
+
+### Added
+
+- `sessions.max_budget_usd` column (migration 0002) — optional per-session
+  cap in USD. `POST /api/sessions` accepts it via body; `AgentSession`
+  passes it to `ClaudeAgentOptions.max_budget_usd` when non-null. Stops a
+  runaway agent loop from burning unbounded tokens.
+- Frontend: "Budget USD (optional)" field in the new-session form,
+  persisted end-to-end. `Session` / `SessionCreate` TS types pick up the
+  field.
+- `/api/history/export?from=YYYY-MM-DD&to=YYYY-MM-DD` — either/both
+  bounds supported; bad dates return 400. Store `list_all_*` helpers
+  swap the old single `date_prefix` arg for `date_from` + `date_to`;
+  `/history/daily/{date}` now passes the same date to both bounds.
+
 ## [0.1.7] - 2026-04-19
 
 ### Added

@@ -31,7 +31,12 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:
         return
 
     metrics.ws_active_connections.inc()
-    agent = AgentSession(session_id, row["working_dir"], row["model"])
+    agent = AgentSession(
+        session_id,
+        row["working_dir"],
+        row["model"],
+        max_budget_usd=row.get("max_budget_usd"),
+    )
     try:
         while True:
             payload = await websocket.receive_json()

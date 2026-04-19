@@ -10,12 +10,14 @@ export type Session = {
   working_dir: string;
   model: string;
   title: string | null;
+  max_budget_usd: number | null;
 };
 
 export type SessionCreate = {
   working_dir: string;
   model: string;
   title?: string | null;
+  max_budget_usd?: number | null;
 };
 
 export type Message = {
