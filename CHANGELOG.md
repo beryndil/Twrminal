@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.38] - 2026-04-19
+
+Closes out v0.1. Two tweaks and the first testing-notes pass.
+
+### Changed
+
+- Prompt send rebound: **Enter sends, Shift+Enter newlines** (was
+  `⌘/Ctrl+Enter` / Enter newline). IME composition respected.
+  CheatSheet and placeholder updated to match.
+
+### Added
+
+- Inspector "Agent" disclosure: tool-call list now nested under a
+  collapsible `<details>` summary showing the session model + a
+  running count badge. Auto-follows scroll to the latest tool call
+  while the agent is streaming (effect watches
+  `conversation.toolCalls.length` + `streamingActive`).
+- `TESTING_NOTES.md` at the project root — session-by-session log of
+  what Dave found and what got fixed.
+
 ## [0.1.37] - 2026-04-19
 
 ### Added

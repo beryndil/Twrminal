@@ -73,7 +73,9 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    // Enter sends; Shift+Enter falls through so the textarea inserts
+    // a newline. Skip while the user is mid-IME composition.
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       onSend();
     }
@@ -300,7 +302,7 @@
         resize-none focus:outline-none focus:border-slate-600 disabled:opacity-50"
       rows="2"
       placeholder={sessions.selectedId
-        ? 'Send a prompt (⌘/Ctrl+Enter)'
+        ? 'Send a prompt (Enter · Shift+Enter for newline)'
         : 'Select a session first'}
       bind:value={promptText}
       onkeydown={onKeydown}

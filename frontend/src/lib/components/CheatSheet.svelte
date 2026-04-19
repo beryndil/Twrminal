@@ -15,7 +15,8 @@
     {
       group: 'Conversation',
       items: [
-        { keys: ['⌘/Ctrl', 'Enter'], description: 'Send the prompt' },
+        { keys: ['Enter'], description: 'Send the prompt' },
+        { keys: ['Shift', 'Enter'], description: 'Newline inside the prompt' },
         { keys: ['Esc'], description: 'Clear an active search highlight' }
       ]
     },

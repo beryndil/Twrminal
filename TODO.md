@@ -208,13 +208,17 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 
 - [x] Multi-file drop / picker for session import.
 
-## v0.1.38 — next slice
+## v0.1.38 — shipped (closes out v0.1)
 
-- [ ] SessionList search debounce test (fake timers).
-- [ ] Verify interrupt() behavior against a real agent running a
-  Bash(sleep 10) tool.
-- [ ] Bulk export: "Download all sessions" → zip or single JSON of
-  every session.
+- [x] Enter/Shift+Enter swap on prompt.
+- [x] Inspector "Agent" disclosure with auto-follow scroll.
+- [x] TESTING_NOTES.md for the v0.1.37–38 testing pass.
+
+## v0.2.0 — next milestone
+
+See `V0.2.0_SPEC.md`. First numbered step: tag primitives (tags
+table, session_tags join, pinned/sort_order columns, basic CRUD).
+Then projects + tag memories on top. Build order lives in the spec.
 
 ## v0.1.7+
 
