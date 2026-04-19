@@ -200,13 +200,17 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 
 - [x] `POST /api/sessions/import` + ⇡ sidebar button.
 
-## v0.1.36 — next slice
+## v0.1.36 — shipped
+
+- [x] Drag-drop session import with emerald-ring drop-zone overlay.
+
+## v0.1.37 — next slice
 
 - [ ] SessionList search debounce test (fake timers).
 - [ ] Verify interrupt() behavior against a real agent running a
   Bash(sleep 10) tool.
-- [ ] "Drag a session-*.json file onto the sidebar" alternative to
-  the ⇡ button — match macOS/KDE drag-drop conventions.
+- [ ] Multi-file drop — importing a directory full of exported
+  sessions in one go.
 
 ## v0.1.7+
 

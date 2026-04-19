@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.36] - 2026-04-19
+
+### Added
+
+- Drag-drop a `session-*.json` onto the Sessions sidebar to import
+  — matches the ⇡ button but skips the file picker. Emerald
+  ring + "Drop session JSON to import" overlay while a drag is
+  over the aside. `dragleave` is scoped to the aside so crossing
+  into child elements doesn't flicker the overlay.
+- Import file-reading logic extracted into `importFromFile(file)`
+  shared by the ⇡ click-handler and the drop handler.
+
 ## [0.1.35] - 2026-04-19
 
 ### Added

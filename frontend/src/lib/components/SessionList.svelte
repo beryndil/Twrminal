@@ -21,12 +21,9 @@
   let submitting = $state(false);
   let importInput: HTMLInputElement | undefined = $state();
   let importError = $state<string | null>(null);
+  let dragging = $state(false);
 
-  async function onImportFile(e: Event) {
-    const input = e.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = '';
-    if (!file) return;
+  async function importFromFile(file: File) {
     importError = null;
     try {
       const text = await file.text();
@@ -39,6 +36,40 @@
     } catch (err) {
       importError = err instanceof Error ? err.message : String(err);
     }
+  }
+
+  async function onImportFile(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (file) await importFromFile(file);
+  }
+
+  function hasFiles(e: DragEvent): boolean {
+    return e.dataTransfer?.types.includes('Files') ?? false;
+  }
+
+  function onDragEnter(e: DragEvent) {
+    if (hasFiles(e)) dragging = true;
+  }
+  function onDragOver(e: DragEvent) {
+    // preventDefault so the browser allows a drop; without this the
+    // drop event never fires.
+    if (hasFiles(e)) e.preventDefault();
+  }
+  function onDragLeave(e: DragEvent) {
+    // Only clear when leaving the aside entirely, not when crossing
+    // into a child element (relatedTarget outside the current node).
+    const related = e.relatedTarget as Node | null;
+    if (!related || !(e.currentTarget as Node).contains(related)) {
+      dragging = false;
+    }
+  }
+  async function onDrop(e: DragEvent) {
+    e.preventDefault();
+    dragging = false;
+    const file = e.dataTransfer?.files[0];
+    if (file) await importFromFile(file);
   }
 
   let searchQuery = $state('');
@@ -213,7 +244,14 @@
 
 <Settings bind:open={showSettings} />
 
-<aside class="bg-slate-900 p-4 overflow-y-auto border-r border-slate-800 flex flex-col gap-3">
+<aside
+  class="relative bg-slate-900 p-4 overflow-y-auto border-r border-slate-800
+    flex flex-col gap-3 {dragging ? 'ring-2 ring-emerald-500/60 ring-inset' : ''}"
+  ondragenter={onDragEnter}
+  ondragover={onDragOver}
+  ondragleave={onDragLeave}
+  ondrop={onDrop}
+>
   <div class="flex items-center justify-between gap-2">
     <h2 class="text-sm uppercase tracking-wider text-slate-400">Sessions</h2>
     <div class="flex items-center gap-1">
@@ -251,6 +289,15 @@
       </button>
     </div>
   </div>
+
+  {#if dragging}
+    <div
+      class="pointer-events-none absolute inset-2 rounded border-2 border-dashed
+        border-emerald-500/70 bg-slate-950/60 flex items-center justify-center z-10"
+    >
+      <p class="text-sm text-emerald-300">Drop session JSON to import</p>
+    </div>
+  {/if}
 
   <input
     type="search"
