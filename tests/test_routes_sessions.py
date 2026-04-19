@@ -115,6 +115,45 @@ def test_patch_missing_session_returns_404(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
+def test_export_missing_session_returns_404(client: TestClient) -> None:
+    resp = client.get("/api/sessions/" + "0" * 32 + "/export")
+    assert resp.status_code == 404
+
+
+def test_export_empty_session(client: TestClient) -> None:
+    created = _create(client, title="exported")
+    body = client.get(f"/api/sessions/{created['id']}/export").json()
+    assert body["session"]["id"] == created["id"]
+    assert body["session"]["title"] == "exported"
+    assert body["messages"] == []
+    assert body["tool_calls"] == []
+
+
+def test_export_includes_messages_and_tool_calls(
+    client: TestClient, mock_agent_tool_stream: None
+) -> None:
+    import time
+
+    created = _create(client, title="with-activity")
+    with client.websocket_connect(f"/ws/sessions/{created['id']}") as ws:
+        ws.send_json({"type": "prompt", "content": "read it"})
+        for _ in range(4):
+            ws.receive_text()
+        # Wait for the WS handler to finish persisting post-send writes
+        # before the context cancels the server task.
+        for _ in range(50):
+            body = client.get(f"/api/sessions/{created['id']}/export").json()
+            if body["tool_calls"] and body["tool_calls"][0]["message_id"]:
+                break
+            time.sleep(0.02)
+
+    body = client.get(f"/api/sessions/{created['id']}/export").json()
+    roles = [m["role"] for m in body["messages"]]
+    assert roles == ["user", "assistant"]
+    assert len(body["tool_calls"]) == 1
+    assert body["tool_calls"][0]["name"] == "Read"
+
+
 def test_get_messages_empty_for_new_session(client: TestClient) -> None:
     created = _create(client)
     resp = client.get(f"/api/sessions/{created['id']}/messages")

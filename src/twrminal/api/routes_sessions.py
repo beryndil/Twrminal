@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from twrminal import metrics
@@ -87,3 +89,22 @@ async def list_tool_calls(session_id: str, request: Request) -> list[ToolCallOut
         raise HTTPException(status_code=404, detail="session not found")
     rows = await store.list_tool_calls(conn, session_id)
     return [ToolCallOut(**r) for r in rows]
+
+
+@router.get("/{session_id}/export")
+async def export_session(session_id: str, request: Request) -> dict[str, Any]:
+    """Single-session dump — session metadata + every message and
+    tool call. Keeps the `/api/history/export` shape-per-section but
+    scoped to one session so users can archive a finished
+    conversation as a standalone JSON file."""
+    conn = request.app.state.db
+    session = await store.get_session(conn, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    messages = await store.list_messages(conn, session_id)
+    tool_calls = await store.list_tool_calls(conn, session_id)
+    return {
+        "session": session,
+        "messages": messages,
+        "tool_calls": tool_calls,
+    }

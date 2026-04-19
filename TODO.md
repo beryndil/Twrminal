@@ -173,16 +173,20 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 - [x] Messages pagination (`?before=&limit=`) with scroll-to-top
   lazy-load + viewport preservation.
 
-## v0.1.30 — next slice
+## v0.1.30 — shipped
+
+- [x] Per-session JSON export (`/api/sessions/{id}/export` + ⇣ button).
+
+## v0.1.31 — next slice
 
 - [ ] Component tests (jsdom + @testing-library/svelte; start with
   `AuthGate.svelte`).
 - [ ] Verify interrupt() behavior against a real agent running a
-  Bash(sleep 10) tool — only a live SDK run confirms the CLI actually
-  aborts the subprocess.
-- [ ] Surface a running-total message count on the Conversation
-  header so the user can tell there are >50 messages even before
-  scrolling up.
+  Bash(sleep 10) tool.
+- [ ] Running total message count on the Conversation header.
+- [ ] "Import session" on a fresh server — consume the v0.1.30 export
+  JSON + restore as a new session (or with existing ids if we allow
+  overwrite).
 
 ## v0.1.7+
 

@@ -2,6 +2,7 @@
   import { conversation } from '$lib/stores/conversation.svelte';
   import { sessions } from '$lib/stores/sessions.svelte';
   import { agent } from '$lib/agent.svelte';
+  import * as api from '$lib/api';
   import { renderMarkdown } from '$lib/render';
   import { highlight } from '$lib/actions/highlight';
   import SessionEdit from '$lib/components/SessionEdit.svelte';
@@ -9,6 +10,31 @@
   let promptText = $state('');
   let scrollContainer: HTMLDivElement | undefined = $state();
   let editingSession = $state(false);
+  let exporting = $state(false);
+
+  async function onExport() {
+    const sid = sessions.selectedId;
+    if (!sid || exporting) return;
+    exporting = true;
+    try {
+      const dump = await api.exportSession(sid);
+      const blob = new Blob([JSON.stringify(dump, null, 2)], {
+        type: 'application/json'
+      });
+      const url = URL.createObjectURL(blob);
+      const day = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+      const name = `session-${sid.slice(0, 8)}-${day}.json`;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      exporting = false;
+    }
+  }
 
   $effect(() => {
     void conversation.messages;
@@ -116,6 +142,16 @@
             onclick={() => (editingSession = true)}
           >
             ✎
+          </button>
+          <button
+            type="button"
+            class="text-xs text-slate-500 hover:text-slate-300 disabled:opacity-50"
+            aria-label="Export session"
+            title="Download as JSON"
+            onclick={onExport}
+            disabled={exporting}
+          >
+            ⇣
           </button>
         {/if}
       </h1>

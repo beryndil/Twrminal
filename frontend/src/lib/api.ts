@@ -239,6 +239,19 @@ export function searchHistory(
   return jsonFetch<SearchHit[]>(fetchImpl, `/api/history/search?${params}`);
 }
 
+export type SessionExport = {
+  session: Session;
+  messages: Message[];
+  tool_calls: ToolCall[];
+};
+
+export function exportSession(
+  sessionId: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<SessionExport> {
+  return jsonFetch<SessionExport>(fetchImpl, `/api/sessions/${sessionId}/export`);
+}
+
 export function openAgentSocket(sessionId: string): WebSocket {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const token = readAuthToken();
