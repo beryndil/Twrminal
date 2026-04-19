@@ -267,6 +267,19 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
   `tags.refresh()` in parallel.
 - [x] `tags.svelte.test.ts` store test (happy path + error path).
 
+## v0.2.2 — shipped
+
+- [x] Write helpers in `api.ts`: `createTag`, `updateTag`,
+  `deleteTag` (handles 204), `attachSessionTag`, `detachSessionTag`.
+- [x] `tags` store mutation methods + `bumpCount` for post-attach
+  chip updates without a round-trip refresh.
+- [x] SessionEdit modal Tags section: chips with ✕ to detach,
+  inline input filters global tags; click-to-attach or Enter on
+  novel name to create-and-attach.
+- [x] `SessionEdit.test.ts` (3 cases: detach, suggestion-click
+  attach, Enter-to-create) + extended `tags.svelte.test.ts`
+  (7 cases).
+
 ## v0.2.x — remaining slice plan
 
 See `V0.2.0_SPEC.md` §"Build order" and plan file

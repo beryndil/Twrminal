@@ -244,6 +244,20 @@ export type Tag = {
   session_count: number;
 };
 
+export type TagCreate = {
+  name: string;
+  color?: string | null;
+  pinned?: boolean;
+  sort_order?: number;
+};
+
+export type TagUpdate = {
+  name?: string;
+  color?: string | null;
+  pinned?: boolean;
+  sort_order?: number;
+};
+
 export function listTags(fetchImpl: typeof fetch = fetch): Promise<Tag[]> {
   return jsonFetch<Tag[]>(fetchImpl, '/api/tags');
 }
@@ -253,6 +267,61 @@ export function listSessionTags(
   fetchImpl: typeof fetch = fetch
 ): Promise<Tag[]> {
   return jsonFetch<Tag[]>(fetchImpl, `/api/sessions/${sessionId}/tags`);
+}
+
+export function createTag(
+  body: TagCreate,
+  fetchImpl: typeof fetch = fetch
+): Promise<Tag> {
+  return jsonFetch<Tag>(fetchImpl, '/api/tags', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+
+export function updateTag(
+  id: number,
+  patch: TagUpdate,
+  fetchImpl: typeof fetch = fetch
+): Promise<Tag> {
+  return jsonFetch<Tag>(fetchImpl, `/api/tags/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patch)
+  });
+}
+
+export async function deleteTag(
+  id: number,
+  fetchImpl: typeof fetch = fetch
+): Promise<void> {
+  const res = await fetchImpl(`/api/tags/${id}`, withAuth({ method: 'DELETE' }));
+  if (res.status === 401 && authFailureHandler) authFailureHandler();
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`DELETE /api/tags/${id} → ${res.status}: ${body}`);
+  }
+}
+
+export function attachSessionTag(
+  sessionId: string,
+  tagId: number,
+  fetchImpl: typeof fetch = fetch
+): Promise<Tag[]> {
+  return jsonFetch<Tag[]>(fetchImpl, `/api/sessions/${sessionId}/tags/${tagId}`, {
+    method: 'POST'
+  });
+}
+
+export function detachSessionTag(
+  sessionId: string,
+  tagId: number,
+  fetchImpl: typeof fetch = fetch
+): Promise<Tag[]> {
+  return jsonFetch<Tag[]>(fetchImpl, `/api/sessions/${sessionId}/tags/${tagId}`, {
+    method: 'DELETE'
+  });
 }
 
 export function searchHistory(

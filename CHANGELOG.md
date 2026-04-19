@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-04-19
+
+Attach/detach tags on a session. Third v0.2 slice — first path for
+actually putting tags onto something from the UI. Sidebar
+click-filter lands in v0.2.3.
+
+### Added
+
+- `TagCreate` / `TagUpdate` types + `createTag` / `updateTag` /
+  `deleteTag` / `attachSessionTag` / `detachSessionTag` in
+  `frontend/src/lib/api.ts`. The `deleteTag` helper handles the 204
+  No Content response explicitly (the shared `jsonFetch` path
+  assumes a JSON body).
+- Mutation methods on the `tags` store: `create()`, `update()`,
+  `remove()`, plus `bumpCount()` for post-attach/detach sidebar chip
+  updates without a full refresh.
+- **Tags section** in the SessionEdit modal: attached tags render
+  as chips (with ★ on pinned) with an ✕ to detach. An input below
+  filters global tags by name; click a suggestion to attach, or
+  press Enter on a novel name to create-and-attach in one step.
+- `SessionEdit.test.ts` covers detach via ✕, suggestion-click
+  attach, and the Enter-to-create path.
+- Extended `tags.svelte.test.ts` covers `create`, `remove`, and
+  `bumpCount` including the clamp-at-zero rule.
+
 ## [0.2.1] - 2026-04-19
 
 Sidebar **Tags panel** — read-only. Second v0.2 slice.
