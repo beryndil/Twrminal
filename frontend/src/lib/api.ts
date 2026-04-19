@@ -55,6 +55,11 @@ export type ToolCallEndEvent = {
   output: string | null;
   error: string | null;
 };
+export type MessageStartEvent = {
+  type: 'message_start';
+  session_id: string;
+  message_id: string;
+};
 export type MessageCompleteEvent = {
   type: 'message_complete';
   session_id: string;
@@ -67,6 +72,7 @@ export type AgentEvent =
   | UserMessageEvent
   | ToolCallStartEvent
   | ToolCallEndEvent
+  | MessageStartEvent
   | MessageCompleteEvent
   | ErrorEvent;
 

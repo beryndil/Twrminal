@@ -19,6 +19,7 @@ from twrminal.agent.events import (
     AgentEvent,
     ErrorEvent,
     MessageComplete,
+    MessageStart,
     Token,
     ToolCallEnd,
     ToolCallStart,
@@ -53,6 +54,7 @@ class AgentSession:
         try:
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(prompt)
+                yield MessageStart(session_id=self.session_id, message_id=message_id)
                 async for msg in client.receive_response():
                     if isinstance(msg, AssistantMessage):
                         for block in msg.content:

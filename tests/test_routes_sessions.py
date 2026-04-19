@@ -84,7 +84,7 @@ def test_get_tool_calls_returns_persisted_rows(
     created = _create(client, title="tc")
     with client.websocket_connect(f"/ws/sessions/{created['id']}") as ws:
         ws.send_json({"type": "prompt", "content": "read hosts"})
-        for _ in range(3):
+        for _ in range(4):
             ws.receive_text()
 
     rows = client.get(f"/api/sessions/{created['id']}/tool_calls").json()

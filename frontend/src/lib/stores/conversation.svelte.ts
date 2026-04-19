@@ -132,6 +132,7 @@ class ConversationStore {
         this.error = event.message;
         this.streamingActive = false;
         return;
+      case 'message_start':
       case 'user_message':
         return;
     }

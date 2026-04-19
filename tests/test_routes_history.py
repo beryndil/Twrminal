@@ -27,7 +27,7 @@ def test_export_includes_messages(client: TestClient, mock_agent_stream: None) -
     sid = _create(client)
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
         ws.send_json({"type": "prompt", "content": "hi"})
-        for _ in range(3):
+        for _ in range(4):
             ws.receive_text()
 
     data = client.get("/api/history/export").json()

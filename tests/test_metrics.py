@@ -37,11 +37,16 @@ def test_ws_counters_update(client: TestClient, mock_agent_stream: None) -> None
 
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
         ws.send_json({"type": "prompt", "content": "hi"})
-        frames = [json.loads(ws.receive_text()) for _ in range(3)]
+        frames = [json.loads(ws.receive_text()) for _ in range(4)]
         # Server has clearly advanced past the inc() once we've read frames.
         active_during = metrics.ws_active_connections._value.get()
         assert active_during == active_before + 1
-    assert [f["type"] for f in frames] == ["token", "token", "message_complete"]
+    assert [f["type"] for f in frames] == [
+        "message_start",
+        "token",
+        "token",
+        "message_complete",
+    ]
 
     assert metrics.messages_persisted.labels(role="user")._value.get() == user_before + 1
     assert metrics.messages_persisted.labels(role="assistant")._value.get() == assistant_before + 1
@@ -65,7 +70,7 @@ def test_tool_call_counters_label_success(
 
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
         ws.send_json({"type": "prompt", "content": "read hosts"})
-        for _ in range(3):
+        for _ in range(4):
             ws.receive_text()
 
     assert metrics.tool_calls_started._value.get() == started_before + 1

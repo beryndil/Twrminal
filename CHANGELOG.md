@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-04-19
+
+### Added
+
+- New `MessageStart(session_id, message_id)` event emitted by
+  `AgentSession.stream` as the first frame of each turn. The same
+  `message_id` is reused for the turn's `MessageComplete`, giving the
+  wire protocol a stable id for the assistant message before its
+  content is known.
+- `store.attach_tool_calls_to_message(message_id, tool_call_ids)` —
+  backfills `tool_calls.message_id` after the assistant message row
+  exists. The WS handler collects tool-call ids emitted during the
+  turn and calls this helper at `MessageComplete`.
+- `insert_message` accepts an optional `id` so the WS handler can
+  persist the assistant row with the `MessageStart.message_id` — the
+  same id the client already received over the wire.
+- Frontend `AgentEvent` union gains `MessageStartEvent`; conversation
+  store handles it as a no-op (rendering continues to hinge on
+  `MessageComplete`).
+
+### Why
+
+Tool-call rows were landing with `message_id = NULL`. Attempting to
+insert the link at `ToolCallStart` time tripped the FK (no message
+row yet). The `MessageStart` → collect → backfill flow keeps the FK
+enforced while still linking tool calls back to their assistant turn.
+
 ## [0.1.6] - 2026-04-18
 
 ### Added

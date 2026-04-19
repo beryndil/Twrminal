@@ -38,7 +38,7 @@ def _read_tool_calls(db_path: Path, session_id: str) -> list[dict]:
     conn.row_factory = sqlite3.Row
     try:
         cursor = conn.execute(
-            "SELECT id, name, input, output, error, started_at, finished_at "
+            "SELECT id, message_id, name, input, output, error, started_at, finished_at "
             "FROM tool_calls WHERE session_id = ? ORDER BY started_at ASC, id ASC",
             (session_id,),
         )
@@ -60,11 +60,16 @@ def test_ws_streams_events_and_persists_messages(
     sid = _create_session(client)
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
         ws.send_json({"type": "prompt", "content": "say hi"})
-        frames = [json.loads(ws.receive_text()) for _ in range(3)]
+        frames = [json.loads(ws.receive_text()) for _ in range(4)]
 
-    assert [f["type"] for f in frames] == ["token", "token", "message_complete"]
-    assert [f["text"] for f in frames[:2]] == ["hello ", "world"]
-    assert frames[2]["message_id"] == "mock-msg"
+    assert [f["type"] for f in frames] == [
+        "message_start",
+        "token",
+        "token",
+        "message_complete",
+    ]
+    assert [f["text"] for f in frames[1:3]] == ["hello ", "world"]
+    assert frames[0]["message_id"] == frames[3]["message_id"] == "mock-msg"
 
     assert _read_messages(tmp_settings.storage.db_path, sid) == [
         ("user", "say hi"),
@@ -75,19 +80,37 @@ def test_ws_streams_events_and_persists_messages(
 def test_ws_persists_tool_calls(
     client: TestClient, mock_agent_tool_stream: None, tmp_settings: Settings
 ) -> None:
+    import time
+
     sid = _create_session(client)
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
         ws.send_json({"type": "prompt", "content": "read hosts"})
-        frames = [json.loads(ws.receive_text()) for _ in range(3)]
+        frames = [json.loads(ws.receive_text()) for _ in range(4)]
+
+        # Stay inside the WS context while the server finishes its
+        # post-send DB writes (assistant-message insert + tool-call
+        # backfill). The TestClient may cancel the server task on
+        # exit, so we must wait for the writes before closing.
+        msg_id = frames[0]["message_id"]
+        for _ in range(50):
+            rows = _read_tool_calls(tmp_settings.storage.db_path, sid)
+            if rows and rows[0]["message_id"] == msg_id:
+                break
+            time.sleep(0.02)
+
     assert [f["type"] for f in frames] == [
+        "message_start",
         "tool_call_start",
         "tool_call_end",
         "message_complete",
     ]
+    assert frames[0]["message_id"] == frames[3]["message_id"]
+
     rows = _read_tool_calls(tmp_settings.storage.db_path, sid)
     assert len(rows) == 1
     call = rows[0]
     assert call["id"] == "tool-1"
+    assert call["message_id"] == msg_id
     assert call["name"] == "Read"
     assert call["input"] == '{"path": "/etc/hosts"}'
     assert call["output"] == "127.0.0.1 localhost"
@@ -100,5 +123,10 @@ def test_ws_ignores_unknown_payload_types(client: TestClient, mock_agent_stream:
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
         ws.send_json({"type": "noop", "content": "ignored"})
         ws.send_json({"type": "prompt", "content": "go"})
-        frames = [json.loads(ws.receive_text()) for _ in range(3)]
-    assert [f["type"] for f in frames] == ["token", "token", "message_complete"]
+        frames = [json.loads(ws.receive_text()) for _ in range(4)]
+    assert [f["type"] for f in frames] == [
+        "message_start",
+        "token",
+        "token",
+        "message_complete",
+    ]

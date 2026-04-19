@@ -94,8 +94,9 @@ async def insert_message(
     session_id: str,
     role: str,
     content: str,
+    id: str | None = None,
 ) -> dict[str, Any]:
-    message_id = _new_id()
+    message_id = id or _new_id()
     now = _now()
     await conn.execute(
         "INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -160,6 +161,29 @@ async def finish_tool_call(
     )
     await conn.commit()
     return cursor.rowcount > 0
+
+
+async def attach_tool_calls_to_message(
+    conn: aiosqlite.Connection,
+    *,
+    message_id: str,
+    tool_call_ids: list[str],
+) -> int:
+    """Backfill tool_calls.message_id for a just-persisted assistant turn.
+
+    Called after `insert_message(role="assistant")` — at that point the
+    messages row exists so the FK can be populated. Returns the number
+    of rows updated.
+    """
+    if not tool_call_ids:
+        return 0
+    placeholders = ",".join("?" for _ in tool_call_ids)
+    cursor = await conn.execute(
+        f"UPDATE tool_calls SET message_id = ? WHERE id IN ({placeholders})",
+        (message_id, *tool_call_ids),
+    )
+    await conn.commit()
+    return cursor.rowcount
 
 
 async def list_tool_calls(conn: aiosqlite.Connection, session_id: str) -> list[dict[str, Any]]:

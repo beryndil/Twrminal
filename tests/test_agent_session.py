@@ -16,6 +16,7 @@ from claude_agent_sdk import (
 from twrminal.agent.events import (
     ErrorEvent,
     MessageComplete,
+    MessageStart,
     Token,
     ToolCallEnd,
     ToolCallStart,
@@ -82,13 +83,21 @@ async def test_stream_translates_text_blocks(monkeypatch: pytest.MonkeyPatch) ->
     )
     session = AgentSession("s1", working_dir="/tmp", model="claude-sonnet-4-6")
     events = [ev async for ev in session.stream("hi")]
-    assert [type(e).__name__ for e in events] == ["Token", "Token", "MessageComplete"]
+    assert [type(e).__name__ for e in events] == [
+        "MessageStart",
+        "Token",
+        "Token",
+        "MessageComplete",
+    ]
+    start = events[0]
+    complete = events[-1]
+    assert isinstance(start, MessageStart)
+    assert isinstance(complete, MessageComplete)
+    assert start.session_id == "s1"
+    assert len(start.message_id) == 32
+    assert start.message_id == complete.message_id
     tokens = [e for e in events if isinstance(e, Token)]
     assert [t.text for t in tokens] == ["hello ", "world"]
-    complete = events[-1]
-    assert isinstance(complete, MessageComplete)
-    assert complete.session_id == "s1"
-    assert len(complete.message_id) == 32
 
 
 @pytest.mark.asyncio
@@ -98,11 +107,12 @@ async def test_stream_translates_tool_use_block(monkeypatch: pytest.MonkeyPatch)
     session = AgentSession("s2", working_dir="/tmp", model="m")
     events = [ev async for ev in session.stream("read it")]
     assert [type(e).__name__ for e in events] == [
+        "MessageStart",
         "Token",
         "ToolCallStart",
         "MessageComplete",
     ]
-    call = events[1]
+    call = events[2]
     assert isinstance(call, ToolCallStart)
     assert call.tool_call_id == "tool-1"
     assert call.name == "Read"
@@ -128,8 +138,8 @@ async def test_stream_translates_tool_result_block(
     session = AgentSession("s", working_dir="/tmp", model="m")
     events = [ev async for ev in session.stream("read it")]
     types = [type(e).__name__ for e in events]
-    assert types == ["ToolCallStart", "ToolCallEnd", "MessageComplete"]
-    end = events[1]
+    assert types == ["MessageStart", "ToolCallStart", "ToolCallEnd", "MessageComplete"]
+    end = events[2]
     assert isinstance(end, ToolCallEnd)
     assert end.tool_call_id == "t-1"
     assert end.ok is True

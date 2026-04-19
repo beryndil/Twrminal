@@ -49,16 +49,21 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 - [x] Frontend `listToolCalls` + `ToolCall` type.
 - [x] Inspector renders persisted tool calls on session load.
 
-## v0.1.7 — next slice
+## v0.1.7 — shipped
+
+- [x] `MessageStart` event + `tool_calls.message_id` backfill via the
+  new `attach_tool_calls_to_message` store helper.
+- [x] Frontend `AgentEvent` union picks up `MessageStartEvent`.
+
+## v0.1.8 — next slice
 
 - [ ] Frontend unit tests (vitest + @testing-library/svelte).
-- [ ] Wire `message_id` on tool_calls rows. Likely approach: emit a
-  `MessageStart(message_id)` event at the start of each assistant turn
-  so the WS handler can pass it through to `insert_tool_call_start`.
 - [ ] Messages-endpoint pagination (limit + cursor) once conversations
   grow long.
 - [ ] `/api/history/export` query params: `?from=YYYY-MM-DD&to=YYYY-MM-DD`
   for a range filter.
+- [ ] `max_budget_usd` per-session cap so a runaway agent can't burn
+  unbounded tokens.
 
 ## v0.1.7+
 

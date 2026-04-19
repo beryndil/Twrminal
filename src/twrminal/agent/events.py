@@ -34,6 +34,12 @@ class ToolCallEnd(BaseModel):
     error: str | None = None
 
 
+class MessageStart(BaseModel):
+    type: Literal["message_start"] = "message_start"
+    session_id: str
+    message_id: str
+
+
 class MessageComplete(BaseModel):
     type: Literal["message_complete"] = "message_complete"
     session_id: str
@@ -46,4 +52,6 @@ class ErrorEvent(BaseModel):
     message: str
 
 
-AgentEvent = UserMessage | Token | ToolCallStart | ToolCallEnd | MessageComplete | ErrorEvent
+AgentEvent = (
+    UserMessage | Token | ToolCallStart | ToolCallEnd | MessageStart | MessageComplete | ErrorEvent
+)
