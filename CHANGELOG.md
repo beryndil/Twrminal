@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.29] - 2026-04-19
+
+### Added
+
+- `GET /api/sessions/{id}/messages?before=<iso>&limit=<N>` — newest-
+  first pagination cursor. `store.list_messages` grows an optional
+  `before` + `limit`; without `limit` it keeps the original
+  all-oldest-first behavior so existing callers are unaffected.
+- Frontend `api.listMessagesPage(sid, {before?, limit?})` returns
+  `{messages, hasMore}` with the page already reversed to
+  oldest-first for rendering.
+- `conversation.load()` now fetches 50 most-recent messages (+
+  `hasMore`), not the whole history.
+- `conversation.loadOlder()` + scroll-to-top handler in
+  Conversation.svelte: scrolling within 40px of the top prepends the
+  next page, preserving viewport (`scrollTop = newHeight -
+  prevHeight`).
+- "Scroll up to load older messages" / "Loading older…" hint at the
+  top of the message list when `hasMore`.
+
 ## [0.1.28] - 2026-04-19
 
 ### Changed

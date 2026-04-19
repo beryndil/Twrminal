@@ -34,6 +34,8 @@ function hydrateToolCall(row: api.ToolCall): LiveToolCall {
   };
 }
 
+const PAGE_SIZE = 50;
+
 class ConversationStore {
   sessionId = $state<string | null>(null);
   messages = $state<api.Message[]>([]);
@@ -43,24 +45,47 @@ class ConversationStore {
   toolCalls = $state<LiveToolCall[]>([]);
   totalCost = $state(0);
   highlightQuery = $state('');
+  hasMore = $state(false);
+  loadingOlder = $state(false);
   error = $state<string | null>(null);
 
   async load(sessionId: string): Promise<void> {
     this.sessionId = sessionId;
     this.messages = [];
+    this.hasMore = false;
     this.reset();
     this.error = null;
     try {
-      const [session, messages, toolCalls] = await Promise.all([
+      const [session, page, toolCalls] = await Promise.all([
         api.getSession(sessionId),
-        api.listMessages(sessionId),
+        api.listMessagesPage(sessionId, { limit: PAGE_SIZE }),
         api.listToolCalls(sessionId)
       ]);
-      this.messages = messages;
+      this.messages = page.messages;
+      this.hasMore = page.hasMore;
       this.toolCalls = toolCalls.map(hydrateToolCall);
       this.totalCost = session.total_cost_usd;
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  async loadOlder(): Promise<void> {
+    if (!this.sessionId || !this.hasMore || this.loadingOlder) return;
+    const first = this.messages[0];
+    if (!first) return;
+    this.loadingOlder = true;
+    try {
+      const page = await api.listMessagesPage(this.sessionId, {
+        before: first.created_at,
+        limit: PAGE_SIZE
+      });
+      this.messages = [...page.messages, ...this.messages];
+      this.hasMore = page.hasMore;
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
+    } finally {
+      this.loadingOlder = false;
     }
   }
 

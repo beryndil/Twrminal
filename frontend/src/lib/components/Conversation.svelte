@@ -20,6 +20,25 @@
     }
   });
 
+  const SCROLL_TOP_THRESHOLD = 40;
+
+  $effect(() => {
+    const el = scrollContainer;
+    if (!el) return;
+    async function onScroll() {
+      if (!el) return;
+      if (el.scrollTop > SCROLL_TOP_THRESHOLD) return;
+      if (!conversation.hasMore || conversation.loadingOlder) return;
+      const prevHeight = el.scrollHeight;
+      await conversation.loadOlder();
+      // Preserve viewport: after prepend, keep the first-previously-
+      // visible message in the same screen position.
+      if (el) el.scrollTop = el.scrollHeight - prevHeight;
+    }
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  });
+
   function onSend() {
     const text = promptText.trim();
     if (!text) return;
@@ -158,6 +177,11 @@
   {/if}
 
   <div bind:this={scrollContainer} class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+    {#if conversation.hasMore}
+      <p class="text-[10px] text-slate-600 text-center">
+        {conversation.loadingOlder ? 'Loading older…' : 'Scroll up to load older messages'}
+      </p>
+    {/if}
     {#if !sessions.selectedId}
       <p class="text-slate-500 text-sm">No session selected.</p>
     {:else if conversation.messages.length === 0 && !conversation.streamingActive}

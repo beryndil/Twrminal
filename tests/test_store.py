@@ -272,3 +272,40 @@ async def test_list_messages_orders_oldest_first(tmp_path: Path) -> None:
         assert [r["id"] for r in rows] == [m1["id"], m2["id"]]
     finally:
         await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_list_messages_paginates_newest_first(tmp_path: Path) -> None:
+    """With `limit`, returns the N most-recent messages in newest-first
+    order so a paginated client can prepend older pages as it scrolls
+    up."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        sess = await create_session(conn, working_dir="/x", model="m", title=None)
+        inserted = []
+        for i in range(5):
+            msg = await insert_message(conn, session_id=sess["id"], role="user", content=f"m{i}")
+            inserted.append(msg)
+            await asyncio.sleep(0.002)
+
+        page = await list_messages(conn, sess["id"], limit=3)
+        assert [r["content"] for r in page] == ["m4", "m3", "m2"]
+
+        older = await list_messages(conn, sess["id"], before=inserted[2]["created_at"], limit=3)
+        assert [r["content"] for r in older] == ["m1", "m0"]
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_list_messages_no_limit_still_returns_all(tmp_path: Path) -> None:
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        sess = await create_session(conn, working_dir="/x", model="m", title=None)
+        for i in range(3):
+            await insert_message(conn, session_id=sess["id"], role="user", content=f"m{i}")
+            await asyncio.sleep(0.002)
+        rows = await list_messages(conn, sess["id"])
+        assert [r["content"] for r in rows] == ["m0", "m1", "m2"]
+    finally:
+        await conn.close()

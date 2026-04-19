@@ -164,12 +164,41 @@ async def insert_message(
     }
 
 
-async def list_messages(conn: aiosqlite.Connection, session_id: str) -> list[dict[str, Any]]:
-    async with conn.execute(
-        "SELECT id, session_id, role, content, thinking, created_at "
-        "FROM messages WHERE session_id = ? ORDER BY created_at ASC, id ASC",
-        (session_id,),
-    ) as cursor:
+async def list_messages(
+    conn: aiosqlite.Connection,
+    session_id: str,
+    *,
+    before: str | None = None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    """Without `limit`, returns every message in the session in
+    creation order — keeps the v0.1.0 behavior for small sessions.
+
+    With `limit`, returns the N most-recent messages in newest-first
+    order (so routes / callers that want oldest-first rendering
+    reverse the page). Pass `before` (ISO timestamp) to fetch the
+    page immediately older than a known cursor."""
+    cols = "id, session_id, role, content, thinking, created_at"
+    if limit is None:
+        async with conn.execute(
+            f"SELECT {cols} FROM messages WHERE session_id = ? ORDER BY created_at ASC, id ASC",
+            (session_id,),
+        ) as cursor:
+            return [dict(row) async for row in cursor]
+    if before is None:
+        params: tuple[Any, ...] = (session_id, limit)
+        sql = (
+            f"SELECT {cols} FROM messages WHERE session_id = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT ?"
+        )
+    else:
+        params = (session_id, before, limit)
+        sql = (
+            f"SELECT {cols} FROM messages "
+            "WHERE session_id = ? AND created_at < ? "
+            "ORDER BY created_at DESC, id DESC LIMIT ?"
+        )
+    async with conn.execute(sql, params) as cursor:
         return [dict(row) async for row in cursor]
 
 

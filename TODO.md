@@ -168,14 +168,21 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 - [x] Sidebar sort by updated_at; insert_message touches the session
   row so active sessions float to the top.
 
-## v0.1.29 — next slice
+## v0.1.29 — shipped
+
+- [x] Messages pagination (`?before=&limit=`) with scroll-to-top
+  lazy-load + viewport preservation.
+
+## v0.1.30 — next slice
 
 - [ ] Component tests (jsdom + @testing-library/svelte; start with
   `AuthGate.svelte`).
-- [ ] Messages-endpoint pagination (limit + cursor).
 - [ ] Verify interrupt() behavior against a real agent running a
   Bash(sleep 10) tool — only a live SDK run confirms the CLI actually
   aborts the subprocess.
+- [ ] Surface a running-total message count on the Conversation
+  header so the user can tell there are >50 messages even before
+  scrolling up.
 
 ## v0.1.7+
 

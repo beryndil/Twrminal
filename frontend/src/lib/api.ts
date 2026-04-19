@@ -188,6 +188,31 @@ export function listMessages(
   return jsonFetch<Message[]>(fetchImpl, `/api/sessions/${sessionId}/messages`);
 }
 
+export type MessagePage = {
+  /** Oldest-first so the caller can prepend/append directly. */
+  messages: Message[];
+  /** True if the server returned exactly `limit` rows — there may be
+   * more older messages beyond this page. */
+  hasMore: boolean;
+};
+
+export async function listMessagesPage(
+  sessionId: string,
+  opts: { before?: string; limit?: number } = {},
+  fetchImpl: typeof fetch = fetch
+): Promise<MessagePage> {
+  const limit = opts.limit ?? 50;
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (opts.before) params.set('before', opts.before);
+  // Server sends newest-first when `limit` is set. Reverse once so
+  // the caller sees the familiar oldest-first ordering.
+  const raw = await jsonFetch<Message[]>(
+    fetchImpl,
+    `/api/sessions/${sessionId}/messages?${params}`
+  );
+  return { messages: raw.reverse(), hasMore: raw.length === limit };
+}
+
 export function listToolCalls(
   sessionId: string,
   fetchImpl: typeof fetch = fetch
