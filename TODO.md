@@ -304,27 +304,23 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 
 ## v0.2.x — remaining slice plan
 
-See `V0.2.0_SPEC.md` §"Build order" and plan file
-`~/.claude/plans/vectorized-leaping-pretzel.md`.
-- [ ] **v0.2.2** — Attach/detach tags on a session: chips in header
-  or SessionEdit modal, clickable tag-filter on the session list.
-- [ ] **v0.2.3** — Migration `0007_projects_and_memories.sql`
-  (projects table, `sessions.project_id`, `tag_memories`,
-  `sessions.session_instructions`). Store helpers stubbed.
-- [ ] **v0.2.4** — `agent/prompt.py` assembler: base + project +
-  tag memories + session override, with unit tests.
-- [ ] **v0.2.5** — Projects backend: CRUD + session filter by
-  `project_id` on `GET /api/sessions`.
-- [ ] **v0.2.6** — Tag memories backend (`GET/PUT/DELETE
-  /api/tags/{id}/memory`) + `session_instructions` via
-  `PATCH /api/sessions/{id}`. Wire `AgentSession` to
+Plan file: `~/.claude/plans/vectorized-leaping-pretzel.md`. Slice
+numbering shifted from the original 12-slice plan because spec
+step 1 ended up needing four slices, not three.
+
+- [ ] **v0.2.5** — `agent/prompt.py` assembler (pure function;
+  unit tests for layer ordering). No callers yet.
+- [ ] **v0.2.6** — Projects backend: store CRUD + `/api/projects`
+  routes + session filter by `project_id`.
+- [ ] **v0.2.7** — Tag memories backend + `session_instructions`
+  via `PATCH /api/sessions/{id}`. Wire `AgentSession` through
   `assemble_prompt`.
-- [ ] **v0.2.7** — Inspector Context tab (read-only assembled prompt
-  with per-layer breakdown).
-- [ ] **v0.2.8** — Projects sidebar + management view.
-- [ ] **v0.2.9** — Tag memory editor (markdown + live preview).
-- [ ] **v0.2.10** — Session instructions inline editor.
-- [ ] **v0.2.11** — Conversation header badges + README update.
+- [ ] **v0.2.8** — Inspector Context tab (read-only) +
+  `GET /api/sessions/{id}/system_prompt`.
+- [ ] **v0.2.9** — Projects sidebar + management view.
+- [ ] **v0.2.10** — Tag memory editor (markdown + live preview).
+- [ ] **v0.2.11** — Session instructions inline editor.
+- [ ] **v0.2.12** — Conversation header badges + README update.
 
 ## Decisions pending
 
