@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-04-19
+
+Sidebar **click-filter** — fourth v0.2 slice. Closes out the
+tag-primitives UI surface that started in v0.2.0. Full spec build
+order step 1 (both back- and front-end) is now shipped.
+
+### Added
+
+- `GET /api/sessions?tags=1,2&mode=any|all` — optional filter on
+  the session list. `mode="any"` matches sessions carrying any of
+  the listed tags; `mode="all"` requires every listed tag. Empty /
+  omitted `tags` returns the unfiltered list unchanged. Bad `tags`
+  (non-integer) → 400.
+- `store.list_sessions(tag_ids=, mode=)` extended to run the join
+  + GROUP BY / DISTINCT path when filtering.
+- `api.ts` `listSessions` now takes an optional `SessionFilter`;
+  the sessions store caches the last-applied filter.
+- `tags` store gets `selected: number[]`, `mode: 'any' | 'all'`,
+  `toggleSelected()`, `clearSelection()`, plus derived `hasFilter`
+  + `filter`.
+- Sidebar tag rows become toggle buttons (emerald tint when
+  selected), an Any/All toggle sits next to the "Tags" header, and
+  a "Filter: N tag(s) ✕" pill appears when the filter is active —
+  click to clear.
+- SessionList watches the filter and re-fetches sessions on change.
+- 5 new pytest cases (store any/all, store empty-filter, API happy
+  path, API 400 on bad tags). 3 new vitest cases (toggle, derived
+  filter, clearSelection).
+
 ## [0.2.2] - 2026-04-19
 
 Attach/detach tags on a session. Third v0.2 slice — first path for

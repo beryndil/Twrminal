@@ -142,8 +142,22 @@ export function fetchHealth(fetchImpl: typeof fetch = fetch): Promise<HealthResp
   return jsonFetch<HealthResponse>(fetchImpl, '/api/health');
 }
 
-export function listSessions(fetchImpl: typeof fetch = fetch): Promise<Session[]> {
-  return jsonFetch<Session[]>(fetchImpl, '/api/sessions');
+export type SessionFilter = {
+  tags?: number[];
+  mode?: 'any' | 'all';
+};
+
+export function listSessions(
+  filter: SessionFilter = {},
+  fetchImpl: typeof fetch = fetch
+): Promise<Session[]> {
+  const tagIds = filter.tags ?? [];
+  if (tagIds.length === 0) return jsonFetch<Session[]>(fetchImpl, '/api/sessions');
+  const params = new URLSearchParams({
+    tags: tagIds.join(','),
+    mode: filter.mode ?? 'any'
+  });
+  return jsonFetch<Session[]>(fetchImpl, `/api/sessions?${params}`);
 }
 
 export function getSession(

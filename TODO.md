@@ -280,6 +280,19 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
   attach, Enter-to-create) + extended `tags.svelte.test.ts`
   (7 cases).
 
+## v0.2.3 — shipped
+
+- [x] `GET /api/sessions?tags=&mode=any|all` filter + store support
+  (`list_sessions(tag_ids=, mode=)`). 400 on bad tag ids.
+- [x] `api.listSessions(filter?)` + sessions store caches last
+  filter.
+- [x] `tags` store `selected`, `mode`, `toggleSelected`,
+  `clearSelection`, derived `hasFilter` + `filter`.
+- [x] Sidebar: clickable tag buttons with emerald selection tint,
+  Any/All toggle, "Filter: N tag(s) ✕" clear pill.
+- [x] SessionList re-fetches sessions on filter change.
+- [x] 5 new pytest cases + 3 new vitest cases.
+
 ## v0.2.x — remaining slice plan
 
 See `V0.2.0_SPEC.md` §"Build order" and plan file

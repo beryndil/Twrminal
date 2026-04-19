@@ -38,8 +38,20 @@ async def create_session(body: SessionCreate, request: Request) -> SessionOut:
 
 
 @router.get("", response_model=list[SessionOut])
-async def list_sessions(request: Request) -> list[SessionOut]:
-    rows = await store.list_sessions(request.app.state.db)
+async def list_sessions(
+    request: Request,
+    tags: str | None = Query(None, description="Comma-separated tag ids"),
+    mode: str = Query("any", pattern="^(any|all)$"),
+) -> list[SessionOut]:
+    tag_ids: list[int] | None = None
+    if tags:
+        try:
+            tag_ids = [int(t) for t in tags.split(",") if t.strip()]
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail="tags must be comma-separated integers"
+            ) from exc
+    rows = await store.list_sessions(request.app.state.db, tag_ids=tag_ids, mode=mode)
     return [SessionOut(**r) for r in rows]
 
 

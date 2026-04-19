@@ -26,14 +26,20 @@ class SessionStore {
   selectedId = $state<string | null>(null);
   loading = $state(false);
   error = $state<string | null>(null);
+  /** Most recent filter applied. Kept so bumpCost / bumpMessageCount
+   * know whether a re-sort is safe (the filter is server-side, not
+   * client-side). Currently informational — future slices may key
+   * cache invalidation off it. */
+  filter = $state<api.SessionFilter>({});
 
   selected = $derived(this.list.find((s) => s.id === this.selectedId) ?? null);
 
-  async refresh(): Promise<void> {
+  async refresh(filter: api.SessionFilter = {}): Promise<void> {
     this.loading = true;
     this.error = null;
+    this.filter = filter;
     try {
-      this.list = await api.listSessions();
+      this.list = await api.listSessions(filter);
       const stored = readStoredId();
       if (stored && this.list.some((s) => s.id === stored) && this.selectedId === null) {
         this.selectedId = stored;

@@ -215,6 +215,18 @@
   // Boot (auth + session refresh) is owned by +page.svelte so the auth
   // gate can block API calls until a token is supplied.
 
+  // Re-fetch the session list whenever the tag filter changes. Initial
+  // boot in +page.svelte happens before the first effect settles, so
+  // this only fires on subsequent filter edits.
+  let filterKey = $derived(`${tags.selected.join(',')}|${tags.mode}`);
+  let lastAppliedKey = '';
+  $effect(() => {
+    const key = filterKey;
+    if (key === lastAppliedKey) return;
+    lastAppliedKey = key;
+    sessions.refresh(tags.filter);
+  });
+
   async function onCreate() {
     submitting = true;
     const created = await sessions.create({
@@ -270,6 +282,31 @@
 </script>
 
 <Settings bind:open={showSettings} />
+
+{#snippet tagRow(tag: api.Tag, pinned: boolean)}
+  {@const selected = tags.selected.includes(tag.id)}
+  <li>
+    <button
+      type="button"
+      class="w-full flex items-center justify-between gap-2 rounded px-2 py-1 text-sm
+        text-left transition {selected
+        ? 'bg-emerald-900/60 text-emerald-200'
+        : 'text-slate-300 hover:bg-slate-800'}"
+      aria-pressed={selected}
+      onclick={() => tags.toggleSelected(tag.id)}
+    >
+      <span class="flex items-center gap-1.5 min-w-0">
+        {#if pinned}
+          <span class="text-amber-400" aria-label="pinned">★</span>
+        {/if}
+        <span class="truncate">{tag.name}</span>
+      </span>
+      <span class="text-[10px] font-mono text-slate-500">
+        {tag.session_count}
+      </span>
+    </button>
+  </li>
+{/snippet}
 
 <aside
   class="relative bg-slate-900 p-4 overflow-y-auto border-r border-slate-800
@@ -410,38 +447,45 @@
     {@const pinned = tags.list.filter((t) => t.pinned)}
     {@const unpinned = tags.list.filter((t) => !t.pinned)}
     <section class="flex flex-col gap-1">
-      <h2 class="text-sm uppercase tracking-wider text-slate-400">Tags</h2>
+      <div class="flex items-center justify-between gap-2">
+        <h2 class="text-sm uppercase tracking-wider text-slate-400">Tags</h2>
+        <button
+          type="button"
+          class="text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5
+            bg-slate-800 hover:bg-slate-700 text-slate-300"
+          aria-label="Toggle tag combine mode"
+          title={tags.mode === 'any'
+            ? 'Any: match sessions with any selected tag'
+            : 'All: match sessions with every selected tag'}
+          onclick={() => (tags.mode = tags.mode === 'any' ? 'all' : 'any')}
+        >
+          {tags.mode === 'any' ? 'Any' : 'All'}
+        </button>
+      </div>
       <ul class="flex flex-col gap-0.5">
         {#each pinned as tag (tag.id)}
-          <li
-            class="flex items-center justify-between gap-2 rounded px-2 py-1 text-sm
-              text-slate-300"
-          >
-            <span class="flex items-center gap-1.5 min-w-0">
-              <span class="text-amber-400" aria-label="pinned">★</span>
-              <span class="truncate">{tag.name}</span>
-            </span>
-            <span class="text-[10px] font-mono text-slate-500">
-              {tag.session_count}
-            </span>
-          </li>
+          {@render tagRow(tag, true)}
         {/each}
         {#if pinned.length > 0 && unpinned.length > 0}
           <li class="h-px bg-slate-800 my-1" aria-hidden="true"></li>
         {/if}
         {#each unpinned as tag (tag.id)}
-          <li
-            class="flex items-center justify-between gap-2 rounded px-2 py-1 text-sm
-              text-slate-300"
-          >
-            <span class="truncate">{tag.name}</span>
-            <span class="text-[10px] font-mono text-slate-500">
-              {tag.session_count}
-            </span>
-          </li>
+          {@render tagRow(tag, false)}
         {/each}
       </ul>
     </section>
+  {/if}
+
+  {#if tags.hasFilter && !searchQuery.trim()}
+    <button
+      type="button"
+      class="self-start flex items-center gap-1 rounded bg-slate-800 hover:bg-slate-700
+        px-2 py-1 text-[11px] text-slate-300"
+      onclick={() => tags.clearSelection()}
+    >
+      <span>Filter: {tags.selected.length} tag{tags.selected.length === 1 ? '' : 's'}</span>
+      <span class="text-slate-500">✕</span>
+    </button>
   {/if}
 
   {#if searchQuery.trim()}

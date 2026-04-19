@@ -8,6 +8,8 @@ afterEach(() => {
   tags.list = [];
   tags.error = null;
   tags.loading = false;
+  tags.selected = [];
+  tags.mode = 'any';
 });
 
 type Fake = { ok: boolean; status?: number; body: unknown };
@@ -105,5 +107,29 @@ describe('tags store', () => {
     expect(tags.list[0].session_count).toBe(0);
     tags.bumpCount(1, +2);
     expect(tags.list[0].session_count).toBe(2);
+  });
+
+  it('toggleSelected adds and removes ids', () => {
+    tags.toggleSelected(1);
+    expect(tags.selected).toEqual([1]);
+    expect(tags.hasFilter).toBe(true);
+    tags.toggleSelected(2);
+    expect(tags.selected).toEqual([1, 2]);
+    tags.toggleSelected(1);
+    expect(tags.selected).toEqual([2]);
+  });
+
+  it('filter derived reflects selection + mode', () => {
+    tags.toggleSelected(3);
+    tags.toggleSelected(7);
+    tags.mode = 'all';
+    expect(tags.filter).toEqual({ tags: [3, 7], mode: 'all' });
+  });
+
+  it('clearSelection empties the set', () => {
+    tags.selected = [1, 2];
+    tags.clearSelection();
+    expect(tags.selected).toEqual([]);
+    expect(tags.hasFilter).toBe(false);
   });
 });

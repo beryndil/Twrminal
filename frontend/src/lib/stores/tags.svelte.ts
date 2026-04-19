@@ -4,6 +4,29 @@ class TagStore {
   list = $state<api.Tag[]>([]);
   loading = $state(false);
   error = $state<string | null>(null);
+  /** Tag ids selected as a filter on the sidebar session list. */
+  selected = $state<number[]>([]);
+  /** Combination rule for `selected` — any-of vs all-of. */
+  mode = $state<'any' | 'all'>('any');
+
+  hasFilter = $derived(this.selected.length > 0);
+
+  filter = $derived<api.SessionFilter>({
+    tags: this.selected.length > 0 ? [...this.selected] : undefined,
+    mode: this.mode
+  });
+
+  toggleSelected(id: number): void {
+    if (this.selected.includes(id)) {
+      this.selected = this.selected.filter((x) => x !== id);
+    } else {
+      this.selected = [...this.selected, id];
+    }
+  }
+
+  clearSelection(): void {
+    this.selected = [];
+  }
 
   async refresh(): Promise<void> {
     this.loading = true;

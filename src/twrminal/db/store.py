@@ -77,10 +77,51 @@ async def create_session(
     return row
 
 
-async def list_sessions(conn: aiosqlite.Connection) -> list[dict[str, Any]]:
-    async with conn.execute(
-        f"SELECT {_SESSION_COLS_WITH_COUNT} FROM sessions s ORDER BY s.updated_at DESC, s.id DESC"
-    ) as cursor:
+async def list_sessions(
+    conn: aiosqlite.Connection,
+    *,
+    tag_ids: list[int] | None = None,
+    mode: str = "any",
+) -> list[dict[str, Any]]:
+    """List sessions, newest-first. Optional tag filter:
+
+    - `tag_ids=None` (default) or empty list: no tag filter applied.
+    - `mode="any"`: return sessions carrying ANY of the listed tags.
+    - `mode="all"`: return sessions carrying ALL of the listed tags.
+
+    Mode is ignored when no tag ids are supplied. Ordering stays
+    `updated_at DESC, id DESC` regardless.
+    """
+    if not tag_ids:
+        sql = (
+            f"SELECT {_SESSION_COLS_WITH_COUNT} FROM sessions s "
+            "ORDER BY s.updated_at DESC, s.id DESC"
+        )
+        async with conn.execute(sql) as cursor:
+            return [dict(row) async for row in cursor]
+
+    placeholders = ",".join("?" for _ in tag_ids)
+    if mode == "all":
+        # HAVING COUNT(DISTINCT tag_id) == len(tag_ids) ensures every
+        # required tag is present on the session.
+        sql = (
+            f"SELECT {_SESSION_COLS_WITH_COUNT} FROM sessions s "
+            f"JOIN session_tags st ON st.session_id = s.id "
+            f"WHERE st.tag_id IN ({placeholders}) "
+            f"GROUP BY s.id HAVING COUNT(DISTINCT st.tag_id) = ? "
+            "ORDER BY s.updated_at DESC, s.id DESC"
+        )
+        params: tuple[Any, ...] = (*tag_ids, len(tag_ids))
+    else:
+        # mode == "any" — DISTINCT + IN (...).
+        sql = (
+            f"SELECT DISTINCT {_SESSION_COLS_WITH_COUNT} FROM sessions s "
+            f"JOIN session_tags st ON st.session_id = s.id "
+            f"WHERE st.tag_id IN ({placeholders}) "
+            "ORDER BY s.updated_at DESC, s.id DESC"
+        )
+        params = tuple(tag_ids)
+    async with conn.execute(sql, params) as cursor:
         return [dict(row) async for row in cursor]
 
 
