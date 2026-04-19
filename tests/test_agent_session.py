@@ -272,6 +272,70 @@ async def test_stream_message_complete_cost_none_when_sdk_omits(
 
 
 @pytest.mark.asyncio
+async def test_interrupt_is_noop_when_no_active_stream() -> None:
+    session = AgentSession("s", working_dir="/tmp", model="m")
+    # Should not raise, should not error.
+    await session.interrupt()
+    assert session._client is None
+
+
+@pytest.mark.asyncio
+async def test_stream_tracks_client_reference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """While an in-flight stream is running, `_client` points at the
+    active SDK client so `interrupt()` can reach it. After the stream
+    completes naturally, the reference drops."""
+    seen: dict[str, Any] = {"mid_stream": None}
+
+    def factory(options: Any = None) -> FakeClient:
+        return FakeClient([_assistant(TextBlock("hi")), _result()], options)
+
+    monkeypatch.setattr("twrminal.agent.session.ClaudeSDKClient", factory)
+    session = AgentSession("s", working_dir="/tmp", model="m")
+    async for ev in session.stream("go"):
+        # Capture on the first non-MessageStart event so we know we're
+        # inside the `async with` body.
+        if not isinstance(ev, MessageStart) and seen["mid_stream"] is None:
+            seen["mid_stream"] = session._client
+    # After the generator runs to completion, reference drops.
+    assert session._client is None
+    assert seen["mid_stream"] is not None
+
+
+@pytest.mark.asyncio
+async def test_interrupt_during_stream_calls_sdk_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mid-stream `session.interrupt()` forwards to the active SDK
+    client's `interrupt()` method. That's what tells the CLI subprocess
+    to abort a running tool — cancelling the iteration alone wouldn't
+    stop the tool."""
+
+    class InterruptTrackingClient(FakeClient):
+        def __init__(self, messages: list[Any], options: Any = None) -> None:
+            super().__init__(messages, options)
+            self.interrupt_calls = 0
+
+        async def interrupt(self) -> None:
+            self.interrupt_calls += 1
+
+    ref: dict[str, InterruptTrackingClient] = {}
+
+    def factory(options: Any = None) -> InterruptTrackingClient:
+        client = InterruptTrackingClient([_assistant(TextBlock("running")), _result()], options)
+        ref["client"] = client
+        return client
+
+    monkeypatch.setattr("twrminal.agent.session.ClaudeSDKClient", factory)
+    session = AgentSession("s", working_dir="/tmp", model="m")
+    async for ev in session.stream("go"):
+        if isinstance(ev, Token):
+            await session.interrupt()
+    assert ref["client"].interrupt_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_stream_emits_error_event_on_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

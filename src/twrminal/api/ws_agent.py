@@ -168,11 +168,13 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:  # noqa: C901
                     )
                     persisted = True
                     break  # turn finished naturally
-                # Check for client stop between events. Break out early
-                # and synthesise a MessageComplete so the assistant turn
+                # Check for client stop between events. Cancel any
+                # in-flight tool at the SDK level, then break out and
+                # synthesise a MessageComplete so the partial turn
                 # still persists.
                 if _drain_stop(incoming):
                     stopped = True
+                    await agent.interrupt()
                     break
 
             if stopped and not persisted:

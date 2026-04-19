@@ -53,6 +53,10 @@ class AgentSession:
         self.working_dir = working_dir
         self.model = model
         self.max_budget_usd = max_budget_usd
+        # Tracks the currently-active SDK client so `interrupt()` can
+        # reach into an in-flight stream. Set inside `stream()` under
+        # the `async with`; cleared on exit.
+        self._client: ClaudeSDKClient | None = None
 
     async def stream(self, prompt: str) -> AsyncIterator[AgentEvent]:
         options_kwargs: dict[str, Any] = {
@@ -67,21 +71,25 @@ class AgentSession:
         cost_usd: float | None = None
         try:
             async with ClaudeSDKClient(options=options) as client:
-                await client.query(prompt)
-                yield MessageStart(session_id=self.session_id, message_id=message_id)
-                async for msg in client.receive_response():
-                    if isinstance(msg, AssistantMessage):
-                        for block in msg.content:
-                            event = self._translate_block(block)
-                            if event is not None:
-                                yield event
-                    elif isinstance(msg, UserMessage) and isinstance(msg.content, list):
-                        for block in msg.content:
-                            if isinstance(block, ToolResultBlock):
-                                yield self._tool_call_end(block)
-                    elif isinstance(msg, ResultMessage):
-                        cost_usd = msg.total_cost_usd
-                        break
+                self._client = client
+                try:
+                    await client.query(prompt)
+                    yield MessageStart(session_id=self.session_id, message_id=message_id)
+                    async for msg in client.receive_response():
+                        if isinstance(msg, AssistantMessage):
+                            for block in msg.content:
+                                event = self._translate_block(block)
+                                if event is not None:
+                                    yield event
+                        elif isinstance(msg, UserMessage) and isinstance(msg.content, list):
+                            for block in msg.content:
+                                if isinstance(block, ToolResultBlock):
+                                    yield self._tool_call_end(block)
+                        elif isinstance(msg, ResultMessage):
+                            cost_usd = msg.total_cost_usd
+                            break
+                finally:
+                    self._client = None
             yield MessageComplete(
                 session_id=self.session_id,
                 message_id=message_id,
@@ -89,6 +97,22 @@ class AgentSession:
             )
         except Exception as exc:  # noqa: BLE001 — surface as a wire event
             yield ErrorEvent(session_id=self.session_id, message=str(exc))
+
+    async def interrupt(self) -> None:
+        """Cancel an in-flight stream at the SDK level. When a tool is
+        mid-execution this tells the Claude CLI to abort it rather than
+        merely stopping the token stream. A no-op when no stream is
+        active."""
+        client = self._client
+        if client is None:
+            return
+        try:
+            await client.interrupt()
+        except Exception:
+            # The SDK may refuse a second interrupt or fail if the
+            # subprocess is already winding down. Swallow — the outer
+            # WS handler breaks out of the stream loop regardless.
+            pass
 
     def _translate_block(self, block: object) -> AgentEvent | None:
         if isinstance(block, TextBlock):

@@ -140,15 +140,21 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 - [x] `conversation.highlightQuery` wire-up: sidebar result click →
   highlight + scroll in the Conversation body.
 
-## v0.1.23 — next slice
+## v0.1.23 — shipped
+
+- [x] `AgentSession.interrupt()` wired to SDK `client.interrupt()`.
+- [x] WS Stop frame calls interrupt before breaking, so tools abort.
+
+## v0.1.24 — next slice
 
 - [ ] Component tests (jsdom + @testing-library/svelte; start with
   `AuthGate.svelte`).
 - [ ] Messages-endpoint pagination (limit + cursor).
-- [ ] Interrupt during tool execution: the SDK has `client.interrupt()`;
-  wire it when a stop lands mid-`tool_use` so the tool can abort too.
-- [ ] Clear-highlight button or keyboard shortcut once the user has
-  found what they were looking for.
+- [ ] Clear-highlight affordance — Esc or a small "×" next to the
+  Conversation body when `highlightQuery` is set.
+- [ ] Verify interrupt() behavior against a real agent running a
+  Bash(sleep 10) tool — the mocked tests are a protocol smoke; only
+  a real SDK run confirms the CLI actually aborts the subprocess.
 
 ## v0.1.7+
 

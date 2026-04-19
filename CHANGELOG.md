@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.23] - 2026-04-19
+
+### Added
+
+- `AgentSession.interrupt()` — forwards to the active SDK client's
+  `client.interrupt()`. Safe no-op when no stream is active. The WS
+  handler now calls it on a `{"type":"stop"}` frame *before* breaking
+  out of the stream loop, so tools running in the CLI subprocess get
+  an actual cancel signal rather than just getting their output
+  stream orphaned.
+- `AgentSession._client` field tracks the live SDK client while a
+  stream is in flight. Cleared in a `finally` under the `async with`
+  so reference drops even if the generator is closed mid-iteration.
+
+### Why
+
+v0.1.18's stop already broke out of the server's stream loop and
+persisted the partial turn. But a Bash tool running a 30s command
+kept running in the CLI subprocess — the user's Stop clicks
+stopped what they saw on screen without freeing the compute. Now
+`agent.interrupt()` pokes the SDK, which tells the CLI to abort the
+in-flight tool.
+
 ## [0.1.22] - 2026-04-19
 
 ### Added
