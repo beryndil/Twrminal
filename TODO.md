@@ -111,14 +111,21 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 - [x] `SessionEdit` modal — title + budget editable post-creation.
 - [x] `twrminal send --format=pretty` — human-readable output mode.
 
-## v0.1.18 — next slice
+## v0.1.18 — shipped
+
+- [x] WS `{"type":"stop"}` frame — cancels in-flight stream, persists
+  partial turn, synthesises MessageComplete.
+- [x] Frontend Stop button in Conversation header.
+- [x] WS handler: single-reader / queue-dispatched refactor.
+
+## v0.1.19 — next slice
 
 - [ ] Frontend unit tests (vitest + @testing-library/svelte).
 - [ ] Messages-endpoint pagination (limit + cursor).
-- [ ] Stop / cancel in-flight stream (send a "stop" frame the server
-  honors by breaking out of `agent.stream`).
 - [ ] Persisted conversation search: `/api/history/search?q=...` across
   messages, with sidebar filter input.
+- [ ] Interrupt during tool execution: the SDK has `client.interrupt()`;
+  wire it when a stop lands mid-`tool_use` so the tool can abort too.
 
 ## v0.1.7+
 

@@ -95,16 +95,29 @@
         {/if}
       </p>
     </div>
-    <span
-      class="text-[10px] uppercase tracking-wider px-2 py-1 rounded
-        {agent.state === 'open'
-          ? 'bg-emerald-900 text-emerald-300'
-          : agent.state === 'connecting'
-            ? 'bg-amber-900 text-amber-300'
-            : 'bg-slate-800 text-slate-400'}"
-    >
-      {connectionLabel(agent.state)}
-    </span>
+    <div class="flex items-center gap-2">
+      {#if conversation.streamingActive}
+        <button
+          type="button"
+          class="text-[10px] uppercase tracking-wider px-2 py-1 rounded
+            bg-rose-900 text-rose-200 hover:bg-rose-800"
+          onclick={() => agent.stop()}
+          title="Stop the in-flight stream"
+        >
+          Stop
+        </button>
+      {/if}
+      <span
+        class="text-[10px] uppercase tracking-wider px-2 py-1 rounded
+          {agent.state === 'open'
+            ? 'bg-emerald-900 text-emerald-300'
+            : agent.state === 'connecting'
+              ? 'bg-amber-900 text-amber-300'
+              : 'bg-slate-800 text-slate-400'}"
+      >
+        {connectionLabel(agent.state)}
+      </span>
+    </div>
   </header>
 
   <div bind:this={scrollContainer} class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">

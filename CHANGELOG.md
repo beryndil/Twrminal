@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.18] - 2026-04-19
+
+### Added
+
+- `{"type":"stop"}` frame on the agent WebSocket interrupts an
+  in-flight stream. The server breaks out of `agent.stream`,
+  synthesises a `MessageComplete`, and persists whatever text/tool
+  calls streamed so far — the partial assistant message is not lost.
+- Frontend `agent.stop()` sends the stop frame; Conversation header
+  shows a red **Stop** button next to the connection badge while
+  `conversation.streamingActive` is true.
+
+### Changed
+
+- WS handler refactor: a dedicated reader task drains inbound frames
+  into an `asyncio.Queue`; the outer prompt loop pulls from it, and
+  the streaming loop peeks non-blockingly between events. Keeps a
+  single WS reader (no racing `receive_json` calls), lets any future
+  mid-stream control frame follow the same pattern.
+- Assistant-turn persistence extracted into a `_persist_assistant_turn`
+  helper so natural-end and stop paths both write through the same
+  code.
+
 ## [0.1.17] - 2026-04-19
 
 ### Added

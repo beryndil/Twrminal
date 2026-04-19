@@ -90,6 +90,28 @@ def mock_agent_thinking_stream(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
+def mock_agent_long_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Emits many tokens with `asyncio.sleep(0)` between yields so the
+    event loop can surface a queued stop frame. Without a stop, would
+    eventually emit MessageComplete; with a stop, the server breaks
+    out early and synthesises one itself."""
+
+    import asyncio
+
+    async def fake(self: AgentSession, prompt: str) -> AsyncIterator[AgentEvent]:
+        yield MessageStart(session_id=self.session_id, message_id=MOCK_MSG_ID)
+        for i in range(200):
+            yield Token(session_id=self.session_id, text=f"t{i} ")
+            # Enough slack for the reader task to actually receive any
+            # queued stop frame. asyncio.sleep(0) alone doesn't give
+            # Starlette's WS transport a chance to deliver.
+            await asyncio.sleep(0.005)
+        yield MessageComplete(session_id=self.session_id, message_id=MOCK_MSG_ID)
+
+    monkeypatch.setattr("twrminal.agent.session.AgentSession.stream", fake)
+
+
+@pytest.fixture
 def mock_agent_cost_stream(monkeypatch: pytest.MonkeyPatch) -> None:
     from uuid import uuid4
 

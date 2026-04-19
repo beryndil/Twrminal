@@ -38,6 +38,12 @@ class AgentConnection {
     return true;
   }
 
+  stop(): boolean {
+    if (!this.socket || this.state !== 'open') return false;
+    this.socket.send(JSON.stringify({ type: 'stop' }));
+    return true;
+  }
+
   close(): void {
     this.wantConnected = false;
     if (this.reconnectTimer !== null) {

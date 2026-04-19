@@ -220,6 +220,49 @@ def test_ws_registers_and_deregisters_active_connection(
     assert len(client.app.state.active_ws) == 0  # type: ignore[attr-defined]
 
 
+def test_ws_stop_frame_persists_partial_turn(
+    client: TestClient, mock_agent_long_stream: None, tmp_settings: Settings
+) -> None:
+    import time
+
+    sid = _create_session(client)
+    with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        ws.send_json({"type": "prompt", "content": "long task"})
+        # Read the message_start and a few tokens, then interrupt.
+        start = json.loads(ws.receive_text())
+        assert start["type"] == "message_start"
+        first_tokens = [json.loads(ws.receive_text()) for _ in range(3)]
+        assert all(f["type"] == "token" for f in first_tokens)
+
+        ws.send_json({"type": "stop"})
+
+        # Drain until we hit message_complete. Must come long before
+        # the 200-token natural end.
+        frames: list[dict] = []
+        while True:
+            f = json.loads(ws.receive_text())
+            frames.append(f)
+            if f["type"] == "message_complete":
+                break
+            assert len(frames) < 200, "stop should break out well before natural end"
+        assert frames[-1]["message_id"] == start["message_id"]
+
+        for _ in range(50):
+            rows = _read_messages(tmp_settings.storage.db_path, sid)
+            if len(rows) >= 2:
+                break
+            time.sleep(0.02)
+
+    # Partial assistant content persisted — includes at least the tokens
+    # the test observed, and fewer than the full 200.
+    rows = _read_messages(tmp_settings.storage.db_path, sid)
+    assert rows[0] == ("user", "long task")
+    role, assistant_content = rows[1]
+    assert role == "assistant"
+    assert assistant_content.startswith("t0 t1 t2 ")
+    assert "t199" not in assistant_content  # natural end did not arrive
+
+
 def test_ws_ignores_unknown_payload_types(client: TestClient, mock_agent_stream: None) -> None:
     sid = _create_session(client)
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
