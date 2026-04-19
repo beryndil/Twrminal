@@ -11,6 +11,7 @@ from twrminal.agent.events import (
     AgentEvent,
     MessageComplete,
     MessageStart,
+    Thinking,
     Token,
     ToolCallEnd,
     ToolCallStart,
@@ -72,6 +73,18 @@ def mock_agent_tool_stream(monkeypatch: pytest.MonkeyPatch) -> None:
             error=None,
         )
         yield MessageComplete(session_id=self.session_id, message_id=MOCK_TOOL_MSG_ID)
+
+    monkeypatch.setattr("twrminal.agent.session.AgentSession.stream", fake)
+
+
+@pytest.fixture
+def mock_agent_thinking_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake(self: AgentSession, prompt: str) -> AsyncIterator[AgentEvent]:
+        yield MessageStart(session_id=self.session_id, message_id=MOCK_MSG_ID)
+        yield Thinking(session_id=self.session_id, text="first I consider...")
+        yield Thinking(session_id=self.session_id, text=" then I decide.")
+        yield Token(session_id=self.session_id, text="answer")
+        yield MessageComplete(session_id=self.session_id, message_id=MOCK_MSG_ID)
 
     monkeypatch.setattr("twrminal.agent.session.AgentSession.stream", fake)
 

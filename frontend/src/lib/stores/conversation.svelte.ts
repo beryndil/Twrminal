@@ -77,6 +77,7 @@ class ConversationStore {
         session_id: sessionId,
         role: 'user',
         content,
+        thinking: null,
         created_at: new Date().toISOString()
       }
     ];
@@ -130,6 +131,7 @@ class ConversationStore {
               session_id: event.session_id,
               role: 'assistant',
               content: this.streamingText,
+              thinking: this.streamingThinking || null,
               created_at: new Date().toISOString()
             }
           ];

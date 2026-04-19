@@ -26,6 +26,7 @@ export type Message = {
   session_id: string;
   role: string;
   content: string;
+  thinking: string | null;
   created_at: string;
 };
 

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS messages (
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
+    thinking TEXT,
     created_at TEXT NOT NULL
 );
 

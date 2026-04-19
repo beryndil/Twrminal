@@ -112,12 +112,14 @@ async def insert_message(
     role: str,
     content: str,
     id: str | None = None,
+    thinking: str | None = None,
 ) -> dict[str, Any]:
     message_id = id or _new_id()
     now = _now()
     await conn.execute(
-        "INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
-        (message_id, session_id, role, content, now),
+        "INSERT INTO messages (id, session_id, role, content, thinking, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (message_id, session_id, role, content, thinking, now),
     )
     await conn.commit()
     return {
@@ -125,13 +127,14 @@ async def insert_message(
         "session_id": session_id,
         "role": role,
         "content": content,
+        "thinking": thinking,
         "created_at": now,
     }
 
 
 async def list_messages(conn: aiosqlite.Connection, session_id: str) -> list[dict[str, Any]]:
     async with conn.execute(
-        "SELECT id, session_id, role, content, created_at "
+        "SELECT id, session_id, role, content, thinking, created_at "
         "FROM messages WHERE session_id = ? ORDER BY created_at ASC, id ASC",
         (session_id,),
     ) as cursor:
@@ -249,7 +252,7 @@ async def list_all_messages(
 ) -> list[dict[str, Any]]:
     where, params = _date_filter("created_at", date_from, date_to)
     sql = (
-        "SELECT id, session_id, role, content, created_at "
+        "SELECT id, session_id, role, content, thinking, created_at "
         "FROM messages" + where + " ORDER BY created_at ASC, id ASC"
     )
     async with conn.execute(sql, params) as cursor:

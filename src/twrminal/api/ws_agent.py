@@ -9,6 +9,7 @@ from twrminal import metrics
 from twrminal.agent.events import (
     MessageComplete,
     MessageStart,
+    Thinking,
     Token,
     ToolCallEnd,
     ToolCallStart,
@@ -52,6 +53,7 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:
             await store.insert_message(conn, session_id=session_id, role="user", content=prompt)
             metrics.messages_persisted.labels(role="user").inc()
             buf: list[str] = []
+            thinking_buf: list[str] = []
             tool_call_ids: list[str] = []
             async for event in agent.stream(prompt):
                 await websocket.send_text(event.model_dump_json())
@@ -60,6 +62,8 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:
                     continue
                 if isinstance(event, Token):
                     buf.append(event.text)
+                elif isinstance(event, Thinking):
+                    thinking_buf.append(event.text)
                 elif isinstance(event, ToolCallStart):
                     await store.insert_tool_call_start(
                         conn,
@@ -85,6 +89,7 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:
                         id=event.message_id,
                         role="assistant",
                         content="".join(buf),
+                        thinking="".join(thinking_buf) or None,
                     )
                     metrics.messages_persisted.labels(role="assistant").inc()
                     await store.attach_tool_calls_to_message(
@@ -95,6 +100,7 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:
                     if event.cost_usd is not None:
                         await store.add_session_cost(conn, session_id, event.cost_usd)
                     buf.clear()
+                    thinking_buf.clear()
                     tool_call_ids.clear()
     except WebSocketDisconnect:
         return

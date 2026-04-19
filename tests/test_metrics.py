@@ -35,12 +35,26 @@ def test_ws_counters_update(client: TestClient, mock_agent_stream: None) -> None
     user_before = metrics.messages_persisted.labels(role="user")._value.get()
     assistant_before = metrics.messages_persisted.labels(role="assistant")._value.get()
 
+    import time
+
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
         ws.send_json({"type": "prompt", "content": "hi"})
         frames = [json.loads(ws.receive_text()) for _ in range(4)]
         # Server has clearly advanced past the inc() once we've read frames.
         active_during = metrics.ws_active_connections._value.get()
         assert active_during == active_before + 1
+
+        # MessageComplete side-effects (assistant insert + inc) happen
+        # AFTER the last send — poll inside the context so the server
+        # task isn't cancelled by TestClient before the inc runs.
+        for _ in range(50):
+            if (
+                metrics.messages_persisted.labels(role="assistant")._value.get()
+                >= assistant_before + 1
+            ):
+                break
+            time.sleep(0.02)
+
     assert [f["type"] for f in frames] == [
         "message_start",
         "token",

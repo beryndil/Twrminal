@@ -89,15 +89,20 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 - [x] `Thinking` event + `ThinkingBlock` translation in AgentSession.
 - [x] Frontend renders streaming thinking in a collapsible block.
 
-## v0.1.14 — next slice
+## v0.1.14 — shipped
 
-- [ ] Persist thinking alongside assistant messages (currently only
-  streamed; not on reload). Needs a column or JSON payload.
+- [x] `messages.thinking` column (migration 0004) + WS persistence.
+- [x] Conversation renders persisted thinking blocks on reload.
+
+## v0.1.15 — next slice
+
 - [ ] Frontend unit tests (vitest + @testing-library/svelte).
-- [ ] Messages-endpoint pagination (limit + cursor) once conversations
-  grow long.
+- [ ] Messages-endpoint pagination (limit + cursor).
 - [ ] "Settings" panel surface for token + default model/working_dir so
   users don't have to remember the `twrminal:token` localStorage key.
+- [ ] `twrminal send` streams thinking to stdout too (currently only
+  echoes the raw JSON; pretty-printing with `--format=pretty` would
+  help).
 
 ## v0.1.7+
 

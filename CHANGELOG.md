@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.14] - 2026-04-19
+
+### Added
+
+- `messages.thinking` column (migration 0004). WS handler accumulates
+  a `thinking_buf` alongside `buf` during the turn and passes the
+  joined string (or `None` if empty) to `insert_message` at
+  `MessageComplete`. Persisted thinking survives page reloads.
+- `MessageOut.thinking` + frontend `Message.thinking` types.
+- Conversation pane renders a `<details>` "thinking" block (closed by
+  default) on any persisted message that has stored reasoning.
+
+### Fixed
+
+- `test_metrics.py::test_ws_counters_update` flake: the
+  `messages_persisted` assistant counter is incremented in the
+  MessageComplete branch after the last send, which can be truncated
+  by TestClient context exit. Now polls the counter inside the WS
+  context before asserting, matching the pattern used elsewhere.
+
 ## [0.1.13] - 2026-04-19
 
 ### Added

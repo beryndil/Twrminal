@@ -118,6 +118,49 @@ def test_ws_persists_tool_calls(
     assert call["started_at"] and call["finished_at"]
 
 
+def test_ws_persists_thinking_on_assistant_message(
+    client: TestClient, mock_agent_thinking_stream: None, tmp_settings: Settings
+) -> None:
+    sid = _create_session(client)
+    with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        ws.send_json({"type": "prompt", "content": "think"})
+        frames = [json.loads(ws.receive_text()) for _ in range(5)]
+
+        import time
+
+        # insert_message runs after the last send — poll until the
+        # assistant row materialises before exiting the WS context.
+        conn = sqlite3.connect(tmp_settings.storage.db_path)
+        try:
+            for _ in range(50):
+                cur = conn.execute(
+                    "SELECT thinking FROM messages WHERE session_id=? AND role='assistant'",
+                    (sid,),
+                )
+                row = cur.fetchone()
+                if row is not None and row[0]:
+                    break
+                time.sleep(0.02)
+        finally:
+            conn.close()
+
+    types = [f["type"] for f in frames]
+    assert types == [
+        "message_start",
+        "thinking",
+        "thinking",
+        "token",
+        "message_complete",
+    ]
+
+    # History endpoint returns the persisted thinking.
+    rows = client.get(f"/api/sessions/{sid}/messages").json()
+    assistant = next(m for m in rows if m["role"] == "assistant")
+    assert assistant["thinking"] == "first I consider... then I decide."
+    user = next(m for m in rows if m["role"] == "user")
+    assert user["thinking"] is None
+
+
 def test_ws_accumulates_session_cost(client: TestClient, mock_agent_cost_stream: None) -> None:
     sid = _create_session(client)
     before = client.get(f"/api/sessions/{sid}").json()

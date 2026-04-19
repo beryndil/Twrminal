@@ -105,6 +105,15 @@
           <header class="text-[10px] uppercase tracking-wider text-slate-500 mb-1">
             {msg.role}
           </header>
+          {#if msg.thinking}
+            <details class="mb-2 rounded bg-slate-950/40 px-2 py-1">
+              <summary class="cursor-pointer text-[10px] uppercase tracking-wider text-slate-500">
+                thinking
+              </summary>
+              <pre
+                class="mt-1 whitespace-pre-wrap text-xs text-slate-400 font-sans">{msg.thinking}</pre>
+            </details>
+          {/if}
           <div class="prose prose-invert prose-sm max-w-none">
             {@html renderMarkdown(msg.content)}
           </div>
