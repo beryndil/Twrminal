@@ -129,6 +129,54 @@ def test_export_empty_session(client: TestClient) -> None:
     assert body["tool_calls"] == []
 
 
+def test_import_roundtrip_preserves_content(
+    client: TestClient, mock_agent_tool_stream: None
+) -> None:
+    import time
+
+    # Seed a session with a full turn + a tool call.
+    src = _create(client, title="source")
+    with client.websocket_connect(f"/ws/sessions/{src['id']}") as ws:
+        ws.send_json({"type": "prompt", "content": "read hosts"})
+        for _ in range(4):
+            ws.receive_text()
+        for _ in range(50):
+            body = client.get(f"/api/sessions/{src['id']}/export").json()
+            if body["tool_calls"] and body["tool_calls"][0]["message_id"]:
+                break
+            time.sleep(0.02)
+
+    export = client.get(f"/api/sessions/{src['id']}/export").json()
+
+    # Round-trip.
+    resp = client.post("/api/sessions/import", json=export)
+    assert resp.status_code == 200
+    imported = resp.json()
+    assert imported["id"] != src["id"]
+    assert imported["title"] == "source"
+    assert imported["total_cost_usd"] == 0.0  # reset on import
+    assert imported["message_count"] == 2
+
+    # Messages and tool calls carried over with remapped ids.
+    messages = client.get(f"/api/sessions/{imported['id']}/messages").json()
+    assert [m["role"] for m in messages] == ["user", "assistant"]
+    assert messages[0]["content"] == "read hosts"
+
+    tool_calls = client.get(f"/api/sessions/{imported['id']}/tool_calls").json()
+    assert len(tool_calls) == 1
+    assert tool_calls[0]["name"] == "Read"
+    # message_id was remapped to the newly-inserted assistant message.
+    assert tool_calls[0]["message_id"] == messages[1]["id"]
+
+
+def test_import_rejects_missing_session_key(client: TestClient) -> None:
+    resp = client.post(
+        "/api/sessions/import",
+        json={"messages": [], "tool_calls": []},
+    )
+    assert resp.status_code == 400
+
+
 def test_export_includes_messages_and_tool_calls(
     client: TestClient, mock_agent_tool_stream: None
 ) -> None:

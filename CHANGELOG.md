@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.35] - 2026-04-19
+
+### Added
+
+- `POST /api/sessions/import` — consumes the v0.1.30 export shape
+  (`{session, messages, tool_calls}`) and restores it as a new
+  session. Generates fresh ids for the session, every message, and
+  every tool call; preserves content / role / thinking / timestamps;
+  remaps `tool_calls.message_id` through an id-translation table.
+  Resets `total_cost_usd` to zero (restores don't count as spend).
+  Returns 400 on missing / malformed `session` key.
+- `store.import_session(conn, payload)` helper — single-transaction
+  writeback.
+- ⇡ button in sidebar header opens a file picker; FileReader parses
+  the JSON, POSTs, prepends the imported session to the list,
+  selects and connects. Inline error below the button on bad JSON
+  or server rejection.
+- `api.importSession(payload)` TS helper.
+
 ## [0.1.34] - 2026-04-19
 
 ### Added

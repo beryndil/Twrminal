@@ -91,6 +91,18 @@ async def list_tool_calls(session_id: str, request: Request) -> list[ToolCallOut
     return [ToolCallOut(**r) for r in rows]
 
 
+@router.post("/import", response_model=SessionOut)
+async def import_session(payload: dict[str, Any], request: Request) -> SessionOut:
+    """Restore a session from the v0.1.30 export shape. Generates new
+    ids so the import can land next to an existing session with the
+    same original id. Sibling of the per-session /export endpoint."""
+    if not isinstance(payload.get("session"), dict):
+        raise HTTPException(status_code=400, detail="missing or malformed `session` object")
+    row = await store.import_session(request.app.state.db, payload)
+    metrics.sessions_created.inc()
+    return SessionOut(**row)
+
+
 @router.get("/{session_id}/export")
 async def export_session(session_id: str, request: Request) -> dict[str, Any]:
     """Single-session dump — session metadata + every message and

@@ -19,6 +19,27 @@
   let newTitle = $state('');
   let newBudget = $state('');
   let submitting = $state(false);
+  let importInput: HTMLInputElement | undefined = $state();
+  let importError = $state<string | null>(null);
+
+  async function onImportFile(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    importError = null;
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      const created = await api.importSession(payload);
+      // Put it at the top of the list + auto-open.
+      sessions.list = [created, ...sessions.list.filter((s) => s.id !== created.id)];
+      sessions.select(created.id);
+      await agent.connect(created.id);
+    } catch (err) {
+      importError = err instanceof Error ? err.message : String(err);
+    }
+  }
 
   let searchQuery = $state('');
   let searchResults = $state<api.SearchHit[]>([]);
@@ -199,6 +220,22 @@
       <button
         type="button"
         class="text-xs rounded bg-slate-800 hover:bg-slate-700 px-2 py-1"
+        aria-label="Import session from JSON"
+        title="Import a session.json file"
+        onclick={() => importInput?.click()}
+      >
+        ⇡
+      </button>
+      <input
+        type="file"
+        accept="application/json,.json"
+        class="hidden"
+        bind:this={importInput}
+        onchange={onImportFile}
+      />
+      <button
+        type="button"
+        class="text-xs rounded bg-slate-800 hover:bg-slate-700 px-2 py-1"
         aria-label="Open settings"
         onclick={() => (showSettings = true)}
       >
@@ -284,6 +321,9 @@
 
   {#if sessions.error}
     <p class="text-xs text-rose-400">{sessions.error}</p>
+  {/if}
+  {#if importError}
+    <p class="text-xs text-rose-400">import: {importError}</p>
   {/if}
 
   {#if searchQuery.trim()}

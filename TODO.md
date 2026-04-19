@@ -196,12 +196,17 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 - [x] AuthGate component test (5 cases).
 - [x] Node-native `localStorage` shim in vitest setup.
 
-## v0.1.35 — next slice
+## v0.1.35 — shipped
+
+- [x] `POST /api/sessions/import` + ⇡ sidebar button.
+
+## v0.1.36 — next slice
 
 - [ ] SessionList search debounce test (fake timers).
 - [ ] Verify interrupt() behavior against a real agent running a
   Bash(sleep 10) tool.
-- [ ] "Import session" consuming the v0.1.30 export JSON.
+- [ ] "Drag a session-*.json file onto the sidebar" alternative to
+  the ⇡ button — match macOS/KDE drag-drop conventions.
 
 ## v0.1.7+
 

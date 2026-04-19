@@ -253,6 +253,17 @@ export function exportSession(
   return jsonFetch<SessionExport>(fetchImpl, `/api/sessions/${sessionId}/export`);
 }
 
+export function importSession(
+  payload: SessionExport,
+  fetchImpl: typeof fetch = fetch
+): Promise<Session> {
+  return jsonFetch<Session>(fetchImpl, '/api/sessions/import', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
 export function openAgentSocket(sessionId: string): WebSocket {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const token = readAuthToken();

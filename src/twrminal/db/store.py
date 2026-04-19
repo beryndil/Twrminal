@@ -121,6 +121,85 @@ async def delete_session(conn: aiosqlite.Connection, session_id: str) -> bool:
     return cursor.rowcount > 0
 
 
+async def import_session(conn: aiosqlite.Connection, payload: dict[str, Any]) -> dict[str, Any]:
+    """Restore a session from the v0.1.30 export shape
+    ({session, messages, tool_calls}). Generates fresh ids for the
+    session, every message, and every tool call — preserves content,
+    role, thinking, timestamps, and the message↔tool-call relationship
+    through an id-remap table. Returns the new session row.
+
+    Does not copy `total_cost_usd` forward — the new session starts at
+    zero (restores don't count as spend). `updated_at` is stamped to
+    the import time so the imported session lands at the top of the
+    sidebar sort."""
+    src_session = payload.get("session") or {}
+    src_messages = payload.get("messages") or []
+    src_tool_calls = payload.get("tool_calls") or []
+
+    new_session_id = _new_id()
+    now = _now()
+    created_at = str(src_session.get("created_at") or now)
+    await conn.execute(
+        "INSERT INTO sessions "
+        "(id, created_at, updated_at, working_dir, model, title, max_budget_usd) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            new_session_id,
+            created_at,
+            now,
+            str(src_session.get("working_dir") or "/tmp"),
+            str(src_session.get("model") or "claude-sonnet-4-6"),
+            src_session.get("title"),
+            src_session.get("max_budget_usd"),
+        ),
+    )
+
+    msg_id_map: dict[str, str] = {}
+    for m in src_messages:
+        old_id = str(m.get("id") or "")
+        new_id = _new_id()
+        if old_id:
+            msg_id_map[old_id] = new_id
+        await conn.execute(
+            "INSERT INTO messages (id, session_id, role, content, thinking, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                new_id,
+                new_session_id,
+                str(m.get("role") or "user"),
+                str(m.get("content") or ""),
+                m.get("thinking"),
+                str(m.get("created_at") or _now()),
+            ),
+        )
+
+    for tc in src_tool_calls:
+        old_msg_id = tc.get("message_id")
+        new_msg_id = msg_id_map.get(str(old_msg_id)) if old_msg_id else None
+        await conn.execute(
+            "INSERT INTO tool_calls "
+            "(id, session_id, message_id, name, input, output, error, "
+            "started_at, finished_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                _new_id(),
+                new_session_id,
+                new_msg_id,
+                str(tc.get("name") or ""),
+                str(tc.get("input") or "{}"),
+                tc.get("output"),
+                tc.get("error"),
+                str(tc.get("started_at") or _now()),
+                tc.get("finished_at"),
+            ),
+        )
+
+    await conn.commit()
+    row = await get_session(conn, new_session_id)
+    assert row is not None
+    return row
+
+
 async def add_session_cost(conn: aiosqlite.Connection, session_id: str, delta_usd: float) -> bool:
     """Accumulate SDK-reported cost onto the session row. Returns False if
     the session row is gone (e.g. deleted mid-stream)."""
