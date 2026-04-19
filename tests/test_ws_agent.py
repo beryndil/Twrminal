@@ -57,10 +57,19 @@ def test_ws_unknown_session_closes_4404(client: TestClient) -> None:
 def test_ws_streams_events_and_persists_messages(
     client: TestClient, mock_agent_stream: None, tmp_settings: Settings
 ) -> None:
+    import time
+
     sid = _create_session(client)
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
         ws.send_json({"type": "prompt", "content": "say hi"})
         frames = [json.loads(ws.receive_text()) for _ in range(4)]
+        # Poll for the assistant row inside the WS context — TestClient
+        # cancels the server task on exit, so a post-MessageComplete
+        # insert can be racing cancellation if we assert after `with`.
+        for _ in range(50):
+            if len(_read_messages(tmp_settings.storage.db_path, sid)) == 2:
+                break
+            time.sleep(0.02)
 
     assert [f["type"] for f in frames] == [
         "message_start",

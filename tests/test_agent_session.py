@@ -353,3 +353,69 @@ async def test_stream_emits_error_event_on_exception(
     err = events[0]
     assert isinstance(err, ErrorEvent)
     assert "kaboom" in err.message
+
+
+@pytest.mark.asyncio
+async def test_stream_passes_assembled_system_prompt_when_db_wired(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """With db= set, stream() calls assemble_prompt and passes the
+    result through as ClaudeAgentOptions.system_prompt. Without db=
+    (the prior behavior), system_prompt stays None."""
+    from twrminal.agent.base_prompt import BASE_PROMPT
+    from twrminal.db.store import (
+        attach_tag,
+        create_session,
+        create_tag,
+        init_db,
+        put_tag_memory,
+        update_session,
+    )
+
+    captured: dict[str, Any] = {}
+
+    class CapturingClient(FakeClient):
+        def __init__(self, messages: list[Any], options: Any = None) -> None:
+            super().__init__(messages, options)
+            captured["options"] = options
+
+    def factory(options: Any = None) -> CapturingClient:
+        return CapturingClient([_result()], options)
+
+    monkeypatch.setattr("twrminal.agent.session.ClaudeSDKClient", factory)
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        sess = await create_session(conn, working_dir="/x", model="m")
+        tag = await create_tag(conn, name="infra")
+        await attach_tag(conn, sess["id"], tag["id"])
+        await put_tag_memory(conn, tag["id"], "Prefer nftables.")
+        await update_session(conn, sess["id"], fields={"session_instructions": "Be concise."})
+        agent = AgentSession(sess["id"], working_dir="/x", model="m", db=conn)
+        _ = [ev async for ev in agent.stream("hi")]
+    finally:
+        await conn.close()
+    opts = captured["options"]
+    assert opts.system_prompt is not None
+    assert BASE_PROMPT in opts.system_prompt
+    assert "Prefer nftables." in opts.system_prompt
+    assert "Be concise." in opts.system_prompt
+
+
+@pytest.mark.asyncio
+async def test_stream_omits_system_prompt_when_db_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class CapturingClient(FakeClient):
+        def __init__(self, messages: list[Any], options: Any = None) -> None:
+            super().__init__(messages, options)
+            captured["options"] = options
+
+    def factory(options: Any = None) -> CapturingClient:
+        return CapturingClient([_result()], options)
+
+    monkeypatch.setattr("twrminal.agent.session.ClaudeSDKClient", factory)
+    session = AgentSession("s", working_dir="/tmp", model="m")
+    _ = [ev async for ev in session.stream("hi")]
+    assert captured["options"].system_prompt is None

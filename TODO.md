@@ -333,14 +333,26 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
   project + tag filters compose without SQL-path explosion.
 - [x] 23 pytest cases in `tests/test_projects.py`.
 
+## v0.2.7 — shipped
+
+- [x] `store.get_tag_memory` / `put_tag_memory` (ON CONFLICT
+  upsert) / `delete_tag_memory`. Put returns None for missing tag.
+- [x] `/api/tags/{id}/memory` CRUD (GET/PUT/DELETE) with
+  `TagMemoryOut` + `TagMemoryPut` DTOs.
+- [x] `PATCH /api/sessions/{id}` accepts `session_instructions`;
+  `SessionOut` exposes it; `_SESSION_BASE_COLS` carries it.
+- [x] `AgentSession(db=conn)` wires through `assemble_prompt`
+  per turn as `ClaudeAgentOptions.system_prompt`. `ws_agent.py`
+  passes the DB connection at construction.
+- [x] 14 new pytest cases in `tests/test_tag_memories.py` (store +
+  API + session_instructions round-trip) plus 2 agent-session
+  cases pinning the system_prompt wire-through.
+
 ## v0.2.x — remaining slice plan
 
 Plan file: `~/.claude/plans/vectorized-leaping-pretzel.md`. Slice
 numbering shifted from the original 12-slice plan because spec
 step 1 ended up needing four slices, not three.
-- [ ] **v0.2.7** — Tag memories backend + `session_instructions`
-  via `PATCH /api/sessions/{id}`. Wire `AgentSession` through
-  `assemble_prompt`.
 - [ ] **v0.2.8** — Inspector Context tab (read-only) +
   `GET /api/sessions/{id}/system_prompt`.
 - [ ] **v0.2.9** — Projects sidebar + management view.

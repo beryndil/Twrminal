@@ -108,6 +108,7 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:  # noqa: C901
         row["working_dir"],
         row["model"],
         max_budget_usd=row.get("max_budget_usd"),
+        db=conn,
     )
     incoming: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     reader = asyncio.create_task(_ws_reader(websocket, incoming))

@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 from uuid import uuid4
 
+import aiosqlite
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
@@ -27,6 +28,7 @@ from twrminal.agent.events import (
     ToolCallEnd,
     ToolCallStart,
 )
+from twrminal.agent.prompt import assemble_prompt
 
 
 def _stringify(content: str | list[dict[str, object]] | None) -> str | None:
@@ -48,11 +50,18 @@ class AgentSession:
         working_dir: str,
         model: str,
         max_budget_usd: float | None = None,
+        db: aiosqlite.Connection | None = None,
     ) -> None:
         self.session_id = session_id
         self.working_dir = working_dir
         self.model = model
         self.max_budget_usd = max_budget_usd
+        # Optional DB connection for the v0.2 prompt assembler. When
+        # set, `stream()` calls `assemble_prompt` and passes the
+        # concatenated layered prompt as `system_prompt`. Unit tests
+        # that don't exercise persistence can leave it None; the WS
+        # handler wires it in production.
+        self.db = db
         # Tracks the currently-active SDK client so `interrupt()` can
         # reach into an in-flight stream. Set inside `stream()` under
         # the `async with`; cleared on exit.
@@ -66,6 +75,14 @@ class AgentSession:
         }
         if self.max_budget_usd is not None:
             options_kwargs["max_budget_usd"] = self.max_budget_usd
+        if self.db is not None:
+            # Assemble the layered system prompt (base → project → tag
+            # memories → session instructions) from the current DB
+            # state. Called per turn so edits to project prompt / tag
+            # memories / session instructions take effect on the next
+            # prompt without restarting the WS.
+            assembled = await assemble_prompt(self.db, self.session_id)
+            options_kwargs["system_prompt"] = assembled.text
         options = ClaudeAgentOptions(**options_kwargs)
         message_id = uuid4().hex
         cost_usd: float | None = None

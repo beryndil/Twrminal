@@ -20,6 +20,7 @@ class SessionUpdate(BaseModel):
     description: str | None = None
     max_budget_usd: float | None = None
     project_id: int | None = None
+    session_instructions: str | None = None
     # Distinguishes "not provided" from "set to null" for the nullable
     # columns. Pydantic writes `model_fields_set` so routes can dispatch
     # off what was actually passed.
@@ -37,6 +38,7 @@ class SessionOut(BaseModel):
     total_cost_usd: float = 0.0
     message_count: int = 0
     project_id: int | None = None
+    session_instructions: str | None = None
 
 
 class MessageOut(BaseModel):
@@ -132,3 +134,13 @@ class ProjectOut(BaseModel):
     created_at: str
     updated_at: str
     session_count: int = 0
+
+
+class TagMemoryPut(BaseModel):
+    content: str
+
+
+class TagMemoryOut(BaseModel):
+    tag_id: int
+    content: str
+    updated_at: str

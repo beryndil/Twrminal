@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-04-19
+
+Tag memories backend + `session_instructions` PATCH + wires the
+v0.2.5 prompt assembler into the live agent. Eighth v0.2 slice,
+spec step 5. Backend is now feature-complete for v0.2; remaining
+slices (0.2.8+) are UI.
+
+### Added
+
+- `store.get_tag_memory` / `put_tag_memory` (upsert via `ON
+  CONFLICT`) / `delete_tag_memory`. `put` returns None if the tag
+  doesn't exist so the route can render 404 without an FK
+  violation.
+- `/api/tags/{id}/memory` CRUD: `GET` 200 | 404, `PUT` 200 | 404
+  (body: `{content}`), `DELETE` 204 | 404. `TagMemoryOut` and
+  `TagMemoryPut` DTOs.
+- `PATCH /api/sessions/{id}` accepts `session_instructions` — new
+  value, or explicit null to clear. `SessionOut.session_instructions`
+  exposed on every session response.
+- `SessionUpdate.session_instructions` field (Pydantic
+  distinguishes unset from explicit null via `model_fields_set`,
+  same as the existing nullable columns).
+- `store.update_session` `allowed` set grew by
+  `session_instructions`.
+- `_SESSION_BASE_COLS` includes `session_instructions` so every
+  session read (get, list, export) carries it.
+- `AgentSession` accepts an optional `db` connection. When set,
+  `stream()` calls `assemble_prompt(db, session_id)` per turn and
+  passes `system_prompt=<layered text>` to `ClaudeAgentOptions`.
+  Edits to project prompts, tag memories, or session instructions
+  take effect on the next prompt without restarting the WS. Tests
+  that don't exercise persistence leave `db=None` and behave as
+  before (no `system_prompt`).
+- `ws_agent.py` passes the lifespan-owned DB connection into
+  `AgentSession` at construction.
+- 13 new store + API tests in `tests/test_tag_memories.py` plus 1
+  session-instructions PATCH round-trip.
+- 2 new agent-session tests verifying system_prompt is assembled
+  from project / tag memory / session instructions when db is
+  wired, and stays None when it isn't.
+
+### Changed
+
+- `store.delete_project` is unchanged — cascade to SET NULL on
+  `sessions.project_id` was already exercised by v0.2.4's
+  migration test. `delete_tag` already cascaded to `tag_memories`
+  via FK from migration 0007; new test pins the behavior.
+
 ## [0.2.6] - 2026-04-19
 
 Projects backend — store CRUD + REST + session filter. Seventh v0.2

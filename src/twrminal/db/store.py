@@ -47,7 +47,7 @@ def _new_id() -> str:
 
 _SESSION_BASE_COLS = (
     "id, created_at, updated_at, working_dir, model, title, description, "
-    "max_budget_usd, total_cost_usd, project_id"
+    "max_budget_usd, total_cost_usd, project_id, session_instructions"
 )
 _SESSION_COUNT = "(SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count"
 _SESSION_COLS_WITH_COUNT = f"s.{_SESSION_BASE_COLS.replace(', ', ', s.')}, {_SESSION_COUNT}"
@@ -161,10 +161,16 @@ async def update_session(
     fields: dict[str, Any],
 ) -> dict[str, Any] | None:
     """Apply a partial update. `fields` maps column name → new value;
-    only `title`, `description`, `max_budget_usd`, and `project_id` are
-    accepted. Bumps updated_at. Returns the refreshed row, or None if
-    the session doesn't exist."""
-    allowed = {"title", "description", "max_budget_usd", "project_id"}
+    only `title`, `description`, `max_budget_usd`, `project_id`, and
+    `session_instructions` are accepted. Bumps updated_at. Returns
+    the refreshed row, or None if the session doesn't exist."""
+    allowed = {
+        "title",
+        "description",
+        "max_budget_usd",
+        "project_id",
+        "session_instructions",
+    }
     filtered = {k: v for k, v in fields.items() if k in allowed}
     if not filtered:
         return await get_session(conn, session_id)
@@ -737,5 +743,45 @@ async def update_project(
 
 async def delete_project(conn: aiosqlite.Connection, project_id: int) -> bool:
     cursor = await conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+    await conn.commit()
+    return cursor.rowcount > 0
+
+
+# --- Tag memories (v0.2.7) -------------------------------------------
+
+
+async def get_tag_memory(conn: aiosqlite.Connection, tag_id: int) -> dict[str, Any] | None:
+    """Return `{tag_id, content, updated_at}` for the given tag, or
+    None if the tag has no memory (or doesn't exist — callers route
+    that to 404)."""
+    async with conn.execute(
+        "SELECT tag_id, content, updated_at FROM tag_memories WHERE tag_id = ?",
+        (tag_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    return dict(row) if row is not None else None
+
+
+async def put_tag_memory(
+    conn: aiosqlite.Connection, tag_id: int, content: str
+) -> dict[str, Any] | None:
+    """Upsert the tag's memory. Returns None if the tag doesn't exist
+    (so the FK would fail); otherwise returns the stored row."""
+    tag_row = await conn.execute("SELECT 1 FROM tags WHERE id = ?", (tag_id,))
+    if await tag_row.fetchone() is None:
+        return None
+    await conn.execute(
+        "INSERT INTO tag_memories (tag_id, content, updated_at) "
+        "VALUES (?, ?, ?) "
+        "ON CONFLICT(tag_id) DO UPDATE SET content = excluded.content, "
+        "updated_at = excluded.updated_at",
+        (tag_id, content, _now()),
+    )
+    await conn.commit()
+    return await get_tag_memory(conn, tag_id)
+
+
+async def delete_tag_memory(conn: aiosqlite.Connection, tag_id: int) -> bool:
+    cursor = await conn.execute("DELETE FROM tag_memories WHERE tag_id = ?", (tag_id,))
     await conn.commit()
     return cursor.rowcount > 0

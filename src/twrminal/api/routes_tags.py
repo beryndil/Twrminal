@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from twrminal.api.auth import require_auth
-from twrminal.api.models import TagCreate, TagOut, TagUpdate
+from twrminal.api.models import TagCreate, TagMemoryOut, TagMemoryPut, TagOut, TagUpdate
 from twrminal.db import store
 
 router = APIRouter(
@@ -65,4 +65,31 @@ async def delete_tag(tag_id: int, request: Request) -> Response:
     ok = await store.delete_tag(request.app.state.db, tag_id)
     if not ok:
         raise HTTPException(status_code=404, detail="tag not found")
+    return Response(status_code=204)
+
+
+@router.get("/{tag_id}/memory", response_model=TagMemoryOut)
+async def get_tag_memory(tag_id: int, request: Request) -> TagMemoryOut:
+    row = await store.get_tag_memory(request.app.state.db, tag_id)
+    if row is None:
+        # Could be missing tag OR missing memory — both render as 404 to
+        # the client. The tag-memory editor UI loads lazily on open, so
+        # a missing memory is expected on first edit, not an error.
+        raise HTTPException(status_code=404, detail="tag memory not found")
+    return TagMemoryOut(**row)
+
+
+@router.put("/{tag_id}/memory", response_model=TagMemoryOut)
+async def put_tag_memory(tag_id: int, body: TagMemoryPut, request: Request) -> TagMemoryOut:
+    row = await store.put_tag_memory(request.app.state.db, tag_id, body.content)
+    if row is None:
+        raise HTTPException(status_code=404, detail="tag not found")
+    return TagMemoryOut(**row)
+
+
+@router.delete("/{tag_id}/memory", status_code=204)
+async def delete_tag_memory(tag_id: int, request: Request) -> Response:
+    ok = await store.delete_tag_memory(request.app.state.db, tag_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="tag memory not found")
     return Response(status_code=204)
