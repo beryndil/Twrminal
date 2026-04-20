@@ -3,7 +3,7 @@
 
   let {
     value = $bindable(''),
-    placeholder = '/home/...'
+    placeholder = 'click to choose…'
   }: { value?: string; placeholder?: string } = $props();
 
   let open = $state(false);
@@ -31,15 +31,14 @@
     }
   }
 
-  async function onBrowse() {
-    if (open) {
-      open = false;
-      return;
-    }
+  async function openDialog() {
     open = true;
-    // Seed from the current text-field value, or $HOME (server-side)
-    // when the field is empty.
+    // Seed from the current value, or $HOME (server-side) when empty.
     await fetchList(value.trim() || null);
+  }
+
+  function closeDialog() {
+    open = false;
   }
 
   async function descend(entry: FsEntry) {
@@ -60,9 +59,10 @@
     open = false;
   }
 
-  // Breadcrumb: split the current path into cumulative ancestors so
-  // each is a jumpable link. `/home/beryndil/Projects` →
-  //   [ ('/', '/'), ('home', '/home'), ('beryndil', '/home/beryndil'), … ]
+  function onKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') closeDialog();
+  }
+
   const crumbs = $derived.by(() => {
     if (!currentPath) return [] as Array<{ label: string; path: string }>;
     const segments = currentPath.split('/').filter((s) => s.length > 0);
@@ -76,27 +76,44 @@
   });
 </script>
 
-<div class="flex flex-col gap-1">
-  <div class="flex gap-1">
-    <input
-      type="text"
-      class="flex-1 rounded bg-slate-950 border border-slate-800 px-2 py-2 text-sm font-mono
-        focus:outline-none focus:border-slate-600"
-      {placeholder}
-      bind:value
-      aria-label="Folder path"
-    />
-    <button
-      type="button"
-      class="rounded bg-slate-800 hover:bg-slate-700 px-2 py-2 text-xs text-slate-200"
-      onclick={onBrowse}
-      aria-expanded={open}
+<button
+  type="button"
+  class="w-full text-left rounded bg-slate-950 border border-slate-800 hover:border-slate-600
+    px-2 py-2 text-sm font-mono truncate"
+  class:text-slate-200={value}
+  class:text-slate-500={!value}
+  onclick={openDialog}
+  aria-label="Folder path"
+  title={value || placeholder}
+>
+  {value || placeholder}
+</button>
+
+{#if open}
+  <div
+    class="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/80 p-4"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Choose folder"
+    onkeydown={onKeydown}
+    tabindex="-1"
+  >
+    <div
+      class="w-full max-w-lg rounded-lg border border-slate-800 bg-slate-900 p-4 shadow-2xl
+        flex flex-col gap-3"
     >
-      {open ? 'Close' : 'Browse'}
-    </button>
-  </div>
-  {#if open}
-    <div class="rounded border border-slate-800 bg-slate-950 p-2 flex flex-col gap-2">
+      <header class="flex items-start justify-between">
+        <h2 class="text-sm font-medium text-slate-200">Choose folder</h2>
+        <button
+          type="button"
+          class="text-slate-500 hover:text-slate-300 text-sm"
+          aria-label="Close folder picker"
+          onclick={closeDialog}
+        >
+          ✕
+        </button>
+      </header>
+
       <nav
         class="flex flex-wrap items-center gap-0.5 text-xs text-slate-400"
         aria-label="Path breadcrumb"
@@ -112,6 +129,7 @@
           </button>
         {/each}
       </nav>
+
       <div class="flex items-center justify-between gap-2 text-xs">
         <button
           type="button"
@@ -131,14 +149,8 @@
           />
           <span>hidden</span>
         </label>
-        <button
-          type="button"
-          class="rounded bg-emerald-600 hover:bg-emerald-500 px-2 py-1 text-white"
-          onclick={useThis}
-        >
-          Use this folder
-        </button>
       </div>
+
       {#if loading}
         <p class="text-xs text-slate-500">loading…</p>
       {:else if error}
@@ -147,7 +159,7 @@
         <p class="text-xs text-slate-600">(no subdirectories)</p>
       {:else}
         <ul
-          class="grid grid-cols-2 gap-1 max-h-48 overflow-y-auto"
+          class="grid grid-cols-2 gap-1 max-h-64 overflow-y-auto"
           aria-label="Subdirectories"
         >
           {#each entries as entry (entry.path)}
@@ -164,6 +176,23 @@
           {/each}
         </ul>
       {/if}
+
+      <footer class="flex items-center justify-end gap-2 pt-1">
+        <button
+          type="button"
+          class="rounded bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs text-slate-200"
+          onclick={closeDialog}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="rounded bg-emerald-600 hover:bg-emerald-500 px-3 py-1 text-xs text-white"
+          onclick={useThis}
+        >
+          Use this folder
+        </button>
+      </footer>
     </div>
-  {/if}
-</div>
+  </div>
+{/if}

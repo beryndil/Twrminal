@@ -518,6 +518,28 @@ cover shape, not feel.
   missing/file targets. 8 new backend tests + 9 new frontend
   tests (186 backend / 48 frontend total).
 
+## v0.3.4 — shipped
+
+- [x] **FolderPicker → display + modal dialog**.
+  `FolderPicker.svelte` rewritten: the text input + "Browse" button
+  became a single clickable path (placeholder `click to choose…`
+  when empty). Clicking opens a modal overlay matching
+  `Settings.svelte`'s style — same breadcrumb / parent / hidden
+  toggle / subdirectory grid, plus a Cancel button so closing
+  without applying no longer requires toggling Browse twice. ESC
+  also closes. `Use this folder` writes the current path back to
+  the trigger and closes. Applies to TagEdit and NewSessionForm
+  alike (no caller changes — the component's prop API
+  (`bind:value`) is unchanged). 1 new test case (Cancel preserves
+  value), 4 existing cases rewritten for the button-trigger surface.
+- [x] **Default model → `claude-opus-4-7` everywhere the frontend
+  falls through.** `NewSessionForm.svelte` initial state and the
+  final fallback (when both attached-tag defaults and
+  `prefs.defaultModel` are empty) now land on opus-4-7, matching
+  the backend `config.py` default and the README. Settings modal
+  placeholder + `_sessions.py`'s imported-session fallback updated
+  for consistency.
+
 ## Decisions pending
 
 - [x] GitHub org for remote push: `Beryndil/Twrminal`.

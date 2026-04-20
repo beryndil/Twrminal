@@ -11,7 +11,7 @@
   let { open = $bindable(false) }: { open?: boolean } = $props();
 
   let workingDir = $state('');
-  let model = $state('claude-sonnet-4-6');
+  let model = $state('claude-opus-4-7');
   let title = $state('');
   let budget = $state('');
   let submitting = $state(false);
@@ -118,7 +118,7 @@
     const ids = [...tagIds];
     const created = await sessions.create({
       working_dir: workingDir.trim() || prefs.defaultWorkingDir || '/tmp',
-      model: model.trim() || prefs.defaultModel || 'claude-sonnet-4-6',
+      model: model.trim() || prefs.defaultModel || 'claude-opus-4-7',
       title: title.trim() || null,
       max_budget_usd: parseBudget(budget),
       tag_ids: ids

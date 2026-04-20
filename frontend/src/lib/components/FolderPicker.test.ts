@@ -31,7 +31,6 @@ function mockFetch(map: Record<string, unknown>) {
       if (url.includes(needle))
         return new Response(JSON.stringify(body), { status: 200 });
     }
-    // Default: treat as "list $HOME" when no path param is given.
     if (!url.includes('path=')) {
       return new Response(JSON.stringify(HOME_LIST), { status: 200 });
     }
@@ -41,26 +40,34 @@ function mockFetch(map: Record<string, unknown>) {
 
 describe('FolderPicker', () => {
   beforeEach(() => {
-    // jsdom lacks a default global fetch — install a stub each test.
-    // `listDir` uses the global `fetch` via its default fetchImpl.
+    // jsdom lacks a default global fetch — tests install a stub per case.
   });
 
-  it('renders a text field bound to value', () => {
+  it('renders the value as a clickable trigger', () => {
     const { getByLabelText } = render(FolderPicker, { value: '/home/dave' });
-    const input = getByLabelText('Folder path') as HTMLInputElement;
-    expect(input.value).toBe('/home/dave');
+    const trigger = getByLabelText('Folder path') as HTMLButtonElement;
+    expect(trigger.tagName).toBe('BUTTON');
+    expect(trigger.textContent?.trim()).toBe('/home/dave');
   });
 
-  it('Browse button opens the picker and fetches the current value', async () => {
+  it('shows the placeholder when value is empty', () => {
+    const { getByLabelText } = render(FolderPicker, {
+      value: '',
+      placeholder: 'click to choose…'
+    });
+    const trigger = getByLabelText('Folder path') as HTMLButtonElement;
+    expect(trigger.textContent?.trim()).toBe('click to choose…');
+  });
+
+  it('clicking the trigger opens the dialog and fetches the current value', async () => {
     const fetchSpy = mockFetch({
       'path=%2Fhome%2Fdave': HOME_LIST
     });
     vi.stubGlobal('fetch', fetchSpy);
-    const { getByText, findByText } = render(FolderPicker, {
+    const { getByLabelText, findByText } = render(FolderPicker, {
       value: '/home/dave'
     });
-    await fireEvent.click(getByText('Browse'));
-    // Waits for the fetch to resolve and the first entry to render.
+    await fireEvent.click(getByLabelText('Folder path'));
     await findByText('Projects');
     expect(fetchSpy).toHaveBeenCalled();
   });
@@ -71,18 +78,17 @@ describe('FolderPicker', () => {
       'path=%2Fhome%2Fdave': HOME_LIST
     });
     vi.stubGlobal('fetch', fetchSpy);
-    const { getByText, findByText } = render(FolderPicker, {
+    const { getByText, getByLabelText, findByText } = render(FolderPicker, {
       value: '/home/dave'
     });
-    await fireEvent.click(getByText('Browse'));
+    await fireEvent.click(getByLabelText('Folder path'));
     await findByText('Projects');
     await fireEvent.click(getByText('Projects'));
     await findByText('Twrminal');
-    // Breadcrumb now includes the descended segment.
     expect(getByText('Projects')).toBeDefined();
   });
 
-  it('"Use this folder" writes currentPath back to value and closes', async () => {
+  it('"Use this folder" writes currentPath back to the trigger and closes', async () => {
     const fetchSpy = mockFetch({
       'path=%2Fhome%2Fdave%2FProjects': PROJECTS_LIST
     });
@@ -91,25 +97,42 @@ describe('FolderPicker', () => {
       FolderPicker,
       { value: '/home/dave/Projects' }
     );
-    await fireEvent.click(getByText('Browse'));
+    await fireEvent.click(getByLabelText('Folder path'));
     await findByText('Twrminal');
     await fireEvent.click(getByText('Use this folder'));
     await waitFor(() => expect(queryByText('Use this folder')).toBeNull());
-    const input = getByLabelText('Folder path') as HTMLInputElement;
-    expect(input.value).toBe('/home/dave/Projects');
+    const trigger = getByLabelText('Folder path') as HTMLButtonElement;
+    expect(trigger.textContent?.trim()).toBe('/home/dave/Projects');
   });
 
-  it('surfaces fetch errors inline without clobbering the input', async () => {
+  it('Cancel closes the dialog without changing the value', async () => {
+    const fetchSpy = mockFetch({
+      'path=%2Fhome%2Fdave%2FProjects': PROJECTS_LIST
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const { getByText, getByLabelText, findByText, queryByText } = render(
+      FolderPicker,
+      { value: '/home/dave/Projects' }
+    );
+    await fireEvent.click(getByLabelText('Folder path'));
+    await findByText('Twrminal');
+    await fireEvent.click(getByText('Cancel'));
+    await waitFor(() => expect(queryByText('Use this folder')).toBeNull());
+    const trigger = getByLabelText('Folder path') as HTMLButtonElement;
+    expect(trigger.textContent?.trim()).toBe('/home/dave/Projects');
+  });
+
+  it('surfaces fetch errors inline without changing the trigger text', async () => {
     const fetchSpy = vi.fn(
       async () => new Response('not found', { status: 404 })
     );
     vi.stubGlobal('fetch', fetchSpy);
-    const { getByText, findByText, getByLabelText } = render(FolderPicker, {
+    const { getByLabelText, findByText } = render(FolderPicker, {
       value: '/nope'
     });
-    await fireEvent.click(getByText('Browse'));
+    await fireEvent.click(getByLabelText('Folder path'));
     await findByText(/not found|404/);
-    const input = getByLabelText('Folder path') as HTMLInputElement;
-    expect(input.value).toBe('/nope');
+    const trigger = getByLabelText('Folder path') as HTMLButtonElement;
+    expect(trigger.textContent?.trim()).toBe('/nope');
   });
 });

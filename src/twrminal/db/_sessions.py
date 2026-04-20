@@ -163,7 +163,7 @@ async def import_session(conn: aiosqlite.Connection, payload: dict[str, Any]) ->
             created_at,
             now,
             str(src_session.get("working_dir") or "/tmp"),
-            str(src_session.get("model") or "claude-sonnet-4-6"),
+            str(src_session.get("model") or "claude-opus-4-7"),
             src_session.get("title"),
             src_session.get("description"),
             src_session.get("max_budget_usd"),

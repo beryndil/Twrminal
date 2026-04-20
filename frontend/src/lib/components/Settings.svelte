@@ -80,7 +80,7 @@
           type="text"
           class="rounded bg-slate-950 border border-slate-800 px-2 py-2 text-sm font-mono
             focus:outline-none focus:border-slate-600"
-          placeholder="claude-sonnet-4-6"
+          placeholder="claude-opus-4-7"
           bind:value={model}
         />
       </label>
