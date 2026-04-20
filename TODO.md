@@ -441,53 +441,37 @@ v0.1.1 slice plan: `~/.claude/plans/hazy-hatching-honey.md`.
 All 14 planned slices (0.2.0 → 0.2.13) shipped on 2026-04-19. v0.2
 is feature-complete.
 
-## Open follow-ups (post-v0.2 refactor + verification)
-
-These are not blocking v0.3; they're the residue of shipping
-v0.2 fast.
+## Open follow-ups
 
 ### File-size audit (CLAUDE.md: max 400 lines)
 
-- [ ] `src/twrminal/db/store.py` is **680 lines**. Natural split:
-  `store/sessions.py`, `store/messages.py`, `store/tags.py` (tags
-  + memories), `store/history.py` (aggregate queries + search),
-  `store/__init__.py` re-exporting for back-compat. Reasonable
-  scope for one refactor slice; mypy + pytest should cover
-  regressions.
-- [ ] `frontend/src/lib/components/SessionList.svelte` is **788
-  lines**. Extraction candidates:
-  - search pane (input + results + debounce) → `SidebarSearch.svelte`
-  - import UX (drag-drop + file picker + progress + errors) →
-    `SessionImport.svelte`
-  - tag filter section → `TagFilterPanel.svelte`
-  - new-session form → `NewSessionForm.svelte`
-- [ ] `frontend/src/lib/api.ts` is **447 lines**. Fine to leave as
-  one file for now — it's all type declarations + thin fetch
-  helpers. Split only if a second domain comes along.
+- [x] `src/twrminal/db/store.py` split into
+  `_common.py` / `_sessions.py` / `_messages.py` / `_tags.py`.
+  `store.py` is now a 81-line re-export facade; largest new file
+  is `_sessions.py` at 242 lines. All 168 backend tests pass
+  unchanged.
+- [x] `frontend/src/lib/components/SessionList.svelte` split into
+  `NewSessionForm.svelte` (251), `SidebarSearch.svelte` (122),
+  `TagFilterPanel.svelte` (94). `SessionList.svelte` is now 336
+  lines.
+- [ ] `frontend/src/lib/api.ts` is 447 lines — over the cap but
+  it's all type declarations + thin fetch helpers. Splitting it
+  before there's a second domain to peel off would be premature.
+  Revisit if/when agent/session API expands significantly.
 
-### Browser verification pending (CLAUDE.md: UI changes need dev-server testing)
+### Browser verification pending
 
-- [ ] Dave to walk through the v0.2 UI surfaces and confirm
-  behavior:
-  - Inspector → Context pane: layers render, per-layer content
-    collapsibles work, `~N tok` counts look sensible.
-  - Session instructions inline editor (under Context layer
-    list): Save / Reset / clear-to-null round trip.
-  - TagEdit modal (sidebar ✎): name / pinned / sort_order /
-    defaults persist; markdown preview toggle; save-clears-to-
-    DELETE-memory path.
-  - New-session form: tag chip attach (existing + create-and-
-    attach via Enter), submit gated on ≥1 tag, defaults pre-fill
-    from attached tags.
-  - Conversation header: tag chips render, pinned order, hover
-    title shows defaults.
+Checklist lives in `TESTING_NOTES.md` §"Pending Dave's browser
+walkthrough". Every v0.2 UI surface needs exercising; unit tests
+cover shape, not feel.
 
 ### Other
 
-- [ ] TESTING_NOTES.md last update was v0.1.37. Expand or archive
-  once a v0.2 walkthrough happens.
-- [ ] Partial-message semantics: confirm `include_partial_messages=True`
-  emits token deltas as expected on first live agent run.
+- [ ] Partial-message semantics: confirm
+  `include_partial_messages=True` emits token deltas as expected
+  on first live agent run.
+- [ ] Resizable / collapsible panes (raised during v0.2.13 review,
+  out of scope). Candidate for v0.3.0.
 
 ## Decisions pending
 
