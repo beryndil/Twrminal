@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import shutil
+import subprocess
 import sys
 from collections.abc import Sequence
 from typing import IO, Any
@@ -12,6 +14,20 @@ from websockets.asyncio.client import connect as ws_connect
 from twrminal import __version__
 from twrminal.config import load_settings
 
+# Ordered by popularity on Linux so the first hit on PATH is likely
+# the one the user actually uses. All of these accept --app=URL to
+# launch a chromeless standalone window.
+CHROMIUM_FLAVORED_BROWSERS: tuple[str, ...] = (
+    "google-chrome-stable",
+    "google-chrome",
+    "chromium",
+    "chromium-browser",
+    "brave-browser",
+    "brave",
+    "microsoft-edge-stable",
+    "microsoft-edge",
+)
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="twrminal")
@@ -20,6 +36,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("serve", help="Run the FastAPI server")
     sub.add_parser("init", help="Initialize config + database on disk")
+
+    window = sub.add_parser(
+        "window",
+        help="Open the UI in a standalone Chromium-flavored app window",
+    )
+    window.add_argument("--host", default=None, help="Server host (default: from config)")
+    window.add_argument("--port", type=int, default=None, help="Server port (default: from config)")
+    window.add_argument(
+        "--browser",
+        default=None,
+        help="Path to a Chromium-flavored browser binary. Defaults to autodetect.",
+    )
 
     send = sub.add_parser("send", help="Send a one-shot prompt to an agent session")
     send.add_argument("--session", required=True, help="Session id")
@@ -95,6 +123,29 @@ async def _run_send(url: str, prompt: str, out: IO[str], *, pretty: bool = False
     return 0
 
 
+def find_chromium_browser(
+    candidates: Sequence[str] = CHROMIUM_FLAVORED_BROWSERS,
+) -> str | None:
+    """Return the path to the first candidate found on PATH, or None."""
+    for name in candidates:
+        path = shutil.which(name)
+        if path:
+            return path
+    return None
+
+
+def launch_app_window(browser: str, url: str) -> subprocess.Popen[bytes]:
+    """Spawn a chromeless standalone window pointed at `url`. Detaches
+    so `twrminal window` returns immediately — the window lives as long
+    as the user keeps it open, decoupled from this CLI invocation."""
+    return subprocess.Popen(
+        [browser, f"--app={url}"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -116,6 +167,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         cfg.ensure_paths()
         print(f"config ready at {cfg.config_file}")
         print(f"database path {cfg.storage.db_path}")
+        return 0
+
+    if args.command == "window":
+        cfg = load_settings()
+        host = args.host or cfg.server.host
+        port = args.port or cfg.server.port
+        url = f"http://{host}:{port}/"
+        browser = args.browser or find_chromium_browser()
+        if browser is None:
+            print(
+                "twrminal window: no Chromium-flavored browser found on PATH.\n"
+                "  Install one of: "
+                + ", ".join(CHROMIUM_FLAVORED_BROWSERS)
+                + "\n  …or pass --browser /path/to/binary.\n"
+                f"  You can also open {url} in your default browser.",
+                file=sys.stderr,
+            )
+            return 1
+        launch_app_window(browser, url)
+        print(f"twrminal window: opened {url} via {browser}", file=sys.stderr)
         return 0
 
     if args.command == "send":

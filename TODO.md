@@ -491,6 +491,19 @@ cover shape, not feel.
   +page.svelte is 244 lines (under the 400-line cap). Browser
   walkthrough entry added to `TESTING_NOTES.md`.
 
+## v0.3.2 — shipped
+
+- [x] Headless-window support, two paths. **PWA**: new
+  `frontend/static/` dir with `manifest.webmanifest`,
+  `icon.svg` + `icon-192.png` + `icon-512.png` (rsvg-convert from
+  the SVG), `favicon.png`. `app.html` links the manifest, icons,
+  and `theme-color`. Chromium install button creates a standalone
+  dock-docked window. **CLI**: new `twrminal window` subcommand
+  autodetects Chromium-flavored browsers on PATH
+  (google-chrome-stable, chromium, brave, edge) and spawns
+  `BROWSER --app=URL` detached. `--browser PATH` override. 6 new
+  tests in `test_cli_window.py` (178 backend tests total).
+
 ## Decisions pending
 
 - [x] GitHub org for remote push: `Beryndil/Twrminal`.
