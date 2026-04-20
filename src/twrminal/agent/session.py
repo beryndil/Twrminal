@@ -11,6 +11,7 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ResultMessage,
+    StreamEvent,
     TextBlock,
     ThinkingBlock,
     ToolResultBlock,
@@ -91,12 +92,27 @@ class AgentSession:
                 try:
                     await client.query(prompt)
                     yield MessageStart(session_id=self.session_id, message_id=message_id)
+                    # True once we've seen at least one StreamEvent delta
+                    # for the current assistant message. If so, the
+                    # matching TextBlock/ThinkingBlock in the eventual
+                    # AssistantMessage is a duplicate and we skip it.
+                    streamed_this_msg = False
                     async for msg in client.receive_response():
-                        if isinstance(msg, AssistantMessage):
+                        if isinstance(msg, StreamEvent):
+                            event = self._translate_stream_event(msg.event)
+                            if event is not None:
+                                streamed_this_msg = True
+                                yield event
+                        elif isinstance(msg, AssistantMessage):
                             for block in msg.content:
+                                if streamed_this_msg and isinstance(
+                                    block, TextBlock | ThinkingBlock
+                                ):
+                                    continue
                                 event = self._translate_block(block)
                                 if event is not None:
                                     yield event
+                            streamed_this_msg = False
                         elif isinstance(msg, UserMessage) and isinstance(msg.content, list):
                             for block in msg.content:
                                 if isinstance(block, ToolResultBlock):
@@ -129,6 +145,27 @@ class AgentSession:
             # subprocess is already winding down. Swallow — the outer
             # WS handler breaks out of the stream loop regardless.
             pass
+
+    def _translate_stream_event(self, event: dict[str, Any]) -> AgentEvent | None:
+        """Turn an Anthropic streaming event dict into a wire event.
+
+        Only `content_block_delta` with `text_delta` / `thinking_delta`
+        payloads are surfaced — other event kinds (message_start,
+        content_block_start, input_json_delta, etc.) are ignored because
+        the rest of the pipeline keys off the completed blocks in the
+        trailing `AssistantMessage`.
+        """
+        if event.get("type") != "content_block_delta":
+            return None
+        delta = event.get("delta") or {}
+        delta_type = delta.get("type")
+        if delta_type == "text_delta":
+            text = delta.get("text") or ""
+            return Token(session_id=self.session_id, text=text) if text else None
+        if delta_type == "thinking_delta":
+            text = delta.get("thinking") or ""
+            return Thinking(session_id=self.session_id, text=text) if text else None
+        return None
 
     def _translate_block(self, block: object) -> AgentEvent | None:
         if isinstance(block, TextBlock):

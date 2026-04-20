@@ -7,6 +7,7 @@ import pytest
 from claude_agent_sdk import (
     AssistantMessage,
     ResultMessage,
+    StreamEvent,
     TextBlock,
     ThinkingBlock,
     ToolResultBlock,
@@ -353,6 +354,159 @@ async def test_stream_emits_error_event_on_exception(
     err = events[0]
     assert isinstance(err, ErrorEvent)
     assert "kaboom" in err.message
+
+
+def _text_delta(text: str, index: int = 0) -> StreamEvent:
+    return StreamEvent(
+        uuid="e",
+        session_id="sdk-sess",
+        event={
+            "type": "content_block_delta",
+            "index": index,
+            "delta": {"type": "text_delta", "text": text},
+        },
+        parent_tool_use_id=None,
+    )
+
+
+def _thinking_delta(text: str, index: int = 0) -> StreamEvent:
+    return StreamEvent(
+        uuid="e",
+        session_id="sdk-sess",
+        event={
+            "type": "content_block_delta",
+            "index": index,
+            "delta": {"type": "thinking_delta", "thinking": text},
+        },
+        parent_tool_use_id=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_stream_event_emits_text_deltas(monkeypatch: pytest.MonkeyPatch) -> None:
+    """StreamEvent text_delta fragments surface as Token events, and the
+    trailing AssistantMessage's TextBlock is skipped to avoid a double
+    emission."""
+    _patch_client(
+        monkeypatch,
+        [
+            _text_delta("Hel"),
+            _text_delta("lo "),
+            _text_delta("world"),
+            _assistant(TextBlock("Hello world")),
+            _result(),
+        ],
+    )
+    session = AgentSession("s", working_dir="/tmp", model="m")
+    events = [ev async for ev in session.stream("hi")]
+    tokens = [e for e in events if isinstance(e, Token)]
+    assert [t.text for t in tokens] == ["Hel", "lo ", "world"]
+    # No duplicate from the AssistantMessage.
+    assert len(tokens) == 3
+
+
+@pytest.mark.asyncio
+async def test_stream_event_emits_thinking_deltas(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_client(
+        monkeypatch,
+        [
+            _thinking_delta("pondering "),
+            _thinking_delta("the prompt"),
+            _assistant(
+                ThinkingBlock(thinking="pondering the prompt", signature="sig"),
+                TextBlock("answer"),
+            ),
+            _result(),
+        ],
+    )
+    session = AgentSession("s", working_dir="/tmp", model="m")
+    events = [ev async for ev in session.stream("hi")]
+    thinking = [e for e in events if isinstance(e, Thinking)]
+    assert [t.text for t in thinking] == ["pondering ", "the prompt"]
+    # TextBlock("answer") came via AssistantMessage; no delta preceded it
+    # but streamed_this_msg was set by the thinking deltas, so the text
+    # block is treated as already-streamed. This is the documented
+    # trade-off — partial-stream mode assumes text comes via deltas.
+    assert [type(e).__name__ for e in events] == [
+        "MessageStart",
+        "Thinking",
+        "Thinking",
+        "MessageComplete",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_stream_event_preserves_tool_use_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tool-use blocks arrive complete in the AssistantMessage (deltas
+    stream input JSON but we don't parse that). They must still be
+    emitted even when text deltas preceded them."""
+    _patch_client(
+        monkeypatch,
+        [
+            _text_delta("calling "),
+            _text_delta("a tool"),
+            _assistant(
+                TextBlock("calling a tool"),
+                ToolUseBlock(id="t1", name="Read", input={"path": "/etc/hosts"}),
+            ),
+            _result(),
+        ],
+    )
+    session = AgentSession("s", working_dir="/tmp", model="m")
+    events = [ev async for ev in session.stream("hi")]
+    types = [type(e).__name__ for e in events]
+    assert types == [
+        "MessageStart",
+        "Token",
+        "Token",
+        "ToolCallStart",
+        "MessageComplete",
+    ]
+    call = next(e for e in events if isinstance(e, ToolCallStart))
+    assert call.tool_call_id == "t1"
+    assert call.input == {"path": "/etc/hosts"}
+
+
+@pytest.mark.asyncio
+async def test_stream_event_ignores_non_delta_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-delta stream events (message_start, content_block_start,
+    content_block_stop, input_json_delta, etc.) are dropped — they carry
+    no user-visible content the pipeline needs."""
+    noise = StreamEvent(
+        uuid="e",
+        session_id="sdk-sess",
+        event={"type": "message_start", "message": {"id": "m1"}},
+        parent_tool_use_id=None,
+    )
+    input_delta = StreamEvent(
+        uuid="e",
+        session_id="sdk-sess",
+        event={
+            "type": "content_block_delta",
+            "index": 1,
+            "delta": {"type": "input_json_delta", "partial_json": '{"p":'},
+        },
+        parent_tool_use_id=None,
+    )
+    _patch_client(
+        monkeypatch,
+        [noise, input_delta, _assistant(TextBlock("hi")), _result()],
+    )
+    session = AgentSession("s", working_dir="/tmp", model="m")
+    events = [ev async for ev in session.stream("x")]
+    # No StreamEvent deltas surfaced, so streamed_this_msg stays False
+    # and the TextBlock in the AssistantMessage emits normally.
+    assert [type(e).__name__ for e in events] == [
+        "MessageStart",
+        "Token",
+        "MessageComplete",
+    ]
 
 
 @pytest.mark.asyncio

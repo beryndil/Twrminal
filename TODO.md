@@ -470,17 +470,21 @@ cover shape, not feel.
 
 ### Other
 
-- [ ] Partial-message semantics (confirmed 2026-04-20, live run
-  session `74374ddb`): `include_partial_messages=True` is set in
-  `agent/session.py:74`, but the `receive_response()` loop only
-  branches on `AssistantMessage` / `UserMessage` / `ResultMessage`
-  — the SDK's `StreamEvent` (with per-delta content) has no case,
-  so deltas are silently dropped and the UI sees one `token` event
-  per completed `TextBlock`. Flag is functionally inert today.
-  Either wire a `StreamEvent` branch that emits `token` deltas as
-  they land, or drop the flag. v0.3.x candidate.
-- [ ] Resizable / collapsible panes (raised during v0.2.13 review,
-  out of scope). Candidate for v0.3.0.
+## v0.3.0 — shipped
+
+- [x] StreamEvent handling in `agent/session.py`: `content_block_delta`
+  with `text_delta` / `thinking_delta` payloads now surface as live
+  `Token` / `Thinking` wire events. `TextBlock` / `ThinkingBlock` in
+  the trailing `AssistantMessage` are skipped when deltas already
+  fired for that message, so the UI receives real token streaming
+  without duplication. 4 new cases in `test_agent_session.py`
+  (172 backend tests total).
+
+## v0.3.1 — in progress
+
+- [ ] Resizable / collapsible side panes (sidebar + inspector), with
+  drag handles, min-width / snap-to-collapse, and localStorage
+  persistence of widths + collapse state.
 
 ## Decisions pending
 
