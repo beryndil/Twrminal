@@ -664,6 +664,90 @@ state indicator (like a closed ticket or an archived email).
   derived + close / reopen happy + error paths), 5 for SessionList
   (group render, toggle, "No open sessions" placeholder).
 
+## v0.3.26 — shipped
+
+Session-description clamp in the conversation header. Long
+multi-paragraph plugs (design briefs, pasted bug reports) had no
+max-height and ate half the viewport before the conversation
+even started.
+
+- [x] Tailwind `line-clamp-3` wraps the description paragraph in
+  `Conversation.svelte` — folds to three lines with mask fade.
+- [x] Compact `⌄ show more` / `⌃ show less` toggle. Renders only
+  when measured `scrollHeight > clientHeight` so short plugs stay
+  toggle-free.
+- [x] Clamp state resets on session switch and re-measures on
+  description edits (paired with the 0.3.25 runner-respawn so live
+  edits propagate end-to-end).
+- [x] Companion to the 0.3.24 message-body fold — long content
+  anywhere in the page (header plug, user paste, assistant turn)
+  now has a predictable fold affordance.
+
+## v0.3.25 — shipped
+
+Runner auto-drop when prompt-layer fields change. The claude
+subprocess bakes in `--system-prompt` at launch, so in-place DB
+edits to `description`, `session_instructions`, or tag-memory
+content never reached a live runner without respawn. Dave edited
+the description from the UI mid-session and the agent kept
+behaving against the stale prompt.
+
+- [x] `PATCH /sessions/{id}` drops the runner when `description`
+  or `session_instructions` is in the request body. Title-only
+  and budget-only patches leave the runner alive (no prompt
+  impact).
+- [x] Tag attach / detach and tag-memory put / delete drop every
+  runner whose session inherits the affected tag's memory.
+- [x] 13 new pytest across `test_routes_sessions.py` and
+  `test_tag_memories.py` covering the drop matrix (title-only →
+  no drop, description → drop, tag attach → drop, etc.).
+- [x] Unblocks 0.3.26 header-clamp re-measure: editing the
+  description from the header now propagates to the live agent
+  on the next turn instead of lingering until reconnect.
+
+## v0.3.24 — shipped
+
+Long user messages dominated the conversation viewport. Pasted
+bug reports / design briefs pushed the assistant's response
+off-screen, forcing constant scroll to reread prior turns.
+
+- [x] `CollapsibleBody.svelte` — height-based fold around rendered
+  markdown in `MessageTurn`. Clamps bodies taller than 480px with
+  a mask-image fade and a `show full message` / `collapse` toggle.
+- [x] Expanded state persists per-message in localStorage
+  (`bearings:msg:expanded:<id>`) so reloads and scroll-back don't
+  re-collapse underfoot.
+- [x] Streaming assistant turns bypass the fold — new tokens stay
+  visible as they land; fold only applies once the body is final.
+- [x] 7 new vitest (`CollapsibleBody.test.ts`). Existing
+  `MessageTurn.test.ts` stays green — tool-call group, thinking
+  details, copy button, reorg menu, bulk-select, shiki all
+  unchanged.
+- [x] Motivated the 0.3.27 close / reopen feature (session
+  82c151f4): sessions accumulated in the sidebar forever with no
+  signal that a charter had shipped.
+
+## v0.3.23 — shipped
+
+Agents with empty context (fresh runner after reaper, reconnect
+with drifted cwd, or SDK-resume miss) had no way to orient on
+"why am I here" short of reading conversation memory back.
+
+- [x] New `session_description` prompt layer slotted between
+  `base` and `tag_memory` in `src/bearings/agent/prompt.py`.
+  Injects the session's description blurb directly into the
+  assembled system prompt so the agent reads the human-authored
+  charter on first turn.
+- [x] Bypass when description is NULL — layer is omitted rather
+  than emitting an empty heading, so sessions without a plug
+  don't waste tokens on structural noise.
+- [x] 4 new pytest in `test_prompt_assembler.py` covering layer
+  presence, ordering (between base and tag_memory), and the
+  null-description bypass.
+- [x] Motivated 0.3.27: once charters land in the prompt, shipped
+  charters accumulate in the sidebar with no "this is done" signal,
+  so a close / reopen lifecycle was the natural follow-up.
+
 ## v0.3.22 — shipped
 
 Slice 7 (Polish) of the Session Reorg plan

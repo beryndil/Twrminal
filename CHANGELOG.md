@@ -53,6 +53,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Import/export round-trip test (`test_import_session_round_trips_closed_at`)
   confirms the flag survives a full JSON round trip.
 
+## [0.3.26] - 2026-04-21
+
+### Added
+
+- Session-description clamp in the conversation header. Long
+  multi-paragraph plugs (design briefs, pasted bug reports) were
+  eating half the viewport before the conversation even started.
+  Tailwind `line-clamp-3` folds to three lines with a compact
+  `⌄ show more` / `⌃ show less` toggle — the toggle only renders
+  when the text actually overflows. Clamp state resets on session
+  switch and re-measures after a description edit (pairs with the
+  live-prompt-respawn hook from 0.3.25).
+
+### Notes
+
+- Companion piece to the 0.3.24 message-body fold: long content has
+  a predictable fold affordance everywhere in the page — header
+  plug, user paste, assistant turn.
+
+## [0.3.25] - 2026-04-21
+
+### Changed
+
+- Runner auto-drop when prompt-layer fields change. The claude
+  subprocess is spawned with `--system-prompt` baked in at launch,
+  so in-place edits to `description`, `session_instructions`, or
+  tag-memory content never reached a live runner without respawn.
+  The affected runner(s) now drop from the registry so the next
+  WebSocket turn rebuilds against the freshly-assembled prompt.
+- `PATCH /sessions/{id}` drops the runner when `description` or
+  `session_instructions` is in the request body; title-only and
+  budget-only patches leave the runner alive.
+- Tag attach / detach and tag-memory put / delete drop the runner
+  for every affected session, since every session inheriting that
+  tag's memory sees its prompt change.
+
+### Notes
+
+- Unblocks the 0.3.26 header clamp's re-measure behavior: editing
+  the description from the header now propagates to the live agent
+  on the next turn instead of lingering until the next reconnect.
+
+## [0.3.24] - 2026-04-21
+
+### Added
+
+- `CollapsibleBody.svelte` — height-based fold around rendered
+  markdown for user and assistant turns. Bodies taller than 480px
+  clamp to that height with a mask-image fade and a `show full
+  message` / `collapse` toggle. Expanded state persists per-message
+  in `localStorage` (`bearings:msg:expanded:<id>`) so reloads and
+  scroll-back don't re-collapse underfoot.
+
+### Changed
+
+- Streaming assistant turns bypass the fold so new tokens stay
+  visible as they land — the fold only applies once the message
+  has a final body.
+- Tool-call group, thinking details, copy button, reorg menu,
+  bulk-select checkbox, and shiki highlighting all unchanged;
+  `MessageTurn.test.ts` stays green.
+
+### Notes
+
+- 7 new vitest (`CollapsibleBody.test.ts`). Closes the "Long user
+  messages dominate the conversation viewport" TODO that motivated
+  the 0.3.27 close / reopen feature (session 82c151f4).
+
+## [0.3.23] - 2026-04-21
+
+### Added
+
+- `session_description` prompt layer injected into the assembled
+  system prompt, slotted between `base` and `tag_memory`. The
+  description blurb rendered beneath the Conversation header's
+  title and tags now reaches the agent directly — empty-context
+  agents orienting on "why am I here" can read the human-authored
+  answer instead of guessing from conversation memory.
+
+### Notes
+
+- This is the feature surfaced when Dave asks `/get your bearings`:
+  the charter at the top of the system prompt is this layer at
+  work. Motivated the 0.3.27 close / reopen lifecycle so finished
+  charters stop cluttering the sidebar.
+- 4 new pytest in `test_prompt_assembler.py` covering the layer's
+  presence, ordering, and the null-description bypass.
+
 ## [0.3.22] - 2026-04-21
 
 ### Added
@@ -307,6 +395,51 @@ pass (up from 299). Ruff + mypy strict green.
   (`~/.claude/plans/sparkling-triaging-otter.md`) — Slice 2
   (move/split routes) builds on this. 299 backend tests pass (up from
   289; 10 new in `test_db_reorg.py`). Ruff + mypy strict green.
+
+## [0.3.16] - 2026-04-21
+
+### Added
+
+- Context-pressure meter (Wave 1 of the token-cost-mitigation plan).
+  `get_context_usage()` is captured inside the SDK client's
+  `async with` and shipped as a `ContextUsage` WebSocket event
+  emitted BEFORE `MessageComplete` — the runner breaks its loop on
+  `MessageComplete`, so anything after that never reaches the UI.
+  Last snapshot persists on the session row (migration 0013:
+  `last_context_pct`, `last_context_tokens`, `last_context_max`)
+  and seeds the frontend store on `load()` so the meter paints on
+  first render instead of flickering between turns. Threshold bands
+  shift one earlier when auto-compact is off since there's no
+  safety net catching overflow.
+- Pre-submit budget gate. `submit_prompt()` refuses a turn when
+  `total_cost_usd >= max_budget_usd`, emitting an `ErrorEvent`
+  rather than queueing. The SDK's `max_budget_usd` advisory fires
+  post-hoc — after tokens are spent — so an already-over-cap
+  session could still kick off one more turn without the pre-check.
+
+### Notes
+
+- 7 new backend tests (289 → 296). Frontend: 113 vitest cases,
+  svelte-check clean.
+
+## [0.3.15] - 2026-04-21
+
+### Fixed
+
+- Cold-context reconnect into a live research session. The SDK's
+  `resume=<sdk_session_id>` path fails silently when the session
+  file is gone, the cwd has drifted, or the system prompt has
+  changed. Belt-and-suspenders fallback: once per `AgentSession`
+  instance (first turn after a cold runner build only), prepend a
+  compact `<previous-conversation>` preamble built from the last
+  10 persisted messages, each truncated to 2000 chars. SDK resume
+  hint still rides along — if it works, we've merely duplicated
+  the tail; if it fails, the model still has immediate context.
+- The preamble only fires when the DB has prior turns AND they're
+  not just the current turn's own user row (runner persists the
+  user message before calling `stream()`). Subsequent turns rely
+  on the SDK's own context chain — priming every turn would waste
+  tokens.
 
 ## [0.3.14] - 2026-04-21
 
