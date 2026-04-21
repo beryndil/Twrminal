@@ -1,25 +1,47 @@
+"""WebSocket handler for agent sessions.
+
+This is now a thin subscriber on top of `SessionRunner`. The runner
+owns the `AgentSession`, the stream loop, and event persistence; the
+handler just forwards incoming control frames (`prompt`, `stop`,
+`set_permission_mode`) and pushes outbound events to the socket.
+
+Disconnect no longer stops the agent — the runner keeps going, and a
+reconnect (optionally with `?since_seq=N`) replays any buffered events
+that arrived while the client was away. That's what makes sessions
+independent: you can walk away from a question mid-stream, do work in
+another session, and come back to the finished result.
+"""
+
 from __future__ import annotations
 
 import asyncio
-import json
+import logging
 from typing import Any
-from uuid import uuid4
 
+from claude_agent_sdk import ThinkingConfig
 from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketDisconnect
 
 from bearings import metrics
-from bearings.agent.events import (
-    MessageComplete,
-    MessageStart,
-    Thinking,
-    Token,
-    ToolCallEnd,
-    ToolCallStart,
-)
+from bearings.agent.runner import SessionRunner, _Envelope
 from bearings.agent.session import AgentSession
 from bearings.api.auth import check_ws_auth
+from bearings.config import ThinkingMode
 from bearings.db import store
+
+log = logging.getLogger(__name__)
+
+
+def _thinking_config(mode: ThinkingMode | None) -> ThinkingConfig | None:
+    """Translate the `agent.thinking` config knob into the SDK's
+    ThinkingConfig TypedDict. Kept in the session wiring layer so the
+    SDK type stays an implementation detail of ws_agent."""
+    if mode == "adaptive":
+        return {"type": "adaptive"}
+    if mode == "disabled":
+        return {"type": "disabled"}
+    return None
+
 
 router = APIRouter(tags=["agent-ws"])
 
@@ -27,82 +49,13 @@ CODE_UNAUTHORIZED = 4401
 CODE_SESSION_NOT_FOUND = 4404
 
 
-async def _ws_reader(websocket: WebSocket, incoming: asyncio.Queue[dict[str, Any] | None]) -> None:
-    """Drain inbound WS frames into a queue. Puts None on disconnect so
-    the consumer can break cleanly. Running this as a dedicated task
-    lets the outer streaming loop peek for stop signals without racing
-    itself on `receive_json`."""
-    try:
-        while True:
-            payload = await websocket.receive_json()
-            await incoming.put(payload)
-    except WebSocketDisconnect:
-        await incoming.put(None)
-    except Exception:
-        await incoming.put(None)
-
-
-def _drain_stop(incoming: asyncio.Queue[dict[str, Any] | None]) -> bool:
-    """Non-blocking: pop any queued stop frames. Returns True if one
-    was seen. Other message types are discarded (we don't expect them
-    mid-stream)."""
-    saw_stop = False
-    while not incoming.empty():
-        payload = incoming.get_nowait()
-        if payload is None:
-            # Disconnect marker — treat as implicit stop so the caller
-            # can wind down cleanly. The outer loop also sees None.
-            saw_stop = True
-            # Put the marker back so the outer loop sees it too.
-            incoming.put_nowait(None)
-            break
-        if payload.get("type") == "stop":
-            saw_stop = True
-    return saw_stop
-
-
-async def _persist_assistant_turn(
-    conn: Any,
-    *,
-    session_id: str,
-    message_id: str,
-    content: str,
-    thinking: str | None,
-    tool_call_ids: list[str],
-    cost_usd: float | None,
-) -> None:
-    await store.insert_message(
-        conn,
-        session_id=session_id,
-        id=message_id,
-        role="assistant",
-        content=content,
-        thinking=thinking,
-    )
-    metrics.messages_persisted.labels(role="assistant").inc()
-    await store.attach_tool_calls_to_message(
-        conn,
-        message_id=message_id,
-        tool_call_ids=tool_call_ids,
-    )
-    if cost_usd is not None:
-        await store.add_session_cost(conn, session_id, cost_usd)
-
-
-@router.websocket("/ws/sessions/{session_id}")
-async def agent_ws(websocket: WebSocket, session_id: str) -> None:  # noqa: C901
-    await websocket.accept()
-    if not check_ws_auth(websocket):
-        await websocket.close(code=CODE_UNAUTHORIZED)
-        return
-    conn = websocket.app.state.db
+async def _build_runner(app: Any, session_id: str) -> SessionRunner:
+    """Construct a SessionRunner wired to app-scoped state. Used as
+    the factory passed into `RunnerRegistry.get_or_create` — keeps all
+    the FastAPI-specific wiring out of the runner module."""
+    conn = app.state.db
     row = await store.get_session(conn, session_id)
-    if row is None:
-        await websocket.close(code=CODE_SESSION_NOT_FOUND)
-        return
-
-    metrics.ws_active_connections.inc()
-    websocket.app.state.active_ws.add(websocket)
+    assert row is not None, "caller must verify the session exists first"
     agent = AgentSession(
         session_id,
         row["working_dir"],
@@ -110,104 +63,103 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:  # noqa: C901
         max_budget_usd=row.get("max_budget_usd"),
         db=conn,
         sdk_session_id=row.get("sdk_session_id"),
+        thinking=_thinking_config(app.state.settings.agent.thinking),
     )
-    incoming: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
-    reader = asyncio.create_task(_ws_reader(websocket, incoming))
+    return SessionRunner(session_id, agent, conn)
+
+
+def _parse_since_seq(websocket: WebSocket) -> int:
+    """Read the client's replay cursor from the query string. Clients
+    track the last seq they've rendered per session; on reconnect they
+    pass it so the runner replays only events newer than that. Missing
+    or malformed values fall back to 0 (replay whatever's in the
+    buffer) — the frontend dedupes completed messages by id, so
+    double-replay is harmless."""
+    raw = websocket.query_params.get("since_seq")
+    if raw is None:
+        return 0
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
+
+
+async def _forward_events(websocket: WebSocket, queue: asyncio.Queue[_Envelope]) -> None:
+    """Pull envelopes off the runner's subscriber queue and write them
+    to the socket. Each frame carries `_seq` so the client can advance
+    its replay cursor. Exits on send failure (disconnect)."""
+    while True:
+        env = await queue.get()
+        frame = {**env.payload, "_seq": env.seq}
+        try:
+            await websocket.send_json(frame)
+        except (WebSocketDisconnect, RuntimeError):
+            # Socket died under us — normal at navigation. The outer
+            # handler's finally block will clean up the subscription.
+            return
+
+
+@router.websocket("/ws/sessions/{session_id}")
+async def agent_ws(websocket: WebSocket, session_id: str) -> None:
+    await websocket.accept()
+    if not check_ws_auth(websocket):
+        await websocket.close(code=CODE_UNAUTHORIZED)
+        return
+    app = websocket.app
+    conn = app.state.db
+    row = await store.get_session(conn, session_id)
+    if row is None:
+        await websocket.close(code=CODE_SESSION_NOT_FOUND)
+        return
+
+    since_seq = _parse_since_seq(websocket)
+    registry = app.state.runners
+    runner = await registry.get_or_create(session_id, factory=lambda sid: _build_runner(app, sid))
+    queue, replay = await runner.subscribe(since_seq)
+
+    metrics.ws_active_connections.inc()
+    app.state.active_ws.add(websocket)
+
+    # Replay first so the client sees missed events in order before
+    # any live frame arrives.
+    for env in replay:
+        try:
+            await websocket.send_json({**env.payload, "_seq": env.seq})
+        except (WebSocketDisconnect, RuntimeError):
+            runner.unsubscribe(queue)
+            app.state.active_ws.discard(websocket)
+            metrics.ws_active_connections.dec()
+            return
+
+    forwarder = asyncio.create_task(
+        _forward_events(websocket, queue), name=f"ws-forward:{session_id}"
+    )
     try:
         while True:
-            payload = await incoming.get()
-            if payload is None:
-                break  # disconnect
+            payload = await websocket.receive_json()
             msg_type = payload.get("type")
-            if msg_type == "set_permission_mode":
+            if msg_type == "prompt":
+                prompt = str(payload.get("content", ""))
+                await runner.submit_prompt(prompt)
+            elif msg_type == "stop":
+                await runner.request_stop()
+            elif msg_type == "set_permission_mode":
                 mode = payload.get("mode")
-                # `None` or an empty string clears back to default.
-                agent.set_permission_mode(mode or None)
-                continue
-            if msg_type != "prompt":
-                # Stop-without-an-active-stream is a no-op.
-                continue
-            prompt = str(payload.get("content", ""))
-            await store.insert_message(conn, session_id=session_id, role="user", content=prompt)
-            metrics.messages_persisted.labels(role="user").inc()
-
-            buf: list[str] = []
-            thinking_buf: list[str] = []
-            tool_call_ids: list[str] = []
-            current_message_id: str | None = None
-            persisted = False
-            stopped = False
-            async for event in agent.stream(prompt):
-                await websocket.send_text(event.model_dump_json())
-                metrics.ws_events_sent.labels(type=event.type).inc()
-                if isinstance(event, MessageStart):
-                    current_message_id = event.message_id
-                elif isinstance(event, Token):
-                    buf.append(event.text)
-                elif isinstance(event, Thinking):
-                    thinking_buf.append(event.text)
-                elif isinstance(event, ToolCallStart):
-                    await store.insert_tool_call_start(
-                        conn,
-                        session_id=session_id,
-                        tool_call_id=event.tool_call_id,
-                        name=event.name,
-                        input_json=json.dumps(event.input),
-                    )
-                    tool_call_ids.append(event.tool_call_id)
-                    metrics.tool_calls_started.inc()
-                elif isinstance(event, ToolCallEnd):
-                    await store.finish_tool_call(
-                        conn,
-                        tool_call_id=event.tool_call_id,
-                        output=event.output,
-                        error=event.error,
-                    )
-                    metrics.tool_calls_finished.labels(ok=str(event.ok).lower()).inc()
-                elif isinstance(event, MessageComplete):
-                    await _persist_assistant_turn(
-                        conn,
-                        session_id=session_id,
-                        message_id=event.message_id,
-                        content="".join(buf),
-                        thinking="".join(thinking_buf) or None,
-                        tool_call_ids=tool_call_ids,
-                        cost_usd=event.cost_usd,
-                    )
-                    if agent.sdk_session_id is not None:
-                        await store.set_sdk_session_id(
-                            conn,
-                            session_id,
-                            agent.sdk_session_id,
-                        )
-                    persisted = True
-                    break  # turn finished naturally
-                # Check for client stop between events. Cancel any
-                # in-flight tool at the SDK level, then break out and
-                # synthesise a MessageComplete so the partial turn
-                # still persists.
-                if _drain_stop(incoming):
-                    stopped = True
-                    await agent.interrupt()
-                    break
-
-            if stopped and not persisted:
-                msg_id = current_message_id or uuid4().hex
-                synthetic = MessageComplete(session_id=session_id, message_id=msg_id, cost_usd=None)
-                await websocket.send_text(synthetic.model_dump_json())
-                metrics.ws_events_sent.labels(type=synthetic.type).inc()
-                await _persist_assistant_turn(
-                    conn,
-                    session_id=session_id,
-                    message_id=msg_id,
-                    content="".join(buf),
-                    thinking="".join(thinking_buf) or None,
-                    tool_call_ids=tool_call_ids,
-                    cost_usd=None,
-                )
+                runner.set_permission_mode(mode or None)
+            # Unknown message types are ignored — keeps the protocol
+            # forward-compatible the same way it was pre-refactor.
     except WebSocketDisconnect:
-        return
+        # Normal disconnect. The runner keeps running; that's the
+        # point of this whole refactor.
+        pass
+    except Exception:
+        log.exception("ws %s: unexpected error in receive loop", session_id)
     finally:
-        reader.cancel()
-        websocket.app.state.active_ws.discard(websocket)
+        forwarder.cancel()
+        try:
+            await forwarder
+        except (asyncio.CancelledError, Exception):
+            pass
+        runner.unsubscribe(queue)
+        app.state.active_ws.discard(websocket)
         metrics.ws_active_connections.dec()

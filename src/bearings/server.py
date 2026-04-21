@@ -8,6 +8,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 
 from bearings import __version__
+from bearings.agent.runner import RunnerRegistry
 from bearings.api import (
     routes_fs,
     routes_health,
@@ -33,9 +34,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db = await init_db(settings.storage.db_path)
     active: set[WebSocket] = set()
     app.state.active_ws = active
+    # RunnerRegistry owns per-session agent loops decoupled from WS
+    # lifetime. Sessions keep running when the UI walks away; see
+    # bearings.agent.runner for the contract.
+    app.state.runners = RunnerRegistry()
     try:
         yield
     finally:
+        # Drain runners first so in-flight SDK subprocesses get a
+        # clean interrupt before the DB handle goes away.
+        await app.state.runners.shutdown_all()
         for ws in list(app.state.active_ws):
             try:
                 await ws.close(code=CODE_GOING_AWAY, reason="server shutdown")

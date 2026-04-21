@@ -11,6 +11,20 @@ const CODE_NORMAL_CLOSE = 1000;
 const CODE_UNAUTHORIZED = 4401;
 const CODE_SESSION_NOT_FOUND = 4404;
 
+/**
+ * WebSocket connection to the active session's agent runner.
+ *
+ * Since v0.3, the server's agent runner is detached from the socket
+ * lifetime — closing this connection no longer stops the agent. Every
+ * event arrives with a monotonic `_seq`; the conversation store
+ * remembers the highest seq seen per session and passes it back as
+ * `since_seq` on reconnect so we replay only what we missed.
+ *
+ * Navigating to another session closes *this* socket but leaves the
+ * old session's runner (and its in-flight turn) running on the server.
+ * Returning to the old session reconnects with the stored seq and the
+ * UI catches up.
+ */
 class AgentConnection {
   state = $state<ConnectionState>('idle');
   sessionId = $state<string | null>(null);
@@ -70,7 +84,11 @@ class AgentConnection {
 
   private openSocket(sessionId: string): void {
     this.state = 'connecting';
-    const ws = api.openAgentSocket(sessionId);
+    // Replay cursor: the conversation store tracks the highest `_seq`
+    // seen for this session so the server can replay only what we
+    // missed while the socket was down (or focus was elsewhere).
+    const sinceSeq = conversation.lastSeqFor(sessionId);
+    const ws = api.openAgentSocket(sessionId, sinceSeq);
     this.socket = ws;
 
     ws.addEventListener('open', () => {

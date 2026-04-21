@@ -66,6 +66,17 @@ def test_ws_unknown_session_closes_4404(client: TestClient) -> None:
     assert excinfo.value.code == 4404
 
 
+def test_thinking_config_translator_maps_modes() -> None:
+    """Each config value lands on the exact TypedDict shape the SDK
+    expects. A miss here means `_thinking_config` silently drops the
+    setting and sessions go back to having no thinking surfaced."""
+    from bearings.api.ws_agent import _thinking_config
+
+    assert _thinking_config("adaptive") == {"type": "adaptive"}
+    assert _thinking_config("disabled") == {"type": "disabled"}
+    assert _thinking_config(None) is None
+
+
 def test_ws_streams_events_and_persists_messages(
     client: TestClient, mock_agent_stream: None, tmp_settings: Settings
 ) -> None:

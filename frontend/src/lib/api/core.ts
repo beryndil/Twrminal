@@ -34,7 +34,12 @@ export type MessageCompleteEvent = {
 };
 export type ErrorEvent = { type: 'error'; session_id: string; message: string };
 
-export type AgentEvent =
+/** Every frame from the server now carries a monotonic `_seq` so the
+ * client can track "what have I already seen" and pass `since_seq` on
+ * reconnect to replay only events delivered while it was away. */
+export type SeqStamped = { _seq?: number };
+
+export type AgentEvent = (
   | TokenEvent
   | ThinkingEvent
   | UserMessageEvent
@@ -42,7 +47,9 @@ export type AgentEvent =
   | ToolCallEndEvent
   | MessageStartEvent
   | MessageCompleteEvent
-  | ErrorEvent;
+  | ErrorEvent
+) &
+  SeqStamped;
 
 const TOKEN_STORAGE_KEY = 'bearings:token';
 
@@ -109,11 +116,18 @@ export function fetchHealth(fetchImpl: typeof fetch = fetch): Promise<HealthResp
   return jsonFetch<HealthResponse>(fetchImpl, '/api/health');
 }
 
-export function openAgentSocket(sessionId: string): WebSocket {
+export function openAgentSocket(sessionId: string, sinceSeq = 0): WebSocket {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const token = readAuthToken();
-  const query = token ? `?token=${encodeURIComponent(token)}` : '';
+  const params = new URLSearchParams();
+  if (token) params.set('token', token);
+  // `since_seq=0` is the no-op default (replay whatever's in the
+  // buffer). Reconnects pass the last seq the client rendered so the
+  // server only replays events newer than that.
+  if (sinceSeq > 0) params.set('since_seq', String(sinceSeq));
+  const query = params.toString();
+  const tail = query ? `?${query}` : '';
   return new WebSocket(
-    `${proto}://${window.location.host}/ws/sessions/${sessionId}${query}`
+    `${proto}://${window.location.host}/ws/sessions/${sessionId}${tail}`
   );
 }

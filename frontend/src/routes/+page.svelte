@@ -18,6 +18,9 @@
     if (booted) return;
     booted = true;
     await Promise.all([sessions.refresh(), tags.refresh()]);
+    // Start the background runner poll so session rows flag which
+    // sessions are still working even when you're on a different one.
+    sessions.startRunningPoll();
     if (sessions.selectedId) await agent.connect(sessions.selectedId);
   }
 

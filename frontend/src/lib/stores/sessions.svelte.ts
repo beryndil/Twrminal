@@ -21,6 +21,8 @@ function writeStoredId(id: string | null): void {
   }
 }
 
+const RUNNING_POLL_MS = 3_000;
+
 class SessionStore {
   list = $state<api.Session[]>([]);
   selectedId = $state<string | null>(null);
@@ -31,6 +33,13 @@ class SessionStore {
    * client-side). Currently informational — future slices may key
    * cache invalidation off it. */
   filter = $state<api.SessionFilter>({});
+
+  /** Session ids whose server-side runner has a turn in flight right
+   * now. Polled from `/api/sessions/running`; the UI lights up a
+   * badge on each so the user can see background work at a glance. */
+  running = $state<Set<string>>(new Set());
+
+  private runningTimer: ReturnType<typeof setInterval> | null = null;
 
   selected = $derived(this.list.find((s) => s.id === this.selectedId) ?? null);
 
@@ -121,6 +130,34 @@ class SessionStore {
   select(id: string | null): void {
     this.selectedId = id;
     writeStoredId(id);
+  }
+
+  /** Poll the backend for session ids with in-flight runners. Safe to
+   * call repeatedly — existing timer is cleared first. Called from
+   * +page.svelte on boot so navigation away from a streaming session
+   * keeps the badge accurate. */
+  startRunningPoll(): void {
+    this.stopRunningPoll();
+    const tick = async () => {
+      try {
+        const ids = await api.listRunningSessions();
+        this.running = new Set(ids);
+      } catch {
+        // Polling is a cosmetic feature — if the token expired or the
+        // server blinked, just drop the running set. The auth layer
+        // handles real 401s elsewhere.
+        this.running = new Set();
+      }
+    };
+    tick();
+    this.runningTimer = setInterval(tick, RUNNING_POLL_MS);
+  }
+
+  stopRunningPoll(): void {
+    if (this.runningTimer !== null) {
+      clearInterval(this.runningTimer);
+      this.runningTimer = null;
+    }
   }
 }
 

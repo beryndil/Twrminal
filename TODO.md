@@ -540,6 +540,197 @@ cover shape, not feel.
   placeholder + `_sessions.py`'s imported-session fallback updated
   for consistency.
 
+## v0.3.5 — shipped
+
+- [x] **Project rename Twrminal → Bearings.** Package, CLI, env prefix,
+  XDG paths, systemd unit, repo URL, localStorage keys, frontend
+  package name, icon (ball-bearing SVG across 192/512 PNG). Live
+  cutover: old systemd unit disabled, data moved
+  `~/.local/share/twrminal` → `~/.local/share/bearings` with DB
+  preserved, new unit serving on 127.0.0.1:8787. GitHub repo
+  renamed; `origin` updated.
+- [x] **Patina dashboard button.** Ball-bearing SVG at
+  `~/Projects/Patina/assets/icons/bearings.svg`, `bearings` added to
+  Patina's `ALLOWED_COMMANDS`, button inserted between Firefox and
+  Kitty in `content.json`. `~/.local/share/applications/bearings.desktop`
+  registered via `update-desktop-database`. Root cause of the
+  "clicked three times, nothing happened" bug: Patina's systemd
+  service `PATH` didn't include `~/.local/bin`; fixed by adding
+  `Environment=PATH=%h/.local/bin:…` to `patina.service`.
+- [x] **Inspector pane collapsed by default.** `+page.svelte`
+  fallback seeds `right: 0, lastRight: DEFAULT_RIGHT_PX` so first
+  handle-click opens to the default width.
+- [x] **Turn-grouped rendering.** User prompt → collapsed-by-default
+  `thinking` block (live while streaming) → collapsed-by-default
+  `tool work · N` block (live while streaming) → final assistant
+  reply (always expanded, not collapsible). Extracted
+  `buildTurns` (`$lib/turns.ts`) + `MessageTurn.svelte`;
+  `Conversation.svelte` back under the 400-line cap.
+- [x] **Copy buttons.** Small `⎘ copy` under each assistant reply,
+  copy-session-as-markdown button beside the JSON download icon in
+  the conversation header.
+- [x] **Plan mode as a first-class slash command.** `/plan` toggles
+  permission_mode; `/plan on|off` sets explicitly. Sky badge in the
+  header mirrors active mode; click to exit. WS gains a
+  `set_permission_mode` message type that routes to
+  `ClaudeSDKClient.set_permission_mode`.
+- [x] **SDK session continuity.** `AgentSession` captures
+  `AssistantMessage.session_id` and passes it back as `resume=` on
+  every subsequent `stream()`, so a fresh SDK client per turn
+  inherits the CLI-side conversation. Migration 0010 adds
+  `sessions.sdk_session_id` so this survives WS reconnects.
+- [x] **Frontend icon fix.** `frontend/static/icon.svg` was left
+  showing "Tw" after the sed rename; redesigned to the ball-bearing
+  mark. `icon-192.png`, `icon-512.png`, `favicon.png` regenerated
+  via `rsvg-convert`.
+
+## v0.4.x — Directory Context System (open)
+
+Per-directory ground truth on disk so any session that lands in a
+directory can read `.bearings/` and know what's happening here
+instead of relying on ephemeral chat memory. Diagnosis the design
+leans on: an agent's claims about the world should never be
+trusted over what's actually written down. Directly addresses the
+class of bug the Twrminal transcript demonstrated — a session
+opening blind and improvising.
+
+### Scope (from the v0.4 spec Dave drafted)
+
+Each tracked directory gets a `.bearings/` folder:
+
+```
+.bearings/
+├── manifest.toml     # identity — slow-changing
+├── state.toml        # per-session belief about current state
+├── pending.toml      # operations in flight (THE key file)
+├── history.jsonl     # append-only session log
+└── checks/on_open.sh # optional user-written health probe
+```
+
+### Decisions to resolve before code
+
+- [ ] **CLI namespace.** `bearings init` is already taken (it
+  initializes the global config + DB). Either rename the existing
+  command (`bearings setup` / `bearings bootstrap`) or namespace
+  the new one (`bearings here init` / `bearings dir init`).
+- [ ] **"Session" vocabulary.** Three `session_id`s in play: Bearings
+  row, claude-agent-sdk session (from v0.3.5), directory-history
+  entry. Pick which the `history.jsonl.session_id` field refers to
+  (leaning: Bearings row id) and document.
+- [ ] **Directory-session boundary.** When does a `history.jsonl`
+  line get written — one per WS connection? One per logical
+  "visit"? Leaning: WS connect/disconnect lifecycle.
+- [ ] **Confirmation UX for onboarding.** Spec's
+  `Save this as the directory's bearings? [Y/n]` is a TTY
+  affordance. In the browser UI, the natural fit is: brief is the
+  first assistant message; user replies "yes" or edits; agent
+  writes on confirm.
+- [ ] **Claude-Code-terminal awareness.** Is `.bearings/` only for
+  sessions started through the Bearings WebUI, or do we also want
+  terminal `claude` invocations to pick it up (via a shell-init
+  hook or wrapper)? Scope-defining.
+- [ ] **Version sequencing.** Big-bang 1→10 in v0.4.0 or phased
+  across 0.4.0 / 0.4.1 / 0.4.2? Leaning phased so revert is
+  surgical if something's wrong mid-way.
+
+### v0.4.0 — foundation
+
+- [ ] **Pydantic schema** for all five file shapes
+  (`Manifest`, `State`, `Pending`, `HistoryEntry`, plus the
+  `PendingOperation` sub-model). Validators cap field lengths
+  (`description` ≤ 500, history `summary` ≤ 200). Invalid files
+  moved to `.bearings/corrupted-YYYYMMDDHHMM.toml` and treated as
+  missing so the next session re-onboards instead of crashing.
+- [ ] **Read/write helpers** with atomic writes for
+  `state.toml` / `pending.toml` (temp file + `os.replace`) so a
+  crash mid-write can't corrupt. File-level `fcntl.flock` for
+  concurrent-session safety on Unix; Windows documented as
+  single-session only.
+- [ ] **Onboarding ritual as a command** (name TBD per decision
+  above). Seven steps implemented:
+  1. Identify — walk up for `.git`, `pyproject.toml`,
+     `package.json`, `Cargo.toml`, `go.mod`, `CLAUDE.md`,
+     `README.md`. Read first 50 lines of README.
+  2. Git state — `git status --porcelain`, stashes, in-progress
+     merge/rebase/cherry-pick/bisect markers under `.git/`.
+  3. Environment validation — Python venv path sanity, lockfile
+     freshness (use `uv sync --locked --dry-run` or lock-vs-site-
+     packages diff, not `uv pip check`), language version pins
+     (`.python-version`, `.nvmrc`, `rust-toolchain.toml`), DB
+     file existence, unapplied migrations.
+  4. Related directories — sibling clones with matching remote
+     under `$HOME/Projects`, `$HOME/code`, `$HOME/dev`,
+     `$HOME/src`.
+  5. Unfinished work — `TODO` / `FIXME` / `XXX` / `WIP` grep
+     respecting `.gitignore`; read `TODO.md`, `CHANGELOG.md`,
+     `TESTING_NOTES.md`; **naming-inconsistency grep** (exact
+     Twrminal / Bearings failure mode).
+  6. Tag match — `SELECT * FROM tags WHERE ? LIKE
+     default_working_dir || '%'` against the Bearings DB.
+  7. Present structured brief; on confirm, write manifest + state
+     (and pending if ops were detected).
+- [ ] **`bearings check` command.** Re-run steps 2, 3, 5; bump
+  `state.toml.environment.last_validated`; surface any new
+  inconsistencies.
+- [ ] **`bearings pending` CRUD** — `add <name>`, `resolve <name>`,
+  `list`. Full Python API + CLI. Tests for concurrent writes.
+
+### v0.4.1 — session-layer integration
+
+- [ ] **`history.jsonl` session lifecycle writer.** Session-start
+  appends a marker (`started`, `session_id`, `branch`); session-end
+  updates with `ended`, `commits`, `summary`. If the end hook never
+  fires (crash), the start marker stays on disk so the next session
+  can see the prior one ended unclean.
+- [ ] **Prompt pipeline layer.** New `LayerKind = "directory_bearings"`
+  inserted between `tag_memory` and `session` in
+  `assemble_prompt()`. Sourced from manifest summary, state
+  environment block, all pending ops, last 10 history lines. Size
+  cap ~800 tokens. Per-turn filesystem reads (same cadence as tag
+  memories today).
+- [ ] **Stale-state detection.** At session start, read
+  `state.toml.environment.last_validated`. If > 24h, re-run the
+  cheap checks (step 3). If > 7 days, re-run steps 2+3+5. If a
+  pending operation's `started` > 30 days old, flag in the brief
+  as "stale, may already be resolved."
+
+### v0.4.2 — automatic onboarding
+
+- [ ] **Auto-trigger on WS-open.** When a Bearings session opens in
+  a directory without `.bearings/`, generate and present the brief
+  as the first assistant message. User confirms in chat prose.
+  Agent writes the files on confirm.
+- [ ] **Dogfood against `~/Projects/Bearings` itself.** First
+  `.bearings/` ever written lives here. The test case that matters:
+  the step-5 grep finds "Twrminal" in `CHANGELOG.md` and the brief
+  reports it as *historical record, not a rename in progress* —
+  not as a problem. This false-positive copy ships in the test
+  fixture.
+
+### v0.4.3+ — polish
+
+- [ ] **`checks/on_open.sh` execution framework.** Spawn with
+  timeout, capture stderr, attach exit code + stderr snippet to
+  the brief. No plugin system; shell script is the API.
+- [ ] **`bearings status` / `bearings log` / `bearings pending list`
+  polish.** Color, terminal-aware formatting, `--last N`.
+- [ ] **Read-only filesystem graceful degrade.** If `.bearings/`
+  can't be written, onboarding succeeds and presents the brief but
+  skips the write with a warning. Brief still reaches the session
+  prompt; only persistence is lost.
+
+### Explicit non-goals (deferred)
+
+- Cross-directory state; each `.bearings/` is independent. Shared
+  knowledge lives in Bearings' tag memories.
+- Remote sync of `.bearings/`. Local only. User can `git add` it
+  or `.gitignore` it.
+- GUI editor for bearings files; TOML is editable enough.
+- Plugin system for `checks/`; shell scripts are the API.
+- Encryption; the files carry no secrets.
+- Versioning of bearings files; git covers history when the
+  directory is a repo.
+
 ## Decisions pending
 
 - [x] GitHub org for remote push: `Beryndil/Bearings`.

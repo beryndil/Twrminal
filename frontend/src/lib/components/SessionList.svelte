@@ -168,6 +168,13 @@
     await sessions.remove(id);
   }
 
+  /** True when the server-side runner for this session has a turn in
+   * flight. The sidebar badge uses this so Daisy can see at a glance
+   * which sessions are still working after she's walked away. */
+  function isRunning(id: string): boolean {
+    return sessions.running.has(id);
+  }
+
   function formatTimestamp(ts: string): string {
     try {
       return new Date(ts).toLocaleString();

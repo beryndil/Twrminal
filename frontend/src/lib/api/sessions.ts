@@ -57,6 +57,12 @@ export type SessionFilter = {
   mode?: 'any' | 'all';
 };
 
+export function listRunningSessions(
+  fetchImpl: typeof fetch = fetch
+): Promise<string[]> {
+  return jsonFetch<string[]>(fetchImpl, '/api/sessions/running');
+}
+
 export function listSessions(
   filter: SessionFilter = {},
   fetchImpl: typeof fetch = fetch

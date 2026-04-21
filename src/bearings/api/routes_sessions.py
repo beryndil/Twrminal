@@ -61,6 +61,19 @@ async def create_session(body: SessionCreate, request: Request) -> SessionOut:
     return SessionOut(**refreshed)
 
 
+@router.get("/running", response_model=list[str])
+async def list_running_sessions(request: Request) -> list[str]:
+    """Session ids whose runner currently has a turn in flight.
+
+    Polled by the UI so the session list can flag sessions the user
+    kicked off and walked away from. Cheap — reads in-memory registry
+    state, no DB hit."""
+    runners = getattr(request.app.state, "runners", None)
+    if runners is None:
+        return []
+    return sorted(runners.running_ids())
+
+
 @router.get("", response_model=list[SessionOut])
 async def list_sessions(
     request: Request,
@@ -107,6 +120,12 @@ async def delete_session(session_id: str, request: Request) -> dict[str, bool]:
     ok = await store.delete_session(request.app.state.db, session_id)
     if not ok:
         raise HTTPException(status_code=404, detail="session not found")
+    # If this session had a live runner (it was open in a tab, even
+    # one we never reconnected to), drain it so its SDK subprocess
+    # doesn't outlive the row it was serving.
+    runners = getattr(request.app.state, "runners", None)
+    if runners is not None:
+        await runners.drop(session_id)
     return {"deleted": True}
 
 
