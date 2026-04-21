@@ -156,6 +156,18 @@ async def detach_tag(conn: aiosqlite.Connection, session_id: str, tag_id: int) -
     return True
 
 
+async def list_session_ids_for_tag(conn: aiosqlite.Connection, tag_id: int) -> list[str]:
+    """Return every session id currently attached to `tag_id`. Used by
+    the tag-memory edit routes to decide whose runner needs to be
+    respawned so its system prompt picks up the new memory content on
+    the next turn. Cheap — one indexed scan on session_tags.tag_id."""
+    async with conn.execute(
+        "SELECT session_id FROM session_tags WHERE tag_id = ?",
+        (tag_id,),
+    ) as cursor:
+        return [row["session_id"] async for row in cursor]
+
+
 async def list_session_tags(conn: aiosqlite.Connection, session_id: str) -> list[dict[str, Any]]:
     async with conn.execute(
         f"SELECT {TAG_COLS_WITH_COUNT} FROM tags t "

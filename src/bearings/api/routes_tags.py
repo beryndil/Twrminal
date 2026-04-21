@@ -13,6 +13,21 @@ router = APIRouter(
 )
 
 
+async def _drop_runners_for_tag(request: Request, tag_id: int) -> None:
+    """Tear down every live runner attached to `tag_id` so their next
+    WS turn re-assembles the system prompt with the updated tag-memory
+    layer. A tag-memory edit affects every session carrying that tag;
+    without respawn, live runners keep serving the stale `--system-
+    prompt` they were spawned with. Idempotent when no runners match."""
+    runners = getattr(request.app.state, "runners", None)
+    if runners is None:
+        return
+    conn = request.app.state.db
+    session_ids = await store.list_session_ids_for_tag(conn, tag_id)
+    for sid in session_ids:
+        await runners.drop(sid)
+
+
 @router.get("", response_model=list[TagOut])
 async def list_tags(request: Request) -> list[TagOut]:
     rows = await store.list_tags(request.app.state.db)
@@ -86,6 +101,7 @@ async def put_tag_memory(tag_id: int, body: TagMemoryPut, request: Request) -> T
     row = await store.put_tag_memory(request.app.state.db, tag_id, body.content)
     if row is None:
         raise HTTPException(status_code=404, detail="tag not found")
+    await _drop_runners_for_tag(request, tag_id)
     return TagMemoryOut(**row)
 
 
@@ -94,4 +110,5 @@ async def delete_tag_memory(tag_id: int, request: Request) -> Response:
     ok = await store.delete_tag_memory(request.app.state.db, tag_id)
     if not ok:
         raise HTTPException(status_code=404, detail="tag memory not found")
+    await _drop_runners_for_tag(request, tag_id)
     return Response(status_code=204)

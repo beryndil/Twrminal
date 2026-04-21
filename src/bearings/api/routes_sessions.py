@@ -105,6 +105,25 @@ async def get_session(session_id: str, request: Request) -> SessionOut:
     return SessionOut(**row)
 
 
+# SessionUpdate fields that are layered into the SDK system prompt by
+# `assemble_prompt`. A change to any of these on a live session means
+# the running runner's subprocess is holding a stale `--system-prompt`;
+# dropping the runner forces the next WS turn to spawn fresh and pick
+# up the new value. Fields NOT in this set (title, max_budget_usd) are
+# UI/billing-only and don't need a respawn.
+_SYSTEM_PROMPT_FIELDS = frozenset({"description", "session_instructions"})
+
+
+async def _drop_runner_if_present(request: Request, session_id: str) -> None:
+    """Tear down the live runner for `session_id` if one exists. Safe
+    to call when no runner is attached (idempotent no-op). The next WS
+    turn re-creates the runner via `RunnerRegistry.get_or_create`,
+    which re-assembles the system prompt from current DB state."""
+    runners = getattr(request.app.state, "runners", None)
+    if runners is not None:
+        await runners.drop(session_id)
+
+
 @router.patch("/{session_id}", response_model=SessionOut)
 async def update_session(session_id: str, body: SessionUpdate, request: Request) -> SessionOut:
     # Only fields the client explicitly set are applied — unset fields
@@ -113,6 +132,10 @@ async def update_session(session_id: str, body: SessionUpdate, request: Request)
     row = await store.update_session(request.app.state.db, session_id, fields=fields)
     if row is None:
         raise HTTPException(status_code=404, detail="session not found")
+    if _SYSTEM_PROMPT_FIELDS & body.model_fields_set:
+        # Description / session_instructions edits reach the agent only
+        # after a runner respawn — see `_SYSTEM_PROMPT_FIELDS` note.
+        await _drop_runner_if_present(request, session_id)
     return SessionOut(**row)
 
 
@@ -241,6 +264,9 @@ async def attach_session_tag(session_id: str, tag_id: int, request: Request) -> 
             raise HTTPException(status_code=404, detail="session not found")
         raise HTTPException(status_code=404, detail="tag not found")
     rows = await store.list_session_tags(conn, session_id)
+    # Tag attach adds/removes a tag_memory layer on the next assembled
+    # prompt; the live runner must respawn to transport that to the SDK.
+    await _drop_runner_if_present(request, session_id)
     return [TagOut(**r) for r in rows]
 
 
@@ -251,4 +277,5 @@ async def detach_session_tag(session_id: str, tag_id: int, request: Request) -> 
     if not ok:
         raise HTTPException(status_code=404, detail="session not found")
     rows = await store.list_session_tags(conn, session_id)
+    await _drop_runner_if_present(request, session_id)
     return [TagOut(**r) for r in rows]

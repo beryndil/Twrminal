@@ -202,6 +202,77 @@ def test_system_prompt_base_only(client: TestClient) -> None:
     assert body["layers"][0]["token_count"] >= 1
 
 
+# ---- respawn-on-edit for tag memories ------------------------------
+#
+# Editing a tag's memory affects every session carrying that tag. Live
+# runners for those sessions hold a `--system-prompt` set at subprocess
+# launch, so the edit is invisible until they respawn.
+
+
+class _ShutdownTracker:
+    def __init__(self) -> None:
+        self.shutdown_calls = 0
+
+    async def shutdown(self) -> None:
+        self.shutdown_calls += 1
+
+
+def _plant_runner(client: TestClient, session_id: str) -> _ShutdownTracker:
+    tracker = _ShutdownTracker()
+    registry = client.app.state.runners  # type: ignore[attr-defined]
+    registry._runners[session_id] = tracker  # type: ignore[assignment]
+    return tracker
+
+
+def test_put_tag_memory_drops_runners_for_every_attached_session(
+    client: TestClient,
+) -> None:
+    tag = client.post("/api/tags", json={"name": "infra"}).json()
+    sess_a = client.post(
+        "/api/sessions",
+        json={"working_dir": "/tmp", "model": "m", "tag_ids": [tag["id"]]},
+    ).json()
+    sess_b = client.post(
+        "/api/sessions",
+        json={"working_dir": "/tmp", "model": "m", "tag_ids": [tag["id"]]},
+    ).json()
+    # Third session carries a different tag and must NOT respawn.
+    other_tag = client.post("/api/tags", json={"name": "unrelated"}).json()
+    sess_c = client.post(
+        "/api/sessions",
+        json={"working_dir": "/tmp", "model": "m", "tag_ids": [other_tag["id"]]},
+    ).json()
+
+    tracker_a = _plant_runner(client, sess_a["id"])
+    tracker_b = _plant_runner(client, sess_b["id"])
+    tracker_c = _plant_runner(client, sess_c["id"])
+
+    resp = client.put(
+        f"/api/tags/{tag['id']}/memory",
+        json={"content": "Prefer nftables over iptables."},
+    )
+    assert resp.status_code == 200
+    assert tracker_a.shutdown_calls == 1
+    assert tracker_b.shutdown_calls == 1
+    assert tracker_c.shutdown_calls == 0
+
+
+def test_delete_tag_memory_drops_runners_for_every_attached_session(
+    client: TestClient,
+) -> None:
+    tag = client.post("/api/tags", json={"name": "infra"}).json()
+    client.put(f"/api/tags/{tag['id']}/memory", json={"content": "seed"})
+    sess = client.post(
+        "/api/sessions",
+        json={"working_dir": "/tmp", "model": "m", "tag_ids": [tag["id"]]},
+    ).json()
+    tracker = _plant_runner(client, sess["id"])
+
+    resp = client.delete(f"/api/tags/{tag['id']}/memory")
+    assert resp.status_code == 204
+    assert tracker.shutdown_calls == 1
+
+
 def test_system_prompt_full_stack(client: TestClient) -> None:
     tag = client.post("/api/tags", json={"name": "infra"}).json()
     sess = client.post(

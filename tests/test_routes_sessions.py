@@ -404,3 +404,107 @@ def test_running_endpoint_reports_session_with_live_turn(
         # Stop cleanly so the test shuts down the turn instead of
         # leaving the long-stream mock hanging.
         ws.send_json({"type": "stop"})
+
+
+# ---- respawn-on-edit ------------------------------------------------
+#
+# Edits to fields that feed the assembled system prompt (description,
+# session_instructions, tag attach/detach) must drop any live runner
+# for the session. The runner holds a claude subprocess spawned with
+# `--system-prompt` set once at launch, so in-place DB edits don't
+# reach it. Dropping forces the next WS turn to respawn with the new
+# assembled prompt.
+
+
+class _ShutdownTracker:
+    """Mock runner that only records shutdown() calls. Planted into
+    `registry._runners` so the edit routes can call `drop()` on a real
+    registry entry without needing a real `SessionRunner` (and the SDK
+    subprocess it would spawn)."""
+
+    def __init__(self) -> None:
+        self.shutdown_calls = 0
+
+    async def shutdown(self) -> None:
+        self.shutdown_calls += 1
+
+
+def _plant_runner(client: TestClient, session_id: str) -> _ShutdownTracker:
+    tracker = _ShutdownTracker()
+    registry = client.app.state.runners  # type: ignore[attr-defined]
+    registry._runners[session_id] = tracker  # type: ignore[assignment]
+    return tracker
+
+
+def test_patch_description_drops_live_runner(client: TestClient) -> None:
+    created = _create(client, description="first pass")
+    tracker = _plant_runner(client, created["id"])
+
+    resp = client.patch(
+        f"/api/sessions/{created['id']}",
+        json={"description": "revised brief"},
+    )
+    assert resp.status_code == 200
+    assert tracker.shutdown_calls == 1
+    registry = client.app.state.runners  # type: ignore[attr-defined]
+    assert created["id"] not in registry._runners
+
+
+def test_patch_session_instructions_drops_live_runner(client: TestClient) -> None:
+    created = _create(client, title="under review")
+    tracker = _plant_runner(client, created["id"])
+
+    resp = client.patch(
+        f"/api/sessions/{created['id']}",
+        json={"session_instructions": "respond in bullet points only"},
+    )
+    assert resp.status_code == 200
+    assert tracker.shutdown_calls == 1
+
+
+def test_patch_title_only_does_not_drop_runner(client: TestClient) -> None:
+    """Title doesn't appear in the assembled prompt, so renaming a
+    session must not knock its live runner offline mid-conversation."""
+    created = _create(client, title="before")
+    tracker = _plant_runner(client, created["id"])
+
+    resp = client.patch(
+        f"/api/sessions/{created['id']}",
+        json={"title": "after"},
+    )
+    assert resp.status_code == 200
+    assert tracker.shutdown_calls == 0
+    registry = client.app.state.runners  # type: ignore[attr-defined]
+    assert created["id"] in registry._runners
+
+
+def test_patch_budget_only_does_not_drop_runner(client: TestClient) -> None:
+    created = _create(client, title="bounded", max_budget_usd=1.0)
+    tracker = _plant_runner(client, created["id"])
+
+    resp = client.patch(
+        f"/api/sessions/{created['id']}",
+        json={"max_budget_usd": 2.5},
+    )
+    assert resp.status_code == 200
+    assert tracker.shutdown_calls == 0
+
+
+def test_attach_tag_drops_live_runner(client: TestClient) -> None:
+    created = _create(client, title="needs more context")
+    extra_tag_id = client.post("/api/tags", json={"name": "extra"}).json()["id"]
+    tracker = _plant_runner(client, created["id"])
+
+    resp = client.post(f"/api/sessions/{created['id']}/tags/{extra_tag_id}")
+    assert resp.status_code == 200
+    assert tracker.shutdown_calls == 1
+
+
+def test_detach_tag_drops_live_runner(client: TestClient) -> None:
+    default_tag_id = _default_tag(client)
+    created = _create(client, title="retagging")
+    tracker = _plant_runner(client, created["id"])
+
+    resp = client.delete(f"/api/sessions/{created['id']}/tags/{default_tag_id}")
+    assert resp.status_code == 200
+    assert tracker.shutdown_calls == 1
