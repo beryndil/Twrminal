@@ -599,6 +599,32 @@
     setTimeout(() => (copiedSession = false), 1500);
   }
 
+  // Header session-description clamp. Long plugs (multi-paragraph
+  // design briefs, bug-report pastes) would otherwise eat half the
+  // viewport above the conversation — we collapse to 3 lines with a
+  // "show more" toggle and re-measure whenever the session or its
+  // description changes.
+  let descriptionEl: HTMLParagraphElement | undefined = $state();
+  let descriptionExpanded = $state(false);
+  let descriptionOverflows = $state(false);
+
+  $effect(() => {
+    // Re-run when the selected session or its description text flips.
+    const sid = sessions.selected?.id ?? null;
+    const text = sessions.selected?.description ?? '';
+    descriptionExpanded = false;
+    if (!sid || !text || !descriptionEl) {
+      descriptionOverflows = false;
+      return;
+    }
+    // Measure on the next microtask so the clamp class has applied
+    // before we compare scroll vs client height.
+    const el = descriptionEl;
+    queueMicrotask(() => {
+      descriptionOverflows = el.scrollHeight > el.clientHeight + 1;
+    });
+  });
+
   // Tag chips in the header. Refetch on session change and on
   // `updated_at` bumps (SessionEdit attach/detach bumps the server).
   let sessionTags = $state<api.Tag[]>([]);
@@ -902,9 +928,27 @@
         </ul>
       {/if}
       {#if sessions.selected?.description}
-        <p class="text-xs text-slate-400 mt-1 whitespace-pre-wrap break-words">
+        <p
+          bind:this={descriptionEl}
+          class="text-xs text-slate-400 mt-1 whitespace-pre-wrap break-words
+            {descriptionExpanded ? '' : 'line-clamp-3'}"
+          data-testid="session-description"
+          data-expanded={descriptionExpanded ? 'true' : 'false'}
+        >
           {sessions.selected.description}
         </p>
+        {#if descriptionOverflows}
+          <button
+            type="button"
+            class="text-[10px] uppercase tracking-wider text-slate-500
+              hover:text-slate-300 mt-0.5"
+            onclick={() => (descriptionExpanded = !descriptionExpanded)}
+            data-testid="description-toggle"
+            aria-expanded={descriptionExpanded}
+          >
+            {descriptionExpanded ? '⌃ show less' : '⌄ show more'}
+          </button>
+        {/if}
       {/if}
     </div>
     <div class="flex items-center gap-2">
