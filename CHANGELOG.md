@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6] - 2026-04-20
+
+### Fixed
+
+- Per-session `total_cost_usd` no longer inflates quadratically.
+  `claude-agent-sdk`'s `ResultMessage.total_cost_usd` is cumulative
+  for the resumed CLI session, but the old accumulator added it raw
+  on every turn — so after N uniform-cost turns the row reported
+  ≈ N(N+1)/2 × the actual spend. New column `sdk_reported_cost_usd`
+  tracks the last cumulative; the runner subtracts it to get a
+  per-turn delta before bumping `total_cost_usd` and re-emitting the
+  `message_complete` wire event. Migration 0011 resets every
+  `total_cost_usd` to 0 — historical per-turn deltas were never
+  recorded, so the next turn on any resumable session re-seeds the
+  total from the SDK's own (correct) cumulative.
+
 ## [0.2.13] - 2026-04-19
 
 Closes out v0.2. Enforces the "every session has ≥1 tag" rule at

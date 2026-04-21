@@ -115,16 +115,23 @@ def mock_agent_long_stream(monkeypatch: pytest.MonkeyPatch) -> None:
 def mock_agent_cost_stream(monkeypatch: pytest.MonkeyPatch) -> None:
     from uuid import uuid4
 
+    # `claude-agent-sdk`'s ResultMessage.total_cost_usd is cumulative
+    # across a resumed CLI session, so simulate that: each turn reports
+    # the running total, not the per-turn delta. The runner converts
+    # this back to a delta before persisting/emitting.
+    cumulative = {"usd": 0.0}
+
     async def fake(self: AgentSession, prompt: str) -> AsyncIterator[AgentEvent]:
         # Fresh id per turn so a session can run multiple turns without
         # colliding on messages.id (UNIQUE).
         msg_id = uuid4().hex
         yield MessageStart(session_id=self.session_id, message_id=msg_id)
         yield Token(session_id=self.session_id, text="billed")
+        cumulative["usd"] += 0.01
         yield MessageComplete(
             session_id=self.session_id,
             message_id=msg_id,
-            cost_usd=0.01,
+            cost_usd=cumulative["usd"],
         )
 
     monkeypatch.setattr("bearings.agent.session.AgentSession.stream", fake)
