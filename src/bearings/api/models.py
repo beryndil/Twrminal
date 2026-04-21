@@ -196,3 +196,73 @@ class CommandOut(BaseModel):
 
 class CommandsListOut(BaseModel):
     entries: list[CommandOut]
+
+
+class ReorgWarning(BaseModel):
+    """Advisory issue surfaced by a reorg op — never fatal.
+
+    Slice 2 always returns an empty `warnings` array; Slice 7 (Polish)
+    populates this with tool-call-group split detection. The model is
+    defined now so the API shape is stable and the future addition is
+    non-breaking.
+    """
+
+    code: str
+    message: str
+    details: dict[str, str] = {}
+
+
+class ReorgMoveRequest(BaseModel):
+    """Body for `POST /sessions/{id}/reorg/move`. `message_ids` must
+    be non-empty; the route rejects an empty list with 400 even though
+    the underlying primitive tolerates it as a no-op."""
+
+    target_session_id: str
+    message_ids: list[str]
+
+
+class ReorgMoveResult(BaseModel):
+    """Response shape shared by `move` and (nested in) `split`.
+
+    `moved` and `tool_calls_followed` come directly from
+    `store.MoveResult`; `warnings` is the forward-compatible slot for
+    Slice 7's group-split detection — currently always `[]`.
+    """
+
+    moved: int
+    tool_calls_followed: int
+    warnings: list[ReorgWarning] = []
+
+
+class NewSessionSpec(BaseModel):
+    """Inline session spec used by split to create the target session.
+
+    `model` and `working_dir` are optional here (unlike
+    `SessionCreate`): when omitted, the route copies them from the
+    source session so "split this thread off" doesn't require the
+    caller to re-specify defaults the source already carries. Tag ids
+    must be non-empty — every session must carry ≥1 tag (v0.2.13).
+    """
+
+    title: str
+    description: str | None = None
+    tag_ids: list[int]
+    model: str | None = None
+    working_dir: str | None = None
+
+
+class ReorgSplitRequest(BaseModel):
+    """Body for `POST /sessions/{id}/reorg/split`. `after_message_id`
+    is the anchor — every message chronologically after it moves into
+    the new session."""
+
+    after_message_id: str
+    new_session: NewSessionSpec
+
+
+class ReorgSplitResult(BaseModel):
+    """Response shape for split — the newly created session plus the
+    inner move counts. 201 status code signals a resource was created."""
+
+    session: SessionOut
+    result: ReorgMoveResult

@@ -516,13 +516,12 @@ cover shape, not feel.
     in `_sessions.SESSION_COUNT`, not a stored column, so the primitive
     doesn't "recompute" it — the next read just picks up the new count.
     Simpler than the original slice scope.
-  - [ ] **Slice 2 — Move + Split routes (~4h).**
-    `POST /sessions/{id}/reorg/move` and `.../reorg/split`. Split
-    creates a new sessions row inline from a body-supplied
-    `{title, description?, tag_ids[]}` and moves everything after
-    `after_message_id` into it. Both routes call
-    `runner.stop(reason="session_reorg")` on affected live runners so
-    the model's view clears next turn.
+  - [x] **Slice 2 — Move + Split routes.** Shipped as v0.3.18. Both
+    routes compose `store.move_messages_tx` (Slice 1) and call
+    `runner.request_stop()` on affected live runners. `reason="…"`
+    threading deferred — `request_stop()` carries no public reason
+    string today; adding the param is speculative plumbing, will add
+    when the UI wants to surface the stop cause.
   - [ ] **Slice 3 — UI: hover-action Move + Split (~1 day).**
     Message-row "⋯" menu with "Move to session…" and "Split here…".
     New `SessionPickerModal.svelte` (searchable, tag-filter, "create
@@ -556,6 +555,56 @@ cover shape, not feel.
   cost-attribution policy (leave on source vs. follow messages),
   undo-window length (30s default), Slice-6 priority (ship 1–5 first
   or put 6 on the critical path), tool-call-group warn-vs-refuse.
+
+## v0.3.18 — shipped
+
+Slice 2 of the Session Reorg plan
+(`~/.claude/plans/sparkling-triaging-otter.md`): the first user-
+facing reorg surface. Two routes, both composed on the Slice 1
+`move_messages_tx` primitive.
+
+- [x] `POST /api/sessions/{id}/reorg/move` — body
+  `{target_session_id, message_ids[]}`, returns `ReorgMoveResult`
+  with `moved` / `tool_calls_followed` / `warnings`. Validates
+  non-empty `message_ids` (400), source != target (400), source
+  exists (404), target exists (404) before touching the primitive.
+- [x] `POST /api/sessions/{id}/reorg/split` — body
+  `{after_message_id, new_session: {title, description?, tag_ids[],
+  model?, working_dir?}}`, returns 201 with
+  `{session: SessionOut, result: ReorgMoveResult}`. Creates the new
+  session row inheriting `model` + `working_dir` from source unless
+  overridden, validates tag ids (≥1, each must exist), computes the
+  move set as every message chronologically after the anchor, and
+  420s if nothing is after the anchor (split-at-last is a no-op
+  mistake, not a silent success).
+- [x] Runner-stop side effect: both routes call
+  `runner.request_stop()` on any live runner on affected sessions so
+  the SDK's in-memory context rebuilds against the new DB state
+  next turn. Move stops both sides; split stops source only (new
+  session has no runner yet). Idle runners no-op. The `reason=`
+  threading the plan envisioned is deferred — `request_stop` has no
+  public reason surface today.
+- [x] New Pydantic shapes in `api/models.py`: `ReorgWarning`,
+  `ReorgMoveRequest`, `ReorgMoveResult`, `NewSessionSpec`,
+  `ReorgSplitRequest`, `ReorgSplitResult`. `warnings` is always `[]`
+  in this slice; Slice 7 will populate it with tool-call-group
+  split detection without changing the shape.
+- [x] Router registered in `server.py` with `/api` prefix so routes
+  land at `/api/sessions/{id}/reorg/move` etc. Sits in the APIRouter
+  table right after `routes_sessions` since it shares the `/sessions`
+  prefix.
+- [x] 15 new tests in `tests/test_routes_reorg.py`: move happy-path +
+  counts verify, empty-ids 400, same-source/target 400, missing
+  source 404, missing target 404, move stops both runners; split
+  happy-path + counts + defaults inherit, overrides, tag attach,
+  missing source 404, anchor not in session 404, no-messages-after
+  400, no tag_ids 400, bad tag_id 400, split stops source runner.
+- [x] Seeds messages via a helper that opens a separate aiosqlite
+  connection to the same DB file (WAL mode). First `test_routes_*`
+  test pattern that needs pre-seeded messages and no WS plumbing;
+  kept local to `test_routes_reorg.py` for now — promote to
+  `conftest.py` if a second test file wants the same thing.
+- [x] 314 backend tests pass (up from 299). Ruff + mypy strict green.
 
 ## v0.3.17 — shipped
 

@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.18] - 2026-04-21
+
+### Added
+
+- Session reorg routes — `POST /api/sessions/{id}/reorg/move` and
+  `POST /api/sessions/{id}/reorg/split`. Move cherry-picks specific
+  message ids from the source into an existing target; split anchors
+  on a message id and relocates everything chronologically after it
+  into a newly-created session. Split's `new_session.model` and
+  `new_session.working_dir` are optional — omitted values inherit
+  from the source so "split this thread off" doesn't force the
+  caller to re-specify defaults the source already carries. Tag ids
+  are required on split (≥1, matching the v0.2.13 session-creation
+  gate) and are validated before the session row is written.
+- Runner-stop side effect. Both routes call `runner.request_stop()`
+  on any live runner attached to an affected session so the SDK's
+  in-memory context rebuilds against the new DB state on the next
+  turn. Move stops both sides; split stops only the source (the new
+  session is fresh and has no runner yet). v0.3.15 priming is the
+  belt to this stop's suspenders.
+- `ReorgWarning` / `ReorgMoveResult` / `ReorgSplitResult` Pydantic
+  shapes in `api/models.py`. `warnings` is always returned as `[]` in
+  v0.3.18; Slice 7 (Polish) will populate it with tool-call-group
+  split detection without changing the API shape. `NewSessionSpec`
+  lives alongside — similar to `SessionCreate` but with optional
+  `model` / `working_dir` for the inherit-from-source path.
+
+Slice 2 of the Session Reorg plan
+(`~/.claude/plans/sparkling-triaging-otter.md`); composed entirely
+on top of the Slice 1 `store.move_messages_tx` primitive from
+v0.3.17. 15 new tests in `tests/test_routes_reorg.py` (7 for move, 8
+for split, including the runner-stop assertions). 314 backend tests
+pass (up from 299). Ruff + mypy strict green.
+
 ## [0.3.17] - 2026-04-21
 
 ### Added
