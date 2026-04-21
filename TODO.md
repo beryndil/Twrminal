@@ -483,11 +483,14 @@ is feature-complete.
   `capToolOutput`, `LiveToolCall`) so existing callers don't
   change. 89 frontend tests pass; svelte-check clean.
 
-### Browser verification pending
+### Browser verification — deferred to pre-1.0.0
 
-Checklist lives in `TESTING_NOTES.md` §"Pending Dave's browser
-walkthrough". Every v0.2 UI surface needs exercising; unit tests
-cover shape, not feel.
+Consolidated pre-1.0.0 regression pass lives in `TESTING_NOTES.md`
+§"Pre-1.0.0 browser regression pass — TODO". The old per-slice
+v0.2.13 / v0.3.1 / v0.3.3 checklists are stale (app is at v0.3.22
+and the UI has moved on) — rewrite the list against the
+1.0.0-candidate UI at the time and run it then. Do not exercise
+the historical checklists as-is.
 
 ### Other
 
