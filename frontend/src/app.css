@@ -3,3 +3,37 @@
 @tailwind utilities;
 
 html, body, #app { height: 100%; }
+
+/* Thin, dark scrollbars across the whole app. Firefox uses the
+   `scrollbar-*` properties; Chromium/WebKit gets the `::-webkit-*`
+   pseudo-elements. Track is transparent so it blends into whichever
+   slate-900 surface the scroller sits on; thumb uses slate-700 with a
+   slate-500 hover so it stays visible without dominating. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #334155; /* slate-700 */
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #64748b; /* slate-500 */
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
