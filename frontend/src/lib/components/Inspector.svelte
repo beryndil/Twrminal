@@ -278,7 +278,8 @@
             class="whitespace-pre-wrap break-all {i > 0 ? 'mt-3' : ''}"><span
               class="text-emerald-400">$ {call.name}</span> <span
               class={mark.cls}>{mark.glyph}</span> <span
-              class="text-slate-500">{elapsed(call.startedAt, call.finishedAt)}</span>
+              class="text-slate-500">{elapsed(call.startedAt, call.finishedAt)}</span>{#if call.outputTruncated} <span
+              class="text-amber-400">[truncated]</span>{/if}
 {JSON.stringify(call.input, null, 2)}{#if call.output !== null}
 {call.output}{/if}{#if call.error}
 <span class="text-rose-400">error: {call.error}</span>{/if}</pre>

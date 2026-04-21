@@ -127,6 +127,33 @@ async def finish_tool_call(
     return cursor.rowcount > 0
 
 
+async def append_tool_output(
+    conn: aiosqlite.Connection,
+    *,
+    tool_call_id: str,
+    chunk: str,
+) -> bool:
+    """Append a streamed chunk to a tool call's output column.
+
+    Single-writer semantics: the runner is the only producer of deltas
+    for any given `tool_call_id`, so SQLite's default serialization is
+    enough — no explicit lock needed. The `COALESCE(output, '')` handles
+    the first chunk (where `output` is still NULL from the initial
+    `start_tool_call` insert). `finished_at` is intentionally left
+    untouched; only `finish_tool_call` sets it, and that call writes
+    the canonical final output in a single statement.
+
+    Returns True if the tool_call row exists (chunk landed), False if
+    no row matched — callers may log the latter as a dropped chunk.
+    """
+    cursor = await conn.execute(
+        "UPDATE tool_calls SET output = COALESCE(output, '') || ? WHERE id = ?",
+        (chunk, tool_call_id),
+    )
+    await conn.commit()
+    return cursor.rowcount > 0
+
+
 async def attach_tool_calls_to_message(
     conn: aiosqlite.Connection,
     *,

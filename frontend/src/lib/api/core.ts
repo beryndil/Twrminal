@@ -21,6 +21,18 @@ export type ToolCallEndEvent = {
   output: string | null;
   error: string | null;
 };
+/** Incremental chunk of a tool's output. Reducer appends `delta` to
+ * the matching tool call's `output` string. The backend line-buffers
+ * at the source so chunks are always on safe boundaries (newline /
+ * complete UTF-8 codepoint). Must arrive before the `tool_call_end`
+ * for the same `tool_call_id` — the reducer drops any delta whose
+ * target call has already finished (via `_seq` ordering). */
+export type ToolOutputDeltaEvent = {
+  type: 'tool_output_delta';
+  session_id: string;
+  tool_call_id: string;
+  delta: string;
+};
 export type MessageStartEvent = {
   type: 'message_start';
   session_id: string;
@@ -57,6 +69,7 @@ export type AgentEvent = (
   | UserMessageEvent
   | ToolCallStartEvent
   | ToolCallEndEvent
+  | ToolOutputDeltaEvent
   | MessageStartEvent
   | MessageCompleteEvent
   | ErrorEvent

@@ -46,6 +46,7 @@ from bearings.agent.events import (
     Token,
     ToolCallEnd,
     ToolCallStart,
+    ToolOutputDelta,
 )
 from bearings.agent.session import AgentSession
 from bearings.db import store
@@ -242,6 +243,17 @@ class SessionRunner:
                 )
                 tool_call_ids.append(event.tool_call_id)
                 metrics.tool_calls_started.inc()
+            elif isinstance(event, ToolOutputDelta):
+                # Persist each chunk as it arrives so the history
+                # endpoint + any reconnecting WebSocket see the
+                # cumulative output. `finish_tool_call` later
+                # overwrites with the canonical final string, so a
+                # missed delta doesn't leave a permanent gap.
+                await store.append_tool_output(
+                    self.db,
+                    tool_call_id=event.tool_call_id,
+                    chunk=event.delta,
+                )
             elif isinstance(event, ToolCallEnd):
                 await store.finish_tool_call(
                     self.db,

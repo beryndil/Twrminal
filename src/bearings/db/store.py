@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from bearings.db._common import MIGRATIONS_DIR, init_db
 from bearings.db._messages import (
+    append_tool_output,
     attach_tool_calls_to_message,
     finish_tool_call,
     insert_message,
@@ -51,6 +52,7 @@ from bearings.db._tags import (
 __all__ = [
     "MIGRATIONS_DIR",
     "add_session_cost",
+    "append_tool_output",
     "attach_tag",
     "attach_tool_calls_to_message",
     "create_session",

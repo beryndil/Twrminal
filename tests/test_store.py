@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from bearings.db.store import (
+    append_tool_output,
     create_session,
     delete_session,
     finish_tool_call,
@@ -270,6 +271,79 @@ async def test_finish_tool_call_returns_false_when_missing(tmp_path: Path) -> No
     conn = await init_db(tmp_path / "db.sqlite")
     try:
         assert await finish_tool_call(conn, tool_call_id="nope", output="x", error=None) is False
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_append_tool_output_builds_cumulative_string(tmp_path: Path) -> None:
+    """Three chunks land in order, DB holds the concatenation. This is
+    the reconnect-persistence guarantee: the history endpoint can
+    reconstruct the tail of output a dropped WS client missed."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        sess = await create_session(conn, working_dir="/x", model="m", title=None)
+        await insert_tool_call_start(
+            conn, session_id=sess["id"], tool_call_id="t-stream", name="Bash", input_json="{}"
+        )
+        assert await append_tool_output(conn, tool_call_id="t-stream", chunk="line 1\n")
+        assert await append_tool_output(conn, tool_call_id="t-stream", chunk="line 2\n")
+        assert await append_tool_output(conn, tool_call_id="t-stream", chunk="line 3\n")
+        row = (await list_tool_calls(conn, sess["id"]))[0]
+        assert row["output"] == "line 1\nline 2\nline 3\n"
+        # finished_at stays null — append_tool_output must not close the call.
+        assert row["finished_at"] is None
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_append_tool_output_handles_first_chunk_from_null(tmp_path: Path) -> None:
+    """`insert_tool_call_start` leaves output NULL. The first delta
+    must COALESCE that null to '' — otherwise SQLite returns NULL and
+    the output field is corrupted on the first append."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        sess = await create_session(conn, working_dir="/x", model="m", title=None)
+        await insert_tool_call_start(
+            conn, session_id=sess["id"], tool_call_id="t-first", name="Bash", input_json="{}"
+        )
+        assert await append_tool_output(conn, tool_call_id="t-first", chunk="hello\n")
+        row = (await list_tool_calls(conn, sess["id"]))[0]
+        assert row["output"] == "hello\n"
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_append_tool_output_then_finish_overwrites_with_canonical(tmp_path: Path) -> None:
+    """Deltas build an in-progress view; `finish_tool_call` lands the
+    canonical final string and may overwrite. Pinning this behavior
+    so a missed delta can't leave a phantom artifact once the call
+    finishes."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        sess = await create_session(conn, working_dir="/x", model="m", title=None)
+        await insert_tool_call_start(
+            conn, session_id=sess["id"], tool_call_id="t-overwrite", name="Bash", input_json="{}"
+        )
+        await append_tool_output(conn, tool_call_id="t-overwrite", chunk="partial output\n")
+        await finish_tool_call(
+            conn, tool_call_id="t-overwrite", output="full final output\n", error=None
+        )
+        row = (await list_tool_calls(conn, sess["id"]))[0]
+        assert row["output"] == "full final output\n"
+        assert row["finished_at"] is not None
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_append_tool_output_returns_false_when_missing(tmp_path: Path) -> None:
+    """No row → no-op. Caller logs; nothing explodes."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        assert await append_tool_output(conn, tool_call_id="nope", chunk="x") is False
     finally:
         await conn.close()
 

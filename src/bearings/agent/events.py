@@ -40,6 +40,22 @@ class ToolCallEnd(BaseModel):
     error: str | None = None
 
 
+class ToolOutputDelta(BaseModel):
+    """Incremental chunk of tool output produced while a tool call is
+    still running. Frontend reducer appends `delta` to the matching
+    tool call's `output`. Deltas MUST be emitted before the final
+    `ToolCallEnd` for the same `tool_call_id`; the reducer drops any
+    delta whose target call is already finished. Sources that feed
+    these events are expected to line-buffer (see
+    `agent/line_buffer.py`) so chunks never split multibyte UTF-8
+    codepoints or ANSI escape sequences mid-sequence."""
+
+    type: Literal["tool_output_delta"] = "tool_output_delta"
+    session_id: str
+    tool_call_id: str
+    delta: str
+
+
 class MessageStart(BaseModel):
     type: Literal["message_start"] = "message_start"
     session_id: str
@@ -65,6 +81,7 @@ AgentEvent = (
     | Thinking
     | ToolCallStart
     | ToolCallEnd
+    | ToolOutputDelta
     | MessageStart
     | MessageComplete
     | ErrorEvent

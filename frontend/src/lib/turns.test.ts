@@ -21,6 +21,7 @@ function call(partial: Partial<LiveToolCall> & Pick<LiveToolCall, 'id' | 'messag
     ok: null,
     startedAt: 0,
     finishedAt: null,
+    outputTruncated: false,
     ...partial
   };
 }

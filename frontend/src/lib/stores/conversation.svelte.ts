@@ -11,7 +11,37 @@ export type LiveToolCall = {
   ok: boolean | null; // null until tool_call_end arrives
   startedAt: number;
   finishedAt: number | null;
+  /** True when the output has been head-truncated by the reducer to
+   * stay under TOOL_OUTPUT_CAP_CHARS. UI-only; not round-tripped to
+   * DB. Set once and stays set for the lifetime of the tc. */
+  outputTruncated: boolean;
 };
+
+/** Hard cap on a single tool call's `output` string length held in
+ * the browser store. A runaway tool emitting 500MB would otherwise
+ * balloon this one field unbounded. Terminal-semantics: when we
+ * overflow, we keep the *tail* (most recent output) and drop the
+ * head, prefixed with a truncation marker. 5M chars ≈ 5MB of ASCII,
+ * more for multibyte — still well under what a browser tab handles
+ * comfortably. */
+export const TOOL_OUTPUT_CAP_CHARS = 5_000_000;
+
+/** Applied on every growth of `tc.output` (streamed delta or
+ * hydration of a huge persisted row). Returns the possibly-truncated
+ * string and whether truncation occurred on this call. */
+export function capToolOutput(
+  next: string
+): { output: string; truncated: boolean } {
+  if (next.length <= TOOL_OUTPUT_CAP_CHARS) {
+    return { output: next, truncated: false };
+  }
+  const dropped = next.length - TOOL_OUTPUT_CAP_CHARS;
+  const marker = `…[truncated ${dropped.toLocaleString()} chars]…\n`;
+  return {
+    output: marker + next.slice(-TOOL_OUTPUT_CAP_CHARS),
+    truncated: true
+  };
+}
 
 function hydrateToolCall(row: api.ToolCall): LiveToolCall {
   let parsedInput: Record<string, unknown> = {};
@@ -23,16 +53,22 @@ function hydrateToolCall(row: api.ToolCall): LiveToolCall {
   const startedAt = new Date(row.started_at).getTime();
   const finishedAt = row.finished_at ? new Date(row.finished_at).getTime() : null;
   const ok = finishedAt === null ? null : row.error === null;
+  // Persisted output can itself exceed the cap if a completed tool
+  // emitted a huge final string — apply the same head-truncation so
+  // the store never holds more than the cap per tc.
+  const capped =
+    row.output !== null ? capToolOutput(row.output) : { output: null, truncated: false };
   return {
     id: row.id,
     messageId: row.message_id,
     name: row.name,
     input: parsedInput,
-    output: row.output,
+    output: capped.output,
     error: row.error,
     ok,
     startedAt,
-    finishedAt
+    finishedAt,
+    outputTruncated: capped.truncated
   };
 }
 
@@ -242,23 +278,56 @@ class ConversationStore {
             error: null,
             ok: null,
             startedAt: Date.now(),
-            finishedAt: null
+            finishedAt: null,
+            outputTruncated: false
           }
         ];
         return;
-      case 'tool_call_end':
+      case 'tool_output_delta':
+        // Four invariants, all enforced here:
+        //   1. Ordering — drop if the target call already finished.
+        //      The ring buffer's `_seq` already orders events, but a
+        //      replay after reconnect can deliver a late delta that
+        //      predates `tool_call_end` we already rendered.
+        //   2. Append — delta grows `output` in-place.
+        //   3. Memory cap — head-truncate to TOOL_OUTPUT_CAP_CHARS.
+        //   4. Persistence — backend does idempotent DB append per
+        //      delta, so a reconnecting client pulls cumulative
+        //      output from history, not from the missed live frames.
+        state.toolCalls = state.toolCalls.map((tc) => {
+          if (tc.id !== event.tool_call_id) return tc;
+          if (tc.finishedAt !== null) return tc;
+          const combined = (tc.output ?? '') + event.delta;
+          const capped = capToolOutput(combined);
+          return {
+            ...tc,
+            output: capped.output,
+            outputTruncated: tc.outputTruncated || capped.truncated
+          };
+        });
+        return;
+      case 'tool_call_end': {
+        // The canonical final output arrives here. Apply the cap so
+        // a huge final string doesn't bypass the bound that deltas
+        // respect.
+        const capped =
+          event.output !== null
+            ? capToolOutput(event.output)
+            : { output: null, truncated: false };
         state.toolCalls = state.toolCalls.map((tc) =>
           tc.id === event.tool_call_id
             ? {
                 ...tc,
                 ok: event.ok,
-                output: event.output,
+                output: capped.output,
                 error: event.error,
-                finishedAt: Date.now()
+                finishedAt: Date.now(),
+                outputTruncated: tc.outputTruncated || capped.truncated
               }
             : tc
         );
         return;
+      }
       case 'message_complete':
         // Dedupe: replay can deliver a complete for a turn that's
         // already in the DB (and hence in `messages`). Clear the
