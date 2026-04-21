@@ -25,7 +25,14 @@ from bearings.db._messages import (
     list_tool_calls,
     search_messages,
 )
-from bearings.db._reorg import MoveResult, move_messages_tx
+from bearings.db._reorg import (
+    MoveResult,
+    ReorgOp,
+    delete_reorg_audit,
+    list_reorg_audits,
+    move_messages_tx,
+    record_reorg_audit,
+)
 from bearings.db._sessions import (
     add_session_cost,
     create_session,
@@ -56,6 +63,7 @@ from bearings.db._tags import (
 __all__ = [
     "MIGRATIONS_DIR",
     "MoveResult",
+    "ReorgOp",
     "add_session_cost",
     "append_tool_output",
     "attach_tag",
@@ -63,6 +71,7 @@ __all__ = [
     "create_session",
     "create_tag",
     "delete_session",
+    "delete_reorg_audit",
     "delete_tag",
     "delete_tag_memory",
     "detach_tag",
@@ -79,12 +88,14 @@ __all__ = [
     "list_all_sessions",
     "list_all_tool_calls",
     "list_messages",
+    "list_reorg_audits",
     "list_session_tags",
     "list_sessions",
     "list_tags",
     "list_tool_calls",
     "move_messages_tx",
     "put_tag_memory",
+    "record_reorg_audit",
     "search_messages",
     "set_sdk_session_id",
     "set_session_context_usage",

@@ -17,13 +17,17 @@ import pytest_asyncio
 from bearings.db.store import (
     attach_tool_calls_to_message,
     create_session,
+    delete_reorg_audit,
+    delete_session,
     get_session,
     init_db,
     insert_message,
     insert_tool_call_start,
+    list_reorg_audits,
     list_sessions,
     list_tool_calls,
     move_messages_tx,
+    record_reorg_audit,
 )
 
 
@@ -237,3 +241,133 @@ async def test_move_noop_does_not_bump_updated_at(
     dst_after = (await get_session(conn, dst))["updated_at"]  # type: ignore[index]
     assert src_after == src_before
     assert dst_after == dst_before
+
+
+# --- Slice 5: reorg_audits -------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_record_and_list_reorg_audits_round_trip(
+    conn: aiosqlite.Connection,
+) -> None:
+    src = await _mk_session(conn, "source")
+    dst = await _mk_session(conn, "target")
+    first = await record_reorg_audit(
+        conn,
+        source_session_id=src,
+        target_session_id=dst,
+        target_title_snapshot="target",
+        message_count=3,
+        op="move",
+    )
+    second = await record_reorg_audit(
+        conn,
+        source_session_id=src,
+        target_session_id=dst,
+        target_title_snapshot="target",
+        message_count=1,
+        op="split",
+    )
+    await conn.commit()
+    assert first > 0 and second > first
+
+    audits = await list_reorg_audits(conn, src)
+    assert [a["id"] for a in audits] == [first, second]
+    assert [a["op"] for a in audits] == ["move", "split"]
+    assert audits[0]["message_count"] == 3
+    assert audits[1]["target_title_snapshot"] == "target"
+
+
+@pytest.mark.asyncio
+async def test_reorg_audit_target_nulled_on_target_delete(
+    conn: aiosqlite.Connection,
+) -> None:
+    """`ON DELETE SET NULL` keeps the audit row legible even after the
+    target is deleted — the frontend shows the snapshotted title +
+    "(deleted session)" instead of losing the audit entry."""
+    src = await _mk_session(conn, "source")
+    dst = await _mk_session(conn, "gone")
+    audit_id = await record_reorg_audit(
+        conn,
+        source_session_id=src,
+        target_session_id=dst,
+        target_title_snapshot="gone",
+        message_count=2,
+        op="merge",
+    )
+    await conn.commit()
+    assert audit_id > 0
+
+    await delete_session(conn, dst)
+
+    audits = await list_reorg_audits(conn, src)
+    assert len(audits) == 1
+    assert audits[0]["target_session_id"] is None
+    assert audits[0]["target_title_snapshot"] == "gone"
+
+
+@pytest.mark.asyncio
+async def test_reorg_audit_cascades_on_source_delete(
+    conn: aiosqlite.Connection,
+) -> None:
+    src = await _mk_session(conn, "source")
+    dst = await _mk_session(conn, "target")
+    await record_reorg_audit(
+        conn,
+        source_session_id=src,
+        target_session_id=dst,
+        target_title_snapshot="target",
+        message_count=1,
+        op="move",
+    )
+    await conn.commit()
+
+    await delete_session(conn, src)
+
+    # Source gone → audit cascades out. Query for the raw row count
+    # directly since `list_reorg_audits` filters by source id.
+    async with conn.execute("SELECT COUNT(*) FROM reorg_audits") as cur:
+        row = await cur.fetchone()
+    assert row is not None
+    assert row[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_reorg_audit_returns_false_for_missing(
+    conn: aiosqlite.Connection,
+) -> None:
+    src = await _mk_session(conn, "source")
+    dst = await _mk_session(conn, "target")
+    audit_id = await record_reorg_audit(
+        conn,
+        source_session_id=src,
+        target_session_id=dst,
+        target_title_snapshot="target",
+        message_count=1,
+        op="move",
+    )
+    await conn.commit()
+
+    assert await delete_reorg_audit(conn, audit_id) is True
+    assert await list_reorg_audits(conn, src) == []
+    # Second delete is a no-op, not an error (racing undo clicks).
+    assert await delete_reorg_audit(conn, audit_id) is False
+
+
+@pytest.mark.asyncio
+async def test_reorg_audit_rejects_unknown_op(
+    conn: aiosqlite.Connection,
+) -> None:
+    """The CHECK constraint forbids anything outside move/split/merge."""
+    src = await _mk_session(conn, "source")
+    dst = await _mk_session(conn, "target")
+    with pytest.raises(aiosqlite.IntegrityError):
+        await record_reorg_audit(
+            conn,
+            source_session_id=src,
+            target_session_id=dst,
+            target_title_snapshot="target",
+            message_count=1,
+            op="archive",  # type: ignore[arg-type]
+        )
+    await conn.rollback()

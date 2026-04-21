@@ -363,3 +363,280 @@ def test_split_stops_source_runner(client: TestClient, tmp_settings: Settings) -
     )
     assert resp.status_code == 201
     assert stops == ["src"]
+
+
+# ---------- merge -----------------------------------------------------
+
+
+def test_merge_happy_path(client: TestClient, tmp_settings: Settings) -> None:
+    src = _create(client, title="src")
+    dst = _create(client, title="dst")
+    _seed_ordered(tmp_settings.storage.db_path, src["id"], ["a", "b", "c"])
+
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/merge",
+        json={"target_session_id": dst["id"], "delete_source": False},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["moved"] == 3
+    assert body["deleted_source"] is False
+    assert body["warnings"] == []
+
+    # Source kept, emptied; target grew to 3.
+    src_after = client.get(f"/api/sessions/{src['id']}").json()
+    dst_after = client.get(f"/api/sessions/{dst['id']}").json()
+    assert src_after["message_count"] == 0
+    assert dst_after["message_count"] == 3
+
+
+def test_merge_deletes_source_when_requested(client: TestClient, tmp_settings: Settings) -> None:
+    src = _create(client, title="src")
+    dst = _create(client, title="dst")
+    _seed_ordered(tmp_settings.storage.db_path, src["id"], ["a", "b"])
+
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/merge",
+        json={"target_session_id": dst["id"], "delete_source": True},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["deleted_source"] is True
+
+    # Source gone, target kept both messages (delete runs AFTER the
+    # move so the cascade doesn't swallow the just-moved rows).
+    assert client.get(f"/api/sessions/{src['id']}").status_code == 404
+    dst_after = client.get(f"/api/sessions/{dst['id']}").json()
+    assert dst_after["message_count"] == 2
+
+
+def test_merge_empty_source_is_noop(client: TestClient) -> None:
+    src = _create(client, title="src")
+    dst = _create(client, title="dst")
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/merge",
+        json={"target_session_id": dst["id"], "delete_source": False},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["moved"] == 0
+    assert body["deleted_source"] is False
+
+
+def test_merge_empty_source_deletes_when_requested(client: TestClient) -> None:
+    """delete_source honored even when there were no messages to move
+    — lets the UI clear out an orphaned empty session with one click."""
+    src = _create(client, title="src")
+    dst = _create(client, title="dst")
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/merge",
+        json={"target_session_id": dst["id"], "delete_source": True},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["deleted_source"] is True
+    assert client.get(f"/api/sessions/{src['id']}").status_code == 404
+
+
+def test_merge_rejects_same_source_and_target(client: TestClient) -> None:
+    src = _create(client, title="src")
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/merge",
+        json={"target_session_id": src["id"], "delete_source": False},
+    )
+    assert resp.status_code == 400
+    assert "must differ" in resp.json()["detail"]
+
+
+def test_merge_404_on_missing_source(client: TestClient) -> None:
+    dst = _create(client, title="dst")
+    resp = client.post(
+        "/api/sessions/ghost/reorg/merge",
+        json={"target_session_id": dst["id"], "delete_source": False},
+    )
+    assert resp.status_code == 404
+    assert "source" in resp.json()["detail"]
+
+
+def test_merge_404_on_missing_target(client: TestClient) -> None:
+    src = _create(client, title="src")
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/merge",
+        json={"target_session_id": "ghost", "delete_source": False},
+    )
+    assert resp.status_code == 404
+    assert "target" in resp.json()["detail"]
+
+
+def test_merge_stops_both_runners(client: TestClient, tmp_settings: Settings) -> None:
+    src = _create(client, title="src")
+    dst = _create(client, title="dst")
+    _seed_message(tmp_settings.storage.db_path, src["id"], "user", "x")
+
+    stops: list[str] = []
+    registry = client.app.state.runners  # type: ignore[attr-defined]
+    registry._runners[src["id"]] = _MockRunner("src", stops)  # type: ignore[assignment]
+    registry._runners[dst["id"]] = _MockRunner("dst", stops)  # type: ignore[assignment]
+
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/merge",
+        json={"target_session_id": dst["id"], "delete_source": False},
+    )
+    assert resp.status_code == 200
+    assert sorted(stops) == ["dst", "src"]
+
+
+# ---------- audits ----------------------------------------------------
+
+
+def test_move_records_audit(client: TestClient, tmp_settings: Settings) -> None:
+    src = _create(client, title="src")
+    dst = _create(client, title="dst")
+    ids = _seed_ordered(tmp_settings.storage.db_path, src["id"], ["a", "b"])
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/move",
+        json={"target_session_id": dst["id"], "message_ids": ids},
+    )
+    # Response echoes the audit id so the undo handler can DELETE it
+    # directly without a follow-up list call.
+    body = resp.json()
+    assert isinstance(body["audit_id"], int)
+    audits = client.get(f"/api/sessions/{src['id']}/reorg/audits").json()
+    assert len(audits) == 1
+    assert audits[0]["id"] == body["audit_id"]
+    assert audits[0]["op"] == "move"
+    assert audits[0]["message_count"] == 2
+    assert audits[0]["target_session_id"] == dst["id"]
+    assert audits[0]["target_title_snapshot"] == "dst"
+
+
+def test_split_records_audit(client: TestClient, tmp_settings: Settings) -> None:
+    src = _create(client, title="src")
+    ids = _seed_ordered(tmp_settings.storage.db_path, src["id"], ["a", "b", "c"])
+    tag_id = _default_tag(client)
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/split",
+        json={
+            "after_message_id": ids[0],
+            "new_session": {"title": "spin-off", "tag_ids": [tag_id]},
+        },
+    )
+    split_body = resp.json()
+    new_id = split_body["session"]["id"]
+    assert isinstance(split_body["result"]["audit_id"], int)
+    audits = client.get(f"/api/sessions/{src['id']}/reorg/audits").json()
+    assert [a["op"] for a in audits] == ["split"]
+    assert audits[0]["id"] == split_body["result"]["audit_id"]
+    assert audits[0]["target_session_id"] == new_id
+    assert audits[0]["target_title_snapshot"] == "spin-off"
+
+
+def test_merge_records_audit_and_preserves_after_target_delete(
+    client: TestClient, tmp_settings: Settings
+) -> None:
+    src = _create(client, title="src")
+    dst = _create(client, title="dst")
+    _seed_ordered(tmp_settings.storage.db_path, src["id"], ["a"])
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/merge",
+        json={"target_session_id": dst["id"], "delete_source": False},
+    )
+    merge_body = resp.json()
+    assert isinstance(merge_body["audit_id"], int)
+    # Delete the target — audit row's target_session_id flips to null
+    # but the snapshotted title stays so the UI has something to show.
+    client.delete(f"/api/sessions/{dst['id']}")
+    audits = client.get(f"/api/sessions/{src['id']}/reorg/audits").json()
+    assert len(audits) == 1
+    assert audits[0]["id"] == merge_body["audit_id"]
+    assert audits[0]["op"] == "merge"
+    assert audits[0]["target_session_id"] is None
+    assert audits[0]["target_title_snapshot"] == "dst"
+
+
+def test_merge_skips_audit_when_source_deleted(client: TestClient, tmp_settings: Settings) -> None:
+    src = _create(client, title="src")
+    dst = _create(client, title="dst")
+    _seed_ordered(tmp_settings.storage.db_path, src["id"], ["a", "b"])
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/merge",
+        json={"target_session_id": dst["id"], "delete_source": True},
+    )
+    # No audit row was written — cascade would've dropped it anyway.
+    assert resp.json()["audit_id"] is None
+    # Source is gone so the audit endpoint 404s.
+    assert client.get(f"/api/sessions/{src['id']}/reorg/audits").status_code == 404
+
+
+def test_audit_list_empty_for_untouched_session(client: TestClient) -> None:
+    s = _create(client, title="solo")
+    resp = client.get(f"/api/sessions/{s['id']}/reorg/audits")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_audit_list_404_on_missing_session(client: TestClient) -> None:
+    resp = client.get("/api/sessions/ghost/reorg/audits")
+    assert resp.status_code == 404
+
+
+def test_delete_audit_round_trip(client: TestClient, tmp_settings: Settings) -> None:
+    src = _create(client, title="src")
+    dst = _create(client, title="dst")
+    ids = _seed_ordered(tmp_settings.storage.db_path, src["id"], ["a"])
+    client.post(
+        f"/api/sessions/{src['id']}/reorg/move",
+        json={"target_session_id": dst["id"], "message_ids": ids},
+    )
+    audits = client.get(f"/api/sessions/{src['id']}/reorg/audits").json()
+    assert len(audits) == 1
+    audit_id = audits[0]["id"]
+
+    resp = client.delete(f"/api/sessions/{src['id']}/reorg/audits/{audit_id}")
+    assert resp.status_code == 204
+    # Row gone, list is empty again.
+    assert client.get(f"/api/sessions/{src['id']}/reorg/audits").json() == []
+
+
+def test_delete_audit_404_on_wrong_session(client: TestClient, tmp_settings: Settings) -> None:
+    """A stale URL can't delete another session's audits."""
+    src = _create(client, title="src")
+    dst = _create(client, title="dst")
+    other = _create(client, title="other")
+    ids = _seed_ordered(tmp_settings.storage.db_path, src["id"], ["a"])
+    client.post(
+        f"/api/sessions/{src['id']}/reorg/move",
+        json={"target_session_id": dst["id"], "message_ids": ids},
+    )
+    audit_id = client.get(f"/api/sessions/{src['id']}/reorg/audits").json()[0]["id"]
+    resp = client.delete(f"/api/sessions/{other['id']}/reorg/audits/{audit_id}")
+    assert resp.status_code == 404
+
+
+def test_delete_audit_404_on_missing_id(client: TestClient) -> None:
+    src = _create(client, title="src")
+    resp = client.delete(f"/api/sessions/{src['id']}/reorg/audits/99999")
+    assert resp.status_code == 404
+
+
+def test_noop_move_records_no_audit(client: TestClient, tmp_settings: Settings) -> None:
+    """Idempotent re-run with zero real moves leaves no divider."""
+    src = _create(client, title="src")
+    dst = _create(client, title="dst")
+    ids = _seed_ordered(tmp_settings.storage.db_path, src["id"], ["a"])
+    first = client.post(
+        f"/api/sessions/{src['id']}/reorg/move",
+        json={"target_session_id": dst["id"], "message_ids": ids},
+    )
+    assert first.status_code == 200
+    # Second call moves 0 since the row is already on dst — source
+    # audit list must still be 1, not 2.
+    second = client.post(
+        f"/api/sessions/{src['id']}/reorg/move",
+        json={"target_session_id": dst["id"], "message_ids": ids},
+    )
+    assert second.status_code == 200
+    second_body = second.json()
+    assert second_body["moved"] == 0
+    # No divider recorded → audit_id is null, not the first op's id.
+    assert second_body["audit_id"] is None
+    audits = client.get(f"/api/sessions/{src['id']}/reorg/audits").json()
+    assert len(audits) == 1

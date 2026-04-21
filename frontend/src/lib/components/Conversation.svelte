@@ -9,6 +9,7 @@
   import CommandMenu from '$lib/components/CommandMenu.svelte';
   import MessageTurn from '$lib/components/MessageTurn.svelte';
   import PermissionModeSelector from '$lib/components/PermissionModeSelector.svelte';
+  import ReorgAuditDivider from '$lib/components/ReorgAuditDivider.svelte';
   import ReorgUndoToast from '$lib/components/ReorgUndoToast.svelte';
   import SessionEdit from '$lib/components/SessionEdit.svelte';
   import SessionPickerModal from '$lib/components/SessionPickerModal.svelte';
@@ -32,6 +33,37 @@
       streamingText: conversation.streamingText
     })
   );
+
+  // Slice 5: merge turns + reorg audit dividers into one chronological
+  // timeline so the dividers land in the right spot instead of always
+  // being tacked on at the end. Sort stably by ISO timestamp — turns
+  // without a message (streaming placeholder) sink with empty string.
+  type TimelineItem =
+    | { kind: 'turn'; key: string; when: string; turn: (typeof turns)[number] }
+    | { kind: 'audit'; key: string; when: string; audit: api.ReorgAudit };
+
+  const timeline = $derived.by((): TimelineItem[] => {
+    const items: TimelineItem[] = [];
+    for (const t of turns) {
+      const when = t.user?.created_at ?? t.assistant?.created_at ?? '';
+      items.push({ kind: 'turn', key: `turn:${t.key}`, when, turn: t });
+    }
+    for (const a of audits) {
+      items.push({ kind: 'audit', key: `audit:${a.id}`, when: a.created_at, audit: a });
+    }
+    items.sort((a, b) => {
+      if (a.when === b.when) return 0;
+      // Empty (streaming turn, no message yet) always lands last.
+      if (a.when === '') return 1;
+      if (b.when === '') return -1;
+      return a.when < b.when ? -1 : 1;
+    });
+    return items;
+  });
+
+  function onJumpToAuditTarget(targetId: string) {
+    sessions.select(targetId);
+  }
 
   let promptText = $state('');
   let scrollContainer: HTMLDivElement | undefined = $state();
@@ -101,8 +133,10 @@
   // anchor is the message the menu was opened from. Slice 4 added the
   // bulk variants: `bulk-move` moves the current selection to an
   // existing or new target, `bulk-split` moves the selection into a
-  // fresh session (picker opens on the create form).
-  type PickerOp = 'move' | 'split' | 'bulk-move' | 'bulk-split';
+  // fresh session (picker opens on the create form). Slice 5 added
+  // `merge`: folds the entire source into an existing target (no
+  // create-new path, no per-message anchor).
+  type PickerOp = 'move' | 'split' | 'bulk-move' | 'bulk-split' | 'merge';
   let pickerOpen = $state(false);
   let pickerOp = $state<PickerOp>('move');
   let pickerAnchor = $state<api.Message | null>(null);
@@ -188,6 +222,13 @@
     pickerOpen = true;
   }
 
+  function openMerge() {
+    pickerOp = 'merge';
+    pickerAnchor = null;
+    pickerBulkIds = [];
+    pickerOpen = true;
+  }
+
   function closePicker() {
     pickerOpen = false;
     pickerAnchor = null;
@@ -202,22 +243,73 @@
     if (op === 'bulk-split') {
       return `Split ${bulkCount} selected message${bulkCount === 1 ? '' : 's'} into a new session`;
     }
+    if (op === 'merge') return 'Merge this session into…';
     return 'Move message to…';
   }
 
   function pickerConfirmLabel(op: PickerOp): string {
     if (op === 'split' || op === 'bulk-split') return 'Split here';
+    if (op === 'merge') return 'Merge here';
     return 'Move here';
   }
 
+  // Slice 5: persistent reorg-audit dividers. Fetched on session
+  // switch, refreshed after every reorg op (including undos) so the
+  // timeline stays truthful without waiting for a reload.
+  let audits = $state<api.ReorgAudit[]>([]);
+
+  async function refreshAudits(): Promise<void> {
+    const sid = sessions.selectedId;
+    if (!sid) {
+      audits = [];
+      return;
+    }
+    try {
+      const rows = await api.listReorgAudits(sid);
+      if (sessions.selectedId === sid) audits = rows;
+    } catch {
+      // Non-fatal — the conversation still renders without dividers.
+    }
+  }
+
+  $effect(() => {
+    const sid = sessions.selected?.id ?? null;
+    if (!sid) {
+      audits = [];
+      return;
+    }
+    // Track updated_at so a server-side bump (e.g., a move from the
+    // other end) also invalidates the audit list on refocus.
+    void sessions.selected?.updated_at;
+    void refreshAudits();
+  });
+
   /** Run after a successful Move so the view reconciles against the
    * server. Refreshes the sidebar + active conversation so the moved
-   * rows disappear immediately instead of waiting for the next event. */
+   * rows disappear immediately instead of waiting for the next event.
+   * Also re-pulls the audit list when the current session is on either
+   * end of the op — new/undone dividers surface without a reload. */
   async function reconcileAfterReorg(affectedIds: string[]) {
     await sessions.refresh(sessions.filter);
     const currentSid = sessions.selectedId;
     if (currentSid && affectedIds.includes(currentSid)) {
       await conversation.load(currentSid);
+      await refreshAudits();
+    }
+  }
+
+  /** Wrap an undo closure with audit-row cleanup. If the server
+   * returned an `audit_id`, the divider is removed as part of the
+   * undo so the user doesn't see a stale "Moved N messages to X"
+   * line for an op that was reversed. The delete is scoped to
+   * `sourceId` and swallows 404s — a second-click race against the
+   * user manually deleting the divider should not blow up the undo. */
+  async function deleteAuditSafe(sourceId: string, auditId: number | null) {
+    if (auditId == null) return;
+    try {
+      await api.deleteReorgAudit(sourceId, auditId);
+    } catch {
+      // Row was already gone — fine, undo still succeeded.
     }
   }
 
@@ -233,6 +325,7 @@
         message_ids: [msgId]
       });
       await reconcileAfterReorg([sourceId, targetSessionId]);
+      const auditId = result.audit_id;
       undo = {
         message: `Moved ${result.moved} message to ${label}.`,
         run: async () => {
@@ -240,6 +333,7 @@
             target_session_id: sourceId,
             message_ids: [msgId]
           });
+          await deleteAuditSafe(sourceId, auditId);
           await reconcileAfterReorg([sourceId, targetSessionId]);
         }
       };
@@ -270,6 +364,7 @@
       selectedIds = new Set();
       lastSelectedId = null;
       const plural = result.moved === 1 ? '' : 's';
+      const auditId = result.audit_id;
       undo = {
         message: `Moved ${result.moved} message${plural} to ${label}.`,
         run: async () => {
@@ -278,7 +373,11 @@
             message_ids: msgIds
           });
           if (deleteTargetOnUndo) {
+            // Deleting the target cascades the audit row automatically,
+            // so we skip the explicit delete in that branch.
             await api.deleteSession(targetSessionId);
+          } else {
+            await deleteAuditSafe(sourceId, auditId);
           }
           await reconcileAfterReorg([sourceId, targetSessionId]);
         }
@@ -301,9 +400,9 @@
       await reconcileAfterReorg([sourceId, result.session.id]);
       const newId = result.session.id;
       const movedCount = result.result.moved;
-      // The inverse of a split is "move everything back into source"
-      // — we captured the messages that were moved implicitly (all
-      // rows after the anchor); list them fresh off the new session.
+      // Inverse is "move everything back + delete the new session";
+      // deleting the new session cascades its audit row, so no
+      // explicit deleteReorgAudit call here.
       undo = {
         message: `Split off ${movedCount} message${movedCount === 1 ? '' : 's'} into "${
           result.session.title ?? '(untitled)'
@@ -318,6 +417,50 @@
           }
           await api.deleteSession(newId);
           await reconcileAfterReorg([sourceId, newId]);
+        }
+      };
+    } catch (e) {
+      conversation.error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  /** Slice 5: fold the entire source into `targetSessionId`. The
+   * frontend always passes `delete_source=false` — keeping the source
+   * alive so the user has somewhere to render the audit divider and
+   * hit Undo from. If they really want the source gone they can
+   * delete it by hand after the undo window lapses.
+   *
+   * We snapshot the source's message ids BEFORE the merge so the
+   * undo knows exactly which rows to move back — `move_messages_tx`
+   * preserves `created_at`, so "the N newest rows on the target"
+   * isn't necessarily "the ones we just moved over."
+   */
+  async function doMerge(sourceId: string, targetSessionId: string, label: string) {
+    try {
+      const sourceRows = await api.listMessages(sourceId);
+      const sourceIds = sourceRows.map((m) => m.id);
+      const result = await api.reorgMerge(sourceId, {
+        target_session_id: targetSessionId,
+        delete_source: false
+      });
+      await reconcileAfterReorg([sourceId, targetSessionId]);
+      const auditId = result.audit_id;
+      const movedCount = result.moved;
+      const plural = movedCount === 1 ? '' : 's';
+      undo = {
+        message:
+          movedCount === 0
+            ? `No messages to merge into ${label}.`
+            : `Merged ${movedCount} message${plural} into ${label}.`,
+        run: async () => {
+          if (sourceIds.length > 0) {
+            await api.reorgMove(targetSessionId, {
+              target_session_id: sourceId,
+              message_ids: sourceIds
+            });
+          }
+          await deleteAuditSafe(sourceId, auditId);
+          await reconcileAfterReorg([sourceId, targetSessionId]);
         }
       };
     } catch (e) {
@@ -350,6 +493,10 @@
       // semantically a bulk move, so treat it that way.
       if (bulkIds.length === 0) return;
       await doBulkMove(sourceId, bulkIds, targetId, `"${targetLabel}"`);
+      return;
+    }
+    if (op === 'merge') {
+      await doMerge(sourceId, targetId, `"${targetLabel}"`);
       return;
     }
     if (!msg) return;
@@ -607,6 +754,7 @@
   title={pickerTitle(pickerOp, pickerBulkIds.length)}
   confirmLabel={pickerConfirmLabel(pickerOp)}
   defaultCreating={pickerOp === 'bulk-split'}
+  allowCreate={pickerOp !== 'merge'}
   onPickExisting={onPickerPickExisting}
   onPickNew={onPickerPickNew}
   onCancel={closePicker}
@@ -682,6 +830,16 @@
             data-testid="bulk-toggle"
           >
             {bulkMode ? '☑' : '☐'}
+          </button>
+          <button
+            type="button"
+            class="text-xs text-slate-500 hover:text-slate-300"
+            aria-label="Merge this session into another"
+            title="Merge this session into another"
+            onclick={openMerge}
+            data-testid="merge-session"
+          >
+            ⇲
           </button>
         {/if}
       </h1>
@@ -791,29 +949,33 @@
     {/if}
     {#if !sessions.selectedId}
       <p class="text-slate-500 text-sm">No session selected.</p>
-    {:else if conversation.messages.length === 0 && !conversation.streamingActive}
+    {:else if conversation.messages.length === 0 && !conversation.streamingActive && audits.length === 0}
       <p class="text-slate-500 text-sm">
         No messages yet. Send a prompt to start the conversation.
       </p>
     {:else}
-      {#each turns as turn (turn.key)}
-        <MessageTurn
-          user={turn.user}
-          assistant={turn.assistant}
-          thinking={turn.thinking}
-          toolCalls={turn.toolCalls}
-          streamingContent={turn.streamingContent}
-          streamingThinking={turn.streamingThinking}
-          isStreaming={turn.isStreaming}
-          highlightQuery={conversation.highlightQuery}
-          {copiedMsgId}
-          {onCopyMessage}
-          onMoveMessage={openMoveFor}
-          onSplitAfter={openSplitFor}
-          {bulkMode}
-          {selectedIds}
-          onToggleSelect={onBulkToggleSelect}
-        />
+      {#each timeline as item (item.key)}
+        {#if item.kind === 'turn'}
+          <MessageTurn
+            user={item.turn.user}
+            assistant={item.turn.assistant}
+            thinking={item.turn.thinking}
+            toolCalls={item.turn.toolCalls}
+            streamingContent={item.turn.streamingContent}
+            streamingThinking={item.turn.streamingThinking}
+            isStreaming={item.turn.isStreaming}
+            highlightQuery={conversation.highlightQuery}
+            {copiedMsgId}
+            {onCopyMessage}
+            onMoveMessage={openMoveFor}
+            onSplitAfter={openSplitFor}
+            {bulkMode}
+            {selectedIds}
+            onToggleSelect={onBulkToggleSelect}
+          />
+        {:else}
+          <ReorgAuditDivider audit={item.audit} onJumpTo={onJumpToAuditTarget} />
+        {/if}
       {/each}
 
       {#if conversation.error}

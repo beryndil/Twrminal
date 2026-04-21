@@ -1,4 +1,4 @@
-import { jsonFetch } from './core';
+import { jsonFetch, voidFetch } from './core';
 
 export type Session = {
   id: string;
@@ -210,6 +210,12 @@ export type ReorgMoveResult = {
   moved: number;
   tool_calls_followed: number;
   warnings: ReorgWarning[];
+  /** The `reorg_audits` row the server wrote for this op, or `null`
+   * when no divider was recorded (idempotent no-op move, or merge
+   * with `delete_source=true`). The undo handler passes this back to
+   * `deleteReorgAudit` so the inline divider goes away when the
+   * inverse move lands. */
+  audit_id: number | null;
 };
 
 export type ReorgMoveRequest = {
@@ -264,5 +270,84 @@ export function reorgSplit(
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body)
+  });
+}
+
+export type ReorgMergeRequest = {
+  target_session_id: string;
+  /** When true the source session is deleted after the move (in that
+   * order, to avoid the `ON DELETE CASCADE` on `messages.session_id`
+   * swallowing the freshly-moved rows). */
+  delete_source: boolean;
+};
+
+export type ReorgMergeResult = {
+  moved: number;
+  tool_calls_followed: number;
+  warnings: ReorgWarning[];
+  /** Null when the merge op wrote no audit row — either because
+   * nothing moved, or because `delete_source=true` would have caused
+   * the cascade to drop the row anyway. */
+  audit_id: number | null;
+  /** Echoes the request flag on success. False + `delete_source=true`
+   * would only happen on a server-side glitch; the current server
+   * always honors the flag. */
+  deleted_source: boolean;
+};
+
+/** Fold every message on `sourceId` into `targetSessionId` in a
+ * single transaction, optionally dropping the now-empty source. An
+ * empty source is a legitimate no-op (moves 0); `delete_source=true`
+ * still removes it so the UI can clear orphaned empty sessions from
+ * the sidebar with one click. */
+export function reorgMerge(
+  sourceId: string,
+  body: ReorgMergeRequest,
+  fetchImpl: typeof fetch = fetch
+): Promise<ReorgMergeResult> {
+  return jsonFetch<ReorgMergeResult>(fetchImpl, `/api/sessions/${sourceId}/reorg/merge`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+
+/** One row in the persistent reorg audit trail for `sourceId`.
+ * `target_session_id` is `null` when the target was deleted after
+ * the op ran (FK is `ON DELETE SET NULL`) — use
+ * `target_title_snapshot` to render "(deleted session)" in that
+ * case. `created_at` is the ISO timestamp of the op. */
+export type ReorgAudit = {
+  id: number;
+  source_session_id: string;
+  target_session_id: string | null;
+  target_title_snapshot: string | null;
+  message_count: number;
+  op: 'move' | 'split' | 'merge';
+  created_at: string;
+};
+
+/** Oldest-first list of every audit divider attached to `sessionId`.
+ * 404s when the session itself is gone rather than returning `[]` so
+ * callers don't silently paper over a stale id. */
+export function listReorgAudits(
+  sessionId: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<ReorgAudit[]> {
+  return jsonFetch<ReorgAudit[]>(fetchImpl, `/api/sessions/${sessionId}/reorg/audits`);
+}
+
+/** Remove an audit divider, scoped to `sessionId` — the server 404s
+ * on a cross-session id so a stale URL can't delete audits belonging
+ * to another session. Idempotent from the caller's perspective: a
+ * second delete on the same id returns 404, not success, because the
+ * row's already gone. */
+export function deleteReorgAudit(
+  sessionId: string,
+  auditId: number,
+  fetchImpl: typeof fetch = fetch
+): Promise<void> {
+  return voidFetch(fetchImpl, `/api/sessions/${sessionId}/reorg/audits/${auditId}`, {
+    method: 'DELETE'
   });
 }

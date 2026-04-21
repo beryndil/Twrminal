@@ -557,11 +557,15 @@ cover shape, not feel.
     to-new-session so cancelled ops leave no sidebar residue. New
     `defaultCreating` prop on `SessionPickerModal` so bulk-split
     opens straight into the create form.
-  - [ ] **Slice 5 — Merge route + audit divider (~4h).**
-    `POST /.../reorg/merge` with `delete_source` flag. Source session
-    renders a persistent divider: "N messages moved to <target title>
-    at <timestamp> · Undo" (undo button disabled past 30s, divider
-    stays as audit trail).
+  - [x] **Slice 5 — Merge route + audit divider.** Shipped as
+    v0.3.21. `POST /.../reorg/merge` + `reorg_audits` table +
+    persistent chronological `ReorgAuditDivider` in the source
+    conversation + ⇲ Merge header button (picker opens without
+    create-new affordance). Undo closures thread `audit_id` and
+    delete the audit row on success (cascade handles the target-
+    delete case). `doMerge` snapshots source message IDs before
+    the merge so undo moves exactly those rows back — necessary
+    because `move_messages_tx` preserves `created_at`.
   - [ ] **Slice 6 — LLM-assisted analyze (~1–2 days, BLOCKED on
     token-cost Wave 3).** `POST /sessions/{id}/reorg/analyze`
     dispatches a sub-agent (needs Option 4 "researcher" to land first
@@ -579,6 +583,62 @@ cover shape, not feel.
   cost-attribution policy (leave on source vs. follow messages),
   undo-window length (30s default), Slice-6 priority (ship 1–5 first
   or put 6 on the critical path), tool-call-group warn-vs-refuse.
+
+## v0.3.21 — shipped
+
+Slice 5 of the Session Reorg plan
+(`~/.claude/plans/sparkling-triaging-otter.md`): merge route +
+persistent audit divider. Source sessions now render a chronological
+"Moved/Split off/Merged N messages to '…'" divider inline with the
+turns, clickable to jump to the target.
+
+- [x] Migration `0014_reorg_audits.sql` — `reorg_audits` table with
+  cascade-on-source-delete, set-null-on-target-delete. Index on
+  `source_session_id` + `created_at` for fast per-session listing.
+- [x] `store.record_reorg_audit` / `list_reorg_audits` /
+  `delete_reorg_audit` helpers; all three write routes
+  (move/split/merge) record an audit after commit and return its
+  id in the response.
+- [x] `POST /api/sessions/{id}/reorg/merge` — drains every message
+  from source into target in insertion order, optional
+  `delete_source` flag. Response mirrors move/split:
+  `{ moved, target_session_id, warnings, audit_id }`.
+- [x] `GET /api/sessions/{id}/reorg/audits` + `DELETE
+  /api/sessions/{id}/reorg/audits/{audit_id}` for frontend
+  listing + undo cleanup.
+- [x] `ReorgAuditDivider.svelte` — inline chronological divider,
+  verb per op (Moved / Split off / Merged), clickable target label
+  with deleted-session fallback, `data-audit-id` / `data-audit-op`
+  for test queries.
+- [x] `⇲` Merge button in `Conversation.svelte` header. Opens
+  `SessionPickerModal` with `allowCreate={false}` — merge always
+  targets an existing session.
+- [x] `TimelineItem` discriminated union interleaves turns + audit
+  dividers sorted by ISO timestamp so dividers land in the exact
+  chronological slot.
+- [x] All undo closures (`doMove`, `doBulkMove`, `doSplit`,
+  `doMerge`) thread `audit_id` + call `deleteAuditSafe` on
+  successful undo. Cascade handles the target-delete case so that
+  path skips the explicit audit delete. `doMerge` snapshots source
+  message IDs before the merge so undo moves exactly those rows
+  back — `move_messages_tx` preserves `created_at`, so "newest N
+  on target" isn't safe.
+- [x] 23 new pytest (337 total) + 7 new vitest (145 total). All
+  quality gates green: ruff + format + mypy strict + pytest +
+  vitest.
+- [x] Browser smoke verified: merge picker opens with title
+  "Merge this session into…", 21 candidate sessions, no create-
+  new toggle.
+
+Deferred to later slices (intentional):
+
+- [ ] LLM-assisted analyze (Slice 6) still BLOCKED on token-cost
+  Wave 3 (sub-agent researcher). Revisit once that lands.
+- [ ] Tool-call-group warnings on split boundaries (Slice 7).
+  Currently the response's `warnings: []` arrives but is never
+  shown. The toast needs to render them before the Undo button.
+- [ ] Prometheus `bearings_session_reorg_total{op}` counter
+  (Slice 7).
 
 ## v0.3.20 — shipped
 
@@ -1464,3 +1524,38 @@ only if B is unavailable and the protocol trace justifies it. If
 protocol trace shows the CLI itself buffers, kill the feature with a
 dated note in this TODO explaining why — genuine upstream limit, not a
 Bearings shortcoming.
+
+## Ops / service
+
+### 2026-04-21 — bearings.service went offline, did not auto-recover
+
+- **What happened:** Service received a clean SIGTERM at 15:45:19 CDT and
+  shut down gracefully. Not OOM (system had 15Gi free, no dmesg OOM
+  events, process peaked at 2.2G). Not `systemctl --user stop` (journal
+  has no "Stopping bearings.service" line). Not shell-initiated (no
+  `kill`/`pkill`/`stop` in `~/.config/zsh/.zsh_history`). Signal source
+  unidentified — something outside the systemd cgroup signaled PID
+  3025759 directly. No restart because `Restart=on-failure` treats clean
+  TERM as success.
+- **Fix shipped:** Unit at `~/.config/systemd/user/bearings.service`
+  changed to `Restart=always`, `RestartSec=3`, with
+  `StartLimitIntervalSec=60` / `StartLimitBurst=5` to prevent flap loops,
+  and `SuccessExitStatus=143` so a clean TERM still counts toward the
+  burst budget. Backup at `bearings.service.bak`. Reloaded, restarted,
+  verified `/api/health` 200.
+- **Still to do:**
+  - [ ] Identify the TERM sender next time it happens. Add an `ExecStopPost`
+        hook that dumps `/proc/self/status` + `last` + `loginctl` state,
+        or enable audit rule `-a always,exit -F arch=b64 -S kill -F
+        a1=15 -k bearings_term` so the sender is captured.
+  - [ ] Consider `MemoryMax=4G` (soft guard; current peak 2.2G leaves
+        headroom, but Slice-5+ reorg work could grow the footprint).
+
+### 2026-04-21 — slice 5 frontend shipping a request the backend doesn't serve
+
+- `GET /api/sessions/{id}/reorg/audits` returned 404 in the logs right
+  before the outage (unrelated to the shutdown — process was healthy
+  after). The `ReorgAuditDivider.svelte` component expects that route.
+- Needs: register the audits route in `src/bearings/api/routes_reorg.py`
+  and back it with the `0014_reorg_audits.sql` table, or feature-gate
+  the frontend fetch until the route lands.

@@ -75,3 +75,21 @@ CREATE TABLE IF NOT EXISTS tag_memories (
     content TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- Session reorg audit trail (Slice 5 of the Session Reorg plan).
+-- One row per move/split/merge op records where messages went and
+-- when. The source session's conversation view renders these inline
+-- as persistent dividers; the undo path deletes the row so cancelled
+-- ops leave no trace. See migration 0014.
+CREATE TABLE IF NOT EXISTS reorg_audits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    target_session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+    target_title_snapshot TEXT,
+    message_count INTEGER NOT NULL,
+    op TEXT NOT NULL CHECK (op IN ('move', 'split', 'merge')),
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_reorg_audits_source
+    ON reorg_audits(source_session_id, created_at);

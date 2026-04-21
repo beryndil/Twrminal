@@ -5,6 +5,67 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.21] - 2026-04-21
+
+### Added
+
+- Merge route + persistent audit divider — Slice 5 of the Session
+  Reorg plan (`~/.claude/plans/sparkling-triaging-otter.md`).
+  `POST /api/sessions/{id}/reorg/merge` drains every message from
+  a source session into a target (optionally deleting the source
+  on success). Symmetric with the move/split routes — same undo
+  window, same warnings shape, same `audit_id` in the response.
+- `reorg_audits` table (migration `0014_reorg_audits.sql`) with
+  columns `id`, `source_session_id`, `target_session_id`,
+  `target_title_snapshot`, `message_count`, `op`, `created_at`.
+  `source_session_id` cascades on source delete; `target_session_id`
+  sets NULL on target delete so the divider can still render a
+  "(deleted session)" fallback.
+- `store.record_reorg_audit` / `list_reorg_audits` /
+  `delete_reorg_audit` helpers + read routes
+  `GET /api/sessions/{id}/reorg/audits` and
+  `DELETE /api/sessions/{id}/reorg/audits/{audit_id}`.
+- Move / split / merge responses now carry `audit_id: int | None`
+  so the frontend can thread the id into its undo closure and
+  delete the audit row on successful undo without a second round
+  trip to list audits.
+- `ReorgAuditDivider.svelte` — chronological divider rendered
+  inline in the source conversation. Reads "Moved/Split off/Merged
+  N message(s) to '<target title>' · <timestamp>". Target label is
+  a clickable jump-button when `target_session_id` is present;
+  italic "(deleted session)" fallback when null. Tagged with
+  `data-audit-id` / `data-audit-op` for test queries.
+- `⇲` Merge button in the session header (next to ✎/⇣/⎘/☐) opens
+  `SessionPickerModal` with `allowCreate={false}` — merge always
+  targets an existing session, never spins up a new one. Picker
+  title adapts to "Merge this session into…".
+- Frontend `TimelineItem` discriminated union interleaves turns and
+  audit dividers sorted by timestamp — audit dividers render in
+  the exact chronological slot where the op happened, not stapled
+  to the top or bottom of the view.
+- 23 new backend tests (337 pytest, up from 314) covering the
+  merge route, audit recording on all three ops, audit list / delete
+  routes, cascade + set-null FK behavior, and `audit_id` threading
+  in response bodies. 7 new frontend tests (145 vitest, up from 138)
+  for `ReorgAuditDivider` — verb-per-op, pluralization, jump
+  callback, deleted-target fallback, null-snapshot fallback, data
+  attributes.
+
+### Changed
+
+- `Conversation.svelte` now loads and refreshes a per-session
+  `audits` list (via `$effect` keyed on the selected session's
+  `updated_at`), interleaves audits into the rendered timeline,
+  and threads `audit_id` + a `deleteAuditSafe` helper through
+  every undo closure (`doMove`, `doBulkMove`, `doSplit`,
+  `doMerge`). Undos that delete the target session skip the
+  audit delete — the FK cascade does it.
+- `doMerge` snapshots the source message IDs **before** calling
+  `reorgMerge` so the undo can move exactly those rows back. The
+  underlying `move_messages_tx` preserves each message's
+  `created_at`, so "take the newest N on target" isn't a safe
+  undo strategy.
+
 ## [0.3.20] - 2026-04-21
 
 ### Added

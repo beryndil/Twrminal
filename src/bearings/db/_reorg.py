@@ -1,9 +1,14 @@
-"""Cross-session reorg helpers — move rows between `sessions`.
+"""Cross-session reorg helpers — move rows between `sessions` and
+record the corresponding audit entries.
 
 Slice 1 of the Session Reorg plan
-(`~/.claude/plans/sparkling-triaging-otter.md`). Single primitive
-`move_messages_tx` that the eventual `/api/sessions/{id}/reorg/*`
-routes (move / split / merge / archive) are all composed from.
+(`~/.claude/plans/sparkling-triaging-otter.md`) added `move_messages_tx`;
+Slice 5 layered on the `reorg_audits` persistence so every move/split/
+merge leaves a permanent divider on the source conversation. The
+audit write lives outside `move_messages_tx` so callers can record
+the exact op name (`move` / `split` / `merge`) and the target title
+snapshot without the primitive having to know about routing concerns.
+
 `sessions.message_count` is derived via `SELECT COUNT(*)` in
 `_sessions.SESSION_COUNT`, so nothing in here has to recompute it —
 touching `messages.session_id` is enough for the next read to see the
@@ -14,10 +19,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any, Literal
 
 import aiosqlite
 
 from bearings.db._common import _now
+
+ReorgOp = Literal["move", "split", "merge"]
 
 
 @dataclass(frozen=True)
@@ -102,3 +110,79 @@ async def move_messages_tx(
         raise
 
     return MoveResult(moved=moved, tool_calls_followed=tool_calls_followed)
+
+
+async def record_reorg_audit(
+    conn: aiosqlite.Connection,
+    *,
+    source_session_id: str,
+    target_session_id: str | None,
+    target_title_snapshot: str | None,
+    message_count: int,
+    op: ReorgOp,
+) -> int:
+    """Insert a row into `reorg_audits` and return its autoincrement id.
+
+    Caller is responsible for committing; this mirrors the primitive's
+    transactional contract. `target_session_id` may be null when the
+    caller wants to record a merge-with-delete whose target was
+    subsequently deleted (the FK is `ON DELETE SET NULL`); normal move
+    / split / merge always pass a live target id.
+    """
+    cursor = await conn.execute(
+        """
+        INSERT INTO reorg_audits (
+            source_session_id, target_session_id, target_title_snapshot,
+            message_count, op, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            source_session_id,
+            target_session_id,
+            target_title_snapshot,
+            message_count,
+            op,
+            _now(),
+        ),
+    )
+    audit_id = cursor.lastrowid
+    assert audit_id is not None  # AUTOINCREMENT guarantees a row id
+    return audit_id
+
+
+async def list_reorg_audits(
+    conn: aiosqlite.Connection,
+    source_session_id: str,
+) -> list[dict[str, Any]]:
+    """Return every audit row for `source_session_id`, oldest first.
+
+    Callers render these inline with the session's messages, sorted by
+    `created_at` against the message timestamps, so an old divider
+    stays at its original chronological spot even after newer ops
+    push it down the list.
+    """
+    rows: list[dict[str, Any]] = []
+    async with conn.execute(
+        """
+        SELECT id, source_session_id, target_session_id,
+               target_title_snapshot, message_count, op, created_at
+        FROM reorg_audits
+        WHERE source_session_id = ?
+        ORDER BY created_at ASC, id ASC
+        """,
+        (source_session_id,),
+    ) as cursor:
+        async for row in cursor:
+            rows.append(dict(row))
+    return rows
+
+
+async def delete_reorg_audit(conn: aiosqlite.Connection, audit_id: int) -> bool:
+    """Remove an audit row — used by the undo path. Returns True when
+    a row was deleted, False when the id was already gone (racing undo
+    clicks, dev-tools meddling, etc.).
+    """
+    cursor = await conn.execute("DELETE FROM reorg_audits WHERE id = ?", (audit_id,))
+    deleted = cursor.rowcount > 0
+    await conn.commit()
+    return deleted
