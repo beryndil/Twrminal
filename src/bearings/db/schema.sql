@@ -11,7 +11,11 @@ CREATE TABLE IF NOT EXISTS sessions (
     max_budget_usd REAL,
     total_cost_usd REAL NOT NULL DEFAULT 0,
     session_instructions TEXT,
-    sdk_session_id TEXT
+    sdk_session_id TEXT,
+    -- Persisted PermissionMode ('default' | 'plan' | 'acceptEdits' |
+    -- 'bypassPermissions'). NULL treated as 'default' by the runner.
+    -- See migration 0012.
+    permission_mode TEXT
 );
 
 CREATE TABLE IF NOT EXISTS messages (

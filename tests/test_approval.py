@@ -211,6 +211,57 @@ async def test_set_permission_mode_accept_edits_only_resolves_edit_tools(
 
 
 @pytest.mark.asyncio
+async def test_set_permission_mode_persists_to_db(
+    db: aiosqlite.Connection,
+) -> None:
+    """Migration 0012: every `set_permission_mode` on the runner writes
+    through to `sessions.permission_mode` so a browser reload or socket
+    drop restores the user's choice. Regression guard: a runner that
+    forwards to the SDK + broker but skips the DB write would cause
+    the UI to silently downgrade to 'default' on reconnect — exactly
+    the bug that motivated this column."""
+    sid = await _session_id(db)
+    runner = SessionRunner(sid, ScriptedAgent(sid, scripts=[]), db)
+
+    await runner.set_permission_mode("plan")
+    row = await store.get_session(db, sid)
+    assert row is not None
+    assert row["permission_mode"] == "plan"
+
+    await runner.set_permission_mode("bypassPermissions")
+    row = await store.get_session(db, sid)
+    assert row is not None
+    assert row["permission_mode"] == "bypassPermissions"
+
+    # Clearing (None) maps back to NULL — the UI's "back to default"
+    # without leaving a stale string in the column.
+    await runner.set_permission_mode(None)
+    row = await store.get_session(db, sid)
+    assert row is not None
+    assert row["permission_mode"] is None
+
+
+@pytest.mark.asyncio
+async def test_set_permission_mode_ignores_malformed_wire_frame(
+    db: aiosqlite.Connection,
+) -> None:
+    """A non-string truthy payload (e.g. a client bug that sends an
+    object) must not clobber the persisted mode. The runner swallows
+    it rather than clearing — we'd rather keep the last good value
+    than lose it because a frame was malformed."""
+    sid = await _session_id(db)
+    runner = SessionRunner(sid, ScriptedAgent(sid, scripts=[]), db)
+
+    await runner.set_permission_mode("plan")
+    # Pretend a buggy client sent a dict. Expected behavior: no crash,
+    # no DB mutation — the 'plan' we just set stays in the column.
+    await runner.set_permission_mode({"not": "a string"})
+    row = await store.get_session(db, sid)
+    assert row is not None
+    assert row["permission_mode"] == "plan"
+
+
+@pytest.mark.asyncio
 async def test_set_permission_mode_default_leaves_pending_parked(
     db: aiosqlite.Connection,
 ) -> None:

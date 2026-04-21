@@ -188,10 +188,28 @@ class SessionRunner:
         while a modal is on screen would still be stuck clicking the
         modal. Handing the new mode to the broker lets it clear the
         current Future per the accept-edits / bypass matrix and emits
-        `approval_resolved` so every mirroring tab drops its modal too."""
+        `approval_resolved` so every mirroring tab drops its modal too.
+
+        Persists the choice to `sessions.permission_mode` (migration
+        0012) so a browser reload or socket drop restores the same
+        mode instead of silently dropping to 'default'."""
         self.agent.set_permission_mode(mode)
         if isinstance(mode, str):
             await self._approval.resolve_for_mode(mode)
+        # Persist str modes and explicit None (== clear the override).
+        # Non-string truthy values are treated as malformed wire frames
+        # and left alone — don't clobber a good DB value with a bad
+        # one. Invalid strings are rejected by the store helper; we
+        # swallow that ValueError so a bad frame can't crash the runner.
+        if isinstance(mode, str) or mode is None:
+            try:
+                await store.set_session_permission_mode(self.db, self.session_id, mode)
+            except ValueError:
+                log.warning(
+                    "runner %s: rejected unknown permission mode %r",
+                    self.session_id,
+                    mode,
+                )
 
     async def request_stop(self) -> None:
         """User-initiated stop of the current turn. Flags the worker

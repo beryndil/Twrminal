@@ -19,6 +19,7 @@ from bearings.db.store import (
     list_sessions,
     list_tool_calls,
     set_sdk_session_id,
+    set_session_permission_mode,
 )
 
 
@@ -106,6 +107,53 @@ async def test_set_sdk_session_id_persists(tmp_path: Path) -> None:
         refreshed = await get_session(conn, created["id"])
         assert refreshed is not None
         assert refreshed["sdk_session_id"] == "sdk-abc-123"
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_set_session_permission_mode_round_trips(tmp_path: Path) -> None:
+    """Migration 0012: the runner persists the user's PermissionMode on
+    every `set_permission_mode` wire frame so a reload restores Plan /
+    Auto-edit / Bypass instead of silently downgrading to Ask. Column
+    starts NULL on a fresh row (== 'default' behavior), flips to any of
+    the four legal strings, and can be cleared back to NULL."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        created = await create_session(conn, working_dir="/tmp", model="m")
+        assert created["permission_mode"] is None
+
+        await set_session_permission_mode(conn, created["id"], "plan")
+        refreshed = await get_session(conn, created["id"])
+        assert refreshed is not None
+        assert refreshed["permission_mode"] == "plan"
+
+        # Clear back to NULL — how the UI expresses "back to default".
+        await set_session_permission_mode(conn, created["id"], None)
+        cleared = await get_session(conn, created["id"])
+        assert cleared is not None
+        assert cleared["permission_mode"] is None
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_set_session_permission_mode_rejects_unknown(tmp_path: Path) -> None:
+    """Guard rail: SQLite won't enforce the enum so the helper validates
+    at the Python edge. A typo like 'Plan' or a stale client literal
+    would otherwise silently land in the column and then mis-route on
+    read. Raising keeps the runner's own `except ValueError` path
+    exercised too."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        created = await create_session(conn, working_dir="/tmp", model="m")
+        with pytest.raises(ValueError):
+            await set_session_permission_mode(conn, created["id"], "Plan")
+        with pytest.raises(ValueError):
+            await set_session_permission_mode(conn, created["id"], "off")
+        refreshed = await get_session(conn, created["id"])
+        assert refreshed is not None
+        assert refreshed["permission_mode"] is None
     finally:
         await conn.close()
 

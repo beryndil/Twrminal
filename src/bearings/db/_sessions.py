@@ -12,8 +12,14 @@ from bearings.db._common import _date_filter, _new_id, _now
 
 SESSION_BASE_COLS = (
     "id, created_at, updated_at, working_dir, model, title, description, "
-    "max_budget_usd, total_cost_usd, session_instructions, sdk_session_id"
+    "max_budget_usd, total_cost_usd, session_instructions, sdk_session_id, "
+    "permission_mode"
 )
+
+# claude-agent-sdk PermissionMode values. Kept as a module-level
+# constant so `set_session_permission_mode` can reject typos before
+# they hit the column — SQLite won't enforce the enum itself.
+_VALID_PERMISSION_MODES = frozenset({"default", "plan", "acceptEdits", "bypassPermissions"})
 SESSION_COUNT = "(SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count"
 SESSION_COLS_WITH_COUNT = f"s.{SESSION_BASE_COLS.replace(', ', ', s.')}, {SESSION_COUNT}"
 
@@ -227,6 +233,27 @@ async def set_sdk_session_id(
     await conn.execute(
         "UPDATE sessions SET sdk_session_id = ? WHERE id = ?",
         (sdk_session_id, session_id),
+    )
+    await conn.commit()
+
+
+async def set_session_permission_mode(
+    conn: aiosqlite.Connection,
+    session_id: str,
+    mode: str | None,
+) -> None:
+    """Persist the session's PermissionMode so a reconnect or browser
+    reload restores the user's choice instead of silently dropping to
+    'default'. `None` clears the column (== 'default' semantics). The
+    runner calls this on every `set_permission_mode` wire frame; it's
+    write-only — read via `get_session`. Raises ValueError on an
+    unknown mode to keep bad values out of the column (SQLite won't
+    enforce the enum itself)."""
+    if mode is not None and mode not in _VALID_PERMISSION_MODES:
+        raise ValueError(f"unknown permission mode: {mode!r}")
+    await conn.execute(
+        "UPDATE sessions SET permission_mode = ? WHERE id = ?",
+        (mode, session_id),
     )
     await conn.commit()
 

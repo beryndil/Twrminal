@@ -46,8 +46,14 @@ export class AgentConnection {
     this.sessionId = sessionId;
     this.lastCloseCode = null;
     this.retryCount = 0;
-    this.permissionMode = 'default';
-    await conversation.load(sessionId);
+    // Seed from the persisted column (migration 0012) so a reload or
+    // cross-tab navigation restores Plan / Auto-edit / Bypass instead
+    // of silently dropping to Ask. Falls back to 'default' when the
+    // session has no stored mode or the fetch fails; the subsequent
+    // openSocket → 'open' handler re-sends the remembered mode only
+    // if it isn't 'default', so default stays a true no-op.
+    const session = await conversation.load(sessionId);
+    this.permissionMode = session?.permission_mode ?? 'default';
     this.openSocket(sessionId);
   }
 

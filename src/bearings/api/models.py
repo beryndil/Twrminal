@@ -43,6 +43,10 @@ class SessionOut(BaseModel):
     total_cost_usd: float = 0.0
     message_count: int = 0
     session_instructions: str | None = None
+    # Persisted PermissionMode (see migration 0012). NULL maps to None
+    # here, which the frontend renders as 'default' in the selector.
+    # One of: 'default', 'plan', 'acceptEdits', 'bypassPermissions'.
+    permission_mode: str | None = None
 
 
 class MessageOut(BaseModel):

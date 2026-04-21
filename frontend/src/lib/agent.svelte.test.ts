@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { Session } from '$lib/api';
+
 // Mocks resolve to top-level vi.fn() so `vi.mock` hoisting works with
 // ESM. Modules under test import these indirectly.
 const openAgentSocket = vi.fn<(sessionId: string, sinceSeq?: number) => FakeSocket>();
 const handleEvent = vi.fn();
-const conversationLoad = vi.fn<(sessionId: string) => Promise<void>>();
+// Real `conversation.load` returns `Promise<Session | null>` — the
+// session is consumed by AgentConnection to seed the persisted
+// permission_mode (migration 0012). Tests that don't care about that
+// seeding resolve with null.
+const conversationLoad = vi.fn<(sessionId: string) => Promise<Session | null>>();
 const pushUserMessage = vi.fn();
 const notifyMock = vi.fn();
 const prefsState = { notifyOnComplete: false };
@@ -111,7 +117,30 @@ type TestAgent = {
   setPermissionMode: (
     mode: 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions'
   ) => boolean;
+  permissionMode: 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions';
 };
+
+/** Minimal Session factory for seeding `conversation.load` mocks. Only
+ * the fields AgentConnection consumes (`permission_mode`) matter for
+ * the assertions; everything else is filled with innocuous defaults
+ * so the shape stays valid against the real Session type. */
+function fakeSession(overrides: Partial<Session> = {}): Session {
+  return {
+    id: 'S',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    working_dir: '/tmp',
+    model: 'claude-opus-4-7',
+    title: null,
+    description: null,
+    max_budget_usd: null,
+    total_cost_usd: 0,
+    message_count: 0,
+    session_instructions: null,
+    permission_mode: null,
+    ...overrides
+  };
+}
 
 async function freshAgent(): Promise<{ agent: TestAgent }> {
   // Reimport per-test so each gets its own AgentConnection instance.
@@ -130,7 +159,7 @@ describe('AgentConnection reconnect race', () => {
     const { agent } = await freshAgent();
 
     // First connect (resolve the awaited load so connect can finish).
-    conversationLoad.mockResolvedValue();
+    conversationLoad.mockResolvedValue(null);
     await agent.connect('A');
     expect(sockets.length).toBe(1);
     const s1 = sockets[0];
@@ -141,8 +170,8 @@ describe('AgentConnection reconnect race', () => {
     // DURING the await (while load is pending), which is the race.
     let resolveLoad = (): void => {};
     conversationLoad.mockImplementationOnce(
-      () => new Promise<void>((resolve) => {
-        resolveLoad = resolve;
+      () => new Promise<Session | null>((resolve) => {
+        resolveLoad = () => resolve(null);
       })
     );
     const connectPromise = agent.connect('A');
@@ -179,7 +208,7 @@ describe('AgentConnection reconnect race', () => {
     // server-went-away reconnect path.
     const { agent } = await freshAgent();
 
-    conversationLoad.mockResolvedValue();
+    conversationLoad.mockResolvedValue(null);
     await agent.connect('B');
     const s1 = sockets[0];
     s1.fireOpen();
@@ -198,7 +227,7 @@ describe('AgentConnection reconnect race', () => {
 describe('AgentConnection turn-complete notifications', () => {
   it('fires notify() on a fresh message_complete when opted in and tab is hidden', async () => {
     const { agent } = await freshAgent();
-    conversationLoad.mockResolvedValue();
+    conversationLoad.mockResolvedValue(null);
     await agent.connect('N');
     const s = sockets[0];
     s.fireOpen();
@@ -225,7 +254,7 @@ describe('AgentConnection turn-complete notifications', () => {
 
   it('does not fire when the opt-in pref is off', async () => {
     const { agent } = await freshAgent();
-    conversationLoad.mockResolvedValue();
+    conversationLoad.mockResolvedValue(null);
     await agent.connect('N');
     const s = sockets[0];
     s.fireOpen();
@@ -247,7 +276,7 @@ describe('AgentConnection turn-complete notifications', () => {
 
   it('skips replayed message_complete frames (already in completedIds)', async () => {
     const { agent } = await freshAgent();
-    conversationLoad.mockResolvedValue();
+    conversationLoad.mockResolvedValue(null);
     await agent.connect('N');
     const s = sockets[0];
     s.fireOpen();
@@ -283,7 +312,7 @@ describe('AgentConnection permission-mode persistence', () => {
     // the fresh socket's open event.
     const { agent } = await freshAgent();
 
-    conversationLoad.mockResolvedValue();
+    conversationLoad.mockResolvedValue(null);
     await agent.connect('C');
     const s1 = sockets[0];
     s1.fireOpen();
@@ -318,7 +347,7 @@ describe('AgentConnection permission-mode persistence', () => {
     // implementation that always re-sends.
     const { agent } = await freshAgent();
 
-    conversationLoad.mockResolvedValue();
+    conversationLoad.mockResolvedValue(null);
     await agent.connect('D');
     const s1 = sockets[0];
     s1.fireOpen();
@@ -330,5 +359,39 @@ describe('AgentConnection permission-mode persistence', () => {
     s2.fireOpen();
 
     expect(s2.sent).toEqual([]);
+  });
+
+  it('seeds permissionMode from session.permission_mode on connect', async () => {
+    // Migration 0012: the server persists the user's last-picked
+    // PermissionMode on the sessions row. Opening a session that had
+    // 'plan' stored must start the selector on 'plan' — not 'default'
+    // — and re-push that mode on the fresh socket's open event so the
+    // runner starts the next turn in the right state.
+    const { agent } = await freshAgent();
+
+    conversationLoad.mockResolvedValue(fakeSession({ permission_mode: 'plan' }));
+    await agent.connect('E');
+    expect(agent.permissionMode).toBe('plan');
+
+    const s1 = sockets[0];
+    s1.fireOpen();
+    expect(s1.sent).toContainEqual(
+      JSON.stringify({ type: 'set_permission_mode', mode: 'plan' })
+    );
+  });
+
+  it('falls back to default when session.permission_mode is null', async () => {
+    // Pre-migration-0012 sessions store NULL, new sessions start NULL
+    // too. Both must render as 'default' without pushing a frame on
+    // open, same as the no-session-found path.
+    const { agent } = await freshAgent();
+
+    conversationLoad.mockResolvedValue(fakeSession({ permission_mode: null }));
+    await agent.connect('F');
+    expect(agent.permissionMode).toBe('default');
+
+    const s1 = sockets[0];
+    s1.fireOpen();
+    expect(s1.sent).toEqual([]);
   });
 });

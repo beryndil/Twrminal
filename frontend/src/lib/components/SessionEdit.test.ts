@@ -24,6 +24,7 @@ function session(overrides: Partial<Session> = {}): Session {
     total_cost_usd: 0,
     message_count: 0,
     session_instructions: null,
+    permission_mode: null,
     ...overrides
   };
 }

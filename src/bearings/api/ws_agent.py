@@ -64,6 +64,11 @@ async def _build_runner(app: Any, session_id: str) -> SessionRunner:
         max_budget_usd=row.get("max_budget_usd"),
         db=conn,
         sdk_session_id=row.get("sdk_session_id"),
+        # Restore the user's last PermissionMode (migration 0012) so a
+        # browser reload or socket drop doesn't silently roll them back
+        # to 'default'. NULL in the DB → None here → 'default' behavior
+        # in the SDK.
+        permission_mode=row.get("permission_mode"),
         thinking=_thinking_config(app.state.settings.agent.thinking),
     )
     runner = SessionRunner(session_id, agent, conn)

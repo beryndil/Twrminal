@@ -71,7 +71,7 @@ class ConversationStore {
     return this.states[sessionId]?.completedMessageIds ?? new Set();
   }
 
-  async load(sessionId: string): Promise<void> {
+  async load(sessionId: string): Promise<api.Session | null> {
     this.sessionId = sessionId;
     const state = this.ensureState(sessionId);
     this.error = null;
@@ -92,8 +92,13 @@ class ConversationStore {
       ];
       state.completedMessageIds = new Set(page.messages.map((m) => m.id));
       this.totalCost = session.total_cost_usd;
+      // Returned so AgentConnection.connect() can seed its
+      // permissionMode from the persisted column without a second
+      // getSession round-trip.
+      return session;
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
+      return null;
     }
   }
 

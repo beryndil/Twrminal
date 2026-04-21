@@ -12,6 +12,11 @@ export type Session = {
   total_cost_usd: number;
   message_count: number;
   session_instructions: string | null;
+  /** Persisted PermissionMode from migration 0012. `null` means the
+   * user never picked one and the UI should fall back to 'default'.
+   * Agent connection reads this on (re)connect so plan / auto-edit /
+   * bypass choices survive reloads. */
+  permission_mode: 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions' | null;
 };
 
 export type SessionCreate = {
