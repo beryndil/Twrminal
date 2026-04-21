@@ -25,6 +25,12 @@ export type Session = {
   last_context_pct: number | null;
   last_context_tokens: number | null;
   last_context_max: number | null;
+  /** Lifecycle flag (migration 0015). Null = open (default). Non-null
+   * ISO timestamp = closed — the sidebar sinks the row into the
+   * collapsed "Closed" group. Reorg ops touching a closed session
+   * auto-clear this on the backend, so the UI doesn't need to
+   * force-reopen on merge/move/split. */
+  closed_at: string | null;
 };
 
 export type SessionCreate = {
@@ -147,6 +153,30 @@ export function updateSession(
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(patch)
+  });
+}
+
+/** Mark the session closed — the sidebar sinks it into the collapsed
+ * "Closed" group on the next render. Idempotent: the server refreshes
+ * the `closed_at` timestamp on a second call. Returns the refreshed
+ * session row. */
+export function closeSession(
+  id: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<Session> {
+  return jsonFetch<Session>(fetchImpl, `/api/sessions/${id}/close`, {
+    method: 'POST'
+  });
+}
+
+/** Reopen a previously closed session. Idempotent on already-open
+ * sessions. Returns the refreshed session row. */
+export function reopenSession(
+  id: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<Session> {
+  return jsonFetch<Session>(fetchImpl, `/api/sessions/${id}/reopen`, {
+    method: 'POST'
   });
 }
 

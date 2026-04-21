@@ -235,6 +235,21 @@
     pickerOpen = true;
   }
 
+  /** Toggle the active session's closed flag. No confirmation dialog —
+   * a closed session is trivially reopenable and lives one click away
+   * in the sidebar's "Closed" group. */
+  async function onToggleClosed() {
+    const sid = sessions.selectedId;
+    if (!sid) return;
+    const current = sessions.selected;
+    if (!current) return;
+    if (current.closed_at) {
+      await sessions.reopen(sid);
+    } else {
+      await sessions.close(sid);
+    }
+  }
+
   function closePicker() {
     pickerOpen = false;
     pickerAnchor = null;
@@ -877,6 +892,19 @@
             data-testid="merge-session"
           >
             ⇲
+          </button>
+          <button
+            type="button"
+            class="text-xs hover:text-slate-300 {sessions.selected.closed_at
+              ? 'text-emerald-400'
+              : 'text-slate-500'}"
+            aria-label={sessions.selected.closed_at ? 'Reopen session' : 'Close session'}
+            aria-pressed={!!sessions.selected.closed_at}
+            title={sessions.selected.closed_at ? 'Reopen session' : 'Close session'}
+            onclick={onToggleClosed}
+            data-testid="close-session"
+          >
+            ✓
           </button>
         {/if}
       </h1>

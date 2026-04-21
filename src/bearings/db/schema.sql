@@ -15,7 +15,12 @@ CREATE TABLE IF NOT EXISTS sessions (
     -- Persisted PermissionMode ('default' | 'plan' | 'acceptEdits' |
     -- 'bypassPermissions'). NULL treated as 'default' by the runner.
     -- See migration 0012.
-    permission_mode TEXT
+    permission_mode TEXT,
+    -- Nullable ISO timestamp. NULL = open (default). Non-null = the
+    -- user marked the session closed and the sidebar renders it inside
+    -- the collapsed "Closed" group. Reorg ops touching a closed session
+    -- auto-clear the column. See migration 0015.
+    closed_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS messages (

@@ -7,17 +7,21 @@ import pytest
 
 from bearings.db.store import (
     append_tool_output,
+    close_session,
     create_session,
     delete_session,
     finish_tool_call,
     get_session,
     get_session_token_totals,
+    import_session,
     init_db,
     insert_message,
     insert_tool_call_start,
     list_messages,
     list_sessions,
     list_tool_calls,
+    reopen_if_closed,
+    reopen_session,
     set_sdk_session_id,
     set_session_permission_mode,
 )
@@ -154,6 +158,119 @@ async def test_set_session_permission_mode_rejects_unknown(tmp_path: Path) -> No
         refreshed = await get_session(conn, created["id"])
         assert refreshed is not None
         assert refreshed["permission_mode"] is None
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_close_session_stamps_and_idempotent(tmp_path: Path) -> None:
+    """Migration 0015: `close_session` sets `closed_at` to an ISO
+    timestamp and bumps `updated_at`. Calling twice is a no-op from
+    the UI's perspective — the second call just refreshes the stamp.
+    The row stays the same row."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        created = await create_session(conn, working_dir="/tmp", model="m")
+        assert created["closed_at"] is None
+
+        closed = await close_session(conn, created["id"])
+        assert closed is not None
+        assert closed["closed_at"] is not None
+        first_stamp = closed["closed_at"]
+
+        # Idempotent — a second close refreshes the stamp, doesn't 404.
+        await asyncio.sleep(0.002)
+        re_closed = await close_session(conn, created["id"])
+        assert re_closed is not None
+        assert re_closed["closed_at"] is not None
+        assert re_closed["closed_at"] >= first_stamp
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_close_session_unknown_id_returns_none(tmp_path: Path) -> None:
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        assert await close_session(conn, "does-not-exist") is None
+        assert await reopen_session(conn, "does-not-exist") is None
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_reopen_session_clears_closed_at(tmp_path: Path) -> None:
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        created = await create_session(conn, working_dir="/tmp", model="m")
+        await close_session(conn, created["id"])
+
+        reopened = await reopen_session(conn, created["id"])
+        assert reopened is not None
+        assert reopened["closed_at"] is None
+
+        # Reopen on an already-open row is a no-op, not an error.
+        again = await reopen_session(conn, created["id"])
+        assert again is not None
+        assert again["closed_at"] is None
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_reopen_if_closed_only_touches_closed_rows(tmp_path: Path) -> None:
+    """`reopen_if_closed` is the helper the reorg routes call — must
+    be safe to invoke with any mix of open/closed/missing ids. Open
+    rows are untouched (no updated_at bump), closed rows flip to open,
+    unknown ids silently skip."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        open_row = await create_session(conn, working_dir="/a", model="m")
+        closed_row = await create_session(conn, working_dir="/b", model="m")
+        await close_session(conn, closed_row["id"])
+
+        before_open = await get_session(conn, open_row["id"])
+        assert before_open is not None
+
+        await reopen_if_closed(conn, open_row["id"], closed_row["id"], "nonexistent-id")
+
+        after_open = await get_session(conn, open_row["id"])
+        after_closed = await get_session(conn, closed_row["id"])
+        assert after_open is not None and after_closed is not None
+        # Closed → open.
+        assert after_closed["closed_at"] is None
+        # Open row's updated_at is NOT bumped (WHERE clause filters it
+        # out). Confirms the helper doesn't churn open rows.
+        assert after_open["updated_at"] == before_open["updated_at"]
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_import_session_round_trips_closed_at(tmp_path: Path) -> None:
+    """Closed-state survives export/import so a closed session archived
+    to JSON restores to closed. Simulates the /export → /import loop."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        created = await create_session(conn, working_dir="/tmp", model="m", title="t")
+        closed = await close_session(conn, created["id"])
+        assert closed is not None
+
+        payload = {
+            "session": {
+                "working_dir": closed["working_dir"],
+                "model": closed["model"],
+                "title": closed["title"],
+                "description": closed["description"],
+                "max_budget_usd": closed["max_budget_usd"],
+                "closed_at": closed["closed_at"],
+                "created_at": closed["created_at"],
+            },
+            "messages": [],
+            "tool_calls": [],
+        }
+        restored = await import_session(conn, payload)
+        assert restored["closed_at"] == closed["closed_at"]
     finally:
         await conn.close()
 

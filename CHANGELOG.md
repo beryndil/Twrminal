@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.27] - 2026-04-21
+
+### Added
+
+- Session close / reopen lifecycle. Charters that have shipped can
+  now be marked closed from the conversation header (the `✓` button
+  after the merge `⇲` cluster); the sidebar sinks closed sessions
+  into a collapsed `Closed (N)` group at the bottom of the list so
+  live work stays on top. Reopen is symmetric and one click away
+  inside the group.
+- Migration `0015_session_closed_at.sql` adds a nullable
+  `sessions.closed_at TEXT` column. Null = open (default), ISO
+  timestamp = closed. Additive only; rolls forward cleanly on
+  existing databases.
+- `POST /api/sessions/{id}/close` and `/reopen` — dedicated
+  lifecycle routes rather than a `PATCH` extension because the
+  transition has side effects (auto-reopen on reorg) and the
+  dedicated-route shape matches the existing `attach_tag` /
+  `detach_tag` pattern. Both are idempotent: a second close
+  refreshes the timestamp, a second reopen is a no-op.
+- `SessionOut.closed_at` round-trips through session export /
+  import so archived JSON preserves the closed flag.
+
+### Changed
+
+- Reorg move / split / merge routes auto-clear `closed_at` on any
+  session that had work moved into or out of it. Rationale: if the
+  charter is back in play, the flag is stale. Only real ops reset
+  the flag — a no-op move (0 rows moved) leaves a closed session
+  closed. Merge reopens both sides when the source survives and
+  only the target when `delete_source=true`.
+- `SessionList` splits its render into the main open `<ul>` plus a
+  collapsible bottom group. The group's expanded state is local to
+  the component and resets to collapsed each page load — deliberate,
+  since a sticky preference is a separate prefs-store change.
+
+### Notes
+
+- 16 new pytest across store / routes / reorg (covering idempotent
+  close, 404 on unknown ids, live-runner not dropped on close, and
+  per-op auto-reopen semantics).
+- 13 new vitest: 8 for the sessions store (`openList` /
+  `closedList` derived + `close` / `reopen` happy + error paths)
+  plus 5 for SessionList (group rendering, toggle, "No open
+  sessions" placeholder when everything is closed).
+- Import/export round-trip test (`test_import_session_round_trips_closed_at`)
+  confirms the flag survives a full JSON round trip.
+
 ## [0.3.22] - 2026-04-21
 
 ### Added

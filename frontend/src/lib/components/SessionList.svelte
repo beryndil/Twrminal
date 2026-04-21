@@ -21,6 +21,12 @@
 
   let searchQuery = $state('');
 
+  // Collapsed state for the bottom "Closed (N)" group. Local-only by
+  // design — a per-browser sticky preference would be a separate
+  // prefs-store addition; resetting to collapsed each page load keeps
+  // the sidebar quiet on boot.
+  let closedCollapsed = $state(true);
+
   async function importOne(file: File): Promise<api.Session> {
     const text = await file.text();
     const payload = JSON.parse(text);
@@ -272,6 +278,94 @@
     <TagFilterPanel />
   {/if}
 
+  {#snippet sessionRow(session: api.Session)}
+    <li
+      class="group flex items-stretch gap-1 rounded hover:bg-slate-800 {sessions.selectedId ===
+      session.id
+        ? 'bg-slate-800'
+        : ''}"
+    >
+      <button
+        type="button"
+        class="flex-1 min-w-0 text-left px-2 py-2 rounded-l"
+        onclick={() => onSelect(session.id)}
+        ondblclick={(e) => startRename(e, session)}
+      >
+        {#if rename.id === session.id}
+          <!-- svelte-ignore a11y_autofocus -->
+          <input
+            type="text"
+            class="w-full bg-slate-950 rounded px-1 py-0.5 text-sm
+              border border-slate-700 focus:outline-none focus:border-emerald-600"
+            bind:value={rename.draft}
+            onkeydown={onRenameKey}
+            onblur={commitRename}
+            onclick={(e) => e.stopPropagation()}
+            autofocus
+            placeholder="Session title"
+          />
+        {:else}
+          <div class="flex items-center gap-1.5 text-sm" title="Double-click to rename">
+            {#if isRunning(session.id)}
+              <!-- Live-run indicator: a solid emerald dot with an
+                   outer ping ring. Rendered for every session
+                   whose server-side runner has a turn in flight,
+                   not just the active one, so Daisy can walk away
+                   from a prompt and still see at a glance which
+                   sessions are still working. -->
+              <span
+                class="relative inline-flex h-2 w-2 shrink-0"
+                aria-label="Agent is working"
+                title="Agent is working — you can switch away and come back"
+              >
+                <span
+                  class="absolute inline-flex h-full w-full rounded-full
+                    bg-emerald-400 opacity-60 animate-ping"
+                ></span>
+                <span
+                  class="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"
+                ></span>
+              </span>
+            {/if}
+            <span class="min-w-0 truncate">
+              {session.title ?? session.model}
+            </span>
+          </div>
+        {/if}
+        <div class="text-[10px] text-slate-500 font-mono truncate">
+          {session.working_dir}
+        </div>
+        <div class="text-[10px] flex justify-between items-baseline gap-2">
+          <span class="text-slate-600">
+            {formatTimestamp(session.updated_at)}
+          </span>
+          {#if !billing.showTokens && session.total_cost_usd > 0}
+            <!-- Subscription mode suppresses this dollar figure
+                 entirely. Fetching per-card token totals would
+                 mean one round-trip per listed session on every
+                 sidebar render; the conversation header carries
+                 the real token meter for the active session. -->
+            <span class="font-mono {costClass(session)}">
+              ${session.total_cost_usd.toFixed(4)}
+            </span>
+          {/if}
+        </div>
+      </button>
+      <button
+        type="button"
+        class="px-2 text-xs transition {confirm.id === session.id
+          ? 'text-rose-400 font-medium'
+          : 'text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100'}"
+        aria-label={confirm.id === session.id
+          ? 'Confirm delete session'
+          : 'Delete session'}
+        onclick={(e) => onDelete(e, session.id)}
+      >
+        {confirm.id === session.id ? 'Confirm?' : '✕'}
+      </button>
+    </li>
+  {/snippet}
+
   {#if searchQuery.trim()}
     <!-- SidebarSearch renders its own results list above. -->
   {:else if sessions.loading && sessions.list.length === 0}
@@ -279,94 +373,42 @@
   {:else if sessions.list.length === 0}
     <p class="text-slate-500 text-sm">No sessions yet.</p>
   {:else}
-    <ul class="flex flex-col gap-1">
-      {#each sessions.list as session (session.id)}
-        <li
-          class="group flex items-stretch gap-1 rounded hover:bg-slate-800 {sessions.selectedId ===
-          session.id
-            ? 'bg-slate-800'
-            : ''}"
+    {#if sessions.openList.length > 0}
+      <ul class="flex flex-col gap-1">
+        {#each sessions.openList as session (session.id)}
+          {@render sessionRow(session)}
+        {/each}
+      </ul>
+    {:else}
+      <p class="text-slate-500 text-sm">No open sessions.</p>
+    {/if}
+
+    {#if sessions.closedList.length > 0}
+      <div class="mt-3 border-t border-slate-800 pt-2">
+        <button
+          type="button"
+          class="w-full flex items-center justify-between px-1 py-1 text-xs
+            uppercase tracking-wider text-slate-400 hover:text-slate-200"
+          aria-expanded={!closedCollapsed}
+          aria-controls="closed-sessions-group"
+          onclick={() => (closedCollapsed = !closedCollapsed)}
+          data-testid="closed-group-toggle"
         >
-          <button
-            type="button"
-            class="flex-1 min-w-0 text-left px-2 py-2 rounded-l"
-            onclick={() => onSelect(session.id)}
-            ondblclick={(e) => startRename(e, session)}
+          <span>Closed ({sessions.closedList.length})</span>
+          <span aria-hidden="true">{closedCollapsed ? '▸' : '▾'}</span>
+        </button>
+        {#if !closedCollapsed}
+          <ul
+            id="closed-sessions-group"
+            class="flex flex-col gap-1 mt-1"
+            data-testid="closed-sessions-list"
           >
-            {#if rename.id === session.id}
-              <!-- svelte-ignore a11y_autofocus -->
-              <input
-                type="text"
-                class="w-full bg-slate-950 rounded px-1 py-0.5 text-sm
-                  border border-slate-700 focus:outline-none focus:border-emerald-600"
-                bind:value={rename.draft}
-                onkeydown={onRenameKey}
-                onblur={commitRename}
-                onclick={(e) => e.stopPropagation()}
-                autofocus
-                placeholder="Session title"
-              />
-            {:else}
-              <div class="flex items-center gap-1.5 text-sm" title="Double-click to rename">
-                {#if isRunning(session.id)}
-                  <!-- Live-run indicator: a solid emerald dot with an
-                       outer ping ring. Rendered for every session
-                       whose server-side runner has a turn in flight,
-                       not just the active one, so Daisy can walk away
-                       from a prompt and still see at a glance which
-                       sessions are still working. -->
-                  <span
-                    class="relative inline-flex h-2 w-2 shrink-0"
-                    aria-label="Agent is working"
-                    title="Agent is working — you can switch away and come back"
-                  >
-                    <span
-                      class="absolute inline-flex h-full w-full rounded-full
-                        bg-emerald-400 opacity-60 animate-ping"
-                    ></span>
-                    <span
-                      class="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"
-                    ></span>
-                  </span>
-                {/if}
-                <span class="min-w-0 truncate">
-                  {session.title ?? session.model}
-                </span>
-              </div>
-            {/if}
-            <div class="text-[10px] text-slate-500 font-mono truncate">
-              {session.working_dir}
-            </div>
-            <div class="text-[10px] flex justify-between items-baseline gap-2">
-              <span class="text-slate-600">
-                {formatTimestamp(session.updated_at)}
-              </span>
-              {#if !billing.showTokens && session.total_cost_usd > 0}
-                <!-- Subscription mode suppresses this dollar figure
-                     entirely. Fetching per-card token totals would
-                     mean one round-trip per listed session on every
-                     sidebar render; the conversation header carries
-                     the real token meter for the active session. -->
-                <span class="font-mono {costClass(session)}">
-                  ${session.total_cost_usd.toFixed(4)}
-                </span>
-              {/if}
-            </div>
-          </button>
-          <button
-            type="button"
-            class="px-2 text-xs transition {confirm.id === session.id
-              ? 'text-rose-400 font-medium'
-              : 'text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100'}"
-            aria-label={confirm.id === session.id
-              ? 'Confirm delete session'
-              : 'Delete session'}
-            onclick={(e) => onDelete(e, session.id)}
-          >
-            {confirm.id === session.id ? 'Confirm?' : '✕'}
-          </button>
-        </li>
-      {/each}
-    </ul>
+            {#each sessions.closedList as session (session.id)}
+              {@render sessionRow(session)}
+            {/each}
+          </ul>
+        {/if}
+      </div>
+    {/if}
   {/if}
 </aside>

@@ -55,6 +55,11 @@ class SessionOut(BaseModel):
     last_context_pct: float | None = None
     last_context_tokens: int | None = None
     last_context_max: int | None = None
+    # Lifecycle flag (migration 0015). NULL = open, ISO timestamp =
+    # closed. Closed sessions are hidden inside the sidebar's collapsed
+    # "Closed" group. Reorg ops touching a closed session auto-clear
+    # this column — see routes_reorg.
+    closed_at: str | None = None
 
 
 class MessageOut(BaseModel):

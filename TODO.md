@@ -624,6 +624,46 @@ the historical checklists as-is.
   undo-window length (30s default), Slice-6 priority (ship 1–5 first
   or put 6 on the critical path), tool-call-group warn-vs-refuse.
 
+## v0.3.27 — shipped
+
+Session close / reopen lifecycle. Raised right after session
+82c151f4 ("Long messages dominate viewport", v0.3.24) — sessions
+accumulated forever in the sidebar with no signal that a charter had
+shipped, so you had to mentally track live vs. archived history.
+Fixed by adding a closed flag that pushes closed sessions into a
+collapsed bottom group in the sidebar — the location itself is the
+state indicator (like a closed ticket or an archived email).
+
+- [x] Migration `0015_session_closed_at.sql` — nullable `closed_at
+  TEXT` on `sessions`. Null = open, ISO timestamp = closed. Additive.
+- [x] Store helpers in `db/_sessions.py`: `close_session`,
+  `reopen_session`, `reopen_if_closed(*ids)`. All idempotent; the
+  bulk form only touches rows that currently carry the flag so it
+  doesn't inflate `updated_at` for already-open sessions.
+- [x] `import_session` round-trips `closed_at` through export /
+  import — test proves it survives a JSON round trip.
+- [x] `POST /api/sessions/{id}/close` + `/reopen` routes. Dedicated
+  lifecycle routes rather than a PATCH extension because the
+  transition has side effects (auto-reopen on reorg). Idempotent:
+  close-twice refreshes the timestamp, reopen-twice is a no-op.
+- [x] Reorg move / split / merge auto-clear `closed_at` on any
+  session that had rows moved into or out of it (only when the op
+  actually moved >0 rows — idempotent no-op moves leave the flag
+  alone). Merge reopens both sides unless `delete_source=true`, in
+  which case only the target is reopened.
+- [x] `SessionList.svelte` splits into an open `<ul>` plus a
+  collapsible `Closed (N)` group at the bottom. Group's expanded
+  state is component-local and resets to collapsed each page load.
+- [x] Conversation header: new `✓` button after the merge `⇲`,
+  emerald when closed / slate when open, aria-pressed flips with
+  state. `data-testid="close-session"` for tests.
+- [x] 16 new pytest: store idempotency, 404 on unknown, live-runner
+  not dropped on close, per-op auto-reopen matrix, import/export
+  round trip.
+- [x] 13 new vitest: 8 for sessions store (openList / closedList
+  derived + close / reopen happy + error paths), 5 for SessionList
+  (group render, toggle, "No open sessions" placeholder).
+
 ## v0.3.22 — shipped
 
 Slice 7 (Polish) of the Session Reorg plan

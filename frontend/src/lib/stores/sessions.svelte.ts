@@ -43,6 +43,14 @@ class SessionStore {
 
   selected = $derived(this.list.find((s) => s.id === this.selectedId) ?? null);
 
+  /** Open sessions — render in the main sidebar list. */
+  openList = $derived(this.list.filter((s) => s.closed_at === null));
+
+  /** Closed sessions — render in the collapsed "Closed (N)" group at
+   * the bottom of the sidebar. Preserves the store's existing
+   * `updated_at DESC` ordering because `filter` is stable. */
+  closedList = $derived(this.list.filter((s) => s.closed_at !== null));
+
   async refresh(filter: api.SessionFilter = {}): Promise<void> {
     this.loading = true;
     this.error = null;
@@ -90,6 +98,33 @@ class SessionStore {
       const updated = await api.updateSession(id, patch);
       this.list = this.list.map((s) => (s.id === id ? updated : s));
       return updated;
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
+      return null;
+    }
+  }
+
+  /** Close a session — patches the in-place row so the sidebar
+   * re-renders the open/closed split without a full refresh. */
+  async close(id: string): Promise<api.Session | null> {
+    this.error = null;
+    try {
+      const closed = await api.closeSession(id);
+      this.list = this.list.map((s) => (s.id === id ? closed : s));
+      return closed;
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
+      return null;
+    }
+  }
+
+  /** Reopen a closed session. Symmetric to `close`. */
+  async reopen(id: string): Promise<api.Session | null> {
+    this.error = null;
+    try {
+      const reopened = await api.reopenSession(id);
+      this.list = this.list.map((s) => (s.id === id ? reopened : s));
+      return reopened;
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
       return null;

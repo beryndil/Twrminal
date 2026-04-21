@@ -135,6 +135,10 @@ async def reorg_move(
         )
         await conn.commit()
         session_reorg_total.labels(op="move").inc()
+        # v0.3.25: work resumed — clear the closed flag on either side
+        # that was closed. Both sessions are candidates; the helper
+        # no-ops on open rows.
+        await store.reopen_if_closed(conn, session_id, body.target_session_id)
     await _stop_runner_if_live(request.app.state, session_id)
     await _stop_runner_if_live(request.app.state, body.target_session_id)
 
@@ -218,6 +222,10 @@ async def reorg_split(
         )
         await conn.commit()
         session_reorg_total.labels(op="split").inc()
+        # v0.3.25: splitting *off* a closed session means the user is
+        # actively reworking it — reopen so the flag isn't stale. The
+        # newly-created target is open by default.
+        await store.reopen_if_closed(conn, session_id)
     # Only the source can have a live runner — the new session id is
     # one we just created, so no runner exists for it yet.
     await _stop_runner_if_live(request.app.state, session_id)
@@ -301,6 +309,13 @@ async def reorg_merge(
 
     if result.moved > 0:
         session_reorg_total.labels(op="merge").inc()
+        # v0.3.25: merging messages into a closed target reopens it
+        # (charter being amended). Skip the source when it was just
+        # deleted — no row to update.
+        candidates: tuple[str, ...] = (
+            (body.target_session_id,) if deleted else (session_id, body.target_session_id)
+        )
+        await store.reopen_if_closed(conn, *candidates)
 
     await _stop_runner_if_live(request.app.state, session_id)
     await _stop_runner_if_live(request.app.state, body.target_session_id)

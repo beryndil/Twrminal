@@ -13,7 +13,8 @@ from bearings.db._common import _date_filter, _new_id, _now
 SESSION_BASE_COLS = (
     "id, created_at, updated_at, working_dir, model, title, description, "
     "max_budget_usd, total_cost_usd, session_instructions, sdk_session_id, "
-    "permission_mode, last_context_pct, last_context_tokens, last_context_max"
+    "permission_mode, last_context_pct, last_context_tokens, last_context_max, "
+    "closed_at"
 )
 
 # claude-agent-sdk PermissionMode values. Kept as a module-level
@@ -159,11 +160,13 @@ async def import_session(conn: aiosqlite.Connection, payload: dict[str, Any]) ->
     new_session_id = _new_id()
     now = _now()
     created_at = str(src_session.get("created_at") or now)
+    # `closed_at` round-trips so an export of a closed session restores
+    # closed; `None` on payloads predating the column is the open default.
     await conn.execute(
         "INSERT INTO sessions "
         "(id, created_at, updated_at, working_dir, model, title, description, "
-        "max_budget_usd) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "max_budget_usd, closed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             new_session_id,
             created_at,
@@ -173,6 +176,7 @@ async def import_session(conn: aiosqlite.Connection, payload: dict[str, Any]) ->
             src_session.get("title"),
             src_session.get("description"),
             src_session.get("max_budget_usd"),
+            src_session.get("closed_at"),
         ),
     )
 
@@ -277,6 +281,66 @@ async def set_session_context_usage(
         "UPDATE sessions SET last_context_pct = ?, last_context_tokens = ?, "
         "last_context_max = ? WHERE id = ?",
         (safe_pct, int(tokens), int(max_tokens), session_id),
+    )
+    await conn.commit()
+
+
+async def close_session(
+    conn: aiosqlite.Connection,
+    session_id: str,
+) -> dict[str, Any] | None:
+    """Stamp `closed_at = now()` on the session. Idempotent: calling on
+    an already-closed session refreshes the timestamp (cheap, no-op from
+    the UI's view). Bumps `updated_at` so a re-sort after reopen pulls
+    the session back to the top. Returns the refreshed row or `None` if
+    the id is unknown."""
+    now = _now()
+    cursor = await conn.execute(
+        "UPDATE sessions SET closed_at = ?, updated_at = ? WHERE id = ?",
+        (now, now, session_id),
+    )
+    await conn.commit()
+    if cursor.rowcount == 0:
+        return None
+    return await get_session(conn, session_id)
+
+
+async def reopen_session(
+    conn: aiosqlite.Connection,
+    session_id: str,
+) -> dict[str, Any] | None:
+    """Clear `closed_at`. Idempotent on already-open sessions (UPDATE
+    matches but writes a no-op value). Bumps `updated_at` so the
+    reopened session floats back to the top of the sidebar."""
+    now = _now()
+    cursor = await conn.execute(
+        "UPDATE sessions SET closed_at = NULL, updated_at = ? WHERE id = ?",
+        (now, session_id),
+    )
+    await conn.commit()
+    if cursor.rowcount == 0:
+        return None
+    return await get_session(conn, session_id)
+
+
+async def reopen_if_closed(
+    conn: aiosqlite.Connection,
+    *session_ids: str,
+) -> None:
+    """Clear `closed_at` on any listed session that carries it. Called
+    from the reorg routes after a move/split/merge commits — if work
+    resumed (messages moved in/out), the closed flag is stale. Silently
+    skips open sessions (the WHERE clause matches zero rows) and
+    unknown ids. Does not commit; the caller owns the transaction
+    boundary so this composes with `move_messages_tx`'s own commit."""
+    if not session_ids:
+        return
+    placeholders = ",".join("?" for _ in session_ids)
+    now = _now()
+    await conn.execute(
+        f"UPDATE sessions SET closed_at = NULL, updated_at = ? "
+        f"WHERE closed_at IS NOT NULL AND id IN ({placeholders})",
+        (now, *session_ids),
     )
     await conn.commit()
 

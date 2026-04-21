@@ -858,3 +858,96 @@ def test_noop_move_records_no_audit(client: TestClient, tmp_settings: Settings) 
     assert second_body["audit_id"] is None
     audits = client.get(f"/api/sessions/{src['id']}/reorg/audits").json()
     assert len(audits) == 1
+
+
+# ---------- v0.3.25: auto-reopen on reorg -----------------------------
+
+
+def test_move_reopens_closed_source(client: TestClient, tmp_settings: Settings) -> None:
+    """Moving messages out of a closed source auto-clears `closed_at`
+    on the source — work resumed means the flag is stale."""
+    src = _create(client, title="closed source")
+    dst = _create(client, title="dst")
+    ids = _seed_ordered(tmp_settings.storage.db_path, src["id"], ["a", "b"])
+    client.post(f"/api/sessions/{src['id']}/close")
+    assert client.get(f"/api/sessions/{src['id']}").json()["closed_at"] is not None
+
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/move",
+        json={"target_session_id": dst["id"], "message_ids": ids[:1]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["moved"] == 1
+    assert client.get(f"/api/sessions/{src['id']}").json()["closed_at"] is None
+
+
+def test_move_reopens_closed_target(client: TestClient, tmp_settings: Settings) -> None:
+    """Moving messages INTO a closed target auto-reopens it — the
+    charter is being amended."""
+    src = _create(client, title="src")
+    dst = _create(client, title="closed charter")
+    ids = _seed_ordered(tmp_settings.storage.db_path, src["id"], ["a"])
+    client.post(f"/api/sessions/{dst['id']}/close")
+
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/move",
+        json={"target_session_id": dst["id"], "message_ids": ids},
+    )
+    assert resp.status_code == 200
+    assert client.get(f"/api/sessions/{dst['id']}").json()["closed_at"] is None
+
+
+def test_noop_move_leaves_closed_flag_alone(client: TestClient, tmp_settings: Settings) -> None:
+    """An idempotent re-run with zero real moves must NOT reopen —
+    we only reset the flag when actual work landed."""
+    src = _create(client, title="src")
+    dst = _create(client, title="dst")
+    ids = _seed_ordered(tmp_settings.storage.db_path, src["id"], ["a"])
+    client.post(
+        f"/api/sessions/{src['id']}/reorg/move",
+        json={"target_session_id": dst["id"], "message_ids": ids},
+    )
+    client.post(f"/api/sessions/{src['id']}/close")
+
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/move",
+        json={"target_session_id": dst["id"], "message_ids": ids},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["moved"] == 0
+    assert client.get(f"/api/sessions/{src['id']}").json()["closed_at"] is not None
+
+
+def test_split_reopens_closed_source(client: TestClient, tmp_settings: Settings) -> None:
+    """Splitting off a closed session reopens the source — the user
+    just amended it."""
+    src = _create(client, title="closed, then split")
+    ids = _seed_ordered(tmp_settings.storage.db_path, src["id"], ["a", "b", "c"])
+    client.post(f"/api/sessions/{src['id']}/close")
+    tag_id = _default_tag(client)
+
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/split",
+        json={
+            "after_message_id": ids[0],
+            "new_session": {"title": "offshoot", "tag_ids": [tag_id]},
+        },
+    )
+    assert resp.status_code == 201
+    assert client.get(f"/api/sessions/{src['id']}").json()["closed_at"] is None
+
+
+def test_merge_reopens_closed_target(client: TestClient, tmp_settings: Settings) -> None:
+    """Merging messages into a closed target reopens it."""
+    src = _create(client, title="live src")
+    dst = _create(client, title="closed charter")
+    _seed_ordered(tmp_settings.storage.db_path, src["id"], ["a", "b"])
+    client.post(f"/api/sessions/{dst['id']}/close")
+
+    resp = client.post(
+        f"/api/sessions/{src['id']}/reorg/merge",
+        json={"target_session_id": dst["id"], "delete_source": False},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["moved"] == 2
+    assert client.get(f"/api/sessions/{dst['id']}").json()["closed_at"] is None

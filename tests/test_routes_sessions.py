@@ -508,3 +508,58 @@ def test_detach_tag_drops_live_runner(client: TestClient) -> None:
     resp = client.delete(f"/api/sessions/{created['id']}/tags/{default_tag_id}")
     assert resp.status_code == 200
     assert tracker.shutdown_calls == 1
+
+
+# v0.3.25 — lifecycle close/reopen routes.
+
+
+def test_post_close_marks_session_closed(client: TestClient) -> None:
+    created = _create(client, title="finished charter")
+    assert created["closed_at"] is None
+
+    resp = client.post(f"/api/sessions/{created['id']}/close")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == created["id"]
+    assert body["closed_at"] is not None
+
+
+def test_post_close_is_idempotent(client: TestClient) -> None:
+    """Second close re-stamps `closed_at` instead of 409'ing. The UI
+    can fire the button naïvely without tracking current state."""
+    created = _create(client, title="double-close")
+    first = client.post(f"/api/sessions/{created['id']}/close").json()
+    second = client.post(f"/api/sessions/{created['id']}/close").json()
+    assert first["closed_at"] is not None
+    assert second["closed_at"] is not None
+    # Timestamps may match (same clock tick) but must never regress.
+    assert second["closed_at"] >= first["closed_at"]
+
+
+def test_post_reopen_clears_closed_at(client: TestClient) -> None:
+    created = _create(client, title="back to work")
+    client.post(f"/api/sessions/{created['id']}/close")
+    resp = client.post(f"/api/sessions/{created['id']}/reopen")
+    assert resp.status_code == 200
+    assert resp.json()["closed_at"] is None
+
+
+def test_post_close_missing_session_returns_404(client: TestClient) -> None:
+    resp = client.post("/api/sessions/" + "0" * 32 + "/close")
+    assert resp.status_code == 404
+
+
+def test_post_reopen_missing_session_returns_404(client: TestClient) -> None:
+    resp = client.post("/api/sessions/" + "0" * 32 + "/reopen")
+    assert resp.status_code == 404
+
+
+def test_close_does_not_drop_live_runner(client: TestClient) -> None:
+    """Closed state doesn't enter the system prompt; no runner respawn
+    needed. Matches the budget-edit precedent."""
+    created = _create(client, title="quiet close")
+    tracker = _plant_runner(client, created["id"])
+
+    resp = client.post(f"/api/sessions/{created['id']}/close")
+    assert resp.status_code == 200
+    assert tracker.shutdown_calls == 0

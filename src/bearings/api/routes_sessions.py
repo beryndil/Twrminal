@@ -139,6 +139,27 @@ async def update_session(session_id: str, body: SessionUpdate, request: Request)
     return SessionOut(**row)
 
 
+@router.post("/{session_id}/close", response_model=SessionOut)
+async def close_session(session_id: str, request: Request) -> SessionOut:
+    """Mark the session closed — the sidebar sinks it into the
+    collapsed "Closed" group on the next render. Idempotent: a second
+    call just refreshes `closed_at`. No runner respawn; the lifecycle
+    flag doesn't enter the system prompt."""
+    row = await store.close_session(request.app.state.db, session_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return SessionOut(**row)
+
+
+@router.post("/{session_id}/reopen", response_model=SessionOut)
+async def reopen_session(session_id: str, request: Request) -> SessionOut:
+    """Clear the closed flag. Idempotent on already-open sessions."""
+    row = await store.reopen_session(request.app.state.db, session_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return SessionOut(**row)
+
+
 @router.delete("/{session_id}")
 async def delete_session(session_id: str, request: Request) -> dict[str, bool]:
     ok = await store.delete_session(request.app.state.db, session_id)
