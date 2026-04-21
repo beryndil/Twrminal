@@ -505,6 +505,59 @@ cover shape, not feel.
   dead spinner? Reproduce with a deliberately long Task call and
   instrument.
 
+- [ ] **Feature: Session Reorg — message triage across sessions.**
+  Plan: `~/.claude/plans/sparkling-triaging-otter.md`. Session:
+  `a0a4f828…` (tag: Bearings). Motivating failure was the "Checklists"
+  session drifting across 4 unrelated topics and becoming painful to
+  reload. 7 shippable slices:
+
+  - [ ] **Slice 1 — DB primitive (~4h).** `store.move_messages_tx(
+    source_id, target_id, message_ids)` — single SQLite transaction,
+    recomputes `sessions.message_count` on both sides, follows
+    `tool_calls.session_id` + `tool_calls.message_id` for anchored
+    rows, rolls back on bad input. Unit tests for happy path, bad
+    input, tool-call-follow, message_count recompute.
+  - [ ] **Slice 2 — Move + Split routes (~4h).**
+    `POST /sessions/{id}/reorg/move` and `.../reorg/split`. Split
+    creates a new sessions row inline from a body-supplied
+    `{title, description?, tag_ids[]}` and moves everything after
+    `after_message_id` into it. Both routes call
+    `runner.stop(reason="session_reorg")` on affected live runners so
+    the model's view clears next turn.
+  - [ ] **Slice 3 — UI: hover-action Move + Split (~1 day).**
+    Message-row "⋯" menu with "Move to session…" and "Split here…".
+    New `SessionPickerModal.svelte` (searchable, tag-filter, "create
+    new session…" inline row). 30-second undo toast that runs the
+    inverse move. Svelte tests for the picker interactions and the
+    undo timing.
+  - [ ] **Slice 4 — UI: bulk select (~4h).** Toggle mode on session
+    header; checkbox per message row; shift-click selects range;
+    floating action bar at bottom with "Move N…" / "Split into new
+    session…" / "Cancel". Keyboard shortcut `m` / `s` when in bulk
+    mode.
+  - [ ] **Slice 5 — Merge route + audit divider (~4h).**
+    `POST /.../reorg/merge` with `delete_source` flag. Source session
+    renders a persistent divider: "N messages moved to <target title>
+    at <timestamp> · Undo" (undo button disabled past 30s, divider
+    stays as audit trail).
+  - [ ] **Slice 6 — LLM-assisted analyze (~1–2 days, BLOCKED on
+    token-cost Wave 3).** `POST /sessions/{id}/reorg/analyze`
+    dispatches a sub-agent (needs Option 4 "researcher" to land first
+    so the analysis doesn't pollute the parent context). Returns
+    structured JSON proposal; UI renders as an editable table where
+    Dave can retitle, retag, drag messages between proposals, and
+    approve individually. Fallback until Wave 3: rule-based heuristic
+    (long-silence split + keyword-shift split) as placeholder.
+  - [ ] **Slice 7 — Polish.** Tool-call-group warnings on splits that
+    would orphan a call/result pair (warn, not refuse — user decides).
+    Prometheus `bearings_session_reorg_total{op}` counter. Optional
+    audit table if the divider isn't enough.
+
+  Open design questions (see plan §"Open questions for Dave"):
+  cost-attribution policy (leave on source vs. follow messages),
+  undo-window length (30s default), Slice-6 priority (ship 1–5 first
+  or put 6 on the critical path), tool-call-group warn-vs-refuse.
+
 ## v0.3.16 — shipped
 
 Wave 1 of the token-cost-mitigation plan
