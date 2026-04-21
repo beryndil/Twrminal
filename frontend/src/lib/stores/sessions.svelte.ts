@@ -43,13 +43,16 @@ class SessionStore {
 
   selected = $derived(this.list.find((s) => s.id === this.selectedId) ?? null);
 
-  /** Open sessions — render in the main sidebar list. */
-  openList = $derived(this.list.filter((s) => s.closed_at === null));
+  /** Open sessions — render in the main sidebar list. Truthy check
+   * (not `=== null`) so a backend that temporarily omits the field —
+   * e.g. during a rolling deploy where the server lags the static
+   * bundle — doesn't misclassify every session as closed. */
+  openList = $derived(this.list.filter((s) => !s.closed_at));
 
   /** Closed sessions — render in the collapsed "Closed (N)" group at
    * the bottom of the sidebar. Preserves the store's existing
    * `updated_at DESC` ordering because `filter` is stable. */
-  closedList = $derived(this.list.filter((s) => s.closed_at !== null));
+  closedList = $derived(this.list.filter((s) => !!s.closed_at));
 
   async refresh(filter: api.SessionFilter = {}): Promise<void> {
     this.loading = true;

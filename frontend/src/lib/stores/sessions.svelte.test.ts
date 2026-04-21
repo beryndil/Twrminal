@@ -90,6 +90,34 @@ describe('sessions store open/closed split', () => {
     ];
     expect(sessions.openList.map((s) => s.id)).toEqual(['newest', 'middle', 'oldest']);
   });
+
+  it('treats missing `closed_at` (undefined) as open — defensive against a backend that omits the field', () => {
+    // Cast through `unknown` to bypass the Session type guard. This
+    // shape lands in the wild during a rolling deploy where the
+    // frontend bundle ships before the backend picks up migration
+    // 0015 — the field is simply absent from the payload.
+    const partial = {
+      id: 'no-field',
+      created_at: '2026-04-21T00:00:00+00:00',
+      updated_at: '2026-04-21T00:00:00+00:00',
+      working_dir: '/tmp',
+      model: 'claude-opus-4-7',
+      title: null,
+      description: null,
+      max_budget_usd: null,
+      total_cost_usd: 0,
+      message_count: 0,
+      session_instructions: null,
+      permission_mode: null,
+      last_context_pct: null,
+      last_context_tokens: null,
+      last_context_max: null
+      // closed_at intentionally absent
+    };
+    sessions.list = [partial as unknown as Session];
+    expect(sessions.openList.map((s) => s.id)).toEqual(['no-field']);
+    expect(sessions.closedList).toEqual([]);
+  });
 });
 
 describe('sessions.close', () => {
