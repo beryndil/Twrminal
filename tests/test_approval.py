@@ -86,7 +86,7 @@ async def test_resolve_approval_deny_returns_deny_with_reason(
 
     task = asyncio.create_task(runner.can_use_tool("Edit", {"path": "/etc/passwd"}, _ctx("tu_2")))
     await asyncio.sleep(0)  # let the coroutine register the future
-    request_id = next(iter(runner._pending_approvals))
+    request_id = next(iter(runner._approval._pending))
     await runner.resolve_approval(request_id, "deny", reason="not today")
 
     result = await asyncio.wait_for(task, timeout=1.0)
@@ -151,7 +151,7 @@ async def test_shutdown_denies_all_pending(
     t1 = asyncio.create_task(runner.can_use_tool("A", {}, _ctx("a")))
     t2 = asyncio.create_task(runner.can_use_tool("B", {}, _ctx("b")))
     await asyncio.sleep(0.01)
-    assert len(runner._pending_approvals) == 2
+    assert len(runner._approval._pending) == 2
 
     await runner.shutdown()
 

@@ -28,7 +28,8 @@ from bearings.agent.events import (
     MessageStart,
     Token,
 )
-from bearings.agent.runner import RING_MAX, RunnerRegistry, SessionRunner
+from bearings.agent.registry import RunnerRegistry
+from bearings.agent.runner import RING_MAX, SessionRunner
 from bearings.agent.session import AgentSession
 from bearings.db import store
 from bearings.db._common import init_db

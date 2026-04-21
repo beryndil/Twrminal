@@ -51,8 +51,9 @@ CODE_SESSION_NOT_FOUND = 4404
 
 async def _build_runner(app: Any, session_id: str) -> SessionRunner:
     """Construct a SessionRunner wired to app-scoped state. Used as
-    the factory passed into `RunnerRegistry.get_or_create` — keeps all
-    the FastAPI-specific wiring out of the runner module."""
+    the factory passed into `RunnerRegistry.get_or_create`
+    (`bearings.agent.registry`) — keeps all the FastAPI-specific wiring
+    out of the runner module."""
     conn = app.state.db
     row = await store.get_session(conn, session_id)
     assert row is not None, "caller must verify the session exists first"

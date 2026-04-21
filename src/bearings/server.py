@@ -8,7 +8,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 
 from bearings import __version__
-from bearings.agent.runner import RunnerRegistry
+from bearings.agent.registry import RunnerRegistry
 from bearings.api import (
     routes_fs,
     routes_health,

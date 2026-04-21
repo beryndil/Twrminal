@@ -461,17 +461,27 @@ is feature-complete.
   large enough to justify the split; all imports use `$lib/api`
   unchanged. `voidFetch` helper added to core for DELETE-without-
   body endpoints. All 168 backend + 39 frontend tests pass.
-- [ ] `src/bearings/agent/runner.py` (509 lines after v0.3.10)
-  over the 400-line cap. Natural split: extract the approval
-  broker (can_use_tool / resolve_approval / _deny_all_pending /
-  _emit_resolved + the pending-approvals dict) into an
-  `ApprovalBroker` helper the runner composes. Keeps the runner
-  focused on the stream / ring buffer / prompt queue.
-- [ ] `frontend/src/lib/stores/conversation.svelte.ts` (440 lines
-  after v0.3.10) over the cap. Natural split: move the event
-  reducer into `conversation/reducer.ts` (token / thinking /
-  tool-call / approval cases) and keep the class as state +
-  derived getters + load/persist.
+- [x] `src/bearings/agent/runner.py` split. Extracted
+  `ApprovalBroker` → `agent/approval_broker.py` (136 lines) and
+  `RunnerRegistry` → `agent/registry.py` (71 lines). `runner.py`
+  down to 379 lines. `SessionRunner.can_use_tool` is now a
+  forwarding property onto the broker; `resolve_approval` delegates.
+  Stop / shutdown call `broker.deny_all(interrupt=True)` which
+  fans matching `approval_resolved(decision=deny)` events.
+  Test access to pending state updated to `runner._approval._pending`.
+  232 backend tests pass.
+- [x] `frontend/src/lib/stores/conversation.svelte.ts` split.
+  Extracted `applyEvent` reducer + `SessionState` + `LiveToolCall`
+  + `capToolOutput` + `hydrateToolCall` → `conversation/reducer.ts`
+  (322 lines). Store class is now 186 lines: state / derived
+  getters / load / loadOlder / refreshMessages / optimistic
+  `clearPendingApproval` / one-line `handleEvent` that dispatches
+  to `applyEvent` with a small injected `ReducerCtx`. Side effects
+  (cost + message-count bumps, error, refresh) travel through that
+  ctx so the reducer has no import edge on `$lib/api` or
+  `sessions`. Re-exports the legacy names (`TOOL_OUTPUT_CAP_CHARS`,
+  `capToolOutput`, `LiveToolCall`) so existing callers don't
+  change. 89 frontend tests pass; svelte-check clean.
 
 ### Browser verification pending
 

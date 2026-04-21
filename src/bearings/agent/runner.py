@@ -30,23 +30,15 @@ import asyncio
 import json
 import logging
 from collections import deque
-from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 from uuid import uuid4
 
 import aiosqlite
-from claude_agent_sdk import (
-    PermissionResult,
-    PermissionResultAllow,
-    PermissionResultDeny,
-    ToolPermissionContext,
-)
 
 from bearings import metrics
+from bearings.agent.approval_broker import ApprovalBroker
 from bearings.agent.events import (
     AgentEvent,
-    ApprovalRequest,
-    ApprovalResolved,
     ErrorEvent,
     MessageComplete,
     MessageStart,
@@ -79,11 +71,6 @@ class _Shutdown:
 _SHUTDOWN = _Shutdown()
 
 RunnerStatus = Literal["idle", "running"]
-
-# Callable that turns a session id into a runner. The registry uses
-# this so the factory (constructed by ws_agent with app-scoped db +
-# settings) can stay outside the registry's import graph.
-RunnerFactory = Callable[[str], Awaitable["SessionRunner"]]
 
 
 class _Envelope:
@@ -126,12 +113,13 @@ class SessionRunner:
         # clears it on entry so stale stop flags don't short-circuit
         # the next prompt.
         self._stop_requested = False
-        # Pending tool-use approval requests keyed by request_id. The
-        # SDK's `can_use_tool` callback parks a Future here and awaits
-        # it; the WS handler's `approval_response` frame resolves it.
-        # `request_stop()` / `shutdown()` deny all pending so the SDK
-        # unblocks and the stream can wind down cleanly.
-        self._pending_approvals: dict[str, asyncio.Future[PermissionResult]] = {}
+        # Tool-use approval state lives in its own small helper so this
+        # class stays focused on the stream / prompt queue. The broker
+        # owns the pending-Futures dict and the `ApprovalRequest` /
+        # `ApprovalResolved` event emission; the runner just forwards
+        # `resolve_approval` from the WS handler and tells it to deny
+        # everything on stop / shutdown.
+        self._approval = ApprovalBroker(session_id, self._emit_event)
 
     # ---- lifecycle -------------------------------------------------
 
@@ -150,8 +138,7 @@ class SessionRunner:
         # Deny any pending approvals with `interrupt=True` so the SDK
         # stops waiting for a user decision that will never come and
         # the stream loop can reach its shutdown path.
-        denied = self._deny_all_pending("runner shutting down", interrupt=True)
-        await self._emit_resolved(denied)
+        await self._approval.deny_all("runner shutting down", interrupt=True)
         try:
             await self.agent.interrupt()
         except Exception:
@@ -192,8 +179,7 @@ class SessionRunner:
         # make any progress toward the stop flag until the Future is
         # resolved. Deny them all with `interrupt=True` so the SDK
         # unwinds and the loop reaches the stop check.
-        denied = self._deny_all_pending("stopped by user", interrupt=True)
-        await self._emit_resolved(denied)
+        await self._approval.deny_all("stopped by user", interrupt=True)
         try:
             await self.agent.interrupt()
         except Exception:
@@ -201,87 +187,20 @@ class SessionRunner:
 
     # ---- tool-use approval ----------------------------------------
 
-    async def can_use_tool(
-        self,
-        tool_name: str,
-        tool_input: dict[str, Any],
-        context: ToolPermissionContext,
-    ) -> PermissionResult:
-        """SDK `can_use_tool` callback. Emits an `ApprovalRequest` event
-        and blocks on a Future until the frontend sends the matching
-        `approval_response` frame (or a stop/shutdown denies it). Bound
-        to `agent.can_use_tool` by the `ws_agent` factory so the runner
-        stays the only owner of pending-approval state."""
-        request_id = uuid4().hex
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future[PermissionResult] = loop.create_future()
-        self._pending_approvals[request_id] = future
-        await self._emit_event(
-            ApprovalRequest(
-                session_id=self.session_id,
-                request_id=request_id,
-                tool_name=tool_name,
-                input=dict(tool_input),
-                tool_use_id=context.tool_use_id,
-            )
-        )
-        try:
-            return await future
-        finally:
-            self._pending_approvals.pop(request_id, None)
+    @property
+    def can_use_tool(self) -> Any:
+        """Callback bound onto `AgentSession.can_use_tool` by
+        `ws_agent._build_runner`. Forwarding property so callers don't
+        need to know a broker exists; the runner remains the single
+        public surface the WS layer talks to."""
+        return self._approval.can_use_tool
 
     async def resolve_approval(
         self, request_id: str, decision: str, reason: str | None = None
     ) -> None:
-        """Resolve a pending approval raised by `can_use_tool`. Called
-        by the WS handler on an `approval_response` frame. No-op if the
-        id is unknown or already resolved — duplicate resolutions from
-        two tabs answering the same modal mustn't crash."""
-        future = self._pending_approvals.get(request_id)
-        if future is None or future.done():
-            return
-        if decision == "allow":
-            future.set_result(PermissionResultAllow())
-            resolved: Literal["allow", "deny"] = "allow"
-        else:
-            future.set_result(
-                PermissionResultDeny(message=reason or "denied by user", interrupt=False)
-            )
-            resolved = "deny"
-        await self._emit_event(
-            ApprovalResolved(
-                session_id=self.session_id,
-                request_id=request_id,
-                decision=resolved,
-            )
-        )
-
-    def _deny_all_pending(self, reason: str, *, interrupt: bool) -> list[str]:
-        """Synchronously deny every pending approval and return the ids
-        so the caller can emit matching `ApprovalResolved` events for
-        any other tab rendering the stale modal. Sync on purpose: the
-        future-resolution step has to land before the SDK wakes so the
-        stream loop can reach its stop / shutdown check."""
-        denied: list[str] = []
-        for request_id, future in self._pending_approvals.items():
-            if not future.done():
-                future.set_result(PermissionResultDeny(message=reason, interrupt=interrupt))
-                denied.append(request_id)
-        return denied
-
-    async def _emit_resolved(self, request_ids: list[str]) -> None:
-        """Fan `ApprovalResolved(decision=deny)` events for every id
-        denied by a stop / shutdown path. Lets tabs mirroring this
-        session clear their modals; the tab that initiated the stop
-        has already cleared optimistically."""
-        for request_id in request_ids:
-            await self._emit_event(
-                ApprovalResolved(
-                    session_id=self.session_id,
-                    request_id=request_id,
-                    decision="deny",
-                )
-            )
+        """WS → broker forwarder. Kept on the runner so the WS handler
+        has one object to hold (runner), not two (runner + broker)."""
+        await self._approval.resolve(request_id, decision, reason)
 
     async def subscribe(
         self, since_seq: int = 0
@@ -458,52 +377,3 @@ async def _persist_assistant_turn(
     )
     if cost_usd is not None:
         await store.add_session_cost(conn, session_id, cost_usd)
-
-
-class RunnerRegistry:
-    """App-scoped registry of live runners, keyed by session id.
-
-    First WS connect for a session lazily creates the runner; the
-    `delete_session` route drops it. On app shutdown every runner is
-    drained so no stream is left orphaned."""
-
-    def __init__(self) -> None:
-        self._runners: dict[str, SessionRunner] = {}
-        self._lock = asyncio.Lock()
-
-    async def get_or_create(
-        self,
-        session_id: str,
-        *,
-        factory: RunnerFactory,
-    ) -> SessionRunner:
-        async with self._lock:
-            runner = self._runners.get(session_id)
-            if runner is None:
-                runner = await factory(session_id)
-                runner.start()
-                self._runners[session_id] = runner
-            return runner
-
-    def get(self, session_id: str) -> SessionRunner | None:
-        return self._runners.get(session_id)
-
-    def running_ids(self) -> set[str]:
-        """Sessions whose worker currently has a turn in flight. Cheap
-        to call — just iterates the dict."""
-        return {sid for sid, r in self._runners.items() if r.is_running}
-
-    async def drop(self, session_id: str) -> None:
-        """Shut down and remove the runner for a deleted session. Safe
-        when no runner exists (no-op)."""
-        async with self._lock:
-            runner = self._runners.pop(session_id, None)
-        if runner is not None:
-            await runner.shutdown()
-
-    async def shutdown_all(self) -> None:
-        async with self._lock:
-            runners = list(self._runners.values())
-            self._runners.clear()
-        for r in runners:
-            await r.shutdown()
