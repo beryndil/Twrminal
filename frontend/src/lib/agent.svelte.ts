@@ -25,7 +25,7 @@ const CODE_SESSION_NOT_FOUND = 4404;
  * Returning to the old session reconnects with the stored seq and the
  * UI catches up.
  */
-class AgentConnection {
+export class AgentConnection {
   state = $state<ConnectionState>('idle');
   sessionId = $state<string | null>(null);
   lastCloseCode = $state<number | null>(null);
@@ -91,13 +91,25 @@ class AgentConnection {
     const ws = api.openAgentSocket(sessionId, sinceSeq);
     this.socket = ws;
 
+    // Stale-socket guard. A previous socket's async close can schedule
+    // a reconnect during the `await` gap in connect(), spawning a
+    // parallel socket. Each listener below compares `this.socket` to
+    // its captured `ws` so an orphan goes silent instead of double-
+    // delivering every token event.
+    const isCurrent = (): boolean => this.socket === ws;
+
     ws.addEventListener('open', () => {
+      if (!isCurrent()) {
+        ws.close();
+        return;
+      }
       this.state = 'open';
       this.retryCount = 0;
       this.reconnectDelayMs = null;
     });
 
     ws.addEventListener('message', (msg) => {
+      if (!isCurrent()) return;
       try {
         const event = JSON.parse(msg.data) as api.AgentEvent;
         conversation.handleEvent(event);
@@ -107,6 +119,7 @@ class AgentConnection {
     });
 
     ws.addEventListener('close', (ev) => {
+      if (!isCurrent()) return;
       this.state = 'closed';
       this.lastCloseCode = ev.code;
       this.socket = null;
@@ -121,6 +134,7 @@ class AgentConnection {
     });
 
     ws.addEventListener('error', () => {
+      if (!isCurrent()) return;
       this.state = 'error';
     });
   }
@@ -145,6 +159,10 @@ class AgentConnection {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.reconnectDelayMs = null;
+      // A fresh connect() during the delay may have already opened the
+      // authoritative socket. Spawning a parallel one here is what
+      // doubled every token event in v0.3.x.
+      if (this.socket) return;
       if (this.wantConnected && this.sessionId) {
         this.openSocket(this.sessionId);
       }
