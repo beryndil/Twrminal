@@ -491,6 +491,71 @@ cover shape, not feel.
 
 ### Other
 
+## v0.3.15 — shipped
+
+First-turn context priming on fresh runners. Belt-and-suspenders
+backup for the SDK's `resume=<sdk_session_id>` path, which is supposed
+to rehydrate conversation history on the CLI side but fails silently
+when the session file is gone, the cwd has drifted, or the system
+prompt has changed. Dave hit this live: came back to a mid-research
+session with "hello?", got a "how can I help?" blank slate. Resume
+hint still rides along for the cases where it works; the priming
+preamble guarantees the immediate context is present regardless.
+
+- [x] `AgentSession` gains `_primed: bool` flag (False at construction,
+  True after the first `stream()` call). Ensures the preamble is a
+  one-shot per instance — subsequent turns within the same runner
+  rely on the SDK's own context chain so we don't duplicate history
+  every turn.
+- [x] `_build_history_prefix(prompt)` queries the last 10 persisted
+  messages (`_HISTORY_PRIME_MAX_MESSAGES = 10`), truncates each
+  content field to 2000 chars (`_HISTORY_PRIME_MAX_CHARS`), and
+  renders a `<previous-conversation>…</previous-conversation>`
+  preamble. Returns None when there's nothing to prime. Dedupes the
+  runner's own just-persisted user row so the current turn's prompt
+  isn't echoed back inside the preamble.
+- [x] Flag is flipped `True` *before* building the prefix so a
+  transient DB error can't trap the runner in a re-prime loop — worst
+  case is a single missed priming, not infinite retry.
+- [x] 5 new pytest cases in `tests/test_agent_session.py` covering:
+  preamble prepended on first turn when DB has prior messages; no
+  preamble when only the current turn's own user row is in the DB;
+  second turn on the same instance gets no preamble; no-db path
+  short-circuits; long-message truncation fires with visible marker.
+- [x] 282 backend tests pass; ruff + mypy strict green.
+
+## v0.3.14 — shipped
+
+Permission-mode persistence across reconnects and reloads. Closes a
+gap where a user in plan / acceptEdits / bypassPermissions mode would
+silently drop back to `default` the moment their WS reconnected or
+their browser reloaded — the runner's in-memory mode was never
+written to SQLite, so the rebuild path couldn't restore it.
+
+- [x] Migration `0012_session_permission_mode.sql` adds
+  `sessions.permission_mode TEXT` (nullable; NULL means `default`).
+  `db/schema.sql` back-filled to match.
+- [x] `_sessions.py` — `SESSION_BASE_COLS` grew the new column;
+  `set_session_permission_mode(conn, session_id, mode)` upserts with
+  a frozen-set validator (`default` / `plan` / `acceptEdits` /
+  `bypassPermissions`) that raises `ValueError` on anything else.
+- [x] `SessionOut` DTO exposes `permission_mode: str | None`.
+  Frontend `Session` TS type adds the matching union literal.
+- [x] `SessionRunner.set_permission_mode` now persists the choice
+  after forwarding to the SDK and the approval broker. Non-string
+  truthy inputs (malformed wire frames) leave the DB untouched so a
+  bad frame can't clobber a good persisted value; invalid strings
+  hit the store's ValueError and get logged, not re-raised.
+- [x] `ws_agent._build_runner` reads `row.get("permission_mode")` and
+  passes it to `AgentSession(permission_mode=...)` so a fresh runner
+  picks up where the last one left off.
+- [x] `conversation.load()` now returns the session object; the WS
+  agent store uses it to hydrate `permissionMode` on connect
+  without a second round-trip.
+- [x] 4 new pytest cases (2 for the store helper's validator +
+  2 for the runner's DB persistence) + frontend test fixture
+  updated to carry `permission_mode: null`. All tests pass.
+
 ## v0.3.13 — shipped
 
 Desktop/tray notification when an agent turn completes. Opt-in via
