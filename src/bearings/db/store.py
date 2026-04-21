@@ -24,7 +24,7 @@ from bearings.db._messages import (
     search_messages,
 )
 from bearings.db._sessions import (
-    apply_session_cost_turn,
+    add_session_cost,
     create_session,
     delete_session,
     get_session,
@@ -50,7 +50,7 @@ from bearings.db._tags import (
 
 __all__ = [
     "MIGRATIONS_DIR",
-    "apply_session_cost_turn",
+    "add_session_cost",
     "attach_tag",
     "attach_tool_calls_to_message",
     "create_session",

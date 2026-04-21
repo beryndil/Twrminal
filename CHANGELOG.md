@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.7] - 2026-04-20
+
+### Reverted
+
+- Reverts the v0.3.6 "quadratic inflation" fix. The premise was
+  wrong — `claude-agent-sdk`'s `ResultMessage.total_cost_usd` is
+  **per-turn**, not cumulative (verified empirically: a single
+  resumed Opus turn on a real Bearings session reports ~$0.74 with
+  `num_turns=1`). The original `store.add_session_cost` was already
+  correct; 0.3.6's delta/reset-detection math over-counted.
+- Leaves migration 0011 in place (schema forward-only) but stops
+  using the `sdk_reported_cost_usd` column. Historical `total_cost_
+  usd` values that 0011 zeroed are unrecoverable — per-turn deltas
+  were never recorded. Forward accumulation is correct again.
+- Known limitation acknowledged in code: large Opus sessions can
+  show meaningful per-turn cost ($0.5–$2) because each turn spins
+  up a fresh CLI with the full resumed history; that's real spend,
+  not a bug.
+
 ## [0.3.6] - 2026-04-20
 
 ### Fixed
@@ -20,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `total_cost_usd` to 0 — historical per-turn deltas were never
   recorded, so the next turn on any resumable session re-seeds the
   total from the SDK's own (correct) cumulative.
+
+  **Note (0.3.7):** premise was wrong — reverted.
 
 ## [0.2.13] - 2026-04-19
 

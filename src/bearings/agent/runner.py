@@ -225,37 +225,6 @@ class SessionRunner:
         stopped = False
 
         async for event in self.agent.stream(prompt):
-            # MessageComplete carries the SDK's cumulative spend for the
-            # resumed CLI session (not a per-turn delta). Convert it to
-            # a delta and update the session row *before* emitting, so
-            # wire subscribers and the DB both see the corrected value.
-            if isinstance(event, MessageComplete):
-                delta_usd: float | None = None
-                if event.cost_usd is not None:
-                    delta_usd = await store.apply_session_cost_turn(
-                        self.db, self.session_id, event.cost_usd
-                    )
-                corrected = MessageComplete(
-                    session_id=event.session_id,
-                    message_id=event.message_id,
-                    cost_usd=delta_usd,
-                )
-                await self._emit_event(corrected)
-                await _persist_assistant_turn(
-                    self.db,
-                    session_id=self.session_id,
-                    message_id=event.message_id,
-                    content="".join(buf),
-                    thinking="".join(thinking_buf) or None,
-                    tool_call_ids=tool_call_ids,
-                )
-                if self.agent.sdk_session_id is not None:
-                    await store.set_sdk_session_id(
-                        self.db, self.session_id, self.agent.sdk_session_id
-                    )
-                persisted = True
-                break
-
             await self._emit_event(event)
             if isinstance(event, MessageStart):
                 current_message_id = event.message_id
@@ -281,6 +250,22 @@ class SessionRunner:
                     error=event.error,
                 )
                 metrics.tool_calls_finished.labels(ok=str(event.ok).lower()).inc()
+            elif isinstance(event, MessageComplete):
+                await _persist_assistant_turn(
+                    self.db,
+                    session_id=self.session_id,
+                    message_id=event.message_id,
+                    content="".join(buf),
+                    thinking="".join(thinking_buf) or None,
+                    tool_call_ids=tool_call_ids,
+                    cost_usd=event.cost_usd,
+                )
+                if self.agent.sdk_session_id is not None:
+                    await store.set_sdk_session_id(
+                        self.db, self.session_id, self.agent.sdk_session_id
+                    )
+                persisted = True
+                break
 
             if self._stop_requested:
                 stopped = True
@@ -303,6 +288,7 @@ class SessionRunner:
                 content="".join(buf),
                 thinking="".join(thinking_buf) or None,
                 tool_call_ids=tool_call_ids,
+                cost_usd=None,
             )
 
     async def _emit_event(self, event: AgentEvent) -> None:
@@ -335,11 +321,8 @@ async def _persist_assistant_turn(
     content: str,
     thinking: str | None,
     tool_call_ids: list[str],
+    cost_usd: float | None,
 ) -> None:
-    """Persist the assistant message + attach its tool calls. Cost is
-    handled separately by `store.apply_session_cost_turn` at the
-    MessageComplete site so the delta lands on both the DB row and the
-    wire event in one place."""
     await store.insert_message(
         conn,
         session_id=session_id,
@@ -352,6 +335,8 @@ async def _persist_assistant_turn(
     await store.attach_tool_calls_to_message(
         conn, message_id=message_id, tool_call_ids=tool_call_ids
     )
+    if cost_usd is not None:
+        await store.add_session_cost(conn, session_id, cost_usd)
 
 
 class RunnerRegistry:

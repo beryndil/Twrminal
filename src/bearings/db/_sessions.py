@@ -231,49 +231,15 @@ async def set_sdk_session_id(
     await conn.commit()
 
 
-async def apply_session_cost_turn(
-    conn: aiosqlite.Connection,
-    session_id: str,
-    reported_cumulative_usd: float,
-) -> float:
-    """Turn a cumulative SDK cost report into a per-turn delta and
-    accumulate it on the session row.
-
-    `claude-agent-sdk`'s `ResultMessage.total_cost_usd` is cumulative
-    for the resumed CLI session — i.e. on turn N it's the sum of spend
-    across turns 1..N, not just turn N. Adding that raw on every turn
-    inflates totals quadratically. We store the last cumulative we've
-    seen in `sdk_reported_cost_usd` so we can subtract it to get the
-    actual per-turn delta; then we bump `total_cost_usd` by that delta
-    and update the baseline. Returns the delta (>= 0).
-
-    If the reported cumulative is *less* than our baseline, the SDK
-    started a fresh CLI session (e.g. resume=ing a purged id), so we
-    treat the reported value itself as the delta and reset the
-    baseline to match — no retroactive adjustment.
-
-    Returns 0.0 if the session row is gone (e.g. deleted mid-stream).
-    """
-    async with conn.execute(
-        "SELECT sdk_reported_cost_usd FROM sessions WHERE id = ?",
-        (session_id,),
-    ) as cursor:
-        row = await cursor.fetchone()
-    if row is None:
-        return 0.0
-    baseline = float(row[0] or 0.0)
-    if reported_cumulative_usd >= baseline:
-        delta = reported_cumulative_usd - baseline
-    else:
-        delta = max(0.0, reported_cumulative_usd)
-    await conn.execute(
-        "UPDATE sessions "
-        "SET total_cost_usd = total_cost_usd + ?, sdk_reported_cost_usd = ? "
-        "WHERE id = ?",
-        (delta, reported_cumulative_usd, session_id),
+async def add_session_cost(conn: aiosqlite.Connection, session_id: str, delta_usd: float) -> bool:
+    """Accumulate SDK-reported cost onto the session row. Returns False if
+    the session row is gone (e.g. deleted mid-stream)."""
+    cursor = await conn.execute(
+        "UPDATE sessions SET total_cost_usd = total_cost_usd + ? WHERE id = ?",
+        (delta_usd, session_id),
     )
     await conn.commit()
-    return delta
+    return cursor.rowcount > 0
 
 
 async def list_all_sessions(

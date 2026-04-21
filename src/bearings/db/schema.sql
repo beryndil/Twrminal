@@ -10,12 +10,6 @@ CREATE TABLE IF NOT EXISTS sessions (
     description TEXT,
     max_budget_usd REAL,
     total_cost_usd REAL NOT NULL DEFAULT 0,
-    -- Last cumulative cost reported by claude-agent-sdk's ResultMessage.
-    -- On a resumed SDK session that field is cumulative, so the runner
-    -- subtracts this baseline to compute a per-turn delta before
-    -- bumping `total_cost_usd`. Introduced in 0011 to fix quadratic
-    -- cost inflation; see that migration for details.
-    sdk_reported_cost_usd REAL NOT NULL DEFAULT 0,
     session_instructions TEXT,
     sdk_session_id TEXT
 );
