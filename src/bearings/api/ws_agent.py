@@ -120,8 +120,31 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:
     metrics.ws_active_connections.inc()
     app.state.active_ws.add(websocket)
 
-    # Replay first so the client sees missed events in order before
-    # any live frame arrives.
+    # Ground-truth status snapshot sent as the first frame on every
+    # connection. After a server restart the new runner's ring buffer
+    # is empty, so a client that disconnected mid-turn never receives
+    # a `message_complete` — `streamingActive` would stay true forever.
+    # This frame lets the client reconcile: if it thought a turn was
+    # live but the runner is idle, it's safe to clear the streaming
+    # fringe and refresh from DB (the old runner's shutdown path
+    # persisted the partial). Sent before replay so the client has a
+    # known starting point before the event stream resumes.
+    try:
+        await websocket.send_json(
+            {
+                "type": "runner_status",
+                "session_id": session_id,
+                "is_running": runner.is_running,
+            }
+        )
+    except (WebSocketDisconnect, RuntimeError):
+        runner.unsubscribe(queue)
+        app.state.active_ws.discard(websocket)
+        metrics.ws_active_connections.dec()
+        return
+
+    # Replay next so the client sees missed events in order before any
+    # live frame arrives.
     for env in replay:
         try:
             await websocket.send_json({**env.payload, "_seq": env.seq})

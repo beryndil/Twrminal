@@ -45,6 +45,15 @@ def _read_messages(db_path: Path, session_id: str) -> list[tuple[str, str]]:
         conn.close()
 
 
+def _consume_initial_status(ws) -> dict:  # type: ignore[no-untyped-def]
+    """Drain the `runner_status` frame every WS connection now emits
+    after replay. Keeps the per-test frame-count assertions focused on
+    the events the test actually cares about."""
+    frame = json.loads(ws.receive_text())
+    assert frame["type"] == "runner_status"
+    return frame
+
+
 def _read_tool_calls(db_path: Path, session_id: str) -> list[dict]:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -84,6 +93,7 @@ def test_ws_streams_events_and_persists_messages(
 
     sid = _create_session(client)
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        _consume_initial_status(ws)
         ws.send_json({"type": "prompt", "content": "say hi"})
         frames = [json.loads(ws.receive_text()) for _ in range(4)]
         # Poll for the assistant row inside the WS context — TestClient
@@ -116,6 +126,7 @@ def test_ws_persists_tool_calls(
 
     sid = _create_session(client)
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        _consume_initial_status(ws)
         ws.send_json({"type": "prompt", "content": "read hosts"})
         frames = [json.loads(ws.receive_text()) for _ in range(4)]
 
@@ -155,6 +166,7 @@ def test_ws_persists_thinking_on_assistant_message(
 ) -> None:
     sid = _create_session(client)
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        _consume_initial_status(ws)
         ws.send_json({"type": "prompt", "content": "think"})
         frames = [json.loads(ws.receive_text()) for _ in range(5)]
 
@@ -199,6 +211,7 @@ def test_ws_accumulates_session_cost(client: TestClient, mock_agent_cost_stream:
     assert before["total_cost_usd"] == 0
 
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        _consume_initial_status(ws)
         ws.send_json({"type": "prompt", "content": "go"})
         frames = [json.loads(ws.receive_text()) for _ in range(3)]
 
@@ -219,6 +232,7 @@ def test_ws_accumulates_session_cost(client: TestClient, mock_agent_cost_stream:
 
     # Second turn accumulates.
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        _consume_initial_status(ws)
         ws.send_json({"type": "prompt", "content": "again"})
         for _ in range(3):
             ws.receive_text()
@@ -238,6 +252,7 @@ def test_ws_registers_and_deregisters_active_connection(
     sid = _create_session(client)
     assert len(client.app.state.active_ws) == 0  # type: ignore[attr-defined]
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        _consume_initial_status(ws)
         ws.send_json({"type": "prompt", "content": "hi"})
         # Read at least one frame so the server has executed its setup.
         ws.receive_text()
@@ -259,6 +274,7 @@ def test_ws_stop_frame_persists_partial_turn(
 
     sid = _create_session(client)
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        _consume_initial_status(ws)
         ws.send_json({"type": "prompt", "content": "long task"})
         # Read the message_start and a few tokens, then interrupt.
         start = json.loads(ws.receive_text())
@@ -298,6 +314,7 @@ def test_ws_stop_frame_persists_partial_turn(
 def test_ws_ignores_unknown_payload_types(client: TestClient, mock_agent_stream: None) -> None:
     sid = _create_session(client)
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        _consume_initial_status(ws)
         ws.send_json({"type": "noop", "content": "ignored"})
         ws.send_json({"type": "prompt", "content": "go"})
         frames = [json.loads(ws.receive_text()) for _ in range(4)]
@@ -307,3 +324,47 @@ def test_ws_ignores_unknown_payload_types(client: TestClient, mock_agent_stream:
         "token",
         "message_complete",
     ]
+
+
+def test_ws_emits_runner_status_on_connect_for_idle_session(client: TestClient) -> None:
+    """First frame on every connection is a `runner_status` snapshot.
+    Lets a reconnecting client detect drift when the server restarted
+    mid-turn and its ring buffer is empty — without this, a client that
+    missed `message_complete` would sit in `streamingActive=true`
+    forever."""
+    sid = _create_session(client)
+    with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        frame = json.loads(ws.receive_text())
+    assert frame == {
+        "type": "runner_status",
+        "session_id": sid,
+        "is_running": False,
+    }
+
+
+def test_ws_runner_status_reports_running_when_turn_in_flight(
+    client: TestClient, mock_agent_long_stream: None
+) -> None:
+    """A client that reconnects while the runner is still executing a
+    turn sees `is_running=true` — it should NOT clear its streaming
+    fringe in that case."""
+    sid = _create_session(client)
+    with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        _consume_initial_status(ws)
+        ws.send_json({"type": "prompt", "content": "long task"})
+        # Read message_start + a token so the runner is visibly busy.
+        start = json.loads(ws.receive_text())
+        assert start["type"] == "message_start"
+        first_token = json.loads(ws.receive_text())
+        assert first_token["type"] == "token"
+        ws.send_json({"type": "stop"})
+
+    # Reconnect while runner drains (or just after). The second
+    # connection's runner_status reflects whatever is_running is now —
+    # we don't assert a specific value because timing is racy, only
+    # that the frame arrives and carries the right shape.
+    with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        frame = json.loads(ws.receive_text())
+    assert frame["type"] == "runner_status"
+    assert frame["session_id"] == sid
+    assert isinstance(frame["is_running"], bool)

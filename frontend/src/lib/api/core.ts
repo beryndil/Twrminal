@@ -34,6 +34,18 @@ export type MessageCompleteEvent = {
 };
 export type ErrorEvent = { type: 'error'; session_id: string; message: string };
 
+/** Ground-truth snapshot of the server's runner state, sent once per
+ * WebSocket connection right after replay. Lets a reconnecting client
+ * reconcile stale `streamingActive` flags — after a server restart the
+ * new runner's ring buffer is empty, so replay alone can't deliver the
+ * `message_complete` the client never saw. Not part of the event log;
+ * no `_seq`. */
+export type RunnerStatusEvent = {
+  type: 'runner_status';
+  session_id: string;
+  is_running: boolean;
+};
+
 /** Every frame from the server now carries a monotonic `_seq` so the
  * client can track "what have I already seen" and pass `since_seq` on
  * reconnect to replay only events delivered while it was away. */
@@ -48,6 +60,7 @@ export type AgentEvent = (
   | MessageStartEvent
   | MessageCompleteEvent
   | ErrorEvent
+  | RunnerStatusEvent
 ) &
   SeqStamped;
 

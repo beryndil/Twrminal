@@ -293,6 +293,36 @@ class ConversationStore {
         return;
       case 'user_message':
         return;
+      case 'runner_status':
+        // Sent once right after replay on every (re)connect. If the
+        // server says no turn is in-flight but we think one is, the
+        // most likely cause is a server restart that killed the SDK
+        // mid-stream: the shutdown path persisted the partial, but we
+        // never received `message_complete`. Drop the streaming fringe
+        // and refresh from DB so the persisted partial shows up.
+        if (!event.is_running && state.streamingActive) {
+          state.streamingText = '';
+          state.streamingThinking = '';
+          state.streamingActive = false;
+          state.streamingMessageId = null;
+          void this.refreshMessages(targetId);
+        }
+        return;
+    }
+  }
+
+  /** Refetch the most recent page of messages for a session without
+   * touching streaming state or replacing the active session id. Used
+   * to reconcile after `runner_status` reports drift. */
+  private async refreshMessages(sessionId: string): Promise<void> {
+    const state = this.ensureState(sessionId);
+    try {
+      const page = await api.listMessagesPage(sessionId, { limit: PAGE_SIZE });
+      state.messages = page.messages;
+      state.hasMore = page.hasMore;
+      state.completedMessageIds = new Set(page.messages.map((m) => m.id));
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
     }
   }
 }

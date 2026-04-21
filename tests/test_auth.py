@@ -142,6 +142,8 @@ def test_ws_good_token_accepts_and_streams(
     ).json()["id"]
 
     with auth_client.websocket_connect(f"/ws/sessions/{sid}?token=s3cret") as ws:
+        status = json.loads(ws.receive_text())
+        assert status["type"] == "runner_status"
         ws.send_json({"type": "prompt", "content": "hi"})
         frames = [json.loads(ws.receive_text()) for _ in range(4)]
     assert [f["type"] for f in frames] == [

@@ -47,6 +47,8 @@ def test_ws_counters_update(client: TestClient, mock_agent_stream: None) -> None
     import time
 
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        status = json.loads(ws.receive_text())
+        assert status["type"] == "runner_status"
         ws.send_json({"type": "prompt", "content": "hi"})
         frames = [json.loads(ws.receive_text()) for _ in range(4)]
         # Server has clearly advanced past the inc() once we've read frames.
@@ -93,6 +95,8 @@ def test_tool_call_counters_label_success(
     ok_before = metrics.tool_calls_finished.labels(ok="true")._value.get()
 
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        status = json.loads(ws.receive_text())
+        assert status["type"] == "runner_status"
         ws.send_json({"type": "prompt", "content": "read hosts"})
         for _ in range(4):
             ws.receive_text()
