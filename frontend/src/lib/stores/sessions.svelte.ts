@@ -40,6 +40,17 @@ class SessionStore {
    * badge on each so the user can see background work at a glance. */
   running = $state<Set<string>>(new Set());
 
+  /** Monotonically increasing counter that ticks every time the
+   * currently-selected session is bumped to the top of the list
+   * (via `touchSession` on user-submit / MessageStart, or `bumpCost`
+   * on MessageComplete). SessionList watches this and scrolls the
+   * sidebar viewport to the top so the just-bumped row is visible —
+   * otherwise a user who'd scrolled down loses sight of their own
+   * session the moment it moves. Bumps on a non-selected session
+   * deliberately don't tick: stealing the viewport when a background
+   * agent finishes a turn would be intrusive. */
+  scrollTick = $state(0);
+
   private runningTimer: ReturnType<typeof setInterval> | null = null;
 
   selected = $derived(this.list.find((s) => s.id === this.selectedId) ?? null);
@@ -159,6 +170,7 @@ class SessionStore {
     const updated: api.Session = { ...hit, updated_at: now };
     const rest = this.list.filter((s) => s.id !== id);
     this.list = [updated, ...rest];
+    if (id === this.selectedId) this.scrollTick++;
   }
 
   /** Called by the conversation store when a MessageComplete event
@@ -182,6 +194,7 @@ class SessionStore {
       },
       ...rest
     ];
+    if (id === this.selectedId) this.scrollTick++;
   }
 
   /** Stamp `last_viewed_at` so the "finished but unviewed" amber dot

@@ -27,6 +27,23 @@
   // the sidebar quiet on boot.
   let closedCollapsed = $state(true);
 
+  // Bound to the scrollable <aside> below so the scroll-to-top effect
+  // can pull the just-bumped selected session into view. Otherwise a
+  // user who'd scrolled down loses sight of their session the moment
+  // it bumps to index 0.
+  let asideEl: HTMLElement | undefined = $state();
+  // Baseline so the mount-time run of the effect (which reads the
+  // current tick) doesn't fire a gratuitous scroll. Only real tick
+  // increments from this point forward trigger the scroll.
+  // `?.scrollTo?.` also shrugs off jsdom, which doesn't implement it.
+  let lastSeenScrollTick = sessions.scrollTick;
+  $effect(() => {
+    const t = sessions.scrollTick;
+    if (t === lastSeenScrollTick) return;
+    lastSeenScrollTick = t;
+    asideEl?.scrollTo?.({ top: 0, behavior: 'smooth' });
+  });
+
   async function importOne(file: File): Promise<api.Session> {
     const text = await file.text();
     const payload = JSON.parse(text);
@@ -226,6 +243,7 @@
 <Settings bind:open={showSettings} />
 
 <aside
+  bind:this={asideEl}
   class="relative h-full bg-slate-900 p-4 overflow-y-auto border-r border-slate-800
     flex flex-col gap-3 {dragging ? 'ring-2 ring-emerald-500/60 ring-inset' : ''}"
   ondragenter={onDragEnter}

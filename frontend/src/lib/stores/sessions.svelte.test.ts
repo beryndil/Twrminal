@@ -192,3 +192,65 @@ describe('sessions.reopen', () => {
     expect(sessions.list[0].closed_at).toBe('2026-04-20T00:00:00+00:00');
   });
 });
+
+describe('sessions.scrollTick', () => {
+  it('touchSession on the selected id increments the tick', () => {
+    sessions.list = [
+      sess({ id: 'sess-a' }),
+      sess({ id: 'sess-b', updated_at: '2026-04-20T00:00:00+00:00' })
+    ];
+    sessions.selectedId = 'sess-b';
+    const before = sessions.scrollTick;
+    sessions.touchSession('sess-b');
+    expect(sessions.scrollTick).toBe(before + 1);
+    // And the row actually moved to the top.
+    expect(sessions.list[0].id).toBe('sess-b');
+  });
+
+  it('touchSession on a non-selected id leaves the tick alone', () => {
+    sessions.list = [
+      sess({ id: 'sess-a' }),
+      sess({ id: 'sess-b', updated_at: '2026-04-20T00:00:00+00:00' })
+    ];
+    sessions.selectedId = 'sess-a';
+    const before = sessions.scrollTick;
+    sessions.touchSession('sess-b');
+    // Reorder still happens — the sidebar viewport just doesn't snap.
+    expect(sessions.list[0].id).toBe('sess-b');
+    expect(sessions.scrollTick).toBe(before);
+  });
+
+  it('touchSession on an unknown id is a no-op (no tick, no reorder)', () => {
+    sessions.list = [sess({ id: 'sess-a' })];
+    sessions.selectedId = 'sess-a';
+    const before = sessions.scrollTick;
+    sessions.touchSession('does-not-exist');
+    expect(sessions.scrollTick).toBe(before);
+    expect(sessions.list.map((s) => s.id)).toEqual(['sess-a']);
+  });
+
+  it('bumpCost on the selected id increments the tick', () => {
+    sessions.list = [
+      sess({ id: 'sess-a' }),
+      sess({ id: 'sess-b', updated_at: '2026-04-20T00:00:00+00:00' })
+    ];
+    sessions.selectedId = 'sess-b';
+    const before = sessions.scrollTick;
+    sessions.bumpCost('sess-b', 0.05);
+    expect(sessions.scrollTick).toBe(before + 1);
+    expect(sessions.list[0].id).toBe('sess-b');
+    expect(sessions.list[0].total_cost_usd).toBeCloseTo(0.05);
+  });
+
+  it('bumpCost on a non-selected id leaves the tick alone', () => {
+    sessions.list = [
+      sess({ id: 'sess-a' }),
+      sess({ id: 'sess-b', updated_at: '2026-04-20T00:00:00+00:00' })
+    ];
+    sessions.selectedId = 'sess-a';
+    const before = sessions.scrollTick;
+    sessions.bumpCost('sess-b', 0.05);
+    expect(sessions.list[0].id).toBe('sess-b');
+    expect(sessions.scrollTick).toBe(before);
+  });
+});
