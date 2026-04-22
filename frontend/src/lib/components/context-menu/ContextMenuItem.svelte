@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmStore } from '$lib/context-menu/confirm.svelte';
   import type { Action, ActionContext } from '$lib/context-menu/types';
 
   type Props = {
@@ -13,24 +14,42 @@
 
   const { action, ctx, onDone, flatIndex }: Props = $props();
 
-  // Phase 1: `disabled` is a predicate but no action ships with one yet.
-  // Still respect it — when Phase 4 introduces "Coming in v0.9.2"
-  // tooltips per decision §2.3 they need to render correctly.
+  // `disabled` is a predicate; Phase 3 still ships no action with one,
+  // but decision §2.3 reserves the shape for "Coming in v0.9.2"
+  // tooltips that Phase 4+ will introduce.
   const disabledReason = $derived(action.disabled?.(ctx.target) ?? null);
+
+  async function runHandler(): Promise<void> {
+    try {
+      await action.handler(ctx);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[context-menu] handler threw', action.id, err);
+    }
+  }
 
   async function onClick(e: MouseEvent): Promise<void> {
     e.stopPropagation();
     if (disabledReason !== null) return;
-    try {
-      await action.handler(ctx);
-    } catch (err) {
-      // Phase 1 has no toast host; log loudly so failures aren't
-      // silent. Phase 3 routes this through StubToast / error toast.
-      // eslint-disable-next-line no-console
-      console.error('[context-menu] handler threw', action.id, err);
-    } finally {
+    // Destructive actions route through the session-scoped confirm
+    // store (plan §6.7). The store itself handles the "don't ask
+    // again" short-circuit — if the user has already suppressed this
+    // action/target pair, the handler fires inline without a dialog.
+    if (action.destructive) {
+      // Close the menu first so the dialog doesn't land over it.
       onDone();
+      await confirmStore.request({
+        actionId: action.id,
+        targetType: ctx.target.type,
+        message: `${action.label}?`,
+        confirmLabel: action.label,
+        destructive: true,
+        onConfirm: runHandler
+      });
+      return;
     }
+    await runHandler();
+    onDone();
   }
 </script>
 
