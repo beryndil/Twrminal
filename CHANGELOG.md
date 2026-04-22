@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.28] - 2026-04-21
+
+### Changed
+
+- ContextMeter pill now renders the raw context-token count alongside
+  the percentage (`ctx 34.2k (17%)` instead of `ctx 17%`), making the
+  absolute size visible at a glance.
+
+### Added
+
+- Flash-red warning on the ContextMeter when the current context
+  window crosses 32K tokens. Empirically, Claude's recall degrades
+  sharply past that threshold even when the nominal 200K cap is far
+  off — the pill now forces the red band and pulses (0.83 Hz,
+  WCAG-safe) so sessions in the degradation zone are obvious without
+  reading the number. Reduced-motion users get a solid red band
+  instead of the pulse via `motion-safe:animate-flash-red`.
+- `ContextMeter.test.ts` — component previously had no unit coverage;
+  new suite exercises the null placeholder, the token/percentage
+  rendering under threshold, the exact-32K flash edge, and the red
+  override of mid-percentage bands.
+
 ## [0.3.27] - 2026-04-21
 
 ### Added

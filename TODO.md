@@ -624,6 +624,27 @@ the historical checklists as-is.
   undo-window length (30s default), Slice-6 priority (ship 1–5 first
   or put 6 on the critical path), tool-call-group warn-vs-refuse.
 
+## v0.3.28 — shipped
+
+ContextMeter pill now shows the raw context-token count and flashes
+red past 32K. Raised because Dave hit recall degradation on several
+sessions without visible warning — the pill read "ctx 17%" while
+context was already soft. Fixed by surfacing the token count directly
+(`ctx 34.2k (17%)`) and adding a hard 32K threshold that forces a red
+pulse regardless of the percentage band. `motion-safe:` variant keeps
+the pulse off for reduced-motion users; solid red band stays.
+
+- [x] `flashRed` keyframe + `animate-flash-red` utility added to
+  `frontend/tailwind.config.js` (floor = red-900/60 / red-100; peak =
+  red-500/90 / white; 1.2s cycle ≈ 0.83 Hz, below WCAG 3 Hz threshold).
+- [x] `CONTEXT_DEGRADATION_THRESHOLD_TOKENS = 32_000` in
+  `ContextMeter.svelte`; pill widened to `ctx <tokens> (<pct>%)`.
+- [x] Past-threshold tooltip/aria-label includes
+  `"Past 32K — recall degrades beyond this point."`.
+- [x] `ContextMeter.test.ts` — first unit coverage for the component.
+  5 cases: null, under-threshold render, 31,999 no-flash, exact-32K
+  flash, 90k overrides amber band.
+
 ## v0.3.27 — shipped
 
 Session close / reopen lifecycle. Raised right after session

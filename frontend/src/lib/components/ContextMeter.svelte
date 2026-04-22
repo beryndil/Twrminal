@@ -21,7 +21,22 @@
    * Auto-compact-disabled sessions bump one band earlier so the user
    * sees "decide now" territory at 50% instead of 75% — without the
    * compaction safety net, the cliff is closer.
+   *
+   * On top of the percentage bands, a hard 32K-token threshold forces a
+   * flashing red pill. Empirically, Claude's recall degrades sharply
+   * once the current window exceeds ~32K tokens regardless of the
+   * nominal 200K cap — the percentage can still read 17% while real
+   * references are already drifting. The flash surfaces that
+   * degradation early enough for Dave to checkpoint / fork before the
+   * session becomes unreliable.
    */
+
+  /** Empirical recall-degradation threshold. Claude's usable context
+   * gets soft past this mark even when the nominal window is far
+   * larger, so we warn independent of the percentage bands. Hardcoded
+   * for now; a future slice can lift this into config.toml for
+   * per-model tuning. */
+  const CONTEXT_DEGRADATION_THRESHOLD_TOKENS = 32_000;
 
   type Props = {
     /** Null while no context snapshot has been captured for this
@@ -57,19 +72,34 @@
     return 'text-slate-400 bg-slate-800/60';
   }
 
-  const pill = $derived(
-    context
-      ? {
-          class: bandClass(context.percentage, context.isAutoCompactEnabled),
-          label: `${Math.round(context.percentage)}%`,
-          title:
-            `Context: ${formatTokens(context.totalTokens)} / ` +
-            `${formatTokens(context.maxTokens)} tokens ` +
-            `(${context.percentage.toFixed(1)}%). ` +
-            `Auto-compact ${context.isAutoCompactEnabled ? 'on' : 'off'}.`
-        }
-      : null
-  );
+  const pill = $derived.by(() => {
+    if (!context) return null;
+    const degraded = context.totalTokens >= CONTEXT_DEGRADATION_THRESHOLD_TOKENS;
+    // When past the 32K threshold, force the red band and layer on the
+    // flash animation (motion-safe so reduced-motion users get solid
+    // red without the pulse). The percentage-based band is superseded
+    // because "you've already lost recall" is more urgent than "you're
+    // 17% of the way to auto-compact".
+    const baseClass = degraded
+      ? 'text-red-100 bg-red-900/60 motion-safe:animate-flash-red'
+      : bandClass(context.percentage, context.isAutoCompactEnabled);
+    const title = degraded
+      ? `Context: ${formatTokens(context.totalTokens)} / ` +
+        `${formatTokens(context.maxTokens)} tokens ` +
+        `(${context.percentage.toFixed(1)}%). ` +
+        `Past 32K — recall degrades beyond this point. ` +
+        `Auto-compact ${context.isAutoCompactEnabled ? 'on' : 'off'}.`
+      : `Context: ${formatTokens(context.totalTokens)} / ` +
+        `${formatTokens(context.maxTokens)} tokens ` +
+        `(${context.percentage.toFixed(1)}%). ` +
+        `Auto-compact ${context.isAutoCompactEnabled ? 'on' : 'off'}.`;
+    return {
+      class: baseClass,
+      tokens: formatTokens(context.totalTokens),
+      percent: `${Math.round(context.percentage)}%`,
+      title
+    };
+  });
 </script>
 
 {#if pill}
@@ -78,6 +108,6 @@
     title={pill.title}
     aria-label={pill.title}
   >
-    ctx {pill.label}
+    ctx {pill.tokens} ({pill.percent})
   </span>
 {/if}
