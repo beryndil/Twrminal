@@ -23,16 +23,21 @@
     pressureClass
   } from '$lib/utils/conversation-ui';
 
-  const turns = $derived(
-    buildTurns({
+  const turns = $derived.by(() => {
+    // AUDIT (item 7 / Performance optimization): temporary fire counter
+    // so we can size buildTurns recomputes against actual WS event
+    // frequency. Read in DevTools console; remove before merging the
+    // refactor (or sooner if numbers turn out fine).
+    if (import.meta.env.DEV) console.count('bearings:audit:buildTurns');
+    return buildTurns({
       messages: conversation.messages,
       toolCalls: conversation.toolCalls,
       streamingActive: conversation.streamingActive,
       streamingMessageId: conversation.streamingMessageId,
       streamingThinking: conversation.streamingThinking,
       streamingText: conversation.streamingText
-    })
-  );
+    });
+  });
 
   // Slice 5: merge turns + reorg audit dividers into one chronological
   // timeline so the dividers land in the right spot instead of always
@@ -43,6 +48,11 @@
     | { kind: 'audit'; key: string; when: string; audit: api.ReorgAudit };
 
   const timeline = $derived.by((): TimelineItem[] => {
+    // AUDIT (item 7 / Performance optimization): temporary fire counter
+    // so we can confirm whether the timeline is rebuilt + resorted on
+    // every WS event or batched by Svelte's scheduler. Pair with the
+    // counter on `turns` above. Remove with the same cleanup.
+    if (import.meta.env.DEV) console.count('bearings:audit:timeline');
     const items: TimelineItem[] = [];
     for (const t of turns) {
       const when = t.user?.created_at ?? t.assistant?.created_at ?? '';
@@ -839,6 +849,174 @@
     }
   }
 
+  // Prompt textarea auto-grow. Starts at a single row and stretches
+  // as the user types until the content height hits PROMPT_MAX_PX;
+  // past that, `overflow-y: auto` takes over so the rest scrolls
+  // inside a fixed-height box. Recomputed on every value change —
+  // cheap because `scrollHeight` is O(1) for a textarea.
+  const PROMPT_MAX_PX = 240;
+
+  function autosizeTextarea() {
+    const el = textareaEl;
+    if (!el) return;
+    // Reset first so the measurement isn't capped by the previous
+    // height. The `auto` pass lets scrollHeight report the content's
+    // natural height even when it would shrink.
+    el.style.height = 'auto';
+    const next = Math.min(el.scrollHeight, PROMPT_MAX_PX);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > PROMPT_MAX_PX ? 'auto' : 'hidden';
+  }
+
+  // Runs on every promptText change (including programmatic updates
+  // from drop / upload / slash-command insertion). `queueMicrotask`
+  // defers until Svelte has pushed the new value into the DOM.
+  $effect(() => {
+    void promptText;
+    queueMicrotask(autosizeTextarea);
+  });
+
+  /** Insert a path-shaped token into the prompt at the cursor. Surrounds
+   * with spaces so it doesn't glue onto surrounding text, and quotes
+   * paths with spaces so slash-command arg parsers on the other side
+   * don't split the path into two arguments. */
+  function insertPathAtCursor(path: string) {
+    const needsQuote = /\s/.test(path);
+    const token = needsQuote ? `"${path}"` : path;
+    const el = textareaEl;
+    if (!el) {
+      promptText = promptText ? `${promptText} ${token}` : token;
+      return;
+    }
+    const start = el.selectionStart ?? promptText.length;
+    const end = el.selectionEnd ?? promptText.length;
+    const before = promptText.slice(0, start);
+    const after = promptText.slice(end);
+    const leftPad = before && !/\s$/.test(before) ? ' ' : '';
+    const rightPad = after && !/^\s/.test(after) ? ' ' : '';
+    const insertion = `${leftPad}${token}${rightPad}`;
+    promptText = before + insertion + after;
+    // Move caret to just after the inserted token so the user can keep
+    // typing without fighting the cursor.
+    queueMicrotask(() => {
+      if (!textareaEl) return;
+      const pos = before.length + insertion.length;
+      textareaEl.setSelectionRange(pos, pos);
+      textareaEl.focus();
+    });
+  }
+
+  // Drag-and-drop file path injection. Linux file managers (Dolphin,
+  // Nautilus, Thunar, the KDE dolphin-from-Hyprland combo Dave uses)
+  // expose dragged files as `text/uri-list` with absolute `file://`
+  // URIs — we parse those out and drop the local path into the
+  // prompt. We deliberately don't read file bytes: Dave's instruction
+  // was "all it has to do is give you the link so that you know where
+  // the file is."
+  let dragDepth = $state(0);
+  const dragActive = $derived(dragDepth > 0);
+
+  function parseUriList(text: string): string[] {
+    // RFC 2483: lines starting with `#` are comments. Blank lines are
+    // separators. Each remaining line is one URI.
+    const out: string[] = [];
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#')) continue;
+      if (!line.startsWith('file://')) continue;
+      try {
+        const url = new URL(line);
+        if (url.hostname && url.hostname !== 'localhost') continue;
+        out.push(decodeURIComponent(url.pathname));
+      } catch {
+        // Malformed URI — skip rather than inject garbage.
+      }
+    }
+    return out;
+  }
+
+  function onDragEnter(e: DragEvent) {
+    // Only light up for file drags — ignore intra-DOM drags (text
+    // selection, sidebar reorder gestures added later) so we don't
+    // steal drops that other components handle.
+    if (!e.dataTransfer?.types.includes('Files') &&
+        !e.dataTransfer?.types.includes('text/uri-list')) {
+      return;
+    }
+    e.preventDefault();
+    dragDepth += 1;
+  }
+
+  function onDragOver(e: DragEvent) {
+    if (!e.dataTransfer?.types.includes('Files') &&
+        !e.dataTransfer?.types.includes('text/uri-list')) {
+      return;
+    }
+    // Required so the browser fires `drop` instead of its default
+    // "open file in tab" behavior.
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'link';
+  }
+
+  function onDragLeave(e: DragEvent) {
+    // Guard against child-element flicker: dragenter/leave fire for
+    // every descendant, so we track depth and only clear when it
+    // actually returns to zero.
+    if (!e.dataTransfer?.types.includes('Files') &&
+        !e.dataTransfer?.types.includes('text/uri-list')) {
+      return;
+    }
+    dragDepth = Math.max(0, dragDepth - 1);
+  }
+
+  function onDrop(e: DragEvent) {
+    if (!e.dataTransfer) return;
+    e.preventDefault();
+    dragDepth = 0;
+    const uriList = e.dataTransfer.getData('text/uri-list');
+    const paths = uriList ? parseUriList(uriList) : [];
+    if (paths.length === 0) {
+      // Fallback: some browsers only set `text/plain` for a file drag.
+      const text = e.dataTransfer.getData('text/plain');
+      if (text && text.startsWith('file://')) {
+        paths.push(...parseUriList(text));
+      }
+    }
+    if (paths.length === 0) {
+      // File dragged from a source that didn't expose a URI (e.g.,
+      // a download-in-progress preview). The browser sandboxes the
+      // real path for `dataTransfer.files`, so there's nothing useful
+      // we can hand Claude — surface the limitation instead of
+      // silently dropping it.
+      conversation.error =
+        'Could not read the dropped file path. Drag from a local file manager instead.';
+      return;
+    }
+    for (const p of paths) insertPathAtCursor(p);
+  }
+
+  // Upload button → native file picker (zenity/kdialog on the server).
+  // Browser <input type="file"> can't surface an absolute path, so we
+  // defer to the OS dialog — Bearings runs on the user's machine, so
+  // the UX is a native dialog on their own desktop. `picking` gates the
+  // button so rapid clicks don't spawn multiple dialogs.
+  let picking = $state(false);
+
+  async function onPickFile() {
+    if (picking) return;
+    picking = true;
+    try {
+      const start = sessions.selected?.working_dir ?? undefined;
+      const res = await api.pickFile({ start, title: 'Attach a file to the prompt' });
+      if (res.cancelled) return;
+      for (const p of res.paths) insertPathAtCursor(p);
+    } catch (e) {
+      conversation.error = e instanceof Error ? e.message : String(e);
+    } finally {
+      picking = false;
+    }
+  }
+
   // Document-level Esc clears an active search highlight. Scoped to
   // this component so it only binds while a session is open; the
   // textarea keeps its own Esc handling via browser defaults.
@@ -1106,7 +1284,25 @@
     </div>
   {/if}
 
-  <div bind:this={scrollContainer} class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    bind:this={scrollContainer}
+    class="relative flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4"
+    ondragenter={onDragEnter}
+    ondragover={onDragOver}
+    ondragleave={onDragLeave}
+    ondrop={onDrop}
+  >
+    {#if dragActive}
+      <div
+        class="pointer-events-none absolute inset-2 z-10 flex items-center justify-center
+          rounded-lg border-2 border-dashed border-sky-500/60 bg-sky-500/10
+          text-sm font-medium text-sky-200"
+        data-testid="conversation-drop-hint"
+      >
+        Drop to attach file path
+      </div>
+    {/if}
     {#if conversation.hasMore}
       <p class="text-[10px] text-slate-600 text-center">
         {conversation.loadingOlder ? 'Loading older…' : 'Scroll up to load older messages'}
@@ -1155,7 +1351,7 @@
   </div>
 
   <form
-    class="relative border-t border-slate-800 px-4 py-3 flex gap-2 items-end"
+    class="relative border-t border-slate-800 px-4 py-3 flex flex-col gap-2"
     onsubmit={(e) => {
       e.preventDefault();
       onSend();
@@ -1169,26 +1365,46 @@
       onSelect={onSelectCommand}
       onClose={onCloseCommandMenu}
     />
-    <textarea
-      class="flex-1 rounded bg-slate-950 border border-slate-800 px-3 py-2 text-sm
-        resize-none focus:outline-none focus:border-slate-600 disabled:opacity-50"
-      rows="2"
-      placeholder={sessions.selectedId
-        ? 'Send a prompt (Enter · Shift+Enter for newline · / for commands)'
-        : 'Select a session first'}
-      bind:value={promptText}
-      bind:this={textareaEl}
-      onkeydown={onKeydown}
-      disabled={!sessions.selectedId || agent.state !== 'open'}
-    ></textarea>
-    <button
-      type="submit"
-      class="rounded bg-emerald-600 hover:bg-emerald-500 px-3 py-2 text-sm
-        disabled:opacity-50 disabled:cursor-not-allowed"
-      disabled={!sessions.selectedId || agent.state !== 'open' || !promptText.trim()}
-    >
-      Send
-    </button>
+    <div class="flex gap-2 items-end">
+      <textarea
+        class="flex-1 rounded bg-slate-950 border border-slate-800 px-3 py-2 text-sm
+          resize-none focus:outline-none focus:border-slate-600 disabled:opacity-50"
+        rows="1"
+        placeholder={sessions.selectedId
+          ? 'Send a prompt (Enter · Shift+Enter for newline · / for commands)'
+          : 'Select a session first'}
+        bind:value={promptText}
+        bind:this={textareaEl}
+        onkeydown={onKeydown}
+        disabled={!sessions.selectedId || agent.state !== 'open'}
+      ></textarea>
+      <button
+        type="submit"
+        class="rounded bg-emerald-600 hover:bg-emerald-500 px-3 py-2 text-sm
+          disabled:opacity-50 disabled:cursor-not-allowed"
+        disabled={!sessions.selectedId || agent.state !== 'open' || !promptText.trim()}
+      >
+        Send
+      </button>
+    </div>
+    <div class="flex items-center gap-2">
+      <button
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded border border-slate-800
+          bg-slate-900 px-2.5 py-1 text-xs text-slate-300 hover:border-slate-600
+          hover:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+        onclick={onPickFile}
+        disabled={picking || !sessions.selectedId}
+        title="Attach a file path (native picker)"
+        data-testid="attach-file"
+      >
+        <span aria-hidden="true">📎</span>
+        <span>{picking ? 'Picking…' : 'Attach file'}</span>
+      </button>
+      <span class="text-[10px] text-slate-500">
+        or drag a file onto the conversation
+      </span>
+    </div>
   </form>
 </section>
 
