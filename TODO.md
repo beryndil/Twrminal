@@ -1968,3 +1968,85 @@ Bearings shortcoming.
 - Needs: register the audits route in `src/bearings/api/routes_reorg.py`
   and back it with the `0014_reorg_audits.sql` table, or feature-gate
   the frontend fetch until the route lands.
+
+## Performance optimization
+
+### 2026-04-21 — Profile event frequencies (wire + DB)
+
+Pulled `/metrics` and queried SQLite to confirm which event types
+dominate and whether historical volume justifies FTS5 and/or timeline
+virtualization before we build them.
+
+**Wire event mix** (one process lifetime: 40 assistant turns, 299 tool
+calls; captured `bearings_ws_events_sent_total` via
+`curl /metrics`). Share of total = 2369 events emitted:
+
+| type              | count | share  | per assistant turn |
+|-------------------|------:|-------:|-------------------:|
+| token             |  1561 | 65.9%  |              39.0  |
+| tool_call_start   |   300 | 12.7%  |               7.5  |
+| tool_call_end     |   299 | 12.6%  |               7.5  |
+| thinking          |    88 |  3.7%  |               2.2  |
+| message_start     |    41 |  1.7%  |               1.0  |
+| context_usage     |    40 |  1.7%  |               1.0  |
+| message_complete  |    40 |  1.7%  |               1.0  |
+| tool_output_delta |     0 |  0.0%  |               0.0  |
+
+- `token` dominates at 2/3 of all frames — this is the wire-volume
+  bottleneck.
+- `tool_call_*` pairs are the second-biggest block at 25% combined.
+- Average turn = ~60 wire events. The frontend re-derivation audit
+  measured 227 fires on one tool-heavy turn, so heavy-turn fan-out is
+  roughly 4× the average (variance is real, tail is long).
+- `tool_output_delta` never fired in this sample. Either streaming tool
+  output is rare in Dave's actual usage or the translator in
+  `session.py` doesn't currently emit it for any observed tool shape.
+  Worth a follow-up but not a blocker — it can only increase the token
+  dominance, not flip the verdict.
+
+**DB / historical scale** (read directly from SQLite):
+
+| metric                                   | value |
+|------------------------------------------|------:|
+| db.sqlite size                           |  15MB |
+| sessions                                 |    41 |
+| messages                                 |   518 |
+| tool_calls                               | 4 146 |
+| avg msgs / session                       |  14.0 |
+| avg tool_calls / session                 | 105.5 |
+| sessions with >100 timeline items        |    15 |
+| sessions with >300 timeline items        |     3 |
+| largest session (msgs + tool_calls)      |   580 |
+
+**Verdicts:**
+
+- **Timeline virtualization: justified, schedule after frontend
+  re-derivation refactor.** Three of 41 sessions already exceed 300
+  timeline items and the largest is 580. Combined with the sibling
+  audit's 1:1 re-derivation finding, opening a large session walks
+  every item on every WS frame — hundreds of nodes × hundreds of
+  frames. Virtualization is only worthwhile *after* the re-derivation
+  fix promotes `turns`/`timeline` to `$state` arrays that mutate in
+  place; until then, virtualization optimizes rendering of a structure
+  that's also being needlessly rebuilt per event. Sequence matters.
+- **FTS5 search: stop.** 518 messages and 4146 tool calls in a 15MB DB
+  is inside "LIKE scans in milliseconds" territory. Revisit if total
+  messages cross ~50k or if a search UX ships and profiling shows
+  query latency above ~50ms. Noting the decision here so a future
+  session doesn't re-open it without new data.
+- **Token event reduction: out of scope for this pass, but flag it.**
+  66% of wire frames is token streaming. If the re-derivation refactor
+  + virtualization still leave the UI janky under streaming, the next
+  lever is token batching on the server (coalesce N tokens per frame,
+  like `_flush_tool_buffer` already does for tool output). Do not do
+  this pre-emptively — measure first.
+
+**Next checklist items implied:**
+
+- Keep `Performance optimization` open with two live children:
+  - Implement frontend re-derivation refactor (sibling; now unblocked
+    by these numbers).
+  - After that lands, add timeline virtualization for sessions >N
+    items (N = 200 as starting threshold, well below the observed 580
+    max but above the 100 average).
+- FTS5 and token-batching stay off the checklist.
