@@ -7,6 +7,7 @@
   import ApprovalModal from '$lib/components/ApprovalModal.svelte';
   import BulkActionBar from '$lib/components/BulkActionBar.svelte';
   import CommandMenu from '$lib/components/CommandMenu.svelte';
+  import FilePickerModal from '$lib/components/FilePickerModal.svelte';
   import MessageTurn from '$lib/components/MessageTurn.svelte';
   import PermissionModeSelector from '$lib/components/PermissionModeSelector.svelte';
   import ReorgAuditDivider from '$lib/components/ReorgAuditDivider.svelte';
@@ -995,26 +996,24 @@
     for (const p of paths) insertPathAtCursor(p);
   }
 
-  // Upload button → native file picker (zenity/kdialog on the server).
-  // Browser <input type="file"> can't surface an absolute path, so we
-  // defer to the OS dialog — Bearings runs on the user's machine, so
-  // the UX is a native dialog on their own desktop. `picking` gates the
-  // button so rapid clicks don't spawn multiple dialogs.
-  let picking = $state(false);
+  // Upload button → in-app FilePickerModal. We deliberately don't use
+  // the browser's native <input type="file"> (no absolute path) or a
+  // server-side zenity dialog (spawns an OS window that can't match
+  // Bearings styling). The modal walks the server filesystem through
+  // /api/fs/list and hands us absolute paths to inject into the prompt.
+  let filePickerOpen = $state(false);
 
-  async function onPickFile() {
-    if (picking) return;
-    picking = true;
-    try {
-      const start = sessions.selected?.working_dir ?? undefined;
-      const res = await api.pickFile({ start, title: 'Attach a file to the prompt' });
-      if (res.cancelled) return;
-      for (const p of res.paths) insertPathAtCursor(p);
-    } catch (e) {
-      conversation.error = e instanceof Error ? e.message : String(e);
-    } finally {
-      picking = false;
-    }
+  function onPickFile() {
+    filePickerOpen = true;
+  }
+
+  function onFilePickerConfirm(paths: string[]) {
+    filePickerOpen = false;
+    for (const p of paths) insertPathAtCursor(p);
+  }
+
+  function onFilePickerCancel() {
+    filePickerOpen = false;
   }
 
   // Document-level Esc clears an active search highlight. Scoped to
@@ -1051,6 +1050,13 @@
   onPickExisting={onPickerPickExisting}
   onPickNew={onPickerPickNew}
   onCancel={closePicker}
+/>
+
+<FilePickerModal
+  open={filePickerOpen}
+  start={sessions.selected?.working_dir ?? null}
+  onPick={onFilePickerConfirm}
+  onCancel={onFilePickerCancel}
 />
 
 {#if undo}
@@ -1394,12 +1400,12 @@
           bg-slate-900 px-2.5 py-1 text-xs text-slate-300 hover:border-slate-600
           hover:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={onPickFile}
-        disabled={picking || !sessions.selectedId}
-        title="Attach a file path (native picker)"
+        disabled={!sessions.selectedId}
+        title="Attach a file path"
         data-testid="attach-file"
       >
         <span aria-hidden="true">📎</span>
-        <span>{picking ? 'Picking…' : 'Attach file'}</span>
+        <span>Attach file</span>
       </button>
       <span class="text-[10px] text-slate-500">
         or drag a file onto the conversation

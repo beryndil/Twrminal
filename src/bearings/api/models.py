@@ -200,27 +200,21 @@ class SystemPromptOut(BaseModel):
 
 
 class FsEntryOut(BaseModel):
+    """One row in an FsListOut. `is_dir` is always present — it's True
+    for directories and False for files — so the in-app file picker can
+    distinguish "descend here" from "select this file" without a second
+    round-trip. FolderPicker ignores the flag and keeps listing dirs
+    only via `include_files=false`."""
+
     name: str
     path: str
+    is_dir: bool
 
 
 class FsListOut(BaseModel):
     path: str
     parent: str | None
     entries: list[FsEntryOut]
-
-
-class FsPickOut(BaseModel):
-    """Result of POST /fs/pick. `path` is the absolute filesystem path
-    the user chose, or None when they cancelled the dialog. `paths`
-    mirrors `path` for single-select and carries every pick when multi-
-    select is requested — keeping the API shape stable lets the
-    frontend handle both cases uniformly.
-    """
-
-    path: str | None
-    paths: list[str]
-    cancelled: bool
 
 
 class CommandOut(BaseModel):

@@ -12,17 +12,15 @@ const HOME_LIST = {
   path: '/home/dave',
   parent: '/home',
   entries: [
-    { name: 'Projects', path: '/home/dave/Projects' },
-    { name: 'docs', path: '/home/dave/docs' }
+    { name: 'Projects', path: '/home/dave/Projects', is_dir: true },
+    { name: 'docs', path: '/home/dave/docs', is_dir: true }
   ]
 };
 
 const PROJECTS_LIST = {
   path: '/home/dave/Projects',
   parent: '/home/dave',
-  entries: [
-    { name: 'Bearings', path: '/home/dave/Projects/Bearings' }
-  ]
+  entries: [{ name: 'Bearings', path: '/home/dave/Projects/Bearings', is_dir: true }]
 };
 
 function mockFetch(map: Record<string, unknown>) {
