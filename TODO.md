@@ -482,6 +482,16 @@ is feature-complete.
   `sessions`. Re-exports the legacy names (`TOOL_OUTPUT_CAP_CHARS`,
   `capToolOutput`, `LiveToolCall`) so existing callers don't
   change. 89 frontend tests pass; svelte-check clean.
+- [ ] `src/bearings/agent/runner.py` regressed to 657 lines after
+  tool-output coalescer landed (was 379 after the prior split).
+  Extract the `_ToolOutputBuffer` + `_buffer_tool_output` /
+  `_delayed_flush` / `_flush_tool_buffer` / `_flush_all_tool_buffers`
+  / `_drop_tool_buffer` cluster into `agent/tool_output_coalescer.py`
+  with a tiny `ToolOutputCoalescer` class that holds the buffers
+  dict and takes `db` + `session_id` via constructor. Runner keeps
+  one reference and calls `await coalescer.buffer(id, chunk)` /
+  `coalescer.drop(id)` / `await coalescer.flush_all()`. Should land
+  runner.py back under 400.
 
 ### Browser verification — deferred to pre-1.0.0
 
