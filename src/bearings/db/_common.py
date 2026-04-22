@@ -13,12 +13,20 @@ import aiosqlite
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
+# SQLite tuning — safe under WAL. Negative cache_size is KB, positive is pages.
+_CACHE_SIZE_KB = -64000  # 64 MB page cache
+_MMAP_SIZE_BYTES = 128 * 1024 * 1024  # 128 MB memory-mapped reads
+
 
 async def init_db(path: Path) -> aiosqlite.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = await aiosqlite.connect(path)
     conn.row_factory = aiosqlite.Row
     await conn.execute("PRAGMA journal_mode = WAL")
+    await conn.execute("PRAGMA synchronous = NORMAL")
+    await conn.execute(f"PRAGMA cache_size = {_CACHE_SIZE_KB}")
+    await conn.execute("PRAGMA temp_store = MEMORY")
+    await conn.execute(f"PRAGMA mmap_size = {_MMAP_SIZE_BYTES}")
     await conn.execute("PRAGMA foreign_keys = ON")
     await _apply_migrations(conn)
     await conn.commit()
