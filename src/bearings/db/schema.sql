@@ -46,7 +46,13 @@ CREATE TABLE IF NOT EXISTS sessions (
     -- computed at render time as
     --   last_completed_at IS NOT NULL AND
     --   (last_viewed_at IS NULL OR last_completed_at > last_viewed_at).
-    last_viewed_at TEXT
+    last_viewed_at TEXT,
+    -- Session pinning (migration 0022). Boolean — 0 = normal, 1 =
+    -- pinned. The sidebar sorts pinned sessions to the top of their
+    -- tag group regardless of recency. Per plan decision §2.2 there
+    -- is no separate archived_at column; archive is an alias for
+    -- close via the `session.archive` action ID.
+    pinned INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (

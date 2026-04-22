@@ -714,3 +714,107 @@ def test_get_todos_on_missing_session_returns_404(client: TestClient) -> None:
     404 here adds no burden."""
     resp = client.get("/api/sessions/" + "0" * 32 + "/todos")
     assert resp.status_code == 404
+
+
+# ---- Phase 4a.1 PATCH extensions (pinned + model) -------------------
+#
+# Migration 0022 + plan §2.1. `pinned` floats the session in sidebar
+# sort (pure UX, no runner impact); `model` powers "Change model for
+# continuation" and forces the runner subprocess to respawn so the
+# next turn uses the new model.
+
+
+def test_post_create_defaults_pinned_false(client: TestClient) -> None:
+    """Post-migration-0022 default: every freshly created session is
+    unpinned. SessionOut coerces SQLite's INTEGER 0 to bool False."""
+    data = _create(client, title="fresh")
+    assert data["pinned"] is False
+
+
+def test_patch_sets_pinned_true(client: TestClient) -> None:
+    created = _create(client, title="pinnable")
+    assert created["pinned"] is False
+    body = client.patch(
+        f"/api/sessions/{created['id']}",
+        json={"pinned": True},
+    ).json()
+    assert body["pinned"] is True
+    roundtrip = client.get(f"/api/sessions/{created['id']}").json()
+    assert roundtrip["pinned"] is True
+
+
+def test_patch_clears_pinned_back_to_false(client: TestClient) -> None:
+    """Unpinning is a PATCH with `pinned: false`, not an explicit
+    null (the column is NOT NULL). Round-trips through the same code
+    path as pinning."""
+    created = _create(client, title="toggle")
+    client.patch(f"/api/sessions/{created['id']}", json={"pinned": True})
+    body = client.patch(
+        f"/api/sessions/{created['id']}",
+        json={"pinned": False},
+    ).json()
+    assert body["pinned"] is False
+
+
+def test_patch_pinned_does_not_drop_runner(client: TestClient) -> None:
+    """Pinning is pure sidebar sort — must not knock the live runner
+    offline or the user loses their in-flight turn just for clicking
+    a pin icon."""
+    created = _create(client, title="pin live")
+    tracker = _plant_runner(client, created["id"])
+    resp = client.patch(
+        f"/api/sessions/{created['id']}",
+        json={"pinned": True},
+    )
+    assert resp.status_code == 200
+    assert tracker.shutdown_calls == 0
+
+
+def test_patch_rejects_non_boolean_pinned(client: TestClient) -> None:
+    """Pydantic rejects a non-bool at the boundary so a typo in the
+    JSON body (`"pinned": "true"` with quotes) surfaces as a 422
+    instead of coercing into a truthy 1 silently."""
+    created = _create(client, title="strict")
+    resp = client.patch(
+        f"/api/sessions/{created['id']}",
+        # Dict is unambiguously not a bool; FastAPI / Pydantic rejects.
+        json={"pinned": {"nope": True}},
+    )
+    assert resp.status_code == 422
+
+
+def test_patch_updates_model(client: TestClient) -> None:
+    """Phase 4a.1 / plan §2.1 — "Change model for continuation"
+    mutates the model column in place, no fork."""
+    created = _create(client, title="swap")
+    body = client.patch(
+        f"/api/sessions/{created['id']}",
+        json={"model": "claude-opus-4-8"},
+    ).json()
+    assert body["model"] == "claude-opus-4-8"
+
+
+def test_patch_model_drops_live_runner(client: TestClient) -> None:
+    """The SDK subprocess was spawned with the old model baked in; a
+    model change only reaches the agent after the runner is dropped
+    and re-created on the next WS turn."""
+    created = _create(client, title="respawn")
+    tracker = _plant_runner(client, created["id"])
+    resp = client.patch(
+        f"/api/sessions/{created['id']}",
+        json={"model": "claude-sonnet-4-7"},
+    )
+    assert resp.status_code == 200
+    assert tracker.shutdown_calls == 1
+    registry = client.app.state.runners  # type: ignore[attr-defined]
+    assert created["id"] not in registry._runners
+
+
+def test_pinned_round_trips_through_list(client: TestClient) -> None:
+    """GET /sessions surfaces the pinned flag so the sidebar can sort
+    without re-fetching each row individually."""
+    created = _create(client, title="listed")
+    client.patch(f"/api/sessions/{created['id']}", json={"pinned": True})
+    rows = client.get("/api/sessions").json()
+    match = next(r for r in rows if r["id"] == created["id"])
+    assert match["pinned"] is True

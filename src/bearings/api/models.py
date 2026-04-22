@@ -32,6 +32,16 @@ class SessionUpdate(BaseModel):
     description: str | None = None
     max_budget_usd: float | None = None
     session_instructions: str | None = None
+    # Phase 4a.1 of the context-menu plan. `model` powers the "Change
+    # model for continuation" action (decision §2.1 — mutate in place,
+    # no fork); the route drops the runner on model change so the next
+    # turn spawns a fresh SDK subprocess on the new model string.
+    model: str | None = None
+    # `pinned` powers the sidebar pin/unpin affordance (migration 0022).
+    # Pure UX — does not trigger a runner respawn. Accepts True/False;
+    # `None` at the Pydantic layer means "field not provided" and is
+    # ignored by the PATCH path, not "clear to false".
+    pinned: bool | None = None
     # Distinguishes "not provided" from "set to null" for the nullable
     # columns. Pydantic writes `model_fields_set` so routes can dispatch
     # off what was actually passed.
@@ -95,6 +105,11 @@ class SessionOut(BaseModel):
     # N+1 per-row fetch. Empty list when the session has no tags —
     # shouldn't happen post-0021 but tolerates pre-0021 snapshots.
     tag_ids: list[int] = []
+    # Pin flag (migration 0022). Stored as 0/1 in SQLite, coerced to
+    # bool by Pydantic. Pinned sessions float to the top of their tag
+    # group in the sidebar regardless of recency. False on every pre-
+    # 0022 row via the column default.
+    pinned: bool = False
 
 
 class MessageOut(BaseModel):

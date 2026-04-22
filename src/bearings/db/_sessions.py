@@ -14,7 +14,8 @@ SESSION_BASE_COLS = (
     "id, created_at, updated_at, working_dir, model, title, description, "
     "max_budget_usd, total_cost_usd, session_instructions, sdk_session_id, "
     "permission_mode, last_context_pct, last_context_tokens, last_context_max, "
-    "closed_at, kind, checklist_item_id, last_completed_at, last_viewed_at"
+    "closed_at, kind, checklist_item_id, last_completed_at, last_viewed_at, "
+    "pinned"
 )
 
 # Valid values for sessions.kind. The column carries a CHECK constraint
@@ -215,18 +216,36 @@ async def update_session(
     fields: dict[str, Any],
 ) -> dict[str, Any] | None:
     """Apply a partial update. `fields` maps column name → new value;
-    only `title`, `description`, `max_budget_usd`, and
-    `session_instructions` are accepted. Bumps updated_at. Returns
-    the refreshed row, or None if the session doesn't exist."""
+    only `title`, `description`, `max_budget_usd`,
+    `session_instructions`, `model`, and `pinned` are accepted. Bumps
+    updated_at. Returns the refreshed row, or None if the session
+    doesn't exist.
+
+    `model` (Phase 4a.1 of the context-menu plan) lets "Change model
+    for continuation" mutate the session in place per plan decision
+    §2.1 — no fork, the runner drop in the route handler forces the
+    next turn to spawn a fresh SDK subprocess on the new model.
+
+    `pinned` is stored as 0/1 in SQLite; pass Python `True`/`False` and
+    aiosqlite coerces. Pinning is a pure UX affordance — the sidebar
+    floats pinned rows above recency within their tag group."""
     allowed = {
         "title",
         "description",
         "max_budget_usd",
         "session_instructions",
+        "model",
+        "pinned",
     }
     filtered = {k: v for k, v in fields.items() if k in allowed}
     if not filtered:
         return await get_session(conn, session_id)
+    # Coerce bool → 0/1 for the SQLite INTEGER column, matching the
+    # pattern already used by `_tags.update_tag`. Tolerates Python
+    # True/False from Pydantic and the occasional int passed from
+    # internal callers.
+    if "pinned" in filtered:
+        filtered["pinned"] = 1 if filtered["pinned"] else 0
     assignments = ", ".join(f"{col} = ?" for col in filtered)
     params = (*filtered.values(), _now(), session_id)
     cursor = await conn.execute(

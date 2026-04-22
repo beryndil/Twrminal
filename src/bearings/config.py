@@ -119,6 +119,29 @@ class UploadsCfg(BaseModel):
     )
 
 
+class ShellCfg(BaseModel):
+    """Commands the `/api/shell/open` bridge dispatches to.
+
+    Each field is a `list[str]` argv — the path is substituted into any
+    `{path}` placeholder and appended as a trailing arg if no placeholder
+    is present. `None` means the user hasn't configured that kind and the
+    bridge answers 400 (UI surfaces this as a "Configure in settings"
+    tooltip per plan §2.3). argv-list form avoids `shell=True`, keeping
+    quoting sane on paths with spaces.
+
+    Added in Phase 4a.1 of docs/context-menu-plan.md. Powers the
+    `open_in` submenu (Phase 6) + Phase 4a.2 working-dir menus. Bearings
+    is localhost-only and never runs these commands in response to
+    untrusted input — the caller is always the local SvelteKit bundle —
+    so defense-in-depth here is about argv hygiene, not sandboxing."""
+
+    editor_command: list[str] | None = None
+    terminal_command: list[str] | None = None
+    file_explorer_command: list[str] | None = None
+    git_gui_command: list[str] | None = None
+    claude_cli_command: list[str] | None = None
+
+
 class BillingCfg(BaseModel):
     # Defaults to "payg" so nothing changes for developer-API users who
     # were using Bearings before this knob existed. Max/Pro subscribers
@@ -142,6 +165,7 @@ class Settings(BaseSettings):
     billing: BillingCfg = Field(default_factory=BillingCfg)
     runner: RunnerCfg = Field(default_factory=RunnerCfg)
     uploads: UploadsCfg = Field(default_factory=UploadsCfg)
+    shell: ShellCfg = Field(default_factory=ShellCfg)
 
     config_file: Path = Field(default_factory=lambda: CONFIG_HOME / "config.toml")
 

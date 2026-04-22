@@ -152,13 +152,15 @@ async def get_session(session_id: str, request: Request) -> SessionOut:
     return SessionOut(**row)
 
 
-# SessionUpdate fields that are layered into the SDK system prompt by
-# `assemble_prompt`. A change to any of these on a live session means
-# the running runner's subprocess is holding a stale `--system-prompt`;
-# dropping the runner forces the next WS turn to spawn fresh and pick
-# up the new value. Fields NOT in this set (title, max_budget_usd) are
+# SessionUpdate fields whose change on a live session invalidates the
+# running runner's SDK subprocess — either because they're layered into
+# the system prompt (`description`, `session_instructions`) or because
+# the subprocess itself was spawned with a now-stale argument (`model`,
+# per Phase 4a.1 / plan §2.1 "change model for continuation"). Dropping
+# the runner forces the next WS turn to spawn fresh and pick up the new
+# value. Fields NOT in this set (title, max_budget_usd, pinned) are
 # UI/billing-only and don't need a respawn.
-_SYSTEM_PROMPT_FIELDS = frozenset({"description", "session_instructions"})
+_RUNNER_RESPAWN_FIELDS = frozenset({"description", "session_instructions", "model"})
 
 
 async def _drop_runner_if_present(request: Request, session_id: str) -> None:
@@ -179,9 +181,10 @@ async def update_session(session_id: str, body: SessionUpdate, request: Request)
     row = await store.update_session(request.app.state.db, session_id, fields=fields)
     if row is None:
         raise HTTPException(status_code=404, detail="session not found")
-    if _SYSTEM_PROMPT_FIELDS & body.model_fields_set:
-        # Description / session_instructions edits reach the agent only
-        # after a runner respawn — see `_SYSTEM_PROMPT_FIELDS` note.
+    if _RUNNER_RESPAWN_FIELDS & body.model_fields_set:
+        # description / session_instructions / model edits reach the
+        # agent only after a runner respawn — see
+        # `_RUNNER_RESPAWN_FIELDS` note.
         await _drop_runner_if_present(request, session_id)
     await publish_session_upsert(
         getattr(request.app.state, "sessions_broker", None),
