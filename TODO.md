@@ -523,16 +523,37 @@ the historical checklists as-is.
   button in its action row; add a sibling button that, when clicked,
   sends a follow-up prompt to the agent asking it to go into more
   detail on the *same* issue/topic from that response. Should feel
-  like a one-click "elaborate" shortcut — no typing required. Open
-  design points: (a) exact prompt text (e.g. "Please go into more
-  detail on your previous response" vs. a richer template that
-  references the specific turn), (b) whether the button should be
-  per-message or only on the most recent assistant turn, (c) whether
-  to show a subtle hint in the composer before sending so Dave can
-  edit/cancel, (d) button placement + icon in the existing action
-  row without crowding Copy. Likely surface: the message actions
-  component in `frontend/src/lib/components/` that currently renders
-  the copy button on assistant turns.
+  like a one-click "elaborate" shortcut — no typing required.
+  Likely surface: the message actions component in
+  `frontend/src/lib/components/MessageTurn.svelte` (lines 344–356).
+
+  **Decisions (2026-04-22):**
+  - (a) *Prompt text:* literally `Please go into more detail on
+    your previous response.` Short, explicit, model-agnostic. The
+    model already has the full turn in context — injecting a
+    richer quoted template wastes tokens and risks confusing
+    continuity ("which version of the reply am I elaborating
+    on?"). Minimal beats clever.
+  - (b) *Scope:* most-recent assistant turn only. Per-message
+    "more info" on turn 3 when turns 4–10 exist creates an
+    ambiguous contract ("which 'previous response' — the last
+    one, or the one I clicked?"). Scrolled-past turns can still
+    be elaborated via Quote & reply (a separate button coming in
+    the same row). Latest-only keeps the semantics clean and
+    spares the row from rendering the button on every historical
+    turn.
+  - (c) *Auto-send vs. composer pre-fill:* pre-fill + focus, do
+    NOT auto-send. Dave often wants to add a qualifier ("more
+    detail, especially about X"). One Enter key is cheap; an
+    accidental send that burns a turn on the wrong topic is not.
+    Also gives a natural cancel path (Esc clears the composer).
+  - (d) *Placement + icon:* inline in the footer action row,
+    using Dave's small-icon-plus-text ruling (see action-row
+    research entry below). Glyph + UPPERCASE 4-char label to
+    match the existing `⎘ COPY` convention. Proposed:
+    `ℹ MORE`. Row order from left to right: `ℹ MORE` first,
+    `⎘ COPY` last (Copy is the fallback / escape hatch, so it
+    reads as the rightmost "done" action).
 
 - [ ] **Research: assistant-reply action row — "Spawn sessions from
   this reply" button + brainstorm of other one-click actions
@@ -594,16 +615,21 @@ the historical checklists as-is.
   v0 but should be clearly labeled "heuristic preview" in the
   UI so Dave doesn't confuse it with the real classifier.
 
-  **UX shape recommendation.** The row can't grow indefinitely.
-  Two layouts to choose between:
-  - *Three-inline + overflow.* Copy · More info · Spawn ▾ · ⋯
-    (where ⋯ on the row is distinct from the header ⋯ for reorg
-    — consider different glyphs, e.g. footer uses a "+" menu).
-  - *Icons-only inline.* All primary actions as single-glyph
-    buttons with tooltips; keeps the row to its current visual
-    weight. Matches the existing `⎘ copy` style.
-  Preview modal on Spawn is non-negotiable: classifier output is
-  editable (retitle, retag, drag items between proposals,
+  **UX shape (decided 2026-04-22).** Dave: small icons with
+  text. So every action in the row is glyph + space + UPPERCASE
+  4-char label, matching the existing `⎘ COPY` convention.
+  Initial row (left→right): `ℹ MORE` · `＋ SPAWN` ·
+  `❝ QUOTE` · `⎘ CODE` · `⎘ COPY`. Copy stays rightmost as the
+  escape-hatch "done" action. Overflow (once the row has >5
+  buttons): a footer-side `⋯ MORE↓` dropdown, visually distinct
+  from the header `⋯` menu (header = session-reorg, footer =
+  reply-scoped — different lanes). Icon-only and pure-dropdown
+  layouts both rejected: icon-only sacrifices discoverability
+  for the small real-estate saving; pure-dropdown hides every
+  primary action behind an extra click.
+
+  **Spawn preview modal** is non-negotiable: classifier output
+  is editable (retitle, retag, drag items between proposals,
   drop items), then one approve-all commit that creates the
   checklist+items or the N chats in a transaction.
 
@@ -662,18 +688,83 @@ the historical checklists as-is.
   sub-agent call pattern. Ship the preview-modal UX once and
   reuse across all four.
 
-  **Open design points for Dave before implementation:**
-  - Inline-text-buttons vs. icons-only vs. "Act on reply ▾"
-    dropdown with everything inside?
-  - Should Spawn sessions' preview modal live in the right pane
-    (hijacking the Inspector) or as a floating modal like
-    `SessionPickerModal`?
-  - When Spawn produces a checklist, should it *also* close the
-    current session (treating the reply as a terminating
-    "here's your punch list" handoff) or leave the parent open?
-  - Heuristic-fallback in v0 or wait for Wave 3 entirely?
-  - Any buttons from the brainstorm list that Dave vetoes
-    outright so they don't pollute the plan?
+  **Decisions (2026-04-22):**
+  - *Row style:* small icons + UPPERCASE 4-char text (Dave's
+    ruling). Locked in above.
+  - *Spawn preview modal placement:* **floating modal**
+    (`SpawnPreviewModal.svelte`), not Inspector-pane hijack.
+    Reasoning: the Inspector is the only surface for tool-call
+    context, and Dave's workflow when reviewing an
+    enumerate-this-reply often involves cross-referencing the
+    tool calls that produced the plan. Hijacking the Inspector
+    kills that cross-reference at the exact moment it's most
+    useful. Floating modal costs one overlay; Inspector hijack
+    costs the whole right-pane context. Size it bigger than
+    `SessionPickerModal` — the editable-proposal table needs
+    real-estate.
+  - *Close parent session after Spawn:* **no, by default.**
+    Render a checkbox "Close this session after spawning" in
+    the preview modal, default unchecked. Reasoning: sometimes
+    the enumeration is mid-conversation and Dave keeps asking
+    questions; auto-closing would surprise him. The "punch list
+    handoff" case where auto-close *is* what he wants is
+    catchable with one checkbox. Reopen is one PATCH away
+    (`POST /sessions/{id}/reopen` exists) so the cost of getting
+    it wrong is low either direction — but defaulting to "leave
+    open" preserves the conversation contract.
+  - *Heuristic-v0 or wait for Wave 3:* **ship heuristic v0
+    now**, swap the classifier in when Wave 3 lands. Reasoning:
+    Wave 3's ETA is unbounded; the heuristic (numbered/bulleted-
+    list extraction + length threshold → checklist vs. N-chats
+    vs. 1-chat suggestion) is tractable and the preview modal
+    corrects mis-classifications. Shipping v0 exercises the
+    spawn transaction path, the preview UX, and the row
+    integration, so Wave 3 becomes a backend swap with zero UI
+    churn. Label the modal banner "heuristic preview — review
+    before spawning" so Dave never mistakes it for the real
+    classifier.
+  - *Brainstorm vetoes* (from the list above):
+    - **Regenerate — drop.** Needs a message-branching schema
+      (every message today has one parent). Big plumbing cost
+      for a rare use case. Punt indefinitely unless Dave asks.
+    - **Rate reply (👍/👎) — drop.** Nobody's consuming the
+      signal; it's UI noise. Revisit only if a concrete
+      consumer appears (local fine-tune, feedback analytics).
+    - **Save as memory / system-prompt snippet — punt to own
+      entry.** Real use case, but the system-prompt API is
+      read-only today and "where does the memory persist"
+      (session, tag, global) is a non-trivial feature design.
+      Doesn't belong as a one-click row button.
+    - **Append to TODO.md — punt to own research entry.**
+      "Nearest TODO.md" is ambiguous in Bearings' model
+      (server cwd? Dave's project cwd? session `working_dir`?).
+      Needs its own tiny design, not a row button.
+    - **Pin / bookmark turn — keep on maybe list.** Session
+      Reorg's split/move covers most curation needs, reducing
+      pin's value. Not committed, not vetoed. Revisit after
+      Session Reorg Slices 3–7 ship.
+  - *First-wave row buttons* (pre-Wave-3, no sub-agent):
+    **`❝ QUOTE`, `⎘ CODE`, `⬇ SAVE`, `⎯ TOOL`.**
+    - `❝ QUOTE` — pre-fills composer with `> <reply excerpt>`.
+    - `⎘ CODE` — copy fenced code blocks only, concatenated.
+    - `⬇ SAVE` — export single turn as Markdown via filtered
+      `/sessions/{id}/export`.
+    - `⎯ TOOL` — focus Inspector on this turn's tool calls.
+      (Chose `⎯ TOOL` over `🔧` to stay monochrome-ASCII-
+      friendly with the rest of the row; Tailwind emoji
+      rendering is inconsistent across fonts.)
+  - *Second-wave row buttons* (with Wave 3, shares sub-agent
+    plumbing): **`ℹ MORE`, `＋ SPAWN`, `✂ TLDR`, `⚔ CRIT`.**
+    All four hit the same classifier/sub-agent call pattern and
+    the same preview-modal UX (except `ℹ MORE` which just
+    pre-fills the composer — no modal needed). Shipping them
+    together means writing the sub-agent plumbing once.
+  - *Spawn button label wording:* `＋ SPAWN`, not `＋ SESSIONS`
+    or `＋ CHECKLIST`, because the shape is classifier-chosen
+    and the label shouldn't lie about which shape is coming.
+    "Spawn" is a verb already used in the codebase
+    (`spawn_paired_chat`) so it's consistent with internal
+    vocabulary.
 
 - [ ] **Upstream: plan mode pins a stale plan file across topic pivots
   (2026-04-21).** Discovered in the Checklists session
@@ -2483,42 +2574,48 @@ Research + plan before implementing — this is the explicit follow-up
 to the 2026-04-22 research session that got eaten by the turn-loss
 bug now fixed in v0.6.1.
 
-## Live session list — Phase 2: `/ws/sessions` broadcast (deferred from 2026-04-22)
+## Live session list — Phase 2: `/ws/sessions` broadcast — shipped (v0.7.0, 2026-04-22)
 
-Phase 1 shipped (softRefresh on the 3-second running-poll tick):
-SessionList now reconciles against `/api/sessions` periodically, so a
-background session or one active before this tab loaded reaches the
-top of the sidebar within ~3 s without a reload. Good enough for a
-single-user localhost workflow, but three seconds is long enough to
-notice and every tab re-fetches the full list payload each tick.
+Phase 1 shipped in v0.6.2 as a softRefresh poll on the 3-second
+running-poll tick (good enough for a single-user localhost workflow,
+but with three seconds of visible lag and full-list refetches).
 
-Phase 2 is the proper architecture — sub-second latency and no
-periodic full-list fetches:
+Phase 2 replaces that with a real pubsub broadcast — sub-second
+sidebar updates, no per-tick `/api/sessions` refetch:
 
-- [ ] Server-wide pubsub in `src/bearings/agent/broker.py`: single
-  `asyncio`-fanned broker, bounded per-subscriber queue (mirror the
-  5000-item deque in `runner.py:59-61`).
-- [ ] Emit `session_created | session_updated | session_closed |
-  session_deleted` events from the mutation points:
-  - `src/bearings/db/_messages.py` on `insert_message` (covers the
-    `updated_at` bump).
-  - `src/bearings/db/_sessions.py` on create / close / reopen /
-    `touch_session` / `mark_session_completed` / `add_session_cost`.
-  - `src/bearings/agent/runner.py` on runner state transitions
-    (idle ↔ running) for the `running` badge.
-- [ ] New route `src/bearings/api/ws_sessions.py` (`GET /ws/sessions`)
-  that subscribes a client to the broker and streams events. Auth /
-  origin gating mirrors `ws_agent.py`.
-- [ ] Frontend `frontend/src/lib/stores/ws_sessions.svelte.ts`:
-  wrapper around the connection with the same reconnect/backoff used
-  by `ws_agent`. On each event, patch `sessions.list` in place and
-  re-sort; update `sessions.running` in place.
-- [ ] Once the broadcast is reliable, drop the Phase-1 `softRefresh`
-  call inside `startRunningPoll` (keep running-state poll until the
-  broker publishes runner state too, then drop the whole poll).
+- [x] Server-wide pubsub in `src/bearings/agent/sessions_broker.py`:
+  `SessionsBroker` with bounded per-subscriber queue
+  (`SUBSCRIBER_QUEUE_MAX = 500`). Slow subscribers are dropped rather
+  than back-pressuring publishers. Helpers: `publish_session_upsert`,
+  `publish_session_delete`, `publish_runner_state`.
+- [x] Published from every mutation point: `routes_sessions.py`
+  (create / update / close / reopen / viewed / delete / import) and
+  `runner.py` (turn-start + turn-end via the finally block).
+- [x] New route `src/bearings/api/ws_sessions.py` (`GET /ws/sessions`)
+  with auth gate mirroring `ws_agent` (4401 on token failure / broker
+  absent) and a forwarder-task pattern for per-subscriber pushes.
+- [x] Frontend `frontend/src/lib/stores/ws_sessions.svelte.ts`:
+  `SessionsWsConnection` with exponential backoff reconnect (cap 30s),
+  routes `upsert | delete | runner_state` frames through
+  `sessions.applyUpsert / applyDelete / applyRunnerState`.
+- [x] Reducer methods added to `SessionStore`: `applyUpsert` (respects
+  `local-newer updated_at`, re-sorts by `updated_at DESC, id DESC`,
+  no-ops when a tag filter is active), `applyDelete` (clears a
+  matching selection), `applyRunnerState` (reassigns the Set).
+- [x] Boot wiring: `+page.svelte` calls `sessionsWs.connect()` after
+  `startRunningPoll()`. Phase-1 poll kept intact as a
+  belt-and-suspenders reconcile — on every (re)connect the WS handler
+  also fires one `softRefresh` so anything missed while down
+  converges.
 
-Tests to add: broker fan-out + bounded-queue drop behavior; WS
-handshake and auth; frontend merge/re-sort on each event type;
-reconnect replays via a fresh `softRefresh` (keep the method even
-after removing the poll so reconnect has a cheap reconciliation
-path).
+Follow-up (keep deferred — poll stays until the broadcast has
+earned trust via metrics / uptime):
+
+- [ ] Drop the `softRefresh` call from `startRunningPoll` once the
+  broadcast has a few weeks of clean data. `sessions.softRefresh`
+  itself stays — it's the reconnect reconciliation path.
+- [ ] Drop the `running`-set poll once the broadcast's `runner_state`
+  frames have earned the same trust. Requires a reconnect-time
+  snapshot of currently-running sessions (the WS currently has no
+  replay buffer; either a short `/api/sessions/running` tick on
+  connect or a `runner_state_snapshot` frame would work).

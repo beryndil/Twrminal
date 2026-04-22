@@ -52,6 +52,11 @@ from bearings.agent.events import (
     TurnReplayed,
 )
 from bearings.agent.session import AgentSession
+from bearings.agent.sessions_broker import (
+    SessionsBroker,
+    publish_runner_state,
+    publish_session_upsert,
+)
 from bearings.db import store
 
 log = logging.getLogger(__name__)
@@ -143,10 +148,17 @@ class SessionRunner:
         session_id: str,
         agent: AgentSession,
         db: aiosqlite.Connection,
+        *,
+        sessions_broker: SessionsBroker | None = None,
     ) -> None:
         self.session_id = session_id
         self.agent = agent
         self.db = db
+        # Server-wide sessions pubsub. `None` is valid — tests that
+        # don't care about the broadcast channel (most runner tests)
+        # pass it through. The publish helpers no-op on None so the
+        # turn loop stays oblivious.
+        self._sessions_broker = sessions_broker
         self._prompts: asyncio.Queue[str | _Replay | _Shutdown] = asyncio.Queue()
         self._worker: asyncio.Task[None] | None = None
         self._subscribers: set[asyncio.Queue[_Envelope]] = set()
@@ -446,6 +458,12 @@ class SessionRunner:
                     "runner %s: touch_session on turn-start failed",
                     self.session_id,
                 )
+            # Phase-2 broadcast: every connected sidebar sees the
+            # updated_at bump + the running badge without waiting for
+            # the poll tick. Publish AFTER touch_session so the upsert
+            # payload carries the bumped timestamp.
+            await publish_session_upsert(self._sessions_broker, self.db, self.session_id)
+            publish_runner_state(self._sessions_broker, self.session_id, is_running=True)
             try:
                 await self._execute_turn(prompt, persist_user=persist_user)
             except Exception as exc:
@@ -458,6 +476,11 @@ class SessionRunner:
                 # unsubscribes.
                 if not self._subscribers:
                     self._quiet_since = time.monotonic()
+                # Broadcast idle so the sidebar clears the running ping
+                # and picks up any cost / message_count / completed
+                # bumps from _persist_assistant_turn in one upsert.
+                await publish_session_upsert(self._sessions_broker, self.db, self.session_id)
+                publish_runner_state(self._sessions_broker, self.session_id, is_running=False)
 
     async def _execute_turn(self, prompt: str, *, persist_user: bool = True) -> None:  # noqa: C901
         """Run one agent turn end-to-end. Mirrors the pre-runner

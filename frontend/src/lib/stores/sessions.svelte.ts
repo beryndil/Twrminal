@@ -262,6 +262,57 @@ class SessionStore {
     }
   }
 
+  /** Apply an upsert frame from the `/ws/sessions` broadcast channel.
+   * Inserts if new, otherwise replaces — except when the local row has a
+   * strictly newer `updated_at` than the incoming one, in which case we
+   * keep the optimistic local copy (same rule as `softRefresh`). Re-sorts
+   * by `updated_at DESC, id DESC` to match the server ordering.
+   *
+   * When a tag filter is active the broadcast frame carries no filter
+   * context and the frontend's `Session` shape has no tag membership
+   * field to check, so we can't safely decide whether the incoming row
+   * belongs in the current view. In that case the 3s `softRefresh` poll
+   * reconciles the filtered list instead — a brief lag on tag-filtered
+   * views is the price of keeping the default (unfiltered) path live. */
+  applyUpsert(session: api.Session): void {
+    const tagFilter = this.filter.tags ?? [];
+    if (tagFilter.length > 0) return;
+    const existing = this.list.find((s) => s.id === session.id);
+    const incoming =
+      existing && existing.updated_at > session.updated_at ? existing : session;
+    const rest = this.list.filter((s) => s.id !== session.id);
+    const merged = [incoming, ...rest];
+    merged.sort((a, b) => {
+      if (a.updated_at !== b.updated_at) return a.updated_at < b.updated_at ? 1 : -1;
+      return a.id < b.id ? 1 : -1;
+    });
+    this.list = merged;
+  }
+
+  /** Apply a delete frame from the `/ws/sessions` broadcast channel.
+   * Drops the row and clears `selectedId` if it pointed at the deleted
+   * session so downstream code doesn't render a ghost selection. Safe
+   * to run under any filter — removing a row we don't have is a no-op. */
+  applyDelete(sessionId: string): void {
+    const had = this.list.some((s) => s.id === sessionId);
+    if (!had) return;
+    this.list = this.list.filter((s) => s.id !== sessionId);
+    if (this.selectedId === sessionId) this.select(null);
+  }
+
+  /** Apply a runner_state frame from the `/ws/sessions` broadcast
+   * channel. The `running` set isn't view-scoped so we always apply
+   * regardless of filter. Reassigns the Set so Svelte 5 consumers
+   * re-read — the runes proxy does track in-place mutation, but matching
+   * the pattern used elsewhere in this store keeps the reactive
+   * behavior obvious. */
+  applyRunnerState(sessionId: string, isRunning: boolean): void {
+    const next = new Set(this.running);
+    if (isRunning) next.add(sessionId);
+    else next.delete(sessionId);
+    this.running = next;
+  }
+
   /** Bumps the sidebar's cached message_count. Called on user-push
    * (+1) and on MessageComplete (+1 for the assistant row). */
   bumpMessageCount(id: string, delta: number): void {

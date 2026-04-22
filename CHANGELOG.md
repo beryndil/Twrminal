@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-04-22
+
+Live-updating session sidebar (Phase 2) — the sidebar now updates in
+sub-second time via a server-wide `/ws/sessions` broadcast channel.
+The Phase-1 softRefresh poll from v0.6.2 remains as a
+belt-and-suspenders reconcile: on every WebSocket (re)connect the
+client fires one `softRefresh` to close any window missed while the
+socket was down, and the 3-second poll continues to run until the
+broadcast has earned trust via metrics / uptime.
+
+### Added
+
+- `bearings.agent.sessions_broker.SessionsBroker` — in-process pubsub
+  for the sessions-list channel. Per-subscriber queues are bounded
+  at `SUBSCRIBER_QUEUE_MAX = 500`; a subscriber whose queue fills
+  gets dropped rather than stalling publishers. Helpers
+  `publish_session_upsert` (fetches the live row, emits `delete`
+  when the row is gone), `publish_session_delete`, and
+  `publish_runner_state`.
+- `GET /ws/sessions` (`bearings.api.ws_sessions`) — server-wide
+  broadcast endpoint. Auth mirrors `ws_agent` (4401 on token
+  failure or missing broker). Frames: `{kind: "upsert", session}`,
+  `{kind: "delete", session_id}`, `{kind: "runner_state",
+  session_id, is_running}`.
+- Runner publishes `upsert` + `runner_state` frames at turn-start and
+  again from its `finally` block at turn-end, so the
+  currently-running indicator and the sidebar row lifecycle track the
+  real runner state without polling.
+- `SessionRunner(..., sessions_broker=...)` constructor arg and
+  app-lifespan wiring (`app.state.sessions_broker`), plumbed through
+  `_build_runner` in `ws_agent.py`.
+- Session CRUD routes (`create_session`, `update_session`,
+  `close_session`, `reopen_session`, `mark_session_viewed`,
+  `delete_session`, `import_session`) publish the matching broker
+  event before returning.
+- `frontend/src/lib/stores/ws_sessions.svelte.ts` —
+  `SessionsWsConnection` with exponential backoff reconnect (base
+  1 s, cap 30 s). Exposes `handleFrame` for test harnesses. On every
+  `open` it fires one `sessions.softRefresh()` so anything missed
+  while the socket was down converges in one shot.
+- `SessionStore.applyUpsert`, `applyDelete`, `applyRunnerState` —
+  reducers for the broadcast path. `applyUpsert` respects
+  local-newer `updated_at`, re-sorts by `updated_at DESC, id DESC`,
+  and no-ops under an active tag filter (softRefresh handles
+  filtered views). `applyDelete` clears a matching `selectedId`.
+  `applyRunnerState` reassigns the `running` Set.
+- `sessionsWs.connect()` wired into `+page.svelte` boot alongside
+  `startRunningPoll`.
+
+### Notes
+
+- The Phase-1 poll is deliberately kept in place. It will be
+  dropped in a later release once the broadcast has earned trust;
+  `sessions.softRefresh()` itself stays as the reconnect
+  reconciliation path.
+
 ## [0.6.2] - 2026-04-22
 
 Live-updating session sidebar (Phase 1). Activity happening in the

@@ -232,3 +232,20 @@ export function openAgentSocket(sessionId: string, sinceSeq = 0): WebSocket {
     `${proto}://${window.location.host}/ws/sessions/${sessionId}${tail}`
   );
 }
+
+/** Open the sessions-list broadcast channel. Carries upsert / delete /
+ * runner_state frames so the sidebar stays live without polling.
+ * Auth mirrors `openAgentSocket`; no `since_seq` — this channel has
+ * no replay window, the frontend reconciles via `softRefresh` on
+ * reconnect. */
+export function openSessionsSocket(): WebSocket {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const token = readAuthToken();
+  const params = new URLSearchParams();
+  if (token) params.set('token', token);
+  const query = params.toString();
+  const tail = query ? `?${query}` : '';
+  return new WebSocket(
+    `${proto}://${window.location.host}/ws/sessions${tail}`
+  );
+}

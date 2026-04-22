@@ -11,6 +11,7 @@
   import { auth } from '$lib/stores/auth.svelte';
   import { billing } from '$lib/stores/billing.svelte';
   import { sessions } from '$lib/stores/sessions.svelte';
+  import { sessionsWs } from '$lib/stores/ws_sessions.svelte';
   import { tags } from '$lib/stores/tags.svelte';
 
   let booted = $state(false);
@@ -28,6 +29,13 @@
     // Start the background runner poll so session rows flag which
     // sessions are still working even when you're on a different one.
     sessions.startRunningPoll();
+    // Open the sessions-list broadcast channel. The poll above stays
+    // in place as a belt-and-suspenders reconcile (slow subscriber
+    // drops, broker hiccups) — this socket is the live path that
+    // delivers upserts / deletes / runner-state transitions in
+    // sub-second time. On connect / reconnect the WS fires one
+    // softRefresh so nothing missed while the socket was down escapes.
+    sessionsWs.connect();
     // Checklist sessions don't run an agent loop — skip the WS
     // connect so the runner guard doesn't close the socket and the
     // UI doesn't paint a spurious connection error.

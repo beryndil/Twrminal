@@ -6,6 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from bearings import metrics
 from bearings.agent.prompt import assemble_prompt, estimate_tokens
+from bearings.agent.sessions_broker import (
+    publish_session_delete,
+    publish_session_upsert,
+)
 from bearings.api.auth import require_auth
 from bearings.api.models import (
     MessageOut,
@@ -69,6 +73,11 @@ async def create_session(body: SessionCreate, request: Request) -> SessionOut:
     # the attach step, for frontend sort consistency.
     refreshed = await store.get_session(conn, row["id"])
     assert refreshed is not None
+    # Broadcast to every open sidebar so a second tab sees the new
+    # session appear without waiting on the Phase-1 poll tick.
+    await publish_session_upsert(
+        getattr(request.app.state, "sessions_broker", None), conn, row["id"]
+    )
     return SessionOut(**refreshed)
 
 
@@ -146,6 +155,11 @@ async def update_session(session_id: str, body: SessionUpdate, request: Request)
         # Description / session_instructions edits reach the agent only
         # after a runner respawn — see `_SYSTEM_PROMPT_FIELDS` note.
         await _drop_runner_if_present(request, session_id)
+    await publish_session_upsert(
+        getattr(request.app.state, "sessions_broker", None),
+        request.app.state.db,
+        session_id,
+    )
     return SessionOut(**row)
 
 
@@ -158,6 +172,11 @@ async def close_session(session_id: str, request: Request) -> SessionOut:
     row = await store.close_session(request.app.state.db, session_id)
     if row is None:
         raise HTTPException(status_code=404, detail="session not found")
+    await publish_session_upsert(
+        getattr(request.app.state, "sessions_broker", None),
+        request.app.state.db,
+        session_id,
+    )
     return SessionOut(**row)
 
 
@@ -167,6 +186,11 @@ async def reopen_session(session_id: str, request: Request) -> SessionOut:
     row = await store.reopen_session(request.app.state.db, session_id)
     if row is None:
         raise HTTPException(status_code=404, detail="session not found")
+    await publish_session_upsert(
+        getattr(request.app.state, "sessions_broker", None),
+        request.app.state.db,
+        session_id,
+    )
     return SessionOut(**row)
 
 
@@ -180,6 +204,15 @@ async def mark_session_viewed(session_id: str, request: Request) -> SessionOut:
     row = await store.mark_session_viewed(request.app.state.db, session_id)
     if row is None:
         raise HTTPException(status_code=404, detail="session not found")
+    # Publish the viewed-state change so a second tab's amber dot
+    # clears without its own click — the row doesn't resort (we didn't
+    # touch updated_at) but `last_viewed_at` now matches the user's
+    # action elsewhere.
+    await publish_session_upsert(
+        getattr(request.app.state, "sessions_broker", None),
+        request.app.state.db,
+        session_id,
+    )
     return SessionOut(**row)
 
 
@@ -194,6 +227,11 @@ async def delete_session(session_id: str, request: Request) -> dict[str, bool]:
     runners = getattr(request.app.state, "runners", None)
     if runners is not None:
         await runners.drop(session_id)
+    # Broadcast the deletion so every open sidebar drops the row
+    # without waiting on the poll. `publish_session_delete` is the
+    # cheap fire-and-forget path — no DB round-trip to confirm a row
+    # we know is gone.
+    publish_session_delete(getattr(request.app.state, "sessions_broker", None), session_id)
     return {"deleted": True}
 
 
@@ -242,6 +280,11 @@ async def import_session(payload: dict[str, Any], request: Request) -> SessionOu
         raise HTTPException(status_code=400, detail="missing or malformed `session` object")
     row = await store.import_session(request.app.state.db, payload)
     metrics.sessions_created.inc()
+    await publish_session_upsert(
+        getattr(request.app.state, "sessions_broker", None),
+        request.app.state.db,
+        row["id"],
+    )
     return SessionOut(**row)
 
 

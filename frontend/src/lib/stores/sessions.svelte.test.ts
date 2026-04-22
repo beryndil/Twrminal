@@ -392,3 +392,106 @@ describe('sessions.softRefresh', () => {
     expect(capturedUrls[0]).toContain('mode=all');
   });
 });
+
+describe('sessions.applyUpsert', () => {
+  it('inserts a brand-new session and sorts it by updated_at DESC, id DESC', () => {
+    sessions.list = [sess({ id: 'a', updated_at: '2026-04-22T10:00:00+00:00' })];
+    sessions.applyUpsert(
+      sess({ id: 'b', updated_at: '2026-04-22T11:00:00+00:00' })
+    );
+    expect(sessions.list.map((s) => s.id)).toEqual(['b', 'a']);
+  });
+
+  it('replaces an existing row when server updated_at is newer', () => {
+    sessions.list = [
+      sess({ id: 'a', updated_at: '2026-04-22T10:00:00+00:00', total_cost_usd: 0 })
+    ];
+    sessions.applyUpsert(
+      sess({ id: 'a', updated_at: '2026-04-22T11:00:00+00:00', total_cost_usd: 1.23 })
+    );
+    expect(sessions.list[0].total_cost_usd).toBeCloseTo(1.23);
+  });
+
+  it('keeps the local row when local updated_at is strictly newer (optimistic touch)', () => {
+    sessions.list = [
+      sess({ id: 'a', updated_at: '2026-04-22T11:00:01+00:00', total_cost_usd: 0.42 })
+    ];
+    sessions.applyUpsert(
+      sess({ id: 'a', updated_at: '2026-04-22T11:00:00+00:00', total_cost_usd: 0.11 })
+    );
+    // Local optimistic row survives the broadcast.
+    expect(sessions.list[0].total_cost_usd).toBeCloseTo(0.42);
+  });
+
+  it('preserves the final sort on a re-sort after an upsert that bumps a middle row', () => {
+    sessions.list = [
+      sess({ id: 'a', updated_at: '2026-04-22T12:00:00+00:00' }),
+      sess({ id: 'b', updated_at: '2026-04-22T11:00:00+00:00' }),
+      sess({ id: 'c', updated_at: '2026-04-22T10:00:00+00:00' })
+    ];
+    sessions.applyUpsert(
+      sess({ id: 'c', updated_at: '2026-04-22T13:00:00+00:00' })
+    );
+    expect(sessions.list.map((s) => s.id)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('is a no-op when a tag filter is active — softRefresh poll reconciles filtered views', () => {
+    sessions.filter = { tags: [42] };
+    sessions.list = [sess({ id: 'existing' })];
+    sessions.applyUpsert(sess({ id: 'new-row' }));
+    expect(sessions.list.map((s) => s.id)).toEqual(['existing']);
+  });
+});
+
+describe('sessions.applyDelete', () => {
+  it('drops the row and clears selectedId when the deleted session was selected', () => {
+    sessions.list = [sess({ id: 'a' }), sess({ id: 'b' })];
+    sessions.selectedId = 'a';
+    sessions.applyDelete('a');
+    expect(sessions.list.map((s) => s.id)).toEqual(['b']);
+    expect(sessions.selectedId).toBeNull();
+  });
+
+  it('preserves selectedId when a different session is deleted', () => {
+    sessions.list = [sess({ id: 'a' }), sess({ id: 'b' })];
+    sessions.selectedId = 'a';
+    sessions.applyDelete('b');
+    expect(sessions.list.map((s) => s.id)).toEqual(['a']);
+    expect(sessions.selectedId).toBe('a');
+  });
+
+  it('is a no-op on an unknown id', () => {
+    sessions.list = [sess({ id: 'a' })];
+    sessions.applyDelete('not-there');
+    expect(sessions.list.map((s) => s.id)).toEqual(['a']);
+  });
+});
+
+describe('sessions.applyRunnerState', () => {
+  it('adds an id to the running set when is_running is true', () => {
+    sessions.running = new Set();
+    sessions.applyRunnerState('a', true);
+    expect(sessions.running.has('a')).toBe(true);
+  });
+
+  it('removes an id from the running set when is_running is false', () => {
+    sessions.running = new Set(['a', 'b']);
+    sessions.applyRunnerState('a', false);
+    expect(sessions.running.has('a')).toBe(false);
+    expect(sessions.running.has('b')).toBe(true);
+  });
+
+  it('reassigns the Set (not in-place mutation) so Svelte 5 consumers re-read', () => {
+    const before = sessions.running;
+    sessions.applyRunnerState('a', true);
+    expect(sessions.running).not.toBe(before);
+  });
+
+  it('applyRunnerState=false on an id not in the set is a no-op', () => {
+    sessions.running = new Set(['a']);
+    sessions.applyRunnerState('not-there', false);
+    expect(sessions.running.has('a')).toBe(true);
+    expect(sessions.running.size).toBe(1);
+  });
+});
+

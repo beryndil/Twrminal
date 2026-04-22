@@ -87,7 +87,15 @@ async def _build_runner(app: Any, session_id: str) -> SessionRunner:
         permission_mode=row.get("permission_mode"),
         thinking=_thinking_config(app.state.settings.agent.thinking),
     )
-    runner = SessionRunner(session_id, agent, conn)
+    runner = SessionRunner(
+        session_id,
+        agent,
+        conn,
+        # Pull the broker off app.state so runner publishes reach every
+        # `/ws/sessions` subscriber. Absent on tests that skip the full
+        # app wiring — `getattr` keeps the factory usable there.
+        sessions_broker=getattr(app.state, "sessions_broker", None),
+    )
     # Late-bind the approval callback: the SDK's `can_use_tool` hook
     # parks futures on the runner, but the runner only exists after
     # the agent is constructed. Binding here keeps the agent ignorant

@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from bearings import __version__
 from bearings.agent.registry import RunnerRegistry
+from bearings.agent.sessions_broker import SessionsBroker
 from bearings.api import (
     routes_checklists,
     routes_commands,
@@ -21,6 +22,7 @@ from bearings.api import (
     routes_sessions,
     routes_tags,
     ws_agent,
+    ws_sessions,
 )
 from bearings.config import Settings, load_settings
 from bearings.db.store import init_db
@@ -38,6 +40,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db = await init_db(settings.storage.db_path)
     active: set[WebSocket] = set()
     app.state.active_ws = active
+    # Server-wide sessions-list pubsub. Every mutation to a session row
+    # (create / update / close / reopen / delete / viewed) and every
+    # runner state transition fans out to every open sidebar via
+    # `/ws/sessions`. Phase-1 `softRefresh` poll stays as a belt-and-
+    # suspenders reconciliation path — if the broadcast drops, the
+    # poll converges within 3 s.
+    app.state.sessions_broker = SessionsBroker()
     # RunnerRegistry owns per-session agent loops decoupled from WS
     # lifetime. Sessions keep running when the UI walks away; see
     # bearings.agent.runner for the contract. The reaper evicts
@@ -83,6 +92,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(routes_commands.router, prefix="/api")
     app.include_router(routes_metrics.router)
     app.include_router(ws_agent.router)
+    app.include_router(ws_sessions.router)
 
     if STATIC_DIR.exists() and any(STATIC_DIR.iterdir()):
         app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")
