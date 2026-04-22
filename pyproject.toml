@@ -24,6 +24,7 @@ dependencies = [
     "prometheus-client>=0.21",
     "aiosqlite>=0.20",
     "orjson>=3.9",
+    "python-multipart>=0.0.9",
 ]
 
 [project.scripts]

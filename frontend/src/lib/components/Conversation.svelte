@@ -5,6 +5,7 @@
   import { agent } from '$lib/agent.svelte';
   import * as api from '$lib/api';
   import * as fsApi from '$lib/api/fs';
+  import * as uploadsApi from '$lib/api/uploads';
   import ApprovalModal from '$lib/components/ApprovalModal.svelte';
   import BulkActionBar from '$lib/components/BulkActionBar.svelte';
   import CommandMenu from '$lib/components/CommandMenu.svelte';
@@ -1019,32 +1020,78 @@
   // a dedicated banner above the text entry so the user always sees it.
   let dropDiagnostic = $state<string | null>(null);
 
+  // Upload-in-flight state. Drives a small "Uploading N file(s)…" status
+  // pill next to the attach-file button so the user gets feedback during
+  // the bytes-upload fallback path (multi-MB files can take a beat over
+  // localhost, and a silent freeze would look like the drop failed).
+  let uploading = $state(false);
+
+  /** Bytes-upload fallback path for drops that exposed no filesystem
+   * path. Chrome on Wayland strips `text/uri-list` and `text/plain`
+   * even when the File objects are fully readable — so we read the
+   * bytes with file.arrayBuffer(), POST each to `/api/uploads`, and
+   * inject the resulting absolute path at the cursor. Order is
+   * preserved by awaiting each upload in sequence rather than firing
+   * parallel POSTs whose `insertPathAtCursor` calls would race the
+   * textarea selection. */
+  async function uploadDroppedFiles(files: FileList): Promise<void> {
+    if (uploading) return;
+    uploading = true;
+    try {
+      for (const file of Array.from(files)) {
+        try {
+          const result = await uploadsApi.uploadFile(file);
+          insertPathAtCursor(result.path);
+        } catch (e) {
+          // Surface the specific reason (413 over-size, 415 blocked
+          // extension, 500 disk full) so the user can act. The banner
+          // replaces any prior diagnostic — a mid-batch reject is the
+          // most relevant thing to see.
+          dropDiagnostic =
+            `Upload failed for "${file.name}": ` +
+            (e instanceof Error ? e.message : String(e));
+          return;
+        }
+      }
+      dropDiagnostic = null;
+    } finally {
+      uploading = false;
+    }
+  }
+
   function onDrop(e: DragEvent) {
     e.preventDefault();
     dragging = false;
     if (!e.dataTransfer) return;
     const { paths, formats } = extractPaths(e.dataTransfer);
-    if (paths.length === 0) {
-      // Chrome on Wayland sometimes strips both `text/uri-list` and
-      // `text/plain` on drop (tab-sandboxing + compositor mediation),
-      // leaving us nothing to inject. Surface the exposed formats so
-      // the user understands why the drop didn't land and can fall
-      // back to the Attach-file button.
-      const typesInfo = `types=[${(e.dataTransfer.types ?? []).join(', ')}]`;
-      const fileInfo = e.dataTransfer.files?.length
-        ? `files=[${Array.from(e.dataTransfer.files)
-            .map((f) => f.name)
-            .join(', ')}]`
-        : 'files=[]';
-      dropDiagnostic =
-        'Drop received, but the browser did not expose an absolute path. ' +
-        `${typesInfo} ${fileInfo} ` +
-        (formats.length ? formats.join(' | ') : '(no text formats exposed)') +
-        ' — use the Attach-file button instead.';
+    if (paths.length > 0) {
+      // Happy path — the OS handed us URIs, no upload needed. Preserves
+      // the original "all it has to do is give you the link" behavior
+      // from file managers that still expose text/uri-list.
+      dropDiagnostic = null;
+      for (const p of paths) insertPathAtCursor(p);
       return;
     }
-    dropDiagnostic = null;
-    for (const p of paths) insertPathAtCursor(p);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      // Fallback: the browser stripped path metadata (Chrome/Wayland
+      // tab-sandboxing) but the File objects are still readable. Stream
+      // the bytes through `/api/uploads` and inject the server path.
+      // Kick off async without awaiting — the DragEvent handler returns
+      // synchronously and the upload progresses in the background.
+      void uploadDroppedFiles(files);
+      return;
+    }
+    // Nothing to work with — neither URIs nor File objects. Keep the
+    // diagnostic banner so the failure mode stays visible; it's the
+    // instrumentation that'll tell us about future compositor/browser
+    // regressions.
+    const typesInfo = `types=[${(e.dataTransfer.types ?? []).join(', ')}]`;
+    dropDiagnostic =
+      'Drop received, but the browser exposed neither a path nor file bytes. ' +
+      `${typesInfo} ` +
+      (formats.length ? formats.join(' | ') : '(no text formats exposed)') +
+      ' — use the Attach-file button instead.';
   }
 
   // Upload button → native picker via `POST /api/fs/pick` (zenity on
@@ -1151,7 +1198,16 @@
         border-emerald-500/70 bg-slate-950/60 flex items-center justify-center z-20"
       data-testid="conversation-drop-hint"
     >
-      <p class="text-sm text-emerald-300">Drop to attach file path to the prompt</p>
+      <p class="text-sm text-emerald-300">Drop to attach file to the prompt</p>
+    </div>
+  {/if}
+  {#if uploading}
+    <div
+      class="pointer-events-none absolute inset-2 rounded border-2 border-dashed
+        border-sky-500/60 bg-slate-950/70 flex items-center justify-center z-20"
+      data-testid="conversation-upload-hint"
+    >
+      <p class="text-sm text-sky-300">Uploading dropped file…</p>
     </div>
   {/if}
   <header class="border-b border-slate-800 px-4 py-3 flex items-baseline justify-between">

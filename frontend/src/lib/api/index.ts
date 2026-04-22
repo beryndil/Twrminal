@@ -4,4 +4,5 @@ export * from './tags';
 export * from './checklists';
 export * from './history';
 export * from './fs';
+export * from './uploads';
 export * from './commands';

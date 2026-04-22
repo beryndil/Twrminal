@@ -83,6 +83,42 @@ class RunnerCfg(BaseModel):
     reap_interval_seconds: float = 60.0
 
 
+class UploadsCfg(BaseModel):
+    # Chrome/Wayland strips `text/uri-list` metadata from browser file
+    # drops even though `DataTransfer.files` still carries the bytes.
+    # The drop handler reads those bytes and POSTs them to
+    # `/api/uploads`; the server persists under `upload_dir` with a
+    # UUID name and hands the absolute path back for prompt injection.
+    upload_dir: Path = Field(default_factory=lambda: DATA_HOME / "uploads")
+    # Size cap in whole megabytes. 25 is enough for screenshots, PDFs,
+    # log excerpts; anything larger should be referenced by path via
+    # the native picker instead.
+    max_size_mb: int = 25
+    # Extensions we refuse regardless of size — defense-in-depth against
+    # dragging a shell script or binary. Bearings is localhost-only and
+    # never executes uploads server-side, so the real protection is
+    # already in place; this list just keeps the obviously-wrong cases
+    # from landing in the upload dir. Matched case-insensitively.
+    blocked_extensions: list[str] = Field(
+        default_factory=lambda: [
+            ".sh",
+            ".bash",
+            ".zsh",
+            ".fish",
+            ".bat",
+            ".cmd",
+            ".ps1",
+            ".exe",
+            ".msi",
+            ".com",
+            ".so",
+            ".dll",
+            ".dylib",
+            ".appimage",
+        ]
+    )
+
+
 class BillingCfg(BaseModel):
     # Defaults to "payg" so nothing changes for developer-API users who
     # were using Bearings before this knob existed. Max/Pro subscribers
@@ -105,6 +141,7 @@ class Settings(BaseSettings):
     metrics: MetricsCfg = Field(default_factory=MetricsCfg)
     billing: BillingCfg = Field(default_factory=BillingCfg)
     runner: RunnerCfg = Field(default_factory=RunnerCfg)
+    uploads: UploadsCfg = Field(default_factory=UploadsCfg)
 
     config_file: Path = Field(default_factory=lambda: CONFIG_HOME / "config.toml")
 

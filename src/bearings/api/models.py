@@ -234,6 +234,23 @@ class FsPickOut(BaseModel):
     cancelled: bool
 
 
+class UploadOut(BaseModel):
+    """Result of `POST /api/uploads`. `path` is the absolute filesystem
+    path the frontend injects into the prompt — Claude reads from that
+    path exactly as if the user had typed it by hand. `filename` is the
+    sanitized original name for optional UI display; the on-disk name
+    is always a UUID so two drops of `screenshot.png` don't collide and
+    traversal via the original name is impossible. `size_bytes` and
+    `mime_type` round out the shape for a future attachment-chip
+    renderer above the user bubble.
+    """
+
+    path: str
+    filename: str
+    size_bytes: int
+    mime_type: str
+
+
 class CommandOut(BaseModel):
     """One entry in the slash-command palette (command or skill).
 

@@ -2619,3 +2619,46 @@ earned trust via metrics / uptime):
   snapshot of currently-running sessions (the WS currently has no
   replay buffer; either a short `/api/sessions/running` tick on
   connect or a `runner_state_snapshot` frame would work).
+
+## Drag-and-drop file uploads (2026-04-22, initial slice shipped)
+
+Shipped: `POST /api/uploads` bytes-upload endpoint + matching drop
+handler in `Conversation.svelte`. Bypasses Chrome/Wayland's
+`text/uri-list` stripping by reading `DataTransfer.files[].arrayBuffer()`,
+POSTing to the endpoint, and injecting the server-side absolute path
+into the prompt. `dropDiagnostic` banner retained as instrumentation
+for future compositor/browser regressions.
+
+Config: `[uploads] upload_dir` (default `$XDG_DATA_HOME/bearings/uploads`),
+`max_size_mb` (default 25), `blocked_extensions` (default: executables).
+
+Follow-ups:
+
+- [ ] **GC for upload dir.** Time-based sweep of `upload_dir` — e.g.
+  delete files older than `uploads.retention_days` (default 30) on
+  server start and on a daily timer. Currently the directory grows
+  unbounded; low-priority because uploads are small and localhost
+  disk is cheap, but it'll accumulate over years of use. Consider
+  tying cleanup to session deletion instead (per-session upload
+  subdirs) if the attachment-chip work lands first.
+- [ ] **Attachment chip above user bubble.** Render a small chip
+  (filename + size + click-to-preview-or-open) above the user's
+  message when the prompt contains one of our upload paths. Requires
+  either persisting the upload metadata alongside the message OR
+  teaching the turn renderer to detect `upload_dir`-prefixed paths
+  in content and look them up. The `UploadOut` model already carries
+  `filename` / `size_bytes` / `mime_type` for this shape; need a way
+  to persist them per-turn.
+- [ ] **Progress UI for large uploads.** Current fallback fires with
+  a static "Uploading dropped file…" overlay; a 25 MB PDF on a slow
+  bus is a noticeable pause. Options: XHR with `upload.onprogress`
+  (gives real byte-count feedback) or a Fetch-based streaming POST
+  with a `ReadableStream` tee. Cheap wins first — a dots-animation
+  is probably enough for typical drops.
+- [ ] **Batch POST for multi-file drops.** Today each file is a
+  separate round-trip. For 10+ small files on a slow link this
+  adds up. Not urgent — typical drop is 1-3 files.
+- [ ] **Live smoke test on Kubuntu + Hyprland + Chrome.** Tests and
+  typecheck are green; the in-browser drop test happens after the
+  next server restart (restart would kick the live Bearings session
+  — defer until Dave picks his moment).

@@ -17,7 +17,7 @@ from bearings.agent.events import (
     ToolCallStart,
 )
 from bearings.agent.session import AgentSession
-from bearings.config import Settings, StorageCfg
+from bearings.config import Settings, StorageCfg, UploadsCfg
 from bearings.server import create_app
 
 MOCK_MSG_ID = "mock-msg"
@@ -28,6 +28,10 @@ MOCK_TOOL_MSG_ID = "mock-tool-msg"
 def tmp_settings(tmp_path: Path) -> Iterator[Settings]:
     cfg = Settings(
         storage=StorageCfg(db_path=tmp_path / "db.sqlite"),
+        # Redirect uploads at the tmp dir so routes_uploads tests don't
+        # scribble into `~/.local/share/bearings/uploads`. Isolated
+        # subdir keeps it clean-cut from the sqlite files.
+        uploads=UploadsCfg(upload_dir=tmp_path / "uploads"),
     )
     cfg.config_file = tmp_path / "config.toml"
     yield cfg
