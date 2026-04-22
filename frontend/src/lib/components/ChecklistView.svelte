@@ -224,24 +224,24 @@
 <section class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-slate-950 text-slate-100">
   <header class="flex items-center gap-3 border-b border-slate-800 px-4 py-3">
     <span class="text-lg" aria-hidden="true">☑</span>
-    <h2 class="flex-1 truncate text-sm font-semibold">
-      {selected?.title ?? 'Checklist'}
+    <h2 class="flex flex-1 items-center gap-2 min-w-0 text-sm font-semibold">
+      <span class="truncate">{selected?.title ?? 'Checklist'}</span>
+      {#if selected}
+        <button
+          type="button"
+          class="text-xs hover:text-slate-300 {selected.closed_at
+            ? 'text-emerald-400'
+            : 'text-slate-500'}"
+          aria-label={selected.closed_at ? 'Reopen checklist' : 'Close checklist'}
+          aria-pressed={!!selected.closed_at}
+          title={selected.closed_at ? 'Reopen checklist' : 'Close checklist'}
+          onclick={onToggleClosed}
+          data-testid="close-checklist"
+        >
+          ✓
+        </button>
+      {/if}
     </h2>
-    {#if selected}
-      <button
-        type="button"
-        class="text-xs hover:text-slate-300 {selected.closed_at
-          ? 'text-emerald-400'
-          : 'text-slate-500'}"
-        aria-label={selected.closed_at ? 'Reopen checklist' : 'Close checklist'}
-        aria-pressed={!!selected.closed_at}
-        title={selected.closed_at ? 'Reopen checklist' : 'Close checklist'}
-        onclick={onToggleClosed}
-        data-testid="close-checklist"
-      >
-        ✓
-      </button>
-    {/if}
   </header>
 
   {#if checklists.loading}
