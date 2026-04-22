@@ -534,6 +534,147 @@ the historical checklists as-is.
   component in `frontend/src/lib/components/` that currently renders
   the copy button on assistant turns.
 
+- [ ] **Research: assistant-reply action row — "Spawn sessions from
+  this reply" button + brainstorm of other one-click actions
+  (2026-04-22).** Dave's primary ask: alongside Copy (existing) and
+  More Info (logged above), add a button that takes the *output of
+  the current assistant turn only* (not the whole session) and
+  asks an LLM to decide the best container shape for whatever the
+  reply enumerates — three plausible shapes: (a) a single new
+  `checklist` session with N items, (b) N new `chat` sessions (one
+  per item), or (c) one new `chat` session covering the combined
+  topic. Dave wants the shape decision automated, not chosen by
+  him up-front. Then look around the codebase and propose other
+  buttons that could live in the same action row. No action —
+  research only.
+
+  **Surface.** Single action row at the bottom of each assistant
+  article in `frontend/src/lib/components/MessageTurn.svelte`
+  (lines 344–356 today — one Copy button, right-aligned,
+  `text-[10px] uppercase tracking-wider`). The *header* of the
+  same article already has a separate `⋯` menu (lines 274–325)
+  that hosts the session-reorg Move / Split actions. The footer
+  row is the correct home for *reply-scoped* actions; the header
+  ⋯ menu is for *session-shape* actions. Keeping those two lanes
+  separate in the taxonomy avoids crowding either one.
+
+  **Primitives that already exist and make "Spawn sessions" cheap
+  to wire:**
+  - Session-kind discriminator — `sessions.kind ∈ {'chat',
+    'checklist'}` with CHECK constraint (`db/schema.sql:24-30`).
+    Both shapes are first-class.
+  - `POST /api/sessions` (chat creation) and checklist primitives:
+    `POST /api/checklists/{sid}/items` + the paired-chat spawn
+    `POST /api/checklists/{sid}/items/{iid}/chat`
+    (`routes_checklists.py:78, 178`). Paired-chat spawn inherits
+    `working_dir`, model, and tags from the parent — so a
+    "checklist-with-N-items-that-each-spawn-a-chat" flow is one
+    bulk call away once the items exist.
+  - Tag/working-dir inheritance: every session needs ≥1 tag, and
+    the checklist spawn path already defaults tags from the
+    parent. The reply-spawn flow should do the same — inherit the
+    current session's tags and `working_dir` unless Dave
+    overrides in a preview modal.
+  - `Message.content` on the server already carries the full
+    assistant reply markdown, so the classifier has a clean input
+    and doesn't need to walk the whole transcript.
+
+  **LLM classification is the hard part, and it shares a
+  dependency with Session-Reorg Slice 6.** The "pick the right
+  shape, then extract the item list + titles + tags" step is a
+  sub-agent call. Running it inline in the current session's
+  context would pollute the parent. The same blocker gates
+  Slice 6 (analyze-for-reorg). Both should wait on the Option 4
+  "researcher" sub-agent + token-cost Wave 3 landing, then ship
+  as one wave that shares the sub-agent plumbing — classifier
+  prompt, structured-JSON output schema, preview modal,
+  commit-on-approve. Before Wave 3: a heuristic fallback
+  (numbered-list / bulleted-list extraction + length threshold
+  to decide checklist vs. 1-chat vs. N-chats) is plausible as a
+  v0 but should be clearly labeled "heuristic preview" in the
+  UI so Dave doesn't confuse it with the real classifier.
+
+  **UX shape recommendation.** The row can't grow indefinitely.
+  Two layouts to choose between:
+  - *Three-inline + overflow.* Copy · More info · Spawn ▾ · ⋯
+    (where ⋯ on the row is distinct from the header ⋯ for reorg
+    — consider different glyphs, e.g. footer uses a "+" menu).
+  - *Icons-only inline.* All primary actions as single-glyph
+    buttons with tooltips; keeps the row to its current visual
+    weight. Matches the existing `⎘ copy` style.
+  Preview modal on Spawn is non-negotiable: classifier output is
+  editable (retitle, retag, drag items between proposals,
+  drop items), then one approve-all commit that creates the
+  checklist+items or the N chats in a transaction.
+
+  **Brainstormed candidates for the action row** (scored for
+  "built on existing primitives" vs. "needs new plumbing"):
+
+  Built on existing primitives (ship any time):
+  - **Quote & reply.** Pre-fills the composer with
+    `> <selected excerpt>\n\n` so Dave can build on a specific
+    line without re-typing. No backend work.
+  - **Copy code only.** Strip prose, keep fenced code blocks
+    concatenated. One function in the copy handler.
+  - **Export single turn.** Uses the existing
+    `GET /sessions/{id}/export` shape, filtered to one
+    `message_id`. Single-turn share instead of whole session.
+  - **Jump to tool calls for this turn.** Focus Inspector pane
+    on the tool calls belonging to this `message_id`.
+    `list_tool_calls` already returns the data; UI-only.
+  - **Tokens / cost for this turn.** Tooltip on hover, not a
+    nav. `get_session_tokens` is session-level today; would need
+    a per-message rollup, but the raw token events exist.
+  - **Append to TODO.md.** Pattern-detect "we should later X" /
+    "deferred" language in the reply and offer to append the
+    relevant paragraph to the nearest TODO.md. Uses existing
+    `routes_fs.py` write path.
+
+  Needs the sub-agent plumbing (ship with the Wave-3 bundle):
+  - **Summarize / TL;DR.** Cousin of More Info, the other
+    direction. Same prompt template family.
+  - **ELI5 / Rephrase simpler.** Ditto.
+  - **Critique / second opinion.** Spawn a critic sub-agent to
+    poke holes. High value before plan execution.
+  - **Regenerate.** Redo the previous turn with the same
+    prompt; keep both, let Dave pick. Needs a message-branching
+    concept the DB doesn't model yet (every message today has
+    one parent).
+
+  Needs new DB state:
+  - **Pin / bookmark turn.** New `message_pins` column or
+    table; show pins as anchors in SessionList.
+  - **Save as memory / system-prompt snippet.** When the reply
+    establishes a durable rule ("when X, do Y"), push it into a
+    memory file or system-prompt addendum. Overlaps with
+    `get_session_system_prompt` but that's read-only today.
+  - **Rate this reply (👍/👎).** Per-message feedback column
+    for quality tracking. Cheap DB, moderate UI.
+
+  **Recommended first wave** (before Wave 3 lands, no sub-agent
+  needed): Quote & reply + Copy code only + Export turn + Jump
+  to tool calls. These four cost little, fill out the row with
+  high-frequency actions, and let Dave live with the new
+  pattern before the LLM-powered buttons arrive.
+
+  **Recommended second wave** (with Wave 3): More info + Spawn
+  sessions + Summarize + Critique, all sharing one classifier /
+  sub-agent call pattern. Ship the preview-modal UX once and
+  reuse across all four.
+
+  **Open design points for Dave before implementation:**
+  - Inline-text-buttons vs. icons-only vs. "Act on reply ▾"
+    dropdown with everything inside?
+  - Should Spawn sessions' preview modal live in the right pane
+    (hijacking the Inspector) or as a floating modal like
+    `SessionPickerModal`?
+  - When Spawn produces a checklist, should it *also* close the
+    current session (treating the reply as a terminating
+    "here's your punch list" handoff) or leave the parent open?
+  - Heuristic-fallback in v0 or wait for Wave 3 entirely?
+  - Any buttons from the brainstorm list that Dave vetoes
+    outright so they don't pollute the plan?
+
 - [ ] **Upstream: plan mode pins a stale plan file across topic pivots
   (2026-04-21).** Discovered in the Checklists session
   (`f66b7166…`) while trying to plan the checklist feature. Entering
