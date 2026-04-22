@@ -147,13 +147,13 @@ class TodoItemOut(BaseModel):
     and the live WS event carry the same per-item schema so the
     frontend reducer can treat them interchangeably.
 
-    `active_form` is aliased to `activeForm` on the wire (both in
-    and out) to match what the Claude Code SDK emits (camelCase)
-    and what the widget renders in the "Working on X…" footer when
-    an item is in_progress."""
+    `active_form` uses `validation_alias="activeForm"` so the raw SDK
+    input dict stored in `tool_calls.input_json` (camelCase) parses
+    without renames, while the REST response ships snake_case to
+    match every other Bearings wire shape and the frontend type."""
 
     content: str
-    active_form: str | None = Field(default=None, alias="activeForm")
+    active_form: str | None = Field(default=None, validation_alias="activeForm")
     status: Literal["pending", "in_progress", "completed"]
 
     model_config = {"populate_by_name": True}

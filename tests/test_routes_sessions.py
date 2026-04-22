@@ -605,3 +605,112 @@ def test_post_viewed_does_not_change_sort(client: TestClient) -> None:
 def test_post_viewed_missing_session_returns_404(client: TestClient) -> None:
     resp = client.post("/api/sessions/" + "0" * 32 + "/viewed")
     assert resp.status_code == 404
+
+
+# -- GET /api/sessions/{id}/todos ----------------------------------------
+# First-paint snapshot used to seed the LiveTodos widget before the next
+# live `todo_write_update` event lands over the WebSocket.
+
+
+def _seed_todowrite(
+    client: TestClient, session_id: str, tool_call_id: str, input_json: str
+) -> None:
+    """Backfill a raw TodoWrite tool_call row via the app's db handle.
+    Uses the same path the agent runner writes through in production,
+    so the REST layer sees exactly what it would see post-turn.
+
+    Uses `asyncio.Runner` rather than `get_event_loop().run_until_complete`
+    — the latter raises a DeprecationWarning on Python 3.12+ because
+    there's no pre-existing loop in the sync test context."""
+    import asyncio
+
+    from bearings.db.store import insert_tool_call_start
+
+    async def _go() -> None:
+        await insert_tool_call_start(
+            client.app.state.db,  # type: ignore[attr-defined]
+            session_id=session_id,
+            tool_call_id=tool_call_id,
+            name="TodoWrite",
+            input_json=input_json,
+        )
+
+    with asyncio.Runner() as runner:
+        runner.run(_go())
+
+
+def test_get_todos_returns_null_when_session_has_never_called_todowrite(
+    client: TestClient,
+) -> None:
+    created = _create(client, title="no-todos")
+    resp = client.get(f"/api/sessions/{created['id']}/todos")
+    assert resp.status_code == 200
+    assert resp.json() == {"todos": None}
+
+
+def test_get_todos_returns_latest_payload_in_snake_case(client: TestClient) -> None:
+    """Pins the wire shape: the REST response ships `active_form`
+    (snake_case) even though the raw DB payload is `activeForm`
+    (camelCase, as the SDK emits). The frontend `TodoItem` type and
+    `LiveTodos.svelte` read `active_form`; a regression to bidirectional
+    aliasing would silently break the "Working on X…" header line."""
+    created = _create(client, title="snake-wire")
+    _seed_todowrite(
+        client,
+        created["id"],
+        "tw-1",
+        '{"todos":[{"content":"Do X","activeForm":"Doing X","status":"in_progress"}]}',
+    )
+    resp = client.get(f"/api/sessions/{created['id']}/todos")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["todos"] == [{"content": "Do X", "active_form": "Doing X", "status": "in_progress"}]
+    assert "activeForm" not in body["todos"][0]
+
+
+def test_get_todos_returns_most_recent_call_only(client: TestClient) -> None:
+    """Full-replacement semantics: later TodoWrite wins. The helper
+    returns *one* list — the latest — not a merge or a history."""
+    created = _create(client, title="latest-wins")
+    _seed_todowrite(
+        client,
+        created["id"],
+        "tw-early",
+        '{"todos":[{"content":"A","activeForm":"Aing","status":"pending"}]}',
+    )
+    _seed_todowrite(
+        client,
+        created["id"],
+        "tw-late",
+        (
+            '{"todos":['
+            '{"content":"A","activeForm":"Aing","status":"completed"},'
+            '{"content":"B","activeForm":"Bing","status":"in_progress"}'
+            "]}"
+        ),
+    )
+    resp = client.get(f"/api/sessions/{created['id']}/todos")
+    body = resp.json()
+    assert [t["status"] for t in body["todos"]] == ["completed", "in_progress"]
+    assert body["todos"][1]["active_form"] == "Bing"
+
+
+def test_get_todos_returns_empty_list_when_agent_cleared(client: TestClient) -> None:
+    """`todos: []` is distinct from `todos: null` — the agent
+    explicitly wrote an empty list, so the widget should render a
+    "no active todos" footer instead of hiding."""
+    created = _create(client, title="cleared")
+    _seed_todowrite(client, created["id"], "tw-empty", '{"todos":[]}')
+    resp = client.get(f"/api/sessions/{created['id']}/todos")
+    assert resp.status_code == 200
+    assert resp.json() == {"todos": []}
+
+
+def test_get_todos_on_missing_session_returns_404(client: TestClient) -> None:
+    """Consistent with the rest of the /sessions/{id} surface — unknown
+    id is a client error, not an empty result. The frontend only hits
+    this route from `conversation.load()`, which already handles a
+    missing session via the parallel `getSession` 404, so a second
+    404 here adds no burden."""
+    resp = client.get("/api/sessions/" + "0" * 32 + "/todos")
+    assert resp.status_code == 404

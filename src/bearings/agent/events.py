@@ -169,13 +169,15 @@ class TodoItem(BaseModel):
     is `in_progress`. `status` is the three-valued enum observed from
     every TodoWrite call in the historical `tool_calls` table.
 
-    Field aliased to `activeForm` to match the exact wire shape the
-    Claude Code SDK emits (camelCase), so a direct parse of the raw
-    tool input dict doesn't require per-field renames on the runner
-    side."""
+    `validation_alias="activeForm"` so a direct parse of the SDK's
+    raw tool input dict (which emits camelCase) lands cleanly without
+    per-field renames on the runner side. Serialization stays on the
+    Python field name — every other Bearings wire shape is snake_case
+    and the frontend reducer/component read `active_form`, so keeping
+    alias on input only preserves that convention."""
 
     content: str
-    active_form: str | None = Field(default=None, alias="activeForm")
+    active_form: str | None = Field(default=None, validation_alias="activeForm")
     status: Literal["pending", "in_progress", "completed"]
 
     model_config = {"populate_by_name": True}
