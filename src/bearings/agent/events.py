@@ -111,6 +111,24 @@ class ErrorEvent(BaseModel):
     message: str
 
 
+class TurnReplayed(BaseModel):
+    """Emitted once, before the first prompt of a runner's life, when
+    the boot-time replay scan found an orphaned user message (server
+    was killed mid-turn after persisting the prompt but before the SDK
+    emitted any assistant output) and re-queued it.
+
+    The event exists so clients can show "resuming prompt from previous
+    session" context instead of silently starting a turn the user did
+    not just submit. No behavioral payload — the follow-up MessageStart
+    for the same session carries the actual turn. `message_id` is the
+    id of the user row that was replayed so the UI can highlight it.
+    """
+
+    type: Literal["turn_replayed"] = "turn_replayed"
+    session_id: str
+    message_id: str
+
+
 class ApprovalRequest(BaseModel):
     """Tool-use permission request raised by the SDK's `can_use_tool`
     callback. Fired whenever the agent tries to use a tool that the
@@ -154,6 +172,7 @@ AgentEvent = (
     | MessageComplete
     | ContextUsage
     | ErrorEvent
+    | TurnReplayed
     | ApprovalRequest
     | ApprovalResolved
 )

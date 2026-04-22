@@ -51,7 +51,14 @@ CREATE TABLE IF NOT EXISTS messages (
     input_tokens INTEGER,
     output_tokens INTEGER,
     cache_read_tokens INTEGER,
-    cache_creation_tokens INTEGER
+    cache_creation_tokens INTEGER,
+    -- Set the moment a user message is re-queued by the runner-boot
+    -- replay path after a mid-turn server restart (migration 0019).
+    -- NULL on every user row that has not been replayed (the common
+    -- case) and on every assistant row (the column is meaningless
+    -- there). Written BEFORE the replay hits the queue so a second
+    -- crash can't trigger an infinite replay loop.
+    replay_attempted_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);

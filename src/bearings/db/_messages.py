@@ -144,6 +144,75 @@ async def list_messages(
         return [dict(row) async for row in cursor]
 
 
+async def find_replayable_prompt(
+    conn: aiosqlite.Connection,
+    session_id: str,
+) -> dict[str, Any] | None:
+    """Return the orphaned user message that should be re-queued on
+    runner boot, or None.
+
+    A message is "replayable" iff:
+    - the owning session is not closed,
+    - it is the newest row in the session,
+    - its role is "user",
+    - `replay_attempted_at` is still NULL.
+
+    That combination uniquely identifies the failure mode this helper
+    exists for: the server was killed mid-turn after persisting the
+    user's prompt but before the SDK emitted an assistant reply. A
+    closed session is excluded because the user has explicitly retired
+    it; re-running a turn in a closed session would contradict that
+    intent. A non-NULL `replay_attempted_at` means a previous boot
+    already handled this orphan — whatever happened to that replay, we
+    don't try again.
+
+    Returns a dict with `id`, `content`, `created_at` on match; callers
+    mark the row via `mark_replay_attempted` BEFORE queueing the prompt
+    so a crash during replay can't trigger an infinite loop.
+    """
+    sql = (
+        "SELECT m.id, m.content, m.created_at, m.role, m.replay_attempted_at "
+        "FROM messages m "
+        "JOIN sessions s ON s.id = m.session_id "
+        "WHERE m.session_id = ? AND s.closed_at IS NULL "
+        "ORDER BY m.created_at DESC, m.id DESC LIMIT 1"
+    )
+    async with conn.execute(sql, (session_id,)) as cursor:
+        row = await cursor.fetchone()
+    if row is None:
+        return None
+    if row["role"] != "user":
+        return None
+    if row["replay_attempted_at"] is not None:
+        return None
+    return {
+        "id": row["id"],
+        "content": row["content"],
+        "created_at": row["created_at"],
+    }
+
+
+async def mark_replay_attempted(
+    conn: aiosqlite.Connection,
+    message_id: str,
+) -> bool:
+    """Stamp `replay_attempted_at = now()` on a single message row.
+
+    Used as the fail-closed guard for runner-boot replay: write the
+    mark first, then enqueue the prompt. If the process dies between
+    those two steps we lose the replay for this boot but avoid an
+    infinite-restart loop. Returns True when the row existed and was
+    updated, False otherwise — callers treat False as "nothing to
+    replay, skip."
+    """
+    cursor = await conn.execute(
+        "UPDATE messages SET replay_attempted_at = ? WHERE id = ? AND replay_attempted_at IS NULL",
+        (_now(), message_id),
+    )
+    await conn.commit()
+    return cursor.rowcount > 0
+
+
 async def insert_tool_call_start(
     conn: aiosqlite.Connection,
     *,

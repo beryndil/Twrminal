@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-04-22
+
+Fix in-flight turn loss across service restarts. When
+`bearings.service` was stopped (SIGTERM, crash, deploy) mid-turn, the
+`claude` SDK subprocess died before emitting the assistant reply. The
+user's prompt was already persisted but had no follower and no
+recovery path — the prompt was silently lost and the user had to
+retype it on reconnect. Root-caused from the 2026-04-22 incident
+where a draft-persistence / arrow-history research prompt was lost
+after a 15:48:59 UTC user-unit restart.
+
+### Added
+
+- `messages.replay_attempted_at` column (migration 0019) + schema
+  update. The column is the fail-closed guard that prevents a replay
+  loop: mark before enqueue so a crash during replay can't trigger
+  an infinite restart cycle.
+- `store.find_replayable_prompt(conn, session_id)` — returns the
+  orphan user prompt iff the session is not closed, the newest row
+  is role='user', and `replay_attempted_at IS NULL`. Closed sessions
+  are excluded because the user explicitly retired them.
+- `store.mark_replay_attempted(message_id)` — idempotent stamp. A
+  second call on the same row returns False so a race resolves to
+  single-fire semantics.
+- `TurnReplayed` wire event (`type: "turn_replayed"`). Emitted once
+  before the replayed prompt's turn so the UI can show "resuming
+  prompt from previous session" instead of silently starting a turn
+  the user did not just submit. Replays cleanly over the ring buffer
+  so a mid-replay reconnect re-renders the banner.
+- `SessionRunner._maybe_replay_orphaned_prompt()` runs once before
+  the worker's first `queue.get()`. Scan is best-effort — any
+  exception is logged and swallowed so a broken scan can never block
+  a fresh runner from serving new prompts.
+- Internal `_Replay` sentinel on the prompt queue so the worker
+  distinguishes a replayed prompt (skip the user-row insert) from a
+  fresh user submission. Prevents duplicate user rows that would
+  confuse history and break reorg/dedup.
+- `tests/test_runner_replay.py` — 12 tests pinning the contract at
+  both the store-helper level (orphan detection, idempotent mark,
+  closed-session guard) and the runner-integration level (first-boot
+  replay, no-replay on fresh session, no double-replay across
+  restarts, no duplicate user row, single `turn_replayed` event).
+
+### Fixed
+
+- Prompts submitted during a service restart are no longer lost.
+  Every in-flight turn is now recoverable exactly once per boot; a
+  second crash during the replayed turn surfaces to the user as a
+  normal stop instead of an invisible silent failure.
+
 ## [0.6.0] - 2026-04-22
 
 Directory Context System — foundation. Per-directory ground truth on

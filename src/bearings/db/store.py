@@ -29,6 +29,7 @@ from bearings.db._common import MIGRATIONS_DIR, init_db
 from bearings.db._messages import (
     append_tool_output,
     attach_tool_calls_to_message,
+    find_replayable_prompt,
     finish_tool_call,
     get_session_token_totals,
     insert_message,
@@ -37,6 +38,7 @@ from bearings.db._messages import (
     list_all_tool_calls,
     list_messages,
     list_tool_calls,
+    mark_replay_attempted,
     search_messages,
 )
 from bearings.db._reorg import (
@@ -99,6 +101,7 @@ __all__ = [
     "delete_tag_memory",
     "detach_tag",
     "detect_tool_call_group_warnings",
+    "find_replayable_prompt",
     "finish_tool_call",
     "get_checklist",
     "get_item",
@@ -122,6 +125,7 @@ __all__ = [
     "list_sessions",
     "list_tags",
     "list_tool_calls",
+    "mark_replay_attempted",
     "move_messages_tx",
     "put_tag_memory",
     "record_reorg_audit",

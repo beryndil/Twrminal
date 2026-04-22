@@ -49,6 +49,7 @@ from bearings.agent.events import (
     ToolCallEnd,
     ToolCallStart,
     ToolOutputDelta,
+    TurnReplayed,
 )
 from bearings.agent.session import AgentSession
 from bearings.db import store
@@ -82,6 +83,19 @@ class _Shutdown:
 
 
 _SHUTDOWN = _Shutdown()
+
+
+class _Replay:
+    """Queue marker for a prompt that was recovered from a prior
+    runner's unfinished turn. The difference from a plain string: the
+    user row is already in the `messages` table — `_execute_turn` must
+    NOT insert it a second time or history will show the user's prompt
+    twice after a restart-mid-turn event."""
+
+    __slots__ = ("prompt",)
+
+    def __init__(self, prompt: str) -> None:
+        self.prompt = prompt
 
 
 class _ToolOutputBuffer:
@@ -133,7 +147,7 @@ class SessionRunner:
         self.session_id = session_id
         self.agent = agent
         self.db = db
-        self._prompts: asyncio.Queue[str | _Shutdown] = asyncio.Queue()
+        self._prompts: asyncio.Queue[str | _Replay | _Shutdown] = asyncio.Queue()
         self._worker: asyncio.Task[None] | None = None
         self._subscribers: set[asyncio.Queue[_Envelope]] = set()
         self._event_log: deque[_Envelope] = deque(maxlen=RING_MAX)
@@ -350,11 +364,69 @@ class SessionRunner:
 
     # ---- worker ----------------------------------------------------
 
+    async def _maybe_replay_orphaned_prompt(self) -> None:
+        """If the DB shows a user message with no assistant reply and
+        no prior replay attempt, re-queue it as this runner's first
+        turn and emit a `TurnReplayed` event for any subscriber to
+        notice.
+
+        The failure mode this recovers from: the service was stopped
+        (SIGTERM, OOM, crash) after persisting the user's prompt but
+        before the SDK produced an assistant reply. Without this hook
+        the orphaned prompt sits in history forever with no follow-up
+        unless the user types it again — and the original ask loses
+        its wall-clock urgency ("I came back and nothing happened").
+
+        Best-effort: any DB failure is logged and swallowed. A broken
+        replay scan must never block a fresh runner from accepting new
+        user prompts.
+        """
+        try:
+            orphan = await store.find_replayable_prompt(self.db, self.session_id)
+        except Exception:
+            log.exception(
+                "runner %s: replay scan failed; continuing without replay",
+                self.session_id,
+            )
+            return
+        if orphan is None:
+            return
+        try:
+            marked = await store.mark_replay_attempted(self.db, orphan["id"])
+        except Exception:
+            log.exception(
+                "runner %s: replay mark failed; skipping replay to avoid loop",
+                self.session_id,
+            )
+            return
+        if not marked:
+            # Row vanished or another actor marked it first — treat as
+            # "handled elsewhere" and do nothing.
+            return
+        await self._emit_event(TurnReplayed(session_id=self.session_id, message_id=orphan["id"]))
+        await self._prompts.put(_Replay(orphan["content"]))
+        log.info(
+            "runner %s: replayed orphaned user prompt id=%s",
+            self.session_id,
+            orphan["id"],
+        )
+
     async def _run_forever(self) -> None:
+        # Recover orphaned prompts from prior-crash / prior-restart.
+        # Must run before the first `get()` so the replayed prompt is
+        # the first turn this worker executes — any real user prompt
+        # submitted after reconnect naturally queues behind it.
+        await self._maybe_replay_orphaned_prompt()
         while True:
             item = await self._prompts.get()
             if isinstance(item, _Shutdown):
                 return
+            if isinstance(item, _Replay):
+                prompt = item.prompt
+                persist_user = False
+            else:
+                prompt = item
+                persist_user = True
             self._status = "running"
             # A turn is live — not quiet regardless of subscriber count.
             # Clear here rather than spread the condition through every
@@ -362,7 +434,7 @@ class SessionRunner:
             self._quiet_since = None
             self._stop_requested = False
             try:
-                await self._execute_turn(item)
+                await self._execute_turn(prompt, persist_user=persist_user)
             except Exception as exc:
                 log.exception("runner %s: turn failed", self.session_id)
                 await self._emit_event(ErrorEvent(session_id=self.session_id, message=str(exc)))
@@ -374,13 +446,22 @@ class SessionRunner:
                 if not self._subscribers:
                     self._quiet_since = time.monotonic()
 
-    async def _execute_turn(self, prompt: str) -> None:  # noqa: C901
+    async def _execute_turn(self, prompt: str, *, persist_user: bool = True) -> None:  # noqa: C901
         """Run one agent turn end-to-end. Mirrors the pre-runner
         ws_agent loop: persist user message, stream agent events,
         persist assistant turn + tool calls as they complete. Events
-        are fanned out to subscribers via `_emit_event`."""
-        await store.insert_message(self.db, session_id=self.session_id, role="user", content=prompt)
-        metrics.messages_persisted.labels(role="user").inc()
+        are fanned out to subscribers via `_emit_event`.
+
+        `persist_user=False` is used by the runner-boot replay path
+        when recovering an orphaned prompt: the user row is already in
+        `messages` from the original (interrupted) turn, so inserting
+        again would duplicate history.
+        """
+        if persist_user:
+            await store.insert_message(
+                self.db, session_id=self.session_id, role="user", content=prompt
+            )
+            metrics.messages_persisted.labels(role="user").inc()
         # Intentionally not emitting a `user_message` event here. The
         # frontend pushes the user message optimistically on submit,
         # and a second client that subscribes while the turn is in
