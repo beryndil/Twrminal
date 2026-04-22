@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.29] - 2026-04-21
+
+### Changed
+
+- ContextMeter flash threshold retuned. v0.3.28 flashed past 32K
+  tokens, which overstated Claude's long-context behavior — needle-
+  in-a-haystack recall on Sonnet 4.x stays strong well past 100K,
+  and Anthropic's own auto-compact default fires at ~80% of the
+  window (≈160K). A 32K flash triggered on routine sessions and
+  eroded the signal.
+- Flash now rides on the existing red percentage band instead of a
+  raw token count: ≥90% when auto-compact is on (≈180K on a 200K
+  window), ≥80% when auto-compact is off (≈160K). That boundary
+  already represents "auto-compact is imminent or the hard cap is
+  right there," so the flash is "don't ignore this, it's been red"
+  rather than a made-up degradation claim.
+- Tooltip text updated: the degraded-state copy no longer claims
+  recall degrades past 32K. Red-band tooltips now read
+  `"Auto-compact imminent — checkpoint or fork now."` (compact on) or
+  `"Near hard cap with no auto-compact safety net — act now."` (off).
+
+### Removed
+
+- `CONTEXT_DEGRADATION_THRESHOLD_TOKENS` constant in
+  `ContextMeter.svelte`.
+
 ## [0.3.28] - 2026-04-21
 
 ### Changed

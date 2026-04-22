@@ -624,6 +624,26 @@ the historical checklists as-is.
   undo-window length (30s default), Slice-6 priority (ship 1–5 first
   or put 6 on the critical path), tool-call-group warn-vs-refuse.
 
+## v0.3.29 — shipped
+
+Retune ContextMeter flash threshold. Raised immediately after v0.3.28
+shipped: the 32K raw-token threshold baked in v0.3.28 overstated
+Claude's long-context behavior (Sonnet 4.x holds up well past 100K;
+Anthropic's own auto-compact fires around 160K). A 32K flash would
+fire on routine Claude Code sessions, which is exactly the "the
+meter is always screaming, ignore it" failure the flash was meant
+to avoid. Retied flash to the existing red percentage band.
+
+- [x] Dropped `CONTEXT_DEGRADATION_THRESHOLD_TOKENS` constant.
+- [x] Flash now fires at ≥90% (auto-compact on) or ≥80% (off),
+  matching the red color band exactly — one boundary, one rule.
+- [x] Tooltip reworked to stop claiming "recall degrades past 32K"
+  and instead describe what the red band actually means:
+  auto-compact imminent (compact on) or hard-cap proximity (off).
+- [x] Tests rewritten: flash edge at 89/90% on, 79/80% off, plus a
+  regression guard that 50K tokens at 25% does NOT flash (would
+  have tripped the old rule).
+
 ## v0.3.28 — shipped
 
 ContextMeter pill now shows the raw context-token count and flashes

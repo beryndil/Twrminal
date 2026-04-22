@@ -22,21 +22,14 @@
    * sees "decide now" territory at 50% instead of 75% — without the
    * compaction safety net, the cliff is closer.
    *
-   * On top of the percentage bands, a hard 32K-token threshold forces a
-   * flashing red pill. Empirically, Claude's recall degrades sharply
-   * once the current window exceeds ~32K tokens regardless of the
-   * nominal 200K cap — the percentage can still read 17% while real
-   * references are already drifting. The flash surfaces that
-   * degradation early enough for Dave to checkpoint / fork before the
-   * session becomes unreliable.
+   * Red band pills also flash (via `motion-safe:animate-flash-red`) so
+   * the critical zone doesn't blend into "been red for a while,
+   * already filtered it out." The flash fires at the same boundary as
+   * the red color itself — no separate threshold — because the red
+   * band already represents "auto-compact is imminent or the hard cap
+   * is right there." Reduced-motion users get the solid red band
+   * without the pulse.
    */
-
-  /** Empirical recall-degradation threshold. Claude's usable context
-   * gets soft past this mark even when the nominal window is far
-   * larger, so we warn independent of the percentage bands. Hardcoded
-   * for now; a future slice can lift this into config.toml for
-   * per-model tuning. */
-  const CONTEXT_DEGRADATION_THRESHOLD_TOKENS = 32_000;
 
   type Props = {
     /** Null while no context snapshot has been captured for this
@@ -60,6 +53,13 @@
     return `${m < 100 ? m.toFixed(1) : Math.round(m)}M`;
   }
 
+  /** Resolve the red-band cutoff in percentage points. Mirrors the
+   * thresholds encoded in `bandClass()` so the flash rule and the red
+   * color stay in lockstep — changing one must change the other. */
+  function redBandCutoff(autoCompact: boolean): number {
+    return autoCompact ? 90 : 80;
+  }
+
   /** Resolve the threshold band for a given percentage + auto-compact
    * flag. Returns a Tailwind class set (text + background) for the
    * pill. Shifted one band earlier when auto-compact is off because
@@ -74,27 +74,26 @@
 
   const pill = $derived.by(() => {
     if (!context) return null;
-    const degraded = context.totalTokens >= CONTEXT_DEGRADATION_THRESHOLD_TOKENS;
-    // When past the 32K threshold, force the red band and layer on the
-    // flash animation (motion-safe so reduced-motion users get solid
-    // red without the pulse). The percentage-based band is superseded
-    // because "you've already lost recall" is more urgent than "you're
-    // 17% of the way to auto-compact".
-    const baseClass = degraded
-      ? 'text-red-100 bg-red-900/60 motion-safe:animate-flash-red'
-      : bandClass(context.percentage, context.isAutoCompactEnabled);
-    const title = degraded
-      ? `Context: ${formatTokens(context.totalTokens)} / ` +
-        `${formatTokens(context.maxTokens)} tokens ` +
-        `(${context.percentage.toFixed(1)}%). ` +
-        `Past 32K — recall degrades beyond this point. ` +
-        `Auto-compact ${context.isAutoCompactEnabled ? 'on' : 'off'}.`
-      : `Context: ${formatTokens(context.totalTokens)} / ` +
-        `${formatTokens(context.maxTokens)} tokens ` +
-        `(${context.percentage.toFixed(1)}%). ` +
-        `Auto-compact ${context.isAutoCompactEnabled ? 'on' : 'off'}.`;
+    const inRedBand = context.percentage >= redBandCutoff(context.isAutoCompactEnabled);
+    // Flash only in the red band. `motion-safe:` keeps reduced-motion
+    // users on the solid color. Appending rather than overriding so
+    // `bandClass` stays the single source of truth for pill color.
+    const classes =
+      bandClass(context.percentage, context.isAutoCompactEnabled) +
+      (inRedBand ? ' motion-safe:animate-flash-red' : '');
+    const critical = inRedBand
+      ? context.isAutoCompactEnabled
+        ? ' Auto-compact imminent — checkpoint or fork now.'
+        : ' Near hard cap with no auto-compact safety net — act now.'
+      : '';
+    const title =
+      `Context: ${formatTokens(context.totalTokens)} / ` +
+      `${formatTokens(context.maxTokens)} tokens ` +
+      `(${context.percentage.toFixed(1)}%). ` +
+      `Auto-compact ${context.isAutoCompactEnabled ? 'on' : 'off'}.` +
+      critical;
     return {
-      class: baseClass,
+      class: classes,
       tokens: formatTokens(context.totalTokens),
       percent: `${Math.round(context.percentage)}%`,
       title

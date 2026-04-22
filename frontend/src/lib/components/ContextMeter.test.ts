@@ -27,7 +27,7 @@ describe('ContextMeter', () => {
     expect(container.textContent?.trim()).toBe('');
   });
 
-  it('renders token count + percentage under the degradation threshold', () => {
+  it('renders token count + percentage in the pill', () => {
     const { getByText } = render(ContextMeter, {
       props: { context: ctx({ totalTokens: 12_000, percentage: 6 }) }
     });
@@ -35,31 +35,64 @@ describe('ContextMeter', () => {
     expect(getByText(/ctx 12\.0k \(6%\)/)).toBeTruthy();
   });
 
-  it('does not flash when tokens are below 32K even if percentage is moderate', () => {
+  it('does not flash below the red band (auto-compact on, 89%)', () => {
     const { container } = render(ContextMeter, {
-      props: { context: ctx({ totalTokens: 31_999, percentage: 16 }) }
+      props: { context: ctx({ totalTokens: 178_000, percentage: 89 }) }
+    });
+    const pill = container.querySelector('span');
+    expect(pill?.className).not.toContain('animate-flash-red');
+    // Still orange at 89%.
+    expect(pill?.className).toContain('bg-orange-900/60');
+  });
+
+  it('flashes at the red-band boundary (auto-compact on, 90%)', () => {
+    const { container } = render(ContextMeter, {
+      props: { context: ctx({ totalTokens: 180_000, percentage: 90 }) }
+    });
+    const pill = container.querySelector('span');
+    expect(pill?.className).toContain('motion-safe:animate-flash-red');
+    expect(pill?.className).toContain('bg-red-900/60');
+    expect(pill?.getAttribute('title') ?? '').toContain('Auto-compact imminent');
+  });
+
+  it('flashes earlier when auto-compact is off (80% boundary)', () => {
+    const { container } = render(ContextMeter, {
+      props: {
+        context: ctx({
+          totalTokens: 160_000,
+          percentage: 80,
+          isAutoCompactEnabled: false
+        })
+      }
+    });
+    const pill = container.querySelector('span');
+    expect(pill?.className).toContain('motion-safe:animate-flash-red');
+    expect(pill?.className).toContain('bg-red-900/60');
+    expect(pill?.getAttribute('title') ?? '').toContain('hard cap');
+  });
+
+  it('does not flash at 79% with auto-compact off', () => {
+    const { container } = render(ContextMeter, {
+      props: {
+        context: ctx({
+          totalTokens: 158_000,
+          percentage: 79,
+          isAutoCompactEnabled: false
+        })
+      }
     });
     const pill = container.querySelector('span');
     expect(pill?.className).not.toContain('animate-flash-red');
   });
 
-  it('flashes red at exactly 32K tokens', () => {
+  it('does not flash at low token counts regardless of raw size', () => {
+    // Regression guard: a previous (wrong) implementation flashed at a
+    // hardcoded 32K tokens even when the window was nowhere near full.
+    // 50k tokens on a 200K window is 25% — nowhere near the red band.
     const { container } = render(ContextMeter, {
-      props: { context: ctx({ totalTokens: 32_000, percentage: 16 }) }
+      props: { context: ctx({ totalTokens: 50_000, percentage: 25 }) }
     });
     const pill = container.querySelector('span');
-    expect(pill?.className).toContain('motion-safe:animate-flash-red');
-    expect(pill?.className).toContain('bg-red-900/60');
-    expect(pill?.getAttribute('title') ?? '').toContain('Past 32K');
-  });
-
-  it('flashes red well past 32K and overrides the percentage band', () => {
-    // 45% on its own would normally be amber; the 32K override forces red.
-    const { container } = render(ContextMeter, {
-      props: { context: ctx({ totalTokens: 90_000, percentage: 45 }) }
-    });
-    const pill = container.querySelector('span');
-    expect(pill?.className).toContain('motion-safe:animate-flash-red');
-    expect(pill?.className).not.toContain('bg-amber-900/60');
+    expect(pill?.className).not.toContain('animate-flash-red');
   });
 });
