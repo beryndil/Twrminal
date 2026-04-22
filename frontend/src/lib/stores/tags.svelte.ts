@@ -1,31 +1,130 @@
 import * as api from '$lib/api';
 
+/** localStorage key for the collapsed/expanded state of the whole tag
+ * filter panel (migration 0021 / v0.2.14). Expanded on first run per
+ * Daisy; the value lives in the browser and isn't synced to the DB. */
+const COLLAPSED_KEY = 'bearings.tagFilterPanel.collapsed';
+
+function readCollapsed(): boolean {
+  // Guard against SSR / jsdom: both set `globalThis` but jsdom's
+  // localStorage is real, while SvelteKit SSR has none. Either way,
+  // a missing or malformed value means "expanded on first run."
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeCollapsed(value: boolean): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(COLLAPSED_KEY, value ? '1' : '0');
+  } catch {
+    // Quota exhausted / private-mode — the collapse preference is
+    // cosmetic, not worth surfacing an error.
+  }
+}
+
 class TagStore {
   list = $state<api.Tag[]>([]);
   loading = $state(false);
   error = $state<string | null>(null);
-  /** Tag ids selected as a filter on the sidebar session list. */
+  /** General-group tag ids selected as a filter on the sidebar session
+   * list. Multi-select follows Finder semantics: a plain click replaces
+   * the selection with the clicked id (or clears it if that was the
+   * only selected id); shift-click toggles the clicked id inside the
+   * current selection (add if absent, remove if present). Combination
+   * inside this list is always AND — a session must carry every
+   * selected general tag to match. Combines with `selectedSeverity`
+   * via AND between the two axes. */
   selected = $state<number[]>([]);
-  /** Combination rule for `selected` — any-of vs all-of. */
-  mode = $state<'any' | 'all'>('any');
+  /** Severity-group tag ids selected as a filter. Separate from
+   * `selected` because the UI surfaces them in their own section
+   * (below the HR divider) and the server takes them as a separate
+   * query param. Combination inside this list is OR (a session has
+   * exactly one severity — matching any selected severity is what the
+   * user wants). Empty = no severity filter. */
+  selectedSeverity = $state<number[]>([]);
+  /** Whether the entire tag-filter panel is collapsed. Persisted to
+   * localStorage — Daisy wants the state to survive reloads. Expanded
+   * on first run. */
+  panelCollapsed = $state<boolean>(readCollapsed());
+
+  /** Derived: tags in the user-editable general group. Severity tags
+   * are surfaced separately so they don't clutter the primary list. */
+  generalList = $derived(this.list.filter((t) => t.tag_group !== 'severity'));
+  /** Derived: tags in the severity group, sorted by the seed order
+   * (Blocker → Critical → Medium → Low → Quality of Life). */
+  severityList = $derived(
+    this.list
+      .filter((t) => t.tag_group === 'severity')
+      .slice()
+      .sort((a, b) => a.sort_order - b.sort_order)
+  );
 
   hasFilter = $derived(this.selected.length > 0);
+  /** True when at least one severity filter is active. Kept as its own
+   * derived so the sidebar can show the severity-chip clear button
+   * independently of the general-tag chip. */
+  hasSeverityFilter = $derived(this.selectedSeverity.length > 0);
+  /** Combined any-filter-active signal — drives things like the boot-
+   * time refresh key. */
+  hasAnyFilter = $derived(this.hasFilter || this.hasSeverityFilter);
 
   filter = $derived<api.SessionFilter>({
     tags: this.selected.length > 0 ? [...this.selected] : undefined,
-    mode: this.mode
+    severityTags:
+      this.selectedSeverity.length > 0 ? [...this.selectedSeverity] : undefined
   });
 
-  toggleSelected(id: number): void {
-    if (this.selected.includes(id)) {
-      this.selected = this.selected.filter((x) => x !== id);
-    } else {
-      this.selected = [...this.selected, id];
+  /** Finder/Explorer click semantics for the general tag list. Without
+   * `additive` (plain click): if this id is the sole current selection
+   * we clear it — toggle-off on solo re-click — otherwise we replace
+   * the selection with just this id. With `additive` (shift-click):
+   * toggle this id inside the current selection (add if absent, remove
+   * if present). Either way the caller doesn't have to think about
+   * previous state. */
+  selectGeneral(id: number, opts: { additive?: boolean } = {}): void {
+    if (opts.additive) {
+      this.selected = this.selected.includes(id)
+        ? this.selected.filter((x) => x !== id)
+        : [...this.selected, id];
+      return;
     }
+    const solo = this.selected.length === 1 && this.selected[0] === id;
+    this.selected = solo ? [] : [id];
+  }
+
+  /** Same Finder rules for the severity list — regular click is a
+   * single-select, shift-click is additive. Kept as a separate method
+   * from `selectGeneral` so the two axes stay independent (clicking a
+   * severity must not touch the general selection and vice versa). */
+  selectSeverity(id: number, opts: { additive?: boolean } = {}): void {
+    if (opts.additive) {
+      this.selectedSeverity = this.selectedSeverity.includes(id)
+        ? this.selectedSeverity.filter((x) => x !== id)
+        : [...this.selectedSeverity, id];
+      return;
+    }
+    const solo =
+      this.selectedSeverity.length === 1 && this.selectedSeverity[0] === id;
+    this.selectedSeverity = solo ? [] : [id];
   }
 
   clearSelection(): void {
     this.selected = [];
+  }
+
+  clearSeveritySelection(): void {
+    this.selectedSeverity = [];
+  }
+
+  /** Toggle the collapsed state of the whole panel and persist it. */
+  togglePanel(): void {
+    this.panelCollapsed = !this.panelCollapsed;
+    writeCollapsed(this.panelCollapsed);
   }
 
   async refresh(): Promise<void> {
@@ -72,6 +171,11 @@ class TagStore {
     try {
       await api.deleteTag(id);
       this.list = this.list.filter((t) => t.id !== id);
+      // Drop any lingering filter selection for the deleted tag in
+      // both axes — otherwise the sidebar would keep a phantom id in
+      // the filter payload and the server would silently ignore it.
+      this.selected = this.selected.filter((x) => x !== id);
+      this.selectedSeverity = this.selectedSeverity.filter((x) => x !== id);
       return true;
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);

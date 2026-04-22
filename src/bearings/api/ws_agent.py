@@ -49,11 +49,20 @@ router = APIRouter(tags=["agent-ws"])
 CODE_UNAUTHORIZED = 4401
 CODE_SESSION_NOT_FOUND = 4404
 # v0.4.0: a client tried to attach the agent loop to a non-chat
-# session (checklist, etc.). The runner can't spawn on these, and
-# there's no recovery — the UI should have rendered a ChecklistView
-# for the session instead of connecting the WS. 4400 = generic bad
-# protocol input; paired with an explicit `reason` string.
+# session. Originally every non-chat kind (checklist, etc.) rejected
+# here; v0.5.2 opened checklist sessions to the agent loop so the
+# ChecklistView can host an embedded chat about the whole list. This
+# code stays in the protocol for future session kinds that genuinely
+# can't run an agent. 4400 = generic bad protocol input; paired with an
+# explicit `reason` string.
 CODE_SESSION_KIND_UNSUPPORTED = 4400
+
+# Session kinds that can spawn an agent runner. Checklist sessions
+# joined this set in v0.5.2 — the prompt assembler injects a
+# `checklist_overview` layer so the agent sees the list's structure on
+# every turn, and the ChecklistView frontend renders a compact chat
+# panel above the list body.
+_RUNNABLE_KINDS = {"chat", "checklist"}
 
 
 async def _build_runner(app: Any, session_id: str) -> SessionRunner:
@@ -64,14 +73,15 @@ async def _build_runner(app: Any, session_id: str) -> SessionRunner:
     conn = app.state.db
     row = await store.get_session(conn, session_id)
     assert row is not None, "caller must verify the session exists first"
-    # Defense in depth: the WS handler already rejects non-chat
-    # sessions before reaching the runner factory. If a future caller
-    # (imports, migrations, tests) skips that gate, fail loudly here
-    # rather than spawning an SDK subprocess that has nothing to do.
-    if row.get("kind", "chat") != "chat":
+    # Defense in depth: the WS handler already rejects unrunnable
+    # session kinds before reaching the runner factory. If a future
+    # caller (imports, migrations, tests) skips that gate, fail loudly
+    # here rather than spawning an SDK subprocess that has nothing to
+    # do.
+    if row.get("kind", "chat") not in _RUNNABLE_KINDS:
         raise ValueError(
             f"cannot build runner for session kind={row.get('kind')!r}; "
-            "only 'chat' sessions are runnable"
+            f"runnable kinds: {sorted(_RUNNABLE_KINDS)!r}"
         )
     agent = AgentSession(
         session_id,
@@ -160,9 +170,10 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:
     if row is None:
         await websocket.close(code=CODE_SESSION_NOT_FOUND)
         return
-    if row.get("kind", "chat") != "chat":
-        # Checklist sessions don't run an agent loop. Close loud so
-        # the bug is obvious if a frontend ever tries to connect here.
+    if row.get("kind", "chat") not in _RUNNABLE_KINDS:
+        # Future non-runnable kinds land here. Close loud so the bug
+        # is obvious if a frontend ever tries to connect to a kind
+        # whose UI should be local-only.
         await websocket.close(
             code=CODE_SESSION_KIND_UNSUPPORTED,
             reason="session kind does not support agent attachment",

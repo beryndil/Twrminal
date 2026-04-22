@@ -37,6 +37,7 @@ function session(overrides: Partial<Session> = {}): Session {
     checklist_item_id: null,
     last_completed_at: null,
     last_viewed_at: null,
+    tag_ids: [],
     ...overrides
   };
 }
@@ -74,6 +75,14 @@ const EMPTY_CHECKLIST = {
 beforeEach(() => {
   sessions.list = [session()];
   sessions.selectedId = 'sess-cl';
+  // v0.5.2: ChecklistView embeds ChecklistChat, which calls
+  // `agent.connect(sid)` on mount. `connect` internally fetches the
+  // session row via `conversation.load` — left unmocked, it pulls from
+  // the per-test `queueResponses` queue and fails with "unexpected
+  // fetch call". Stub it by default; tests that need to observe the
+  // call (paired-chat spawn, paired-chat link click) still re-spy and
+  // assert on that spy.
+  vi.spyOn(agent, 'connect').mockResolvedValue();
 });
 
 describe('ChecklistView', () => {
@@ -185,7 +194,8 @@ const PAIRED_CHAT_SESSION: Session = {
   kind: 'chat',
   checklist_item_id: 7,
   last_completed_at: null,
-  last_viewed_at: null
+  last_viewed_at: null,
+  tag_ids: []
 };
 
 describe('ChecklistView paired-chat affordance', () => {

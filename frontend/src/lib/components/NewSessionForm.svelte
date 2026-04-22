@@ -139,12 +139,10 @@
     kind = 'chat';
     for (const id of ids) tags.bumpCount(id, +1);
     open = false;
-    // Checklist sessions don't run an agent loop — skip the WS
-    // connect so the runner guard doesn't close the socket with
-    // a kind-unsupported error.
-    if (createdKind === 'chat') {
-      await agent.connect(created.id);
-    }
+    // v0.5.2: both kinds connect — ChecklistView's embedded chat
+    // panel relies on the agent WS being attached to the checklist
+    // session for its overview layer to fire.
+    await agent.connect(created.id);
   }
 </script>
 

@@ -43,6 +43,7 @@ function sess(overrides: Partial<Session> = {}): Session {
     checklist_item_id: null,
     last_completed_at: null,
     last_viewed_at: null,
+    tag_ids: [],
     ...overrides
   };
 }
@@ -367,7 +368,10 @@ describe('sessions.softRefresh', () => {
   });
 
   it('forwards the active filter to the server fetch', async () => {
-    sessions.filter = { tags: [7, 9], mode: 'all' };
+    // v0.2.15 removed the `mode` field from SessionFilter — the API
+    // client hardcodes `mode=all` on the wire whenever `tags` is set,
+    // so the assertion below still expects it in the query string.
+    sessions.filter = { tags: [7, 9] };
     sessions.list = [];
     const capturedUrls: string[] = [];
     vi.stubGlobal(

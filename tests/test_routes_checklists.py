@@ -11,9 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
 from fastapi.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
 
 
 def _default_tag(client: TestClient) -> int:
@@ -244,15 +242,18 @@ def test_reorg_split_rejects_checklist_source(client: TestClient) -> None:
     assert resp.status_code == 400
 
 
-def test_ws_rejects_checklist_session(client: TestClient) -> None:
-    """WS handler must close 4400 when a client tries to attach the
-    agent loop to a checklist session. Dovetails with the runner-
-    factory guard in `_build_runner` — belt + suspenders."""
+def test_ws_accepts_checklist_session(client: TestClient, mock_agent_stream: None) -> None:
+    """v0.5.2: checklist sessions joined the runnable set so the
+    embedded chat panel in ChecklistView can talk to the agent about
+    the list. A successful handshake is the first `runner_status`
+    frame coming back instead of a close 4400."""
+    import json
+
     row = _create_checklist(client)
-    with pytest.raises(WebSocketDisconnect) as excinfo:
-        with client.websocket_connect(f"/ws/sessions/{row['id']}") as ws:
-            ws.receive_text()
-    assert excinfo.value.code == 4400
+    with client.websocket_connect(f"/ws/sessions/{row['id']}") as ws:
+        frame = json.loads(ws.receive_text())
+        assert frame["type"] == "runner_status"
+        assert frame["session_id"] == row["id"]
 
 
 def test_reorg_merge_rejects_checklist_either_side(client: TestClient) -> None:

@@ -30,6 +30,7 @@
   import { checklists } from '$lib/stores/checklists.svelte';
   import { sessions } from '$lib/stores/sessions.svelte';
   import { agent } from '$lib/agent.svelte';
+  import ChecklistChat from '$lib/components/ChecklistChat.svelte';
 
   const selected = $derived(sessions.selected);
 
@@ -243,6 +244,14 @@
       {/if}
     </h2>
   </header>
+
+  <!-- v0.5.2: inline chat about the whole list. Mounted only when a
+       checklist is selected so the agent WS never opens for a
+       transient null selection. Compact by design — height-capped so
+       the checklist body stays reachable below. -->
+  {#if selected?.kind === 'checklist'}
+    <ChecklistChat />
+  {/if}
 
   {#if checklists.loading}
     <p class="px-4 py-6 text-sm text-slate-400">Loading checklist…</p>

@@ -88,6 +88,13 @@ class SessionOut(BaseModel):
     # last_completed_at is non-null and either last_viewed_at is null
     # or precedes it.
     last_viewed_at: str | None = None
+    # v0.2.14 / migration 0021: every tag_id attached to this session,
+    # in no particular order. Populated from a GROUP_CONCAT subquery on
+    # `session_tags` so the sidebar can render the medallion row (shield
+    # for the severity tag, tag icons for each general tag) without an
+    # N+1 per-row fetch. Empty list when the session has no tags —
+    # shouldn't happen post-0021 but tolerates pre-0021 snapshots.
+    tag_ids: list[int] = []
 
 
 class MessageOut(BaseModel):
@@ -144,6 +151,14 @@ class SearchHit(BaseModel):
     created_at: str
 
 
+# Tag grouping dimension (migration 0021). 'general' = the user-
+# configurable tag set; 'severity' = the Blocker/Critical/Medium/Low/
+# QoL urgency ladder every session carries. Declared as a Literal so a
+# typo in the request body surfaces as a 422 at the boundary instead
+# of landing in the DB and tripping the CHECK constraint.
+TagGroup = Literal["general", "severity"]
+
+
 class TagCreate(BaseModel):
     name: str
     color: str | None = None
@@ -151,6 +166,10 @@ class TagCreate(BaseModel):
     sort_order: int = 0
     default_working_dir: str | None = None
     default_model: str | None = None
+    # Defaults to 'general' so existing callers (Settings → New tag,
+    # tests, tooling) keep working without change. Set 'severity' to
+    # land the tag in the second filter section.
+    tag_group: TagGroup = "general"
 
 
 class TagUpdate(BaseModel):
@@ -163,6 +182,10 @@ class TagUpdate(BaseModel):
     sort_order: int | None = None
     default_working_dir: str | None = None
     default_model: str | None = None
+    # Moving a tag between groups is allowed — a user who renamed their
+    # existing "Blocker" tag before migration 0021 landed can promote
+    # it into the severity group with a single PATCH. Unset = unchanged.
+    tag_group: TagGroup | None = None
 
 
 class TagOut(BaseModel):
@@ -178,6 +201,10 @@ class TagOut(BaseModel):
     open_session_count: int = 0
     default_working_dir: str | None = None
     default_model: str | None = None
+    # Filter-panel section the tag renders in (migration 0021). The
+    # frontend groups tags client-side off this field and paints the
+    # severity section below an HR divider with no Any/All toggle.
+    tag_group: TagGroup = "general"
 
 
 class TagMemoryPut(BaseModel):

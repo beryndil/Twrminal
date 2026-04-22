@@ -462,7 +462,11 @@ def test_spawn_paired_chat_inherits_parent_tags(client: TestClient) -> None:
     assert resp.status_code == 201
     chat_id = resp.json()["id"]
     chat_tags = client.get(f"/api/sessions/{chat_id}/tags").json()
-    assert [t["id"] for t in chat_tags] == [tag_a]
+    # Parent carries the explicit tag plus its auto-attached severity
+    # default (migration 0021). Both are inherited. Scope the assertion
+    # to general tags so the severity default doesn't make it brittle.
+    general = [t for t in chat_tags if t["tag_group"] == "general"]
+    assert [t["id"] for t in general] == [tag_a]
 
 
 def test_spawn_paired_chat_is_idempotent(client: TestClient) -> None:

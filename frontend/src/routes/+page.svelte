@@ -36,10 +36,11 @@
     // sub-second time. On connect / reconnect the WS fires one
     // softRefresh so nothing missed while the socket was down escapes.
     sessionsWs.connect();
-    // Checklist sessions don't run an agent loop — skip the WS
-    // connect so the runner guard doesn't close the socket and the
-    // UI doesn't paint a spurious connection error.
-    if (sessions.selectedId && sessions.selected?.kind !== 'checklist') {
+    // v0.5.2: checklist sessions also connect — the ChecklistView
+    // hosts an embedded chat panel and the backend runner accepts
+    // kind='checklist' since the `checklist_overview` prompt layer
+    // landed. No more kind-skip; both kinds take the same boot path.
+    if (sessions.selectedId) {
       await agent.connect(sessions.selectedId);
     }
   }

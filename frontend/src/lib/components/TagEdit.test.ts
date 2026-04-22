@@ -22,6 +22,7 @@ function tag(overrides: Partial<Tag> = {}): Tag {
     open_session_count: 2,
     default_working_dir: null,
     default_model: null,
+    tag_group: 'general',
     ...overrides
   };
 }

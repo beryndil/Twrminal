@@ -18,7 +18,7 @@ from bearings.db._common import _now
 
 TAG_COLS_WITH_COUNT = (
     "t.id, t.name, t.color, t.pinned, t.sort_order, t.created_at, "
-    "t.default_working_dir, t.default_model, "
+    "t.default_working_dir, t.default_model, t.tag_group, "
     "(SELECT COUNT(*) FROM session_tags st WHERE st.tag_id = t.id) "
     "AS session_count, "
     # Open-only partition of session_count. The sidebar shows this in
@@ -34,6 +34,15 @@ TAG_COLS_WITH_COUNT = (
 # order used for sidebar rendering and tag-memory precedence.
 TAG_ORDER = "t.pinned DESC, t.sort_order ASC, t.id ASC"
 
+# Name of the tag that auto-attaches to every newly-created session
+# that didn't explicitly request a severity (migration 0021 / v0.8.x
+# design). Looked up by name so the user can recolor / reorder / rename
+# any of the seeded severity tags without a code change — but renaming
+# this one specifically breaks the auto-attach, which is an intentional
+# part of the "physical law, not DB constraint" design: if the user
+# kills the default, new sessions simply land without a severity.
+_DEFAULT_SEVERITY_NAME = "Low"
+
 
 async def create_tag(
     conn: aiosqlite.Connection,
@@ -44,12 +53,13 @@ async def create_tag(
     sort_order: int = 0,
     default_working_dir: str | None = None,
     default_model: str | None = None,
+    tag_group: str = "general",
 ) -> dict[str, Any]:
     cursor = await conn.execute(
         "INSERT INTO tags "
         "(name, color, pinned, sort_order, created_at, "
-        "default_working_dir, default_model) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "default_working_dir, default_model, tag_group) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             name,
             color,
@@ -58,6 +68,7 @@ async def create_tag(
             _now(),
             default_working_dir,
             default_model,
+            tag_group,
         ),
     )
     await conn.commit()
@@ -92,8 +103,10 @@ async def update_tag(
 ) -> dict[str, Any] | None:
     """Apply a partial update. `fields` maps column name → new value.
     Only `name`, `color`, `pinned`, `sort_order`, `default_working_dir`,
-    and `default_model` are accepted. Returns the refreshed row, or
-    None if the tag doesn't exist."""
+    `default_model`, and `tag_group` are accepted. Returns the refreshed
+    row, or None if the tag doesn't exist. `tag_group` is CHECK-
+    constrained at the DB layer, so an invalid value (e.g. 'urgent')
+    raises IntegrityError rather than landing silently."""
     allowed = {
         "name",
         "color",
@@ -101,6 +114,7 @@ async def update_tag(
         "sort_order",
         "default_working_dir",
         "default_model",
+        "tag_group",
     }
     filtered = {k: v for k, v in fields.items() if k in allowed}
     if "pinned" in filtered:
@@ -128,14 +142,36 @@ async def delete_tag(conn: aiosqlite.Connection, tag_id: int) -> bool:
 async def attach_tag(conn: aiosqlite.Connection, session_id: str, tag_id: int) -> bool:
     """Attach a tag to a session. Idempotent — re-attaching is a no-op.
     Returns True if the session and tag both exist (so the attach is
-    semantically valid), False if either is missing."""
+    semantically valid), False if either is missing.
+
+    Severity-group invariant (migration 0021): a session carries at
+    most one severity tag. Attaching a tag whose `tag_group='severity'`
+    first detaches every other severity tag from the session inside
+    the same commit, so "switch from Critical to Blocker" is one round
+    trip and never transiently exposes two severities. Attaching the
+    same severity tag twice is an idempotent no-op (the INSERT OR
+    IGNORE preserves the existing row)."""
     session_row = await conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,))
     if await session_row.fetchone() is None:
         return False
-    tag_row = await conn.execute("SELECT 1 FROM tags WHERE id = ?", (tag_id,))
-    if await tag_row.fetchone() is None:
+    tag_row = await conn.execute("SELECT tag_group FROM tags WHERE id = ?", (tag_id,))
+    tag_hit = await tag_row.fetchone()
+    if tag_hit is None:
         return False
     now = _now()
+    if tag_hit["tag_group"] == "severity":
+        # Swap semantics: detach any other severity tag this session
+        # already has before attaching the new one. The self-detach
+        # (when tag_id is the currently-attached severity) is a no-op
+        # thanks to the `tag_id != ?` clause, which also means a
+        # re-attach of the same severity tag skips the delete entirely
+        # and falls through to the idempotent INSERT OR IGNORE below.
+        await conn.execute(
+            "DELETE FROM session_tags WHERE session_id = ? "
+            "AND tag_id != ? "
+            "AND tag_id IN (SELECT id FROM tags WHERE tag_group = 'severity')",
+            (session_id, tag_id),
+        )
     await conn.execute(
         "INSERT OR IGNORE INTO session_tags (session_id, tag_id, created_at) VALUES (?, ?, ?)",
         (session_id, tag_id, now),
@@ -145,6 +181,56 @@ async def attach_tag(conn: aiosqlite.Connection, session_id: str, tag_id: int) -
     await conn.execute("UPDATE sessions SET updated_at = ? WHERE id = ?", (now, session_id))
     await conn.commit()
     return True
+
+
+async def get_default_severity_tag_id(conn: aiosqlite.Connection) -> int | None:
+    """Return the id of the default severity tag ('Low'), or None if
+    the user has deleted or renamed it. Used by the session-create
+    route to auto-attach a severity when the caller didn't request
+    one. Returning None silently is intentional: per the design, a
+    missing default doesn't block session creation — the session
+    simply lands without a severity and the user assigns one later."""
+    async with conn.execute(
+        "SELECT id FROM tags WHERE name = ? AND tag_group = 'severity'",
+        (_DEFAULT_SEVERITY_NAME,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    return int(row["id"]) if row is not None else None
+
+
+async def session_has_severity_tag(conn: aiosqlite.Connection, session_id: str) -> bool:
+    """True when the session already carries at least one severity-
+    group tag. Called by the create-session path to decide whether to
+    auto-attach the default — a caller that passed an explicit
+    severity tag skips the backfill."""
+    async with conn.execute(
+        "SELECT 1 FROM session_tags st "
+        "JOIN tags t ON t.id = st.tag_id "
+        "WHERE st.session_id = ? AND t.tag_group = 'severity' "
+        "LIMIT 1",
+        (session_id,),
+    ) as cursor:
+        return await cursor.fetchone() is not None
+
+
+async def ensure_default_severity(conn: aiosqlite.Connection, session_id: str) -> bool:
+    """Idempotent backfill: attach the default severity ('Low') to
+    `session_id` iff the session currently carries no severity tag
+    AND the default tag itself still exists. Returns True when the
+    attach actually happened.
+
+    Called from every session-create path (POST /sessions, paired
+    chat spawn, reorg split, import) AFTER the caller's explicit tag
+    attaches land, so a caller that passed an explicit severity wins
+    and this becomes a no-op. Silently skips when the user has
+    renamed / deleted the 'Low' tag — per the design, that's not an
+    error, just a session that lands without a visible severity."""
+    if await session_has_severity_tag(conn, session_id):
+        return False
+    default_id = await get_default_severity_tag_id(conn)
+    if default_id is None:
+        return False
+    return await attach_tag(conn, session_id, default_id)
 
 
 async def detach_tag(conn: aiosqlite.Connection, session_id: str, tag_id: int) -> bool:

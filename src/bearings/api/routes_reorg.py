@@ -222,6 +222,10 @@ async def reorg_split(
     )
     for tag_id in body.new_session.tag_ids:
         await store.attach_tag(conn, new_row["id"], tag_id)
+    # Migration 0021 severity invariant — a split target inherits the
+    # caller's tags, which may or may not include a severity. Backfill
+    # with the default when none was supplied.
+    await store.ensure_default_severity(conn, new_row["id"])
 
     move_result = await store.move_messages_tx(
         conn,

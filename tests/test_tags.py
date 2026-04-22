@@ -76,7 +76,9 @@ async def test_create_tag_rejects_duplicate_name(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_list_tags_orders_pinned_then_sort_then_id(tmp_path: Path) -> None:
-    """Pinned first, then ascending sort_order, then ascending id."""
+    """Pinned first, then ascending sort_order, then ascending id.
+    Migration 0021 seeds five severity tags; filter them out here so the
+    assertion stays focused on the order of the tags the test created."""
     conn = await init_db(tmp_path / "db.sqlite")
     try:
         a = await create_tag(conn, name="a", sort_order=10)
@@ -84,7 +86,8 @@ async def test_list_tags_orders_pinned_then_sort_then_id(tmp_path: Path) -> None
         c = await create_tag(conn, name="c", pinned=True, sort_order=100)
         d = await create_tag(conn, name="d", pinned=True, sort_order=1)
         rows = await list_tags(conn)
-        assert [r["id"] for r in rows] == [d["id"], c["id"], b["id"], a["id"]]
+        general = [r for r in rows if r["tag_group"] == "general"]
+        assert [r["id"] for r in general] == [d["id"], c["id"], b["id"], a["id"]]
     finally:
         await conn.close()
 
@@ -346,10 +349,22 @@ def _create_session(client: TestClient, **kwargs: object) -> dict:
     return data
 
 
-def test_get_tags_empty(client: TestClient) -> None:
+def test_get_tags_returns_only_seeded_severities_on_fresh_db(client: TestClient) -> None:
+    """Migration 0021 seeds five severity tags, so a fresh DB is no
+    longer empty. The general group, though, should be."""
     resp = client.get("/api/tags")
     assert resp.status_code == 200
-    assert resp.json() == []
+    body = resp.json()
+    general = [t for t in body if t["tag_group"] == "general"]
+    severity = [t for t in body if t["tag_group"] == "severity"]
+    assert general == []
+    assert [t["name"] for t in severity] == [
+        "Blocker",
+        "Critical",
+        "Medium",
+        "Low",
+        "Quality of Life",
+    ]
 
 
 def test_post_tag_returns_201_and_row(client: TestClient) -> None:
@@ -419,26 +434,33 @@ def test_delete_tag_missing_is_404(client: TestClient) -> None:
 def test_attach_session_tag_returns_tag_list(client: TestClient) -> None:
     # Attach the tag at create time (v0.2.13 enforcement). A second
     # POST to the attach endpoint is a no-op via INSERT OR IGNORE.
+    # Migration 0021 also auto-attaches the default severity ('Low'),
+    # so the returned list is {infra, Low} — filter to general-only for
+    # the ordering assertion.
     tag = client.post("/api/tags", json={"name": "infra"}).json()
     sess = _create_session(client, tag_ids=[tag["id"]])
     resp = client.post(f"/api/sessions/{sess['id']}/tags/{tag['id']}")
     assert resp.status_code == 200
     body = resp.json()
-    assert [t["id"] for t in body] == [tag["id"]]
-    # session_count rolls up to /api/tags; open partition matches for
-    # a fresh session.
+    general = [t for t in body if t["tag_group"] == "general"]
+    assert [t["id"] for t in general] == [tag["id"]]
+    # session_count rolls up to /api/tags; the just-created `infra` is
+    # the only general tag so find it directly rather than indexing.
     tags = client.get("/api/tags").json()
-    assert tags[0]["session_count"] == 1
-    assert tags[0]["open_session_count"] == 1
+    infra = next(t for t in tags if t["name"] == "infra")
+    assert infra["session_count"] == 1
+    assert infra["open_session_count"] == 1
 
 
 def test_attach_is_idempotent_via_api(client: TestClient) -> None:
     tag = client.post("/api/tags", json={"name": "infra"}).json()
     sess = _create_session(client, tag_ids=[tag["id"]])
     # Attach again — idempotent (already attached at create time).
+    # Response carries Low (severity default) alongside infra.
     resp = client.post(f"/api/sessions/{sess['id']}/tags/{tag['id']}")
     assert resp.status_code == 200
-    assert len(resp.json()) == 1
+    general = [t for t in resp.json() if t["tag_group"] == "general"]
+    assert len(general) == 1
 
 
 def test_attach_missing_session_is_404(client: TestClient) -> None:
@@ -461,7 +483,10 @@ def test_detach_session_tag_returns_remaining(client: TestClient) -> None:
     sess = _create_session(client, tag_ids=[t1["id"], t2["id"]])
     resp = client.delete(f"/api/sessions/{sess['id']}/tags/{t1['id']}")
     assert resp.status_code == 200
-    assert [t["id"] for t in resp.json()] == [t2["id"]]
+    # Low (severity default) also attached; scope to general for the
+    # meaningful assertion.
+    general = [t for t in resp.json() if t["tag_group"] == "general"]
+    assert [t["id"] for t in general] == [t2["id"]]
 
 
 def test_detach_missing_session_is_404(client: TestClient) -> None:
@@ -475,8 +500,10 @@ def test_list_session_tags_returns_attached(client: TestClient) -> None:
     sess = _create_session(client, tag_ids=[t1["id"], t2["id"]])
     resp = client.get(f"/api/sessions/{sess['id']}/tags")
     assert resp.status_code == 200
-    # Pinned first.
-    assert [t["id"] for t in resp.json()] == [t2["id"], t1["id"]]
+    # Pinned first; severity default Low also attached but sits in its
+    # own group so scope to general for the ordering check.
+    general = [t for t in resp.json() if t["tag_group"] == "general"]
+    assert [t["id"] for t in general] == [t2["id"], t1["id"]]
 
 
 def test_list_session_tags_missing_session_is_404(client: TestClient) -> None:

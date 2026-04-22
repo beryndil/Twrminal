@@ -8,6 +8,8 @@
   import Settings from '$lib/components/Settings.svelte';
   import SidebarSearch from '$lib/components/SidebarSearch.svelte';
   import TagFilterPanel from '$lib/components/TagFilterPanel.svelte';
+  import SeverityShield from '$lib/components/icons/SeverityShield.svelte';
+  import TagIcon from '$lib/components/icons/TagIcon.svelte';
 
   const CONFIRM_TIMEOUT_MS = 3_000;
 
@@ -162,10 +164,16 @@
   // Boot (auth + session refresh) is owned by +page.svelte so the auth
   // gate can block API calls until a token is supplied.
 
-  // Re-fetch the session list whenever the tag filter changes. Initial
-  // boot in +page.svelte happens before the first effect settles, so
-  // this only fires on subsequent filter edits.
-  let filterKey = $derived(`${tags.selected.join(',')}|${tags.mode}`);
+  // Re-fetch the session list whenever any filter axis changes.
+  // Initial boot in +page.svelte happens before the first effect
+  // settles, so this only fires on subsequent filter edits. The key
+  // encodes both axes — general-tag selection and severity selection —
+  // so adding/removing either triggers a refresh without a user also
+  // having to touch the other axis. General-tag combination is always
+  // AND now, so there's no separate `mode` component to key off of.
+  let filterKey = $derived(
+    `${tags.selected.join(',')}|${tags.selectedSeverity.join(',')}`
+  );
   let lastAppliedKey = '';
   $effect(() => {
     const key = filterKey;
@@ -180,14 +188,10 @@
     // Fire-and-forget: the optimistic path in `markViewed` updates the
     // local row synchronously so the dot goes away immediately.
     void sessions.markViewed(id);
-    // Checklist sessions don't run an agent loop — attaching the WS
-    // would trip the server's kind-guard (close 4400). Close any
-    // existing agent connection so the UI reflects the switch.
-    const target = sessions.list.find((s) => s.id === id);
-    if (target?.kind === 'checklist') {
-      agent.close();
-      return;
-    }
+    // v0.5.2: both chat and checklist sessions run an agent loop.
+    // Checklist sessions host an embedded chat panel in ChecklistView
+    // and the backend's `checklist_overview` prompt layer injects the
+    // list's state into every turn.
     await agent.connect(id);
   }
 
@@ -238,25 +242,54 @@
     if (ratio >= 0.8) return 'text-amber-400';
     return 'text-slate-600';
   }
+
+  /** Resolve a session's `tag_ids` into the in-memory tag rows so the
+   * medallion row can pull color + group without a per-row fetch.
+   * Returns `null` for any id the tag store hasn't loaded yet —
+   * filtered out at the callsite. */
+  function tagsFor(session: api.Session): api.Tag[] {
+    const byId = new Map(tags.list.map((t) => [t.id, t]));
+    const ids = session.tag_ids ?? [];
+    const out: api.Tag[] = [];
+    for (const id of ids) {
+      const hit = byId.get(id);
+      if (hit) out.push(hit);
+    }
+    return out;
+  }
+
+  /** Split a session's tag list into the severity slot (one tag or
+   * null) and the ordered general-tag list. Severity lookup is by
+   * `tag_group` — the exactly-one invariant is enforced server-side
+   * so we don't re-check here. */
+  function medallionData(session: api.Session): {
+    severity: api.Tag | null;
+    general: api.Tag[];
+  } {
+    const resolved = tagsFor(session);
+    const severity = resolved.find((t) => t.tag_group === 'severity') ?? null;
+    const general = resolved.filter((t) => t.tag_group !== 'severity');
+    return { severity, general };
+  }
 </script>
 
 <Settings bind:open={showSettings} />
 
 <aside
   bind:this={asideEl}
-  class="relative h-full bg-slate-900 p-4 overflow-y-auto border-r border-slate-800
-    flex flex-col gap-3 {dragging ? 'ring-2 ring-emerald-500/60 ring-inset' : ''}"
+  class="relative h-full bg-slate-900 p-2 overflow-y-auto border-r border-slate-800
+    flex flex-col gap-2 {dragging ? 'ring-2 ring-emerald-500/60 ring-inset' : ''}"
   ondragenter={onDragEnter}
   ondragover={onDragOver}
   ondragleave={onDragLeave}
   ondrop={onDrop}
 >
   <div class="flex items-center justify-between gap-2">
-    <h2 class="text-sm uppercase tracking-wider text-slate-400">Sessions</h2>
+    <h2 class="text-xs uppercase tracking-wider text-slate-400">Sessions</h2>
     <div class="flex items-center gap-1">
       <button
         type="button"
-        class="text-xs rounded bg-slate-800 hover:bg-slate-700 px-2 py-1"
+        class="text-[11px] rounded bg-slate-800 hover:bg-slate-700 px-1.5 py-0.5"
         aria-label="Import session from JSON"
         title="Import a session.json file"
         onclick={() => importInput?.click()}
@@ -273,7 +306,7 @@
       />
       <button
         type="button"
-        class="text-xs rounded bg-slate-800 hover:bg-slate-700 px-2 py-1"
+        class="text-[11px] rounded bg-slate-800 hover:bg-slate-700 px-1.5 py-0.5"
         aria-label="Open settings"
         onclick={() => (showSettings = true)}
       >
@@ -281,7 +314,7 @@
       </button>
       <button
         type="button"
-        class="text-xs rounded bg-slate-800 hover:bg-slate-700 px-2 py-1"
+        class="text-[11px] rounded bg-slate-800 hover:bg-slate-700 px-1.5 py-0.5"
         onclick={() => (showNewForm = !showNewForm)}
         aria-label="Toggle new session form"
       >
@@ -320,6 +353,7 @@
   {/if}
 
   {#snippet sessionRow(session: api.Session)}
+    {@const medals = medallionData(session)}
     <li
       class="group flex items-stretch gap-1 rounded hover:bg-slate-800 {sessions.selectedId ===
       session.id
@@ -328,7 +362,7 @@
     >
       <button
         type="button"
-        class="flex-1 min-w-0 text-left px-2 py-2 rounded-l"
+        class="flex-1 min-w-0 text-left px-2 py-1 rounded-l"
         onclick={() => onSelect(session.id)}
         ondblclick={(e) => startRename(e, session)}
       >
@@ -336,7 +370,7 @@
           <!-- svelte-ignore a11y_autofocus -->
           <input
             type="text"
-            class="w-full bg-slate-950 rounded px-1 py-0.5 text-sm
+            class="w-full bg-slate-950 rounded px-1 py-0.5 text-xs
               border border-slate-700 focus:outline-none focus:border-emerald-600"
             bind:value={rename.draft}
             onkeydown={onRenameKey}
@@ -346,16 +380,11 @@
             placeholder="Session title"
           />
         {:else}
-          <div class="flex items-center gap-1.5 text-sm" title="Double-click to rename">
+          <div class="flex items-center gap-1 text-xs" title="Double-click to rename">
             {#if isRunning(session.id)}
-              <!-- Live-run indicator: a solid emerald dot with an
-                   outer ping ring. Rendered for every session
-                   whose server-side runner has a turn in flight,
-                   not just the active one, so Daisy can walk away
-                   from a prompt and still see at a glance which
-                   sessions are still working. -->
+              <!-- Live-run indicator: emerald ping + solid dot. -->
               <span
-                class="relative inline-flex h-2 w-2 shrink-0"
+                class="relative inline-flex h-1.5 w-1.5 shrink-0"
                 aria-label="Agent is working"
                 title="Agent is working — you can switch away and come back"
               >
@@ -364,33 +393,40 @@
                     bg-emerald-400 opacity-60 animate-ping"
                 ></span>
                 <span
-                  class="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"
+                  class="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500"
                 ></span>
               </span>
             {:else if isUnviewed(session)}
-              <!-- Finished-but-unviewed indicator: a solid amber dot,
-                   no animation. Means the session produced output
-                   since the user last opened it. Suppressed while
-                   `isRunning` is true so the green ping above owns
-                   the slot during live work. Cleared when the user
-                   selects the session or the tab regains focus
-                   while it's already selected. -->
+              <!-- Finished-but-unviewed indicator. -->
               <span
-                class="relative inline-flex h-2 w-2 shrink-0"
+                class="relative inline-flex h-1.5 w-1.5 shrink-0"
                 aria-label="Session finished — unread"
                 title="Session finished — unread since last view"
                 data-testid="unviewed-dot"
               >
                 <span
-                  class="relative inline-flex h-2 w-2 rounded-full bg-amber-400"
+                  class="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-400"
                 ></span>
               </span>
             {/if}
+            <!-- Medallion row: shield (severity) + one tag icon per
+                 attached general-group tag. Color comes from the
+                 tag's own `color` column; missing colors fall back
+                 to a dim slate via the icon component so a
+                 severity-less session still shows the slot. -->
+            <span class="inline-flex items-center gap-0.5 shrink-0"
+              data-testid="medallion-row"
+            >
+              <SeverityShield
+                color={medals.severity?.color ?? null}
+                title={medals.severity?.name ?? 'No severity'}
+                size={11}
+              />
+              {#each medals.general as tag (tag.id)}
+                <TagIcon color={tag.color} title={tag.name} size={11} />
+              {/each}
+            </span>
             {#if session.kind === 'checklist'}
-              <!-- Session-kind badge. Checklist sessions don't run
-                   an agent, so the live-run dot above is never shown
-                   next to this glyph; rendering both is impossible
-                   by construction. -->
               <span
                 class="text-slate-500"
                 aria-label="Checklist session"
@@ -410,11 +446,6 @@
             {formatTimestamp(session.updated_at)}
           </span>
           {#if !billing.showTokens && session.total_cost_usd > 0}
-            <!-- Subscription mode suppresses this dollar figure
-                 entirely. Fetching per-card token totals would
-                 mean one round-trip per listed session on every
-                 sidebar render; the conversation header carries
-                 the real token meter for the active session. -->
             <span class="font-mono {costClass(session)}">
               ${session.total_cost_usd.toFixed(4)}
             </span>
@@ -423,7 +454,7 @@
       </button>
       <button
         type="button"
-        class="px-2 text-xs transition {confirm.id === session.id
+        class="px-1.5 text-[11px] transition {confirm.id === session.id
           ? 'text-rose-400 font-medium'
           : 'text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100'}"
         aria-label={confirm.id === session.id
@@ -454,10 +485,10 @@
     {/if}
 
     {#if sessions.closedList.length > 0}
-      <div class="mt-3 border-t border-slate-800 pt-2">
+      <div class="mt-2 border-t border-slate-800 pt-1">
         <button
           type="button"
-          class="w-full flex items-center justify-between px-1 py-1 text-xs
+          class="w-full flex items-center justify-between px-1 py-0.5 text-[11px]
             uppercase tracking-wider text-slate-400 hover:text-slate-200"
           aria-expanded={!closedCollapsed}
           aria-controls="closed-sessions-group"
@@ -470,7 +501,7 @@
         {#if !closedCollapsed}
           <ul
             id="closed-sessions-group"
-            class="flex flex-col gap-1 mt-1"
+            class="flex flex-col gap-0.5 mt-1"
             data-testid="closed-sessions-list"
           >
             {#each sessions.closedList as session (session.id)}

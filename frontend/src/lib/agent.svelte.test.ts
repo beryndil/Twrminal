@@ -146,6 +146,7 @@ function fakeSession(overrides: Partial<Session> = {}): Session {
     checklist_item_id: null,
     last_completed_at: null,
     last_viewed_at: null,
+    tag_ids: [],
     ...overrides
   };
 }

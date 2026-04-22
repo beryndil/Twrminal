@@ -59,6 +59,13 @@ async def create_session(body: SessionCreate, request: Request) -> SessionOut:
     )
     for tag_id in body.tag_ids:
         await store.attach_tag(conn, row["id"], tag_id)
+    # Severity invariant (migration 0021): every session carries exactly
+    # one severity tag. If the caller passed one explicitly in tag_ids
+    # the `attach_tag` loop already landed it; otherwise auto-attach
+    # the default ('Low'). Silent no-op if the user has deleted /
+    # renamed the default — the session lands without a visible
+    # severity, matching the "physical law, not DB constraint" design.
+    await store.ensure_default_severity(conn, row["id"])
     # Checklist-kind sessions carry a 1:1 companion row. Create it in
     # the same request so a freshly-minted checklist session is
     # immediately addressable via `/api/sessions/{id}/checklist` — no
@@ -94,24 +101,43 @@ async def list_running_sessions(request: Request) -> list[str]:
     return sorted(runners.running_ids())
 
 
+def _parse_tag_csv(raw: str | None, param_name: str) -> list[int] | None:
+    """Parse a comma-separated tag-id query param into a list of ints,
+    returning None when the param is unset or empty. Malformed values
+    raise a 400 so the client learns immediately rather than getting
+    silently empty results."""
+    if not raw:
+        return None
+    try:
+        return [int(t) for t in raw.split(",") if t.strip()]
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{param_name} must be comma-separated integers",
+        ) from exc
+
+
 @router.get("", response_model=list[SessionOut])
 async def list_sessions(
     request: Request,
     tags: str | None = Query(None, description="Comma-separated tag ids"),
     mode: str = Query("any", pattern="^(any|all)$"),
+    severity_tags: str | None = Query(
+        None,
+        description=(
+            "Comma-separated severity tag ids (tag_group='severity'). "
+            "Always OR-within-group since each session carries exactly one "
+            "severity; combined with the `tags` filter via AND."
+        ),
+    ),
 ) -> list[SessionOut]:
-    tag_ids: list[int] | None = None
-    if tags:
-        try:
-            tag_ids = [int(t) for t in tags.split(",") if t.strip()]
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=400, detail="tags must be comma-separated integers"
-            ) from exc
+    tag_ids = _parse_tag_csv(tags, "tags")
+    severity_tag_ids = _parse_tag_csv(severity_tags, "severity_tags")
     rows = await store.list_sessions(
         request.app.state.db,
         tag_ids=tag_ids,
         mode=mode,
+        severity_tag_ids=severity_tag_ids,
     )
     return [SessionOut(**r) for r in rows]
 
@@ -279,6 +305,11 @@ async def import_session(payload: dict[str, Any], request: Request) -> SessionOu
     if not isinstance(payload.get("session"), dict):
         raise HTTPException(status_code=400, detail="missing or malformed `session` object")
     row = await store.import_session(request.app.state.db, payload)
+    # Imports predate migration 0021 by definition — backfill the
+    # default severity so the imported session has a shield in the
+    # sidebar. No-op on re-import of something already carrying a
+    # severity (ensure_default_severity is idempotent).
+    await store.ensure_default_severity(request.app.state.db, row["id"])
     metrics.sessions_created.inc()
     await publish_session_upsert(
         getattr(request.app.state, "sessions_broker", None),

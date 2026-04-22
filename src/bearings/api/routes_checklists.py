@@ -244,6 +244,10 @@ async def spawn_paired_chat(
     )
     for tag_id in effective_tag_ids:
         await store.attach_tag(conn, chat_row["id"], tag_id)
+    # Mirrors routes_sessions: paired chats also inherit the default
+    # severity when the caller (or parent checklist's tag set) didn't
+    # include one. See migration 0021.
+    await store.ensure_default_severity(conn, chat_row["id"])
     await store.set_item_chat_session(conn, item_id, chat_row["id"])
     metrics.sessions_created.inc()
 

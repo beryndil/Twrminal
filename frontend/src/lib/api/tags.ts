@@ -1,5 +1,13 @@
 import { jsonFetch, voidFetch } from './core';
 
+/** Which "axis" of filtering a tag belongs to. `general` is the
+ * user-facing project/area tag system (what most tags are).
+ * `severity` is the seeded severity ladder from migration 0021:
+ * Blocker / Critical / Medium / Low / Quality of Life. Every session
+ * carries exactly one severity; see `ensure_default_severity` on the
+ * backend. Added in v0.2.14. */
+export type TagGroup = 'general' | 'severity';
+
 export type Tag = {
   id: number;
   name: string;
@@ -14,6 +22,7 @@ export type Tag = {
   open_session_count: number;
   default_working_dir: string | null;
   default_model: string | null;
+  tag_group: TagGroup;
 };
 
 export type TagCreate = {
@@ -23,6 +32,7 @@ export type TagCreate = {
   sort_order?: number;
   default_working_dir?: string | null;
   default_model?: string | null;
+  tag_group?: TagGroup;
 };
 
 export type TagUpdate = {
@@ -32,6 +42,7 @@ export type TagUpdate = {
   sort_order?: number;
   default_working_dir?: string | null;
   default_model?: string | null;
+  tag_group?: TagGroup;
 };
 
 export type TagMemory = {

@@ -33,6 +33,7 @@ function session(overrides: Partial<Session> = {}): Session {
     checklist_item_id: null,
     last_completed_at: null,
     last_viewed_at: null,
+    tag_ids: [],
     ...overrides
   };
 }
@@ -49,6 +50,7 @@ function tag(overrides: Partial<Tag> = {}): Tag {
     open_session_count: 0,
     default_working_dir: null,
     default_model: null,
+    tag_group: 'general',
     ...overrides
   };
 }

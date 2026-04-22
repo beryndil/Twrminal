@@ -28,7 +28,32 @@ _VALID_SESSION_KINDS = frozenset({"chat", "checklist"})
 # they hit the column — SQLite won't enforce the enum itself.
 _VALID_PERMISSION_MODES = frozenset({"default", "plan", "acceptEdits", "bypassPermissions"})
 SESSION_COUNT = "(SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count"
-SESSION_COLS_WITH_COUNT = f"s.{SESSION_BASE_COLS.replace(', ', ', s.')}, {SESSION_COUNT}"
+# Comma-separated tag ids attached to the session. Materialized as a
+# string here because SQLite has no native array type; the Python layer
+# splits it back into `list[int]` before handing the row to Pydantic.
+# NULL when the session has zero tags — which should never happen after
+# migration 0021 (ensure_default_severity lands Low on every session),
+# but the split helper tolerates NULL / empty so older snapshots keep
+# round-tripping. Drives the sidebar medallion row without an N+1 fetch.
+SESSION_TAG_IDS = (
+    "(SELECT GROUP_CONCAT(tag_id) FROM session_tags st WHERE st.session_id = s.id) AS tag_ids_csv"
+)
+SESSION_COLS_WITH_COUNT = (
+    f"s.{SESSION_BASE_COLS.replace(', ', ', s.')}, {SESSION_COUNT}, {SESSION_TAG_IDS}"
+)
+
+
+def _parse_tag_ids_csv(row: dict[str, Any]) -> dict[str, Any]:
+    """Mutate `row` to replace the raw `tag_ids_csv` string with a
+    `tag_ids: list[int]` field. Safe on rows that don't carry the
+    column (returns the row untouched) and on NULL / empty payloads
+    (yields an empty list)."""
+    csv = row.pop("tag_ids_csv", None)
+    if csv is None or csv == "":
+        row["tag_ids"] = []
+    else:
+        row["tag_ids"] = [int(x) for x in csv.split(",") if x]
+    return row
 
 
 async def create_session(
@@ -91,46 +116,66 @@ async def list_sessions(
     *,
     tag_ids: list[int] | None = None,
     mode: str = "any",
+    severity_tag_ids: list[int] | None = None,
 ) -> list[dict[str, Any]]:
-    """List sessions, newest-first. Optional tag filter:
+    """List sessions, newest-first. Two independent tag-filter axes,
+    combined with AND (migration 0021 — severity group):
 
-    - `tag_ids=None`/empty: no filter.
-    - `mode="any"`: sessions carrying any listed tag.
-    - `mode="all"`: sessions carrying every listed tag.
+    - `tag_ids` / `mode`: the general-group filter. `mode='any'` =
+      sessions carrying any listed tag; `mode='all'` = sessions
+      carrying every listed tag. Empty / None = no general filter.
+    - `severity_tag_ids`: the severity-group filter. Always OR
+      within-group (a session can only carry one severity, so `all`
+      is meaningless and the route hides the toggle). Empty / None =
+      no severity filter.
 
+    Both axes drop onto the same base query as EXISTS / IN
+    subqueries, so composing them is just two `AND` clauses — no
+    JOIN + GROUP BY gymnastics like the pre-0021 single-axis shape.
     Ordering stays `updated_at DESC, id DESC`.
     """
-    if not tag_ids:
-        sql = (
-            f"SELECT {SESSION_COLS_WITH_COUNT} FROM sessions s "
-            "ORDER BY s.updated_at DESC, s.id DESC"
-        )
-        async with conn.execute(sql) as cursor:
-            return [dict(row) async for row in cursor]
+    where_clauses: list[str] = []
+    params: list[Any] = []
 
-    placeholders = ",".join("?" for _ in tag_ids)
-    if mode == "all":
-        # HAVING COUNT(DISTINCT tag_id) == len(tag_ids) ensures every
-        # required tag is present on the session.
-        sql = (
-            f"SELECT {SESSION_COLS_WITH_COUNT} FROM sessions s "
-            f"JOIN session_tags st ON st.session_id = s.id "
-            f"WHERE st.tag_id IN ({placeholders}) "
-            f"GROUP BY s.id HAVING COUNT(DISTINCT st.tag_id) = ? "
-            "ORDER BY s.updated_at DESC, s.id DESC"
+    if tag_ids:
+        tag_ph = ",".join("?" for _ in tag_ids)
+        if mode == "all":
+            # Every listed tag must be present on the session. Counting
+            # DISTINCT tag_id in the subquery and requiring it to equal
+            # the request's length is the idiomatic all-of check.
+            where_clauses.append(
+                f"s.id IN (SELECT session_id FROM session_tags "
+                f"WHERE tag_id IN ({tag_ph}) "
+                f"GROUP BY session_id HAVING COUNT(DISTINCT tag_id) = ?)"
+            )
+            params.extend(tag_ids)
+            params.append(len(tag_ids))
+        else:
+            # mode == "any" — simple IN-subquery.
+            where_clauses.append(
+                f"s.id IN (SELECT session_id FROM session_tags WHERE tag_id IN ({tag_ph}))"
+            )
+            params.extend(tag_ids)
+
+    if severity_tag_ids:
+        sev_ph = ",".join("?" for _ in severity_tag_ids)
+        # OR-within-group only: a session has exactly one severity, so
+        # "sessions with any listed severity" is the only meaningful
+        # combination rule here. Appended as a second AND clause so
+        # the two axes narrow the result together.
+        where_clauses.append(
+            f"s.id IN (SELECT session_id FROM session_tags WHERE tag_id IN ({sev_ph}))"
         )
-        params: tuple[Any, ...] = (*tag_ids, len(tag_ids))
-    else:
-        # mode == "any" — DISTINCT + IN (...).
-        sql = (
-            f"SELECT DISTINCT {SESSION_COLS_WITH_COUNT} FROM sessions s "
-            f"JOIN session_tags st ON st.session_id = s.id "
-            f"WHERE st.tag_id IN ({placeholders}) "
-            "ORDER BY s.updated_at DESC, s.id DESC"
-        )
-        params = tuple(tag_ids)
+        params.extend(severity_tag_ids)
+
+    where = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+    sql = (
+        f"SELECT {SESSION_COLS_WITH_COUNT} FROM sessions s"
+        f"{where}"
+        " ORDER BY s.updated_at DESC, s.id DESC"
+    )
     async with conn.execute(sql, params) as cursor:
-        return [dict(row) async for row in cursor]
+        return [_parse_tag_ids_csv(dict(row)) async for row in cursor]
 
 
 async def get_session(conn: aiosqlite.Connection, session_id: str) -> dict[str, Any] | None:
@@ -139,7 +184,7 @@ async def get_session(conn: aiosqlite.Connection, session_id: str) -> dict[str, 
         (session_id,),
     ) as cursor:
         row = await cursor.fetchone()
-    return dict(row) if row is not None else None
+    return _parse_tag_ids_csv(dict(row)) if row is not None else None
 
 
 async def update_session(
@@ -455,7 +500,7 @@ async def list_all_sessions(
         "ORDER BY s.created_at ASC, s.id ASC"
     )
     async with conn.execute(sql, params) as cursor:
-        return [dict(row) async for row in cursor]
+        return [_parse_tag_ids_csv(dict(row)) async for row in cursor]
 
 
 async def touch_session(conn: aiosqlite.Connection, session_id: str) -> None:

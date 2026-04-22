@@ -53,6 +53,12 @@ export type Session = {
    * `last_completed_at` is non-null and either this is null or
    * precedes it. */
   last_viewed_at: string | null;
+  /** v0.2.14 / migration 0021: every tag id attached to this session,
+   * in no particular order. Lets the sidebar render the medallion row
+   * (severity shield + per-general-tag icon) by joining against the
+   * in-memory tags store — no per-row fetch. Empty on pre-0021
+   * snapshots that slipped through without a severity backfill. */
+  tag_ids: number[];
 };
 
 export type SessionCreate = {
@@ -121,8 +127,16 @@ export type ToolCall = {
 };
 
 export type SessionFilter = {
+  /** General-group tag ids. Multiple ids are AND-combined — a session
+   * must carry every selected tag to appear. The old Any/All toggle
+   * was removed in the v0.2.15 sidebar redesign; the wire format
+   * still uses `mode=all`, hardcoded in `listSessions`. */
   tags?: number[];
-  mode?: 'any' | 'all';
+  /** v0.2.14 severity axis (migration 0021). Severity tags are a
+   * separate user-editable group; backend always OR-within-group
+   * because each session carries exactly one severity. Combined with
+   * `tags` via AND. Omit or pass `[]` for no severity filter. */
+  severityTags?: number[];
 };
 
 export function listRunningSessions(
@@ -136,11 +150,24 @@ export function listSessions(
   fetchImpl: typeof fetch = fetch
 ): Promise<Session[]> {
   const tagIds = filter.tags ?? [];
-  if (tagIds.length === 0) return jsonFetch<Session[]>(fetchImpl, '/api/sessions');
-  const params = new URLSearchParams({
-    tags: tagIds.join(','),
-    mode: filter.mode ?? 'any'
-  });
+  const severityIds = filter.severityTags ?? [];
+  // No filter at all → hit the bare path so the server skips the
+  // WHERE-clause builder entirely. Any filter present → build the
+  // query string with only the populated axes.
+  if (tagIds.length === 0 && severityIds.length === 0) {
+    return jsonFetch<Session[]>(fetchImpl, '/api/sessions');
+  }
+  const params = new URLSearchParams();
+  if (tagIds.length > 0) {
+    params.set('tags', tagIds.join(','));
+    // Always AND — the Any/All toggle was removed in v0.2.15. The
+    // backend route still defaults to 'any' when `mode` is omitted, so
+    // we pin it explicitly here rather than relying on the default.
+    params.set('mode', 'all');
+  }
+  if (severityIds.length > 0) {
+    params.set('severity_tags', severityIds.join(','));
+  }
   return jsonFetch<Session[]>(fetchImpl, `/api/sessions?${params}`);
 }
 

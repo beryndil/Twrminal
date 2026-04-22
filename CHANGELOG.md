@@ -5,6 +5,120 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-04-22
+
+Severity tag group + sidebar redesign + Finder-click filter. Every
+session now carries exactly one severity tag (Blocker / Critical /
+Medium / Low / QoL) seeded by migration 0021; the invariant is
+enforced at the app layer in `db._tags.attach_tag` via
+DELETE-then-INSERT so reassigning severity just swaps the row. The
+sidebar grew a dedicated severity section (with shield medallions
+painted from each tag's `color` column), the general-group rows
+grew luggage-tag medallions, and the Any/All toggle was replaced
+with Finder-style click semantics: plain click single-selects,
+shift-click toggles within the selection, solo re-click deselects.
+Severity is always OR-within-group on the wire; general is always
+AND; the two groups AND together. The 76 pre-0021 sessions on
+Dave's box were reclassified directly via a one-off SQL pass
+(documented in TODO.md).
+
+### Added
+
+- `src/bearings/db/migrations/0021_tag_groups_and_severity.sql` —
+  adds `tag_group TEXT NOT NULL DEFAULT 'general' CHECK (...)` to
+  `tags`, seeds the five-severity ladder with stable ids 8-12, and
+  backfills every existing session with the `Low` severity tag so
+  no row is orphaned on first boot after the migration.
+- `frontend/src/lib/components/icons/SeverityShield.svelte` and
+  `TagIcon.svelte` — tiny inline SVG medallions used by the session
+  list; both take a `color` prop and fall back to dim slate when
+  null (orphaned / uncoloured case). Fills are `$derived` so a
+  rename-recolor flow re-tints the medallion without a remount.
+- `tests/test_severity.py` — backend invariant tests: attach replaces
+  existing severity, detach clears without re-seeding, orphaned
+  sessions stay orphaned until explicitly reattached.
+- `SessionOut.tag_ids` — `int[]` bundled via `GROUP_CONCAT` subquery
+  so the sidebar can render medallions without an N+1 fetch.
+
+### Changed
+
+- `TagFilterPanel.svelte` — dropped the Any/All button, split the
+  panel into collapsible General + Severity sections, wired
+  shift-click through `tags.selectGeneral(id, { additive })` and
+  `tags.selectSeverity(id, { additive })`.
+- `stores/tags.svelte.ts` — removed the `mode` field entirely;
+  `filter` derived now emits `{ tags, severityTags }`. Finder-click
+  logic lives in the two new select methods.
+- `api/sessions.ts` — `SessionFilter` gained `severityTags?: number[]`,
+  dropped the `mode` field (wire still uses `mode=all` when tags
+  are set, hardcoded in `listSessions`).
+- `db/_sessions.list_sessions` — accepts a `severity_tag_ids` axis,
+  composes it with general `tag_ids` via AND-between / OR-within.
+- `db/_tags.attach_tag` — when attaching a severity tag, deletes any
+  existing severity row for the session in the same transaction so
+  the one-per-session invariant is preserved without a trigger.
+
+### Tests
+
+- Frontend: `tags.svelte.test.ts` rewritten for Finder semantics
+  (plain click single-selects / toggles off on solo re-click,
+  shift-click adds/removes within group, plain click on non-solo
+  member collapses to just that id). All 9 fixture files that
+  construct Session or Tag literals gained `tag_ids: []` and
+  `tag_group: 'general'` to satisfy the extended types.
+- Backend: `test_tags.py` scope fixes around tag-group; new
+  `test_severity.py` covers the attach/detach invariants.
+
+## [0.7.1] - 2026-04-22
+
+Embedded chat inside checklist sessions — the right pane now renders
+a compact chat panel above the checklist body so Dave can talk to
+Claude about the list itself without spawning a per-item paired
+chat. The backend prompt assembler grows a `checklist_overview`
+layer that injects the list's title, notes, and current item tree
+(with `[x]`/`[ ]` glyphs and nesting) into every turn, so the agent
+is grounded in the live checklist state on each reply. Checklist
+sessions joined the runnable kind set in `ws_agent.py`; a new
+`_RUNNABLE_KINDS = {"chat", "checklist"}` gate replaces the old
+chat-only check.
+
+### Added
+
+- `bearings.agent.prompt.Layer(kind="checklist_overview")` — new layer
+  body rendered by `_format_checklist_overview` + `_render_overview_items`.
+  Fires when `sessions.kind == 'checklist'`; skipped silently when the
+  companion `checklists` row is missing.
+- `frontend/src/lib/components/ChecklistChat.svelte` — compact chat
+  panel mounted by `ChecklistView` when the selected session has
+  `kind === 'checklist'`. Owns the agent-connection lifecycle for
+  the session (connect on mount / selection change, `close` on
+  destroy), renders user / assistant bubbles + streaming delta,
+  submits on Enter (Shift+Enter = newline). Disabled when the
+  checklist is closed.
+
+### Changed
+
+- `ws_agent.py` — `_RUNNABLE_KINDS` set gates both the WS handler
+  and the `_build_runner` factory; checklist sessions now connect
+  through the same path as chat sessions. `CODE_SESSION_KIND_UNSUPPORTED
+  = 4400` stays in the protocol for future non-runnable kinds.
+- `NewSessionForm.svelte` now calls `agent.connect` for both kinds
+  on submit (no more chat-only guard). `+page.svelte` boot connects
+  to the selected session regardless of kind.
+
+### Tests
+
+- `tests/test_prompt_assembler.py` — five new cases for the overview
+  layer (fires on checklist kind, omitted on chat, nested indent,
+  empty list handled, skipped on missing row).
+- `tests/test_routes_checklists.py` — flipped
+  `test_ws_rejects_checklist_session` into
+  `test_ws_accepts_checklist_session`; asserts a `runner_status`
+  handshake frame instead of a 4400 close.
+- `frontend/src/lib/components/ChecklistChat.test.ts` — 8 cases
+  covering panel render, connect lifecycle, message render, Send,
+  Enter vs Shift+Enter, disabled states.
+
 ## [0.7.0] - 2026-04-22
 
 Live-updating session sidebar (Phase 2) — the sidebar now updates in

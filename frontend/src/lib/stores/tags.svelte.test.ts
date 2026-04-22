@@ -9,7 +9,16 @@ afterEach(() => {
   tags.error = null;
   tags.loading = false;
   tags.selected = [];
-  tags.mode = 'any';
+  tags.selectedSeverity = [];
+  tags.panelCollapsed = false;
+  // Clear the persisted panel collapse key so tests stay independent.
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.removeItem('bearings.tagFilterPanel.collapsed');
+    } catch {
+      // ignore
+    }
+  }
 });
 
 type Fake = { ok: boolean; status?: number; body: unknown };
@@ -26,6 +35,7 @@ function tag(overrides: Partial<Tag> = {}): Tag {
     open_session_count: 0,
     default_working_dir: null,
     default_model: null,
+    tag_group: 'general',
     ...overrides
   };
 }
@@ -128,21 +138,49 @@ describe('tags store', () => {
     expect(tags.list[0].open_session_count).toBe(3);
   });
 
-  it('toggleSelected adds and removes ids', () => {
-    tags.toggleSelected(1);
+  it('selectGeneral (plain click) single-selects, and toggles off on solo re-click', () => {
+    // Plain click from empty → sole selection.
+    tags.selectGeneral(1);
     expect(tags.selected).toEqual([1]);
     expect(tags.hasFilter).toBe(true);
-    tags.toggleSelected(2);
-    expect(tags.selected).toEqual([1, 2]);
-    tags.toggleSelected(1);
+    // Plain click on a different tag while one is already selected
+    // replaces the selection — no multi-select without the modifier.
+    tags.selectGeneral(2);
     expect(tags.selected).toEqual([2]);
+    // Plain click on the currently-sole selection clears it.
+    tags.selectGeneral(2);
+    expect(tags.selected).toEqual([]);
+    expect(tags.hasFilter).toBe(false);
   });
 
-  it('filter derived reflects selection + mode', () => {
-    tags.toggleSelected(3);
-    tags.toggleSelected(7);
-    tags.mode = 'all';
-    expect(tags.filter).toEqual({ tags: [3, 7], mode: 'all' });
+  it('selectGeneral with additive=true toggles within the current selection', () => {
+    tags.selectGeneral(1);
+    tags.selectGeneral(2, { additive: true });
+    expect(tags.selected).toEqual([1, 2]);
+    // Shift-click on an already-selected id removes it.
+    tags.selectGeneral(1, { additive: true });
+    expect(tags.selected).toEqual([2]);
+    // Shift-click on a fresh id adds it.
+    tags.selectGeneral(3, { additive: true });
+    expect(tags.selected).toEqual([2, 3]);
+  });
+
+  it('plain click on a non-solo member of a multi-selection collapses to just that id', () => {
+    // Build a two-id selection via shift-click, then a plain click on
+    // one of them should reset to that one only (Finder semantics).
+    tags.selectGeneral(1);
+    tags.selectGeneral(2, { additive: true });
+    expect(tags.selected).toEqual([1, 2]);
+    tags.selectGeneral(1);
+    expect(tags.selected).toEqual([1]);
+  });
+
+  it('filter derived reflects selection without a mode field', () => {
+    tags.selectGeneral(3);
+    tags.selectGeneral(7, { additive: true });
+    // `mode` was removed in v0.2.15 — the API client hardcodes `all`
+    // on the wire. The filter object itself carries only the two axes.
+    expect(tags.filter).toEqual({ tags: [3, 7], severityTags: undefined });
   });
 
   it('clearSelection empties the set', () => {
@@ -150,5 +188,73 @@ describe('tags store', () => {
     tags.clearSelection();
     expect(tags.selected).toEqual([]);
     expect(tags.hasFilter).toBe(false);
+  });
+
+  it('generalList and severityList partition by tag_group', () => {
+    tags.list = [
+      tag({ id: 1, name: 'infra', tag_group: 'general', sort_order: 0 }),
+      tag({ id: 2, name: 'Blocker', tag_group: 'severity', sort_order: 1 }),
+      tag({ id: 3, name: 'Low', tag_group: 'severity', sort_order: 4 }),
+      tag({ id: 4, name: 'docs', tag_group: 'general', sort_order: 0 })
+    ];
+    expect(tags.generalList.map((t) => t.id)).toEqual([1, 4]);
+    // Severity list sorted by sort_order so Blocker precedes Low.
+    expect(tags.severityList.map((t) => t.id)).toEqual([2, 3]);
+  });
+
+  it('selectSeverity mirrors Finder rules on the severity axis and stays independent of general', () => {
+    tags.selectSeverity(5);
+    expect(tags.selectedSeverity).toEqual([5]);
+    expect(tags.hasSeverityFilter).toBe(true);
+    expect(tags.hasFilter).toBe(false);
+    // Plain click on the sole severity clears it.
+    tags.selectSeverity(5);
+    expect(tags.selectedSeverity).toEqual([]);
+    expect(tags.hasSeverityFilter).toBe(false);
+    // Shift-click is additive on the severity axis too — a session
+    // has exactly one severity, so multiple selected severities
+    // combine as OR on the server.
+    tags.selectSeverity(8);
+    tags.selectSeverity(9, { additive: true });
+    expect(tags.selectedSeverity).toEqual([8, 9]);
+  });
+
+  it('filter derived passes severityTags when a severity is selected', () => {
+    tags.selectGeneral(1);
+    tags.selectSeverity(9);
+    expect(tags.filter).toEqual({ tags: [1], severityTags: [9] });
+  });
+
+  it('clearSeveritySelection only clears severity axis', () => {
+    tags.selected = [1];
+    tags.selectedSeverity = [9, 10];
+    tags.clearSeveritySelection();
+    expect(tags.selected).toEqual([1]);
+    expect(tags.selectedSeverity).toEqual([]);
+  });
+
+  it('remove drops selection in both axes for the removed tag', async () => {
+    tags.list = [
+      tag({ id: 1, tag_group: 'general' }),
+      tag({ id: 9, tag_group: 'severity' })
+    ];
+    tags.selected = [1];
+    tags.selectedSeverity = [9];
+    queueResponses([{ ok: true, status: 204, body: '' }]);
+    const ok = await tags.remove(9);
+    expect(ok).toBe(true);
+    expect(tags.selectedSeverity).toEqual([]);
+    // Other axis untouched.
+    expect(tags.selected).toEqual([1]);
+  });
+
+  it('togglePanel flips and persists the collapsed state', () => {
+    expect(tags.panelCollapsed).toBe(false);
+    tags.togglePanel();
+    expect(tags.panelCollapsed).toBe(true);
+    expect(localStorage.getItem('bearings.tagFilterPanel.collapsed')).toBe('1');
+    tags.togglePanel();
+    expect(tags.panelCollapsed).toBe(false);
+    expect(localStorage.getItem('bearings.tagFilterPanel.collapsed')).toBe('0');
   });
 });

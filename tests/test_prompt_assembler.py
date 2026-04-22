@@ -7,7 +7,15 @@ import pytest
 
 from bearings.agent.base_prompt import BASE_PROMPT
 from bearings.agent.prompt import assemble_prompt
-from bearings.db.store import attach_tag, create_session, create_tag, init_db
+from bearings.db.store import (
+    attach_tag,
+    create_checklist,
+    create_item,
+    create_session,
+    create_tag,
+    init_db,
+    toggle_item,
+)
 
 
 async def _set_session_instructions(
@@ -185,6 +193,124 @@ async def test_empty_description_omits_layer(tmp_path: Path) -> None:
     finally:
         await conn.close()
     assert "session_description" not in [layer.kind for layer in result.layers]
+
+
+# ---------------------------------------------------------------------------
+# v0.5.2: checklist_overview layer for kind='checklist' sessions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_checklist_overview_layer_injected_for_checklist_kind(tmp_path: Path) -> None:
+    """A kind='checklist' session gets a `checklist_overview` layer that
+    carries the list title, notes, and every item's label + checked state."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        cl = await create_session(
+            conn,
+            working_dir="/tmp",
+            model="claude-sonnet-4-6",
+            kind="checklist",
+            title="ship v0.5.2",
+        )
+        await create_checklist(conn, cl["id"], notes="paired-chat + embedded chat")
+        done = await create_item(conn, cl["id"], label="wire runner")
+        assert done is not None
+        await toggle_item(conn, done["id"], checked=True)
+        await create_item(conn, cl["id"], label="add overview layer")
+        await create_item(conn, cl["id"], label="build chat panel")
+        result = await assemble_prompt(conn, cl["id"])
+    finally:
+        await conn.close()
+    kinds = [layer.kind for layer in result.layers]
+    assert "checklist_overview" in kinds
+    overview = next(layer for layer in result.layers if layer.kind == "checklist_overview")
+    assert "ship v0.5.2" in overview.content
+    assert "paired-chat + embedded chat" in overview.content
+    assert "[x] wire runner" in overview.content
+    assert "[ ] add overview layer" in overview.content
+    assert "[ ] build chat panel" in overview.content
+
+
+@pytest.mark.asyncio
+async def test_checklist_overview_layer_omitted_for_chat_session(tmp_path: Path) -> None:
+    """A plain chat session never gets the overview layer, even when a
+    checklist exists in the DB for a different session."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        cl = await create_session(
+            conn, working_dir="/tmp", model="claude-sonnet-4-6", kind="checklist"
+        )
+        await create_checklist(conn, cl["id"])
+        chat = await create_session(conn, working_dir="/tmp", model="claude-sonnet-4-6")
+        result = await assemble_prompt(conn, chat["id"])
+    finally:
+        await conn.close()
+    assert "checklist_overview" not in [layer.kind for layer in result.layers]
+
+
+@pytest.mark.asyncio
+async def test_checklist_overview_layer_renders_nested_items(tmp_path: Path) -> None:
+    """Nested items should indent under their parent so the agent sees
+    the same hierarchy the UI renders."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        cl = await create_session(
+            conn, working_dir="/tmp", model="claude-sonnet-4-6", kind="checklist"
+        )
+        await create_checklist(conn, cl["id"])
+        parent = await create_item(conn, cl["id"], label="parent task")
+        assert parent is not None
+        await create_item(conn, cl["id"], label="child task", parent_item_id=parent["id"])
+        result = await assemble_prompt(conn, cl["id"])
+    finally:
+        await conn.close()
+    overview = next(layer for layer in result.layers if layer.kind == "checklist_overview")
+    lines = overview.content.splitlines()
+    parent_idx = next(i for i, ln in enumerate(lines) if "parent task" in ln)
+    child_idx = next(i for i, ln in enumerate(lines) if "child task" in ln)
+    assert child_idx > parent_idx
+    # Child line is indented farther than parent line.
+    assert lines[child_idx].startswith("  ") and not lines[parent_idx].startswith("  ")
+
+
+@pytest.mark.asyncio
+async def test_checklist_overview_layer_handles_empty_list(tmp_path: Path) -> None:
+    """An empty checklist still injects the layer — the agent gets the
+    title and a "(none yet)" marker instead of a silent skip."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        cl = await create_session(
+            conn,
+            working_dir="/tmp",
+            model="claude-sonnet-4-6",
+            kind="checklist",
+            title="blank list",
+        )
+        await create_checklist(conn, cl["id"])
+        result = await assemble_prompt(conn, cl["id"])
+    finally:
+        await conn.close()
+    overview = next(layer for layer in result.layers if layer.kind == "checklist_overview")
+    assert "blank list" in overview.content
+    assert "(none yet" in overview.content
+
+
+@pytest.mark.asyncio
+async def test_checklist_overview_layer_skipped_on_missing_checklist_row(tmp_path: Path) -> None:
+    """A kind='checklist' session whose companion `checklists` row never
+    landed (transient creation race) should not crash the assembler."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        cl = await create_session(
+            conn, working_dir="/tmp", model="claude-sonnet-4-6", kind="checklist"
+        )
+        # Deliberately skip create_checklist so the FK-joined row is
+        # missing. The assembler should degrade gracefully.
+        result = await assemble_prompt(conn, cl["id"])
+    finally:
+        await conn.close()
+    assert "checklist_overview" not in [layer.kind for layer in result.layers]
 
 
 @pytest.mark.asyncio

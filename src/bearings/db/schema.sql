@@ -97,7 +97,19 @@ CREATE TABLE IF NOT EXISTS tags (
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     default_working_dir TEXT,
-    default_model TEXT
+    default_model TEXT,
+    -- Tag grouping dimension (migration 0021). 'general' = the
+    -- original user-configurable tag set; 'severity' = the
+    -- Blocker/Critical/Medium/Low/QoL urgency ladder every session
+    -- carries. CHECK-constrained so typos never land in the column.
+    -- The sidebar filter panel renders each group as its own section
+    -- (HR divider between) and the app layer enforces
+    -- "exactly one severity tag per session" on session create /
+    -- tag attach — not enforced at the DB level on purpose, so a
+    -- user deleting their severity tag just orphans the affected
+    -- sessions without blocking the delete.
+    tag_group TEXT NOT NULL DEFAULT 'general'
+        CHECK (tag_group IN ('general', 'severity'))
 );
 
 CREATE TABLE IF NOT EXISTS session_tags (

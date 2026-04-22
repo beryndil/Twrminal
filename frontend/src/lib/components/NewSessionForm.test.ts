@@ -29,6 +29,7 @@ function tag(overrides: Partial<Tag> = {}): Tag {
     open_session_count: 0,
     default_working_dir: null,
     default_model: null,
+    tag_group: 'general',
     ...overrides
   };
 }
@@ -78,7 +79,7 @@ describe('NewSessionForm kind toggle', () => {
     expect(queryByText('Model')).toBeNull();
   });
 
-  it('posts kind=checklist and does NOT open an agent connection on submit', async () => {
+  it('posts kind=checklist and opens an agent connection on submit', async () => {
     const stub = queueResponses([
       {
         ok: true,
@@ -113,8 +114,11 @@ describe('NewSessionForm kind toggle', () => {
     const [, init] = stub.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body));
     expect(body.kind).toBe('checklist');
-    // Checklist sessions skip the WS connect — the runner rejects them.
-    expect(connectSpy).not.toHaveBeenCalled();
+    // v0.5.2: checklist sessions now open the WS so the embedded
+    // chat panel in ChecklistView can stream turns — the runner
+    // accepts checklist kinds and the checklist_overview prompt
+    // layer grounds every turn in the list's current state.
+    expect(connectSpy).toHaveBeenCalledWith('sess-new');
   });
 
   it('chat submission still opens the agent connection', async () => {
