@@ -624,6 +624,79 @@ the historical checklists as-is.
   undo-window length (30s default), Slice-6 priority (ship 1–5 first
   or put 6 on the critical path), tool-call-group warn-vs-refuse.
 
+## v0.4.1 — shipped
+
+Checklist Sessions — Slices 2 and 3 of
+`~/.claude/plans/nimble-checking-heron.md` shipped together because
+either half alone leaves the other broken: Slice 2 exposes a REST
+surface with no UI to reach it, Slice 3 without 2 has no endpoints
+to call. Point bump (0.4.0 → 0.4.1) rather than a minor because no
+new primitives — the sessions.kind discriminator landed in 0.4.0 and
+this ships the plumbing around it.
+
+- [x] `SessionCreate.kind` (Literal, defaults `'chat'`) and
+  `SessionOut.kind` so the frontend can create checklist sessions
+  and the sidebar can render the badge. `POST /api/sessions` with
+  `kind='checklist'` also inserts the companion `checklists` row
+  in the same transaction.
+- [x] `routes_checklists.py` — seven endpoints under
+  `/sessions/{id}/checklist[/items[/{item_id}[/toggle]]]`. Helper
+  `_require_checklist_session` 404s on missing / 400s on wrong
+  kind; item routes additionally check
+  `item['checklist_id'] == session_id` so a client can't mutate a
+  neighbor's list by guessing an id.
+- [x] WS handler rejects checklist sessions with close code 4400
+  before the runner spawns; `_build_runner` keeps its own
+  defense-in-depth `ValueError` so any programmatic caller that
+  bypasses the WS guard still fails loudly.
+- [x] Reorg handlers (`move`, `split`, `merge`) gate on `kind`:
+  both source and target must be `'chat'`, else 400 with a
+  descriptive `role` label. Prevents a merge into a checklist
+  from silently dropping items on the floor.
+- [x] 18 backend tests covering kind round-trip, CRUD,
+  cross-checklist rejection, cascade delete, the reorg guard on
+  all three handlers / both sides, and the WS 4400 close.
+- [x] Frontend `Session.kind` type + optional `kind?` on
+  `SessionCreate`. Five existing test fixtures updated with
+  `kind: 'chat'` to satisfy the now-required field.
+- [x] `frontend/src/lib/api/checklists.ts` — bindings for all
+  seven routes; re-exported through the `$lib/api` barrel.
+- [x] `frontend/src/lib/stores/checklists.svelte.ts` — Svelte 5
+  runes store with optimistic updates and rollback on server
+  error. Captures `this.current` + `this.sessionId` into locals
+  before `await` so TS can narrow past the async boundary.
+- [x] `ChecklistView.svelte` — notes textarea (blur-commits
+  against the server value), flat item list with click-to-edit
+  label, Enter-to-add with input refocus, Add-item autofocus on
+  pane visibility (Q1-A). Layout mirrors `Conversation.svelte`'s
+  header/body split.
+- [x] `+page.svelte` right-pane switch on
+  `sessions.selected?.kind === 'checklist'`. `boot` skips
+  `agent.connect` for checklist sessions so the runner guard
+  doesn't close the socket with a spurious error.
+- [x] `SessionList.svelte` — `☑` badge before the title for
+  checklist sessions; `onSelect` closes the existing agent
+  connection and skips connect for checklist kinds.
+- [x] `NewSessionForm.svelte` — `[ Chat ] [ Checklist ]`
+  segmented control; Checklist hides Budget + Model. Kind
+  threaded into `sessions.create`; connect skipped when
+  checklist.
+- [x] New vitest coverage: `NewSessionForm.test.ts` (3 tests,
+  hide/show + kind payload + agent.connect gating),
+  `ChecklistView.test.ts` (3 tests, load + optimistic add +
+  rollback). All 181 vitest tests green, 0 svelte-check
+  warnings, 416 pytest green.
+
+Follow-ups (blocked on Slice 4):
+
+- Per-item "💬 Work on this" spawn → paired chat session with
+  checklist context injected via `prompt_assembler.py`. User's
+  revised Slice 4 direction: one chat per item, resolve-on-check
+  to close the paired chat, open the next item.
+- Nested items + drag-reorder. Backend already ships
+  `parent_item_id` and `reorder_items`; the flat-list renderer in
+  Slice 3 simply doesn't surface either yet.
+
 ## v0.4.0 — shipped
 
 Checklist Sessions — Slice 1 of

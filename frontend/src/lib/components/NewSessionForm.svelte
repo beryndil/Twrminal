@@ -15,6 +15,11 @@
   let title = $state('');
   let budget = $state('');
   let submitting = $state(false);
+  // v0.4.0 session-kind toggle. 'checklist' hides Budget + Model
+  // because checklists never run an agent and never burn tokens —
+  // the fields are still sent to the backend (the default-from-tag
+  // values survive in state), just not surfaced in the form.
+  let kind = $state<'chat' | 'checklist'>('chat');
 
   // v0.2.13: ≥1 attached tag required. Seeded from the active sidebar
   // filter on open, then user edits with the chip UI below.
@@ -116,12 +121,14 @@
     }
     submitting = true;
     const ids = [...tagIds];
+    const createdKind = kind;
     const created = await sessions.create({
       working_dir: workingDir.trim() || prefs.defaultWorkingDir || '/tmp',
       model: model.trim() || prefs.defaultModel || 'claude-opus-4-7',
       title: title.trim() || null,
       max_budget_usd: parseBudget(budget),
-      tag_ids: ids
+      tag_ids: ids,
+      kind: createdKind
     });
     submitting = false;
     if (!created) return;
@@ -129,9 +136,15 @@
     title = '';
     budget = '';
     tagIds = [];
+    kind = 'chat';
     for (const id of ids) tags.bumpCount(id, +1);
     open = false;
-    await agent.connect(created.id);
+    // Checklist sessions don't run an agent loop — skip the WS
+    // connect so the runner guard doesn't close the socket with
+    // a kind-unsupported error.
+    if (createdKind === 'chat') {
+      await agent.connect(created.id);
+    }
   }
 </script>
 
@@ -143,14 +156,44 @@
       onSubmit();
     }}
   >
+    <div
+      class="flex rounded bg-slate-900 p-0.5 text-xs"
+      role="radiogroup"
+      aria-label="Session kind"
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-checked={kind === 'chat'}
+        class="flex-1 rounded px-2 py-1 {kind === 'chat'
+          ? 'bg-slate-700 text-slate-100'
+          : 'text-slate-400 hover:text-slate-200'}"
+        onclick={() => (kind = 'chat')}
+      >
+        Chat
+      </button>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={kind === 'checklist'}
+        class="flex-1 rounded px-2 py-1 {kind === 'checklist'
+          ? 'bg-slate-700 text-slate-100'
+          : 'text-slate-400 hover:text-slate-200'}"
+        onclick={() => (kind = 'checklist')}
+      >
+        ☑ Checklist
+      </button>
+    </div>
     <div class="flex flex-col text-xs gap-1">
       <span class="text-slate-400">Working dir</span>
       <FolderPicker bind:value={workingDir} />
     </div>
-    <div class="flex flex-col text-xs gap-1">
-      <span class="text-slate-400">Model</span>
-      <ModelSelect bind:value={model} />
-    </div>
+    {#if kind === 'chat'}
+      <div class="flex flex-col text-xs gap-1">
+        <span class="text-slate-400">Model</span>
+        <ModelSelect bind:value={model} />
+      </div>
+    {/if}
     <label class="flex flex-col text-xs gap-1">
       <span class="text-slate-400">Title <span class="text-slate-600">(optional)</span></span>
       <input
@@ -159,20 +202,22 @@
         bind:value={title}
       />
     </label>
-    <label class="flex flex-col text-xs gap-1">
-      <span class="text-slate-400"
-        >Budget USD <span class="text-slate-600">(optional)</span></span
-      >
-      <input
-        type="number"
-        inputmode="decimal"
-        step="0.01"
-        min="0"
-        placeholder="no cap"
-        class="rounded bg-slate-950 px-2 py-1 text-sm font-mono"
-        bind:value={budget}
-      />
-    </label>
+    {#if kind === 'chat'}
+      <label class="flex flex-col text-xs gap-1">
+        <span class="text-slate-400"
+          >Budget USD <span class="text-slate-600">(optional)</span></span
+        >
+        <input
+          type="number"
+          inputmode="decimal"
+          step="0.01"
+          min="0"
+          placeholder="no cap"
+          class="rounded bg-slate-950 px-2 py-1 text-sm font-mono"
+          bind:value={budget}
+        />
+      </label>
+    {/if}
 
     <section class="flex flex-col gap-1 text-xs">
       <span class="text-slate-400">Tags <span class="text-rose-400">*</span></span>

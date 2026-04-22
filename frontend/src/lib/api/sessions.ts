@@ -31,6 +31,11 @@ export type Session = {
    * auto-clear this on the backend, so the UI doesn't need to
    * force-reopen on merge/move/split. */
   closed_at: string | null;
+  /** v0.4.0 session-kind discriminator (migration 0016). 'chat' is
+   * the historical default rendered as a conversation; 'checklist'
+   * renders a structured list view instead. The right-pane and the
+   * WS handler both gate on this field. */
+  kind: 'chat' | 'checklist';
 };
 
 export type SessionCreate = {
@@ -41,6 +46,11 @@ export type SessionCreate = {
   max_budget_usd?: number | null;
   /** v0.2.13 requires at least one tag on every new session. */
   tag_ids: number[];
+  /** v0.4.0 kind discriminator. Omit or set 'chat' for a normal
+   * conversation session; 'checklist' creates the structured-list
+   * variant (the server also inserts the companion checklists row in
+   * the same transaction). */
+  kind?: 'chat' | 'checklist';
 };
 
 export type SessionUpdate = {

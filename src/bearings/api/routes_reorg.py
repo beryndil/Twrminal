@@ -49,6 +49,21 @@ router = APIRouter(
 )
 
 
+def _require_chat_kind(row: dict[str, Any] | None, *, role: str) -> None:
+    """v0.4.0 reorg guard. Move/split/merge semantics are defined over
+    message rows, which only exist on chat sessions. Reject with 400
+    (not 404) so the caller can tell "wrong session kind" from "no
+    such session". `role` is e.g. 'source' / 'target' so the message
+    points at the offending side."""
+    if row is None:
+        return  # missing-row check happens at the call site; stay single-purpose here.
+    if row.get("kind", "chat") != "chat":
+        raise HTTPException(
+            status_code=400,
+            detail=f"reorg requires chat sessions ({role} kind={row.get('kind')!r})",
+        )
+
+
 def _target_title(row: dict[str, Any] | None) -> str | None:
     """Snapshot the target title for the audit row. Falls through to
     `None` for untitled sessions so the UI can render '(untitled)' in
@@ -104,11 +119,14 @@ async def reorg_move(
         raise HTTPException(status_code=400, detail="message_ids must be non-empty")
     if session_id == body.target_session_id:
         raise HTTPException(status_code=400, detail="source and target sessions must differ")
-    if await store.get_session(conn, session_id) is None:
+    source = await store.get_session(conn, session_id)
+    if source is None:
         raise HTTPException(status_code=404, detail="source session not found")
     target = await store.get_session(conn, body.target_session_id)
     if target is None:
         raise HTTPException(status_code=404, detail="target session not found")
+    _require_chat_kind(source, role="source")
+    _require_chat_kind(target, role="target")
 
     # Detect tool-call-group splits BEFORE the move so the source
     # still has both halves of any affected pair — otherwise the
@@ -164,6 +182,7 @@ async def reorg_split(
     source = await store.get_session(conn, session_id)
     if source is None:
         raise HTTPException(status_code=404, detail="source session not found")
+    _require_chat_kind(source, role="source")
     if not body.new_session.tag_ids:
         raise HTTPException(
             status_code=400,
@@ -259,11 +278,14 @@ async def reorg_merge(
     conn = request.app.state.db
     if session_id == body.target_session_id:
         raise HTTPException(status_code=400, detail="source and target sessions must differ")
-    if await store.get_session(conn, session_id) is None:
+    source = await store.get_session(conn, session_id)
+    if source is None:
         raise HTTPException(status_code=404, detail="source session not found")
     target = await store.get_session(conn, body.target_session_id)
     if target is None:
         raise HTTPException(status_code=404, detail="target session not found")
+    _require_chat_kind(source, role="source")
+    _require_chat_kind(target, role="target")
 
     rows = await store.list_messages(conn, session_id)
     message_ids = [r["id"] for r in rows]

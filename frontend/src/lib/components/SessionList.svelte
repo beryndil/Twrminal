@@ -159,6 +159,14 @@
 
   async function onSelect(id: string) {
     sessions.select(id);
+    // Checklist sessions don't run an agent loop — attaching the WS
+    // would trip the server's kind-guard (close 4400). Close any
+    // existing agent connection so the UI reflects the switch.
+    const target = sessions.list.find((s) => s.id === id);
+    if (target?.kind === 'checklist') {
+      agent.close();
+      return;
+    }
     await agent.connect(id);
   }
 
@@ -326,6 +334,17 @@
                   class="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"
                 ></span>
               </span>
+            {/if}
+            {#if session.kind === 'checklist'}
+              <!-- Session-kind badge. Checklist sessions don't run
+                   an agent, so the live-run dot above is never shown
+                   next to this glyph; rendering both is impossible
+                   by construction. -->
+              <span
+                class="text-slate-500"
+                aria-label="Checklist session"
+                title="Checklist session">☑</span
+              >
             {/if}
             <span class="min-w-0 truncate">
               {session.title ?? session.model}

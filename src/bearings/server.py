@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from bearings import __version__
 from bearings.agent.registry import RunnerRegistry
 from bearings.api import (
+    routes_checklists,
     routes_commands,
     routes_config,
     routes_fs,
@@ -76,6 +77,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(routes_sessions.router, prefix="/api")
     app.include_router(routes_reorg.router, prefix="/api")
     app.include_router(routes_tags.router, prefix="/api")
+    app.include_router(routes_checklists.router, prefix="/api")
     app.include_router(routes_history.router, prefix="/api")
     app.include_router(routes_fs.router, prefix="/api")
     app.include_router(routes_commands.router, prefix="/api")

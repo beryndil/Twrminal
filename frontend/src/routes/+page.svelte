@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import AuthGate from '$lib/components/AuthGate.svelte';
   import CheatSheet from '$lib/components/CheatSheet.svelte';
+  import ChecklistView from '$lib/components/ChecklistView.svelte';
   import Conversation from '$lib/components/Conversation.svelte';
   import Inspector from '$lib/components/Inspector.svelte';
   import SessionList from '$lib/components/SessionList.svelte';
@@ -27,7 +28,12 @@
     // Start the background runner poll so session rows flag which
     // sessions are still working even when you're on a different one.
     sessions.startRunningPoll();
-    if (sessions.selectedId) await agent.connect(sessions.selectedId);
+    // Checklist sessions don't run an agent loop — skip the WS
+    // connect so the runner guard doesn't close the socket and the
+    // UI doesn't paint a spurious connection error.
+    if (sessions.selectedId && sessions.selected?.kind !== 'checklist') {
+      await agent.connect(sessions.selectedId);
+    }
   }
 
   onMount(async () => {
@@ -236,7 +242,11 @@
       {panes.left > 0 ? '◂' : '▸'}
     </button>
   </div>
-  <Conversation />
+  {#if sessions.selected?.kind === 'checklist'}
+    <ChecklistView />
+  {:else}
+    <Conversation />
+  {/if}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div

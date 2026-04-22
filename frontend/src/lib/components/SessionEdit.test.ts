@@ -29,6 +29,7 @@ function session(overrides: Partial<Session> = {}): Session {
     last_context_tokens: null,
     last_context_max: null,
     closed_at: null,
+    kind: 'chat',
     ...overrides
   };
 }

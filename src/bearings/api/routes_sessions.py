@@ -51,9 +51,19 @@ async def create_session(body: SessionCreate, request: Request) -> SessionOut:
         title=body.title,
         description=body.description,
         max_budget_usd=body.max_budget_usd,
+        kind=body.kind,
     )
     for tag_id in body.tag_ids:
         await store.attach_tag(conn, row["id"], tag_id)
+    # Checklist-kind sessions carry a 1:1 companion row. Create it in
+    # the same request so a freshly-minted checklist session is
+    # immediately addressable via `/api/sessions/{id}/checklist` — no
+    # half-built state where the session exists but the checklist
+    # doesn't. `create_checklist` commits; a failure here leaves the
+    # session row behind, which is acceptable (user can retry the
+    # checklist body endpoint) and simpler than an explicit rollback.
+    if body.kind == "checklist":
+        await store.create_checklist(conn, row["id"])
     metrics.sessions_created.inc()
     # Re-fetch so the returned row carries any updated_at bump from
     # the attach step, for frontend sort consistency.
