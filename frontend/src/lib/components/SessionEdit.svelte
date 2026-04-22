@@ -70,7 +70,11 @@
     tagError = null;
     try {
       sessionTags = await api.attachSessionTag(current.id, tag.id);
-      tags.bumpCount(tag.id, +1);
+      // open_session_count only moves when the session is open — a
+      // closed session still counts toward the tag's total but not
+      // toward the green "live work" count.
+      const openDelta = current.closed_at ? 0 : +1;
+      tags.bumpCount(tag.id, +1, openDelta);
       tagDraft = '';
     } catch (e) {
       tagError = e instanceof Error ? e.message : String(e);
@@ -96,7 +100,8 @@
     tagError = null;
     try {
       sessionTags = await api.detachSessionTag(current.id, tag.id);
-      tags.bumpCount(tag.id, -1);
+      const openDelta = current.closed_at ? 0 : -1;
+      tags.bumpCount(tag.id, -1, openDelta);
     } catch (e) {
       tagError = e instanceof Error ? e.message : String(e);
     }

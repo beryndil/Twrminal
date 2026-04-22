@@ -8,6 +8,10 @@ export type Tag = {
   sort_order: number;
   created_at: string;
   session_count: number;
+  /** Open-only partition of `session_count` (sessions whose `closed_at`
+   * is null). Rendered in green to the left of the total on the
+   * sidebar so live work is distinguishable from archived at a glance. */
+  open_session_count: number;
   default_working_dir: string | null;
   default_model: string | null;
 };

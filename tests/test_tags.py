@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from bearings.db.store import (
     attach_tag,
+    close_session,
     create_session,
     create_tag,
     delete_session,
@@ -19,6 +20,7 @@ from bearings.db.store import (
     list_session_tags,
     list_sessions,
     list_tags,
+    reopen_session,
     update_tag,
 )
 
@@ -55,6 +57,7 @@ async def test_create_tag_returns_row_with_defaults(tmp_path: Path) -> None:
         assert row["sort_order"] == 0
         assert row["created_at"]
         assert row["session_count"] == 0
+        assert row["open_session_count"] == 0
     finally:
         await conn.close()
 
@@ -133,9 +136,11 @@ async def test_attach_tag_is_idempotent(tmp_path: Path) -> None:
         assert await attach_tag(conn, sess["id"], tag["id"]) is True
         rows = await list_session_tags(conn, sess["id"])
         assert [r["id"] for r in rows] == [tag["id"]]
-        # session_count is 1, not 2.
+        # session_count is 1, not 2. The session is open, so the
+        # open-only partition matches.
         tags = await list_tags(conn)
         assert tags[0]["session_count"] == 1
+        assert tags[0]["open_session_count"] == 1
     finally:
         await conn.close()
 
@@ -270,6 +275,41 @@ def test_api_list_sessions_bad_tags_is_400(client: TestClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_open_session_count_tracks_close_and_reopen(tmp_path: Path) -> None:
+    """The green open count next to each tag row is a live partition of
+    `session_count` by `closed_at IS NULL`. Closing a tagged session
+    should decrement the open count but leave the total alone;
+    reopening should restore it. Two sessions share the tag so the
+    totals are non-trivial on both sides."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        tag = await create_tag(conn, name="infra")
+        s1 = await create_session(conn, working_dir="/x", model="m", title=None)
+        s2 = await create_session(conn, working_dir="/y", model="m", title=None)
+        await attach_tag(conn, s1["id"], tag["id"])
+        await attach_tag(conn, s2["id"], tag["id"])
+
+        row = await get_tag(conn, tag["id"])
+        assert row is not None
+        assert row["session_count"] == 2
+        assert row["open_session_count"] == 2
+
+        await close_session(conn, s1["id"])
+        row = await get_tag(conn, tag["id"])
+        assert row is not None
+        assert row["session_count"] == 2
+        assert row["open_session_count"] == 1
+
+        await reopen_session(conn, s1["id"])
+        row = await get_tag(conn, tag["id"])
+        assert row is not None
+        assert row["session_count"] == 2
+        assert row["open_session_count"] == 2
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
 async def test_delete_session_cascades_session_tags(tmp_path: Path) -> None:
     conn = await init_db(tmp_path / "db.sqlite")
     try:
@@ -281,6 +321,7 @@ async def test_delete_session_cascades_session_tags(tmp_path: Path) -> None:
         refreshed = await get_tag(conn, tag["id"])
         assert refreshed is not None
         assert refreshed["session_count"] == 0
+        assert refreshed["open_session_count"] == 0
     finally:
         await conn.close()
 
@@ -319,6 +360,7 @@ def test_post_tag_returns_201_and_row(client: TestClient) -> None:
     assert body["pinned"] is True
     assert body["sort_order"] == 0
     assert body["session_count"] == 0
+    assert body["open_session_count"] == 0
     assert body["id"] >= 1
 
 
@@ -383,9 +425,11 @@ def test_attach_session_tag_returns_tag_list(client: TestClient) -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert [t["id"] for t in body] == [tag["id"]]
-    # session_count rolls up to /api/tags.
+    # session_count rolls up to /api/tags; open partition matches for
+    # a fresh session.
     tags = client.get("/api/tags").json()
     assert tags[0]["session_count"] == 1
+    assert tags[0]["open_session_count"] == 1
 
 
 def test_attach_is_idempotent_via_api(client: TestClient) -> None:

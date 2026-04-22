@@ -31,8 +31,14 @@
         {/if}
         <span class="truncate">{tag.name}</span>
       </span>
-      <span class="text-[10px] font-mono text-slate-500">
-        {tag.session_count}
+      <span class="text-[10px] font-mono tabular-nums inline-flex items-baseline gap-1">
+        <!-- Open count in emerald when non-zero so a cold tag (0 open)
+             doesn't pull the eye; total stays slate-500 as before.
+             No separator — a single space, per Daisy. -->
+        <span class={tag.open_session_count > 0 ? 'text-emerald-400' : 'text-slate-500'}>
+          {tag.open_session_count}
+        </span>
+        <span class="text-slate-500">{tag.session_count}</span>
       </span>
     </button>
     <button

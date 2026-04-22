@@ -23,6 +23,7 @@ function tag(overrides: Partial<Tag> = {}): Tag {
     sort_order: 0,
     created_at: '2026-04-19T00:00:00+00:00',
     session_count: 0,
+    open_session_count: 0,
     default_working_dir: null,
     default_model: null,
     ...overrides
@@ -104,11 +105,27 @@ describe('tags store', () => {
   });
 
   it('bumpCount clamps at zero', () => {
-    tags.list = [tag({ id: 1, session_count: 0 })];
+    tags.list = [tag({ id: 1, session_count: 0, open_session_count: 0 })];
     tags.bumpCount(1, -1);
     expect(tags.list[0].session_count).toBe(0);
+    expect(tags.list[0].open_session_count).toBe(0);
     tags.bumpCount(1, +2);
     expect(tags.list[0].session_count).toBe(2);
+    expect(tags.list[0].open_session_count).toBe(2);
+  });
+
+  it('bumpCount defaults openDelta to delta when omitted', () => {
+    tags.list = [tag({ id: 1, session_count: 5, open_session_count: 3 })];
+    tags.bumpCount(1, +1);
+    expect(tags.list[0].session_count).toBe(6);
+    expect(tags.list[0].open_session_count).toBe(4);
+  });
+
+  it('bumpCount respects explicit openDelta of 0 (closed-session attach)', () => {
+    tags.list = [tag({ id: 1, session_count: 5, open_session_count: 3 })];
+    tags.bumpCount(1, +1, 0);
+    expect(tags.list[0].session_count).toBe(6);
+    expect(tags.list[0].open_session_count).toBe(3);
   });
 
   it('toggleSelected adds and removes ids', () => {

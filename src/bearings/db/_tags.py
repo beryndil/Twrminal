@@ -20,7 +20,15 @@ TAG_COLS_WITH_COUNT = (
     "t.id, t.name, t.color, t.pinned, t.sort_order, t.created_at, "
     "t.default_working_dir, t.default_model, "
     "(SELECT COUNT(*) FROM session_tags st WHERE st.tag_id = t.id) "
-    "AS session_count"
+    "AS session_count, "
+    # Open-only partition of session_count. The sidebar shows this in
+    # green to the left of the total so Daisy can see at a glance which
+    # tags have live work vs. archived work. Joins sessions to filter
+    # by closed_at IS NULL (migration 0015's lifecycle flag).
+    "(SELECT COUNT(*) FROM session_tags st "
+    "JOIN sessions s ON s.id = st.session_id "
+    "WHERE st.tag_id = t.id AND s.closed_at IS NULL) "
+    "AS open_session_count"
 )
 # Pinned tags first, then ascending sort_order, then id — the canonical
 # order used for sidebar rendering and tag-memory precedence.

@@ -81,11 +81,18 @@ class TagStore {
 
   /** Bump the cached session_count on a tag, used after a local
    * attach/detach so the sidebar chip updates without a full refresh.
+   * `openDelta` defaults to `delta` because the callsites that bump
+   * on a freshly created session (always open) want both to move
+   * together; SessionEdit passes 0 when operating on a closed session.
    * Clamps at 0 — never negative. */
-  bumpCount(id: number, delta: number): void {
+  bumpCount(id: number, delta: number, openDelta: number = delta): void {
     this.list = this.list.map((t) =>
       t.id === id
-        ? { ...t, session_count: Math.max(0, t.session_count + delta) }
+        ? {
+            ...t,
+            session_count: Math.max(0, t.session_count + delta),
+            open_session_count: Math.max(0, t.open_session_count + openDelta)
+          }
         : t
     );
   }

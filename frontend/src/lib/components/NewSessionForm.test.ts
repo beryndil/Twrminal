@@ -26,6 +26,7 @@ function tag(overrides: Partial<Tag> = {}): Tag {
     sort_order: 0,
     created_at: '2026-04-19T00:00:00+00:00',
     session_count: 0,
+    open_session_count: 0,
     default_working_dir: null,
     default_model: null,
     ...overrides

@@ -147,6 +147,11 @@
         <div>
           <h2 class="text-lg font-medium">Edit tag</h2>
           <p class="text-[10px] text-slate-600 font-mono mt-1">
+            <!-- Mirror the sidebar split so the edit modal's headline
+                 count matches the row Daisy just clicked on. -->
+            <span class={current.open_session_count > 0 ? 'text-emerald-400' : ''}>
+              {current.open_session_count}
+            </span>
             {current.session_count} session{current.session_count === 1 ? '' : 's'}
           </p>
         </div>

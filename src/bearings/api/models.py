@@ -173,6 +173,9 @@ class TagOut(BaseModel):
     sort_order: int
     created_at: str
     session_count: int = 0
+    # Open-only partition of session_count (sessions whose closed_at is
+    # NULL). Rendered in green beside the total on the sidebar.
+    open_session_count: int = 0
     default_working_dir: str | None = None
     default_model: str | None = None
 
