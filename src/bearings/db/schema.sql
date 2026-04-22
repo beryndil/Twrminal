@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS tool_calls (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_message_id ON tool_calls(message_id);
 
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
