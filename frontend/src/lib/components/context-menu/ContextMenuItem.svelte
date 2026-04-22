@@ -5,9 +5,13 @@
     action: Action;
     ctx: ActionContext;
     onDone: () => void;
+    /** Zero-based position in the flat (section-order) action list.
+     * ContextMenu.svelte uses this to route keyboard-FSM focus via
+     * `[data-flat-index="..."]` queries rather than a ref map. */
+    flatIndex: number;
   };
 
-  const { action, ctx, onDone }: Props = $props();
+  const { action, ctx, onDone, flatIndex }: Props = $props();
 
   // Phase 1: `disabled` is a predicate but no action ships with one yet.
   // Still respect it — when Phase 4 introduces "Coming in v0.9.2"
@@ -40,6 +44,7 @@
   aria-disabled={disabledReason !== null}
   title={disabledReason ?? undefined}
   data-action-id={action.id}
+  data-flat-index={flatIndex}
   data-testid="context-menu-item"
   onclick={onClick}
 >
