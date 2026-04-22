@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 
 import FolderPicker from './FolderPicker.svelte';
@@ -8,39 +8,22 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const HOME_LIST = {
-  path: '/home/dave',
-  parent: '/home',
-  entries: [
-    { name: 'Projects', path: '/home/dave/Projects', is_dir: true },
-    { name: 'docs', path: '/home/dave/docs', is_dir: true }
-  ]
-};
-
-const PROJECTS_LIST = {
-  path: '/home/dave/Projects',
-  parent: '/home/dave',
-  entries: [{ name: 'Bearings', path: '/home/dave/Projects/Bearings', is_dir: true }]
-};
-
-function mockFetch(map: Record<string, unknown>) {
-  return vi.fn(async (url: string) => {
-    for (const [needle, body] of Object.entries(map)) {
-      if (url.includes(needle))
-        return new Response(JSON.stringify(body), { status: 200 });
+/** Stub the backend `POST /api/fs/pick` bridge. The route shells out to
+ * zenity/kdialog in production, so the test never executes a real binary —
+ * we only exercise the client-side wiring (button → fetch → value update). */
+function mockPickResponse(body: unknown, status = 200) {
+  return vi.fn(async (url: string, init?: RequestInit) => {
+    if (!url.includes('/api/fs/pick')) {
+      throw new Error(`unexpected fetch to ${url}`);
     }
-    if (!url.includes('path=')) {
-      return new Response(JSON.stringify(HOME_LIST), { status: 200 });
+    if (init?.method !== 'POST') {
+      throw new Error(`expected POST, got ${init?.method}`);
     }
-    return new Response('not found', { status: 404 });
+    return new Response(JSON.stringify(body), { status });
   });
 }
 
 describe('FolderPicker', () => {
-  beforeEach(() => {
-    // jsdom lacks a default global fetch — tests install a stub per case.
-  });
-
   it('renders the value as a clickable trigger', () => {
     const { getByLabelText } = render(FolderPicker, { value: '/home/dave' });
     const trigger = getByLabelText('Folder path') as HTMLButtonElement;
@@ -57,80 +40,60 @@ describe('FolderPicker', () => {
     expect(trigger.textContent?.trim()).toBe('click to choose…');
   });
 
-  it('clicking the trigger opens the dialog and fetches the current value', async () => {
-    const fetchSpy = mockFetch({
-      'path=%2Fhome%2Fdave': HOME_LIST
+  it('clicking the trigger pops the native picker and writes the chosen path', async () => {
+    const fetchSpy = mockPickResponse({
+      path: '/home/dave/Projects/Bearings',
+      paths: ['/home/dave/Projects/Bearings'],
+      cancelled: false
     });
     vi.stubGlobal('fetch', fetchSpy);
-    const { getByLabelText, findByText } = render(FolderPicker, {
-      value: '/home/dave'
-    });
+    const { getByLabelText } = render(FolderPicker, { value: '/home/dave' });
     await fireEvent.click(getByLabelText('Folder path'));
-    await findByText('Projects');
+    await waitFor(() => {
+      const trigger = getByLabelText('Folder path') as HTMLButtonElement;
+      expect(trigger.textContent?.trim()).toBe('/home/dave/Projects/Bearings');
+    });
+    expect(fetchSpy).toHaveBeenCalled();
+    // Starts the dialog at the current value so the user isn't thrown
+    // back to $HOME every time they re-open a session form.
+    const url = fetchSpy.mock.calls[0][0];
+    expect(url).toContain('mode=directory');
+    expect(url).toContain('start=%2Fhome%2Fdave');
+  });
+
+  it('cancelled pick leaves the value untouched', async () => {
+    const fetchSpy = mockPickResponse({
+      path: null,
+      paths: [],
+      cancelled: true
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const { getByLabelText } = render(FolderPicker, { value: '/home/dave' });
+    await fireEvent.click(getByLabelText('Folder path'));
+    // Wait past the transient "Picking…" label so we're observing the
+    // post-resolve state — otherwise the assertion races the promise.
+    await waitFor(() => {
+      const t = getByLabelText('Folder path') as HTMLButtonElement;
+      expect(t.textContent?.trim()).not.toBe('Picking…');
+    });
+    const trigger = getByLabelText('Folder path') as HTMLButtonElement;
+    expect(trigger.textContent?.trim()).toBe('/home/dave');
     expect(fetchSpy).toHaveBeenCalled();
   });
 
-  it('descending into a subdirectory refetches and updates breadcrumb', async () => {
-    const fetchSpy = mockFetch({
-      'path=%2Fhome%2Fdave%2FProjects': PROJECTS_LIST,
-      'path=%2Fhome%2Fdave': HOME_LIST
-    });
+  it('surfaces backend errors inline without clobbering the value', async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response('no native file picker available', { status: 501 })
+    );
     vi.stubGlobal('fetch', fetchSpy);
-    const { getByText, getByLabelText, findByText } = render(FolderPicker, {
+    const { getByLabelText, findByTestId } = render(FolderPicker, {
       value: '/home/dave'
     });
     await fireEvent.click(getByLabelText('Folder path'));
-    await findByText('Projects');
-    await fireEvent.click(getByText('Projects'));
-    await findByText('Bearings');
-    expect(getByText('Projects')).toBeDefined();
-  });
-
-  it('"Use this folder" writes currentPath back to the trigger and closes', async () => {
-    const fetchSpy = mockFetch({
-      'path=%2Fhome%2Fdave%2FProjects': PROJECTS_LIST
-    });
-    vi.stubGlobal('fetch', fetchSpy);
-    const { getByText, getByLabelText, findByText, queryByText } = render(
-      FolderPicker,
-      { value: '/home/dave/Projects' }
-    );
-    await fireEvent.click(getByLabelText('Folder path'));
-    await findByText('Bearings');
-    await fireEvent.click(getByText('Use this folder'));
-    await waitFor(() => expect(queryByText('Use this folder')).toBeNull());
+    const err = await findByTestId('folder-picker-error');
+    expect(err.textContent).toMatch(/501|no native file picker/);
     const trigger = getByLabelText('Folder path') as HTMLButtonElement;
-    expect(trigger.textContent?.trim()).toBe('/home/dave/Projects');
-  });
-
-  it('Cancel closes the dialog without changing the value', async () => {
-    const fetchSpy = mockFetch({
-      'path=%2Fhome%2Fdave%2FProjects': PROJECTS_LIST
-    });
-    vi.stubGlobal('fetch', fetchSpy);
-    const { getByText, getByLabelText, findByText, queryByText } = render(
-      FolderPicker,
-      { value: '/home/dave/Projects' }
-    );
-    await fireEvent.click(getByLabelText('Folder path'));
-    await findByText('Bearings');
-    await fireEvent.click(getByText('Cancel'));
-    await waitFor(() => expect(queryByText('Use this folder')).toBeNull());
-    const trigger = getByLabelText('Folder path') as HTMLButtonElement;
-    expect(trigger.textContent?.trim()).toBe('/home/dave/Projects');
-  });
-
-  it('surfaces fetch errors inline without changing the trigger text', async () => {
-    const fetchSpy = vi.fn(
-      async () => new Response('not found', { status: 404 })
-    );
-    vi.stubGlobal('fetch', fetchSpy);
-    const { getByLabelText, findByText } = render(FolderPicker, {
-      value: '/nope'
-    });
-    await fireEvent.click(getByLabelText('Folder path'));
-    await findByText(/not found|404/);
-    const trigger = getByLabelText('Folder path') as HTMLButtonElement;
-    expect(trigger.textContent?.trim()).toBe('/nope');
+    expect(trigger.textContent?.trim()).toBe('/home/dave');
   });
 });

@@ -4,10 +4,10 @@
   import { sessions } from '$lib/stores/sessions.svelte';
   import { agent } from '$lib/agent.svelte';
   import * as api from '$lib/api';
+  import * as fsApi from '$lib/api/fs';
   import ApprovalModal from '$lib/components/ApprovalModal.svelte';
   import BulkActionBar from '$lib/components/BulkActionBar.svelte';
   import CommandMenu from '$lib/components/CommandMenu.svelte';
-  import FilePickerModal from '$lib/components/FilePickerModal.svelte';
   import MessageTurn from '$lib/components/MessageTurn.svelte';
   import PermissionModeSelector from '$lib/components/PermissionModeSelector.svelte';
   import ReorgAuditDivider from '$lib/components/ReorgAuditDivider.svelte';
@@ -914,8 +914,34 @@
   // prompt. We deliberately don't read file bytes: Dave's instruction
   // was "all it has to do is give you the link so that you know where
   // the file is."
-  let dragDepth = $state(0);
-  const dragActive = $derived(dragDepth > 0);
+  //
+  // Pattern mirrors SessionList.svelte (the working left-pane JSON
+  // drop zone). Handlers are bound to the outermost `<section>` so the
+  // whole pane — header, messages, textarea footer — accepts drops,
+  // and the `relatedTarget`/`contains` trick handles child-flicker
+  // without needing a depth counter.
+  let dragging = $state(false);
+
+  // Document-level dragover/drop default-suppression. Without this the
+  // browser's default handler navigates the tab to `file://…` whenever
+  // the user misses the section (or, on some compositors, always). The
+  // listeners only preventDefault — the section's own `ondrop` still
+  // does the real work.
+  $effect(() => {
+    function swallow(e: DragEvent) {
+      e.preventDefault();
+    }
+    document.addEventListener('dragover', swallow);
+    document.addEventListener('drop', swallow);
+    return () => {
+      document.removeEventListener('dragover', swallow);
+      document.removeEventListener('drop', swallow);
+    };
+  });
+
+  function hasFiles(e: DragEvent): boolean {
+    return e.dataTransfer?.types.includes('Files') ?? false;
+  }
 
   function parseUriList(text: string): string[] {
     // RFC 2483: lines starting with `#` are comments. Blank lines are
@@ -937,83 +963,115 @@
   }
 
   function onDragEnter(e: DragEvent) {
-    // Only light up for file drags — ignore intra-DOM drags (text
-    // selection, sidebar reorder gestures added later) so we don't
-    // steal drops that other components handle.
-    if (!e.dataTransfer?.types.includes('Files') &&
-        !e.dataTransfer?.types.includes('text/uri-list')) {
-      return;
-    }
-    e.preventDefault();
-    dragDepth += 1;
+    if (hasFiles(e)) dragging = true;
   }
 
   function onDragOver(e: DragEvent) {
-    if (!e.dataTransfer?.types.includes('Files') &&
-        !e.dataTransfer?.types.includes('text/uri-list')) {
-      return;
-    }
-    // Required so the browser fires `drop` instead of its default
-    // "open file in tab" behavior.
+    // preventDefault UNCONDITIONALLY. Chrome on Wayland sometimes
+    // exposes an empty types list during dragover (types only arrive
+    // reliably on dragenter/drop), so gating this on hasFiles(e) would
+    // skip preventDefault and the browser would then refuse the drop.
+    // Once dragenter has set dragging=true we already know a file drag
+    // is in flight, so it's safe to always accept.
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'link';
   }
 
   function onDragLeave(e: DragEvent) {
-    // Guard against child-element flicker: dragenter/leave fire for
-    // every descendant, so we track depth and only clear when it
-    // actually returns to zero.
-    if (!e.dataTransfer?.types.includes('Files') &&
-        !e.dataTransfer?.types.includes('text/uri-list')) {
-      return;
+    // Only clear when leaving the section entirely, not when crossing
+    // into a child element.
+    const related = e.relatedTarget as Node | null;
+    if (!related || !(e.currentTarget as Node).contains(related)) {
+      dragging = false;
     }
-    dragDepth = Math.max(0, dragDepth - 1);
   }
+
+  /** Pull candidate absolute paths out of every DataTransfer format the
+   * browser/OS combo might expose. Chromium on Linux is inconsistent:
+   * Nautilus/Thunar usually set `text/uri-list`, Dolphin sometimes sets
+   * only `text/plain` with a `file://` URI, and some Wayland setups
+   * strip URIs entirely for security. We try everything and dedupe. */
+  function extractPaths(dt: DataTransfer): { paths: string[]; formats: string[] } {
+    const formats: string[] = [];
+    const paths = new Set<string>();
+    const tryFormat = (fmt: string) => {
+      const raw = dt.getData(fmt);
+      if (!raw) return;
+      formats.push(`${fmt}=${raw.slice(0, 200)}`);
+      for (const p of parseUriList(raw)) paths.add(p);
+      // Raw-path fallback: some sources (KDE, xdg, plain-text drags)
+      // put the absolute path directly, no file:// prefix.
+      for (const line of raw.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('/') && !trimmed.includes(' ')) paths.add(trimmed);
+      }
+    };
+    tryFormat('text/uri-list');
+    tryFormat('text/x-moz-url');
+    tryFormat('application/x-kde4-urilist');
+    tryFormat('text/plain');
+    return { paths: [...paths], formats };
+  }
+
+  // Drop diagnostic state lives OUTSIDE `conversation.error` because that
+  // store only renders at the tail of the message list — invisible when
+  // scrolled up or when the session has no messages. We surface this as
+  // a dedicated banner above the text entry so the user always sees it.
+  let dropDiagnostic = $state<string | null>(null);
 
   function onDrop(e: DragEvent) {
-    if (!e.dataTransfer) return;
     e.preventDefault();
-    dragDepth = 0;
-    const uriList = e.dataTransfer.getData('text/uri-list');
-    const paths = uriList ? parseUriList(uriList) : [];
+    dragging = false;
+    if (!e.dataTransfer) return;
+    const { paths, formats } = extractPaths(e.dataTransfer);
     if (paths.length === 0) {
-      // Fallback: some browsers only set `text/plain` for a file drag.
-      const text = e.dataTransfer.getData('text/plain');
-      if (text && text.startsWith('file://')) {
-        paths.push(...parseUriList(text));
-      }
-    }
-    if (paths.length === 0) {
-      // File dragged from a source that didn't expose a URI (e.g.,
-      // a download-in-progress preview). The browser sandboxes the
-      // real path for `dataTransfer.files`, so there's nothing useful
-      // we can hand Claude — surface the limitation instead of
-      // silently dropping it.
-      conversation.error =
-        'Could not read the dropped file path. Drag from a local file manager instead.';
+      // Chrome on Wayland sometimes strips both `text/uri-list` and
+      // `text/plain` on drop (tab-sandboxing + compositor mediation),
+      // leaving us nothing to inject. Surface the exposed formats so
+      // the user understands why the drop didn't land and can fall
+      // back to the Attach-file button.
+      const typesInfo = `types=[${(e.dataTransfer.types ?? []).join(', ')}]`;
+      const fileInfo = e.dataTransfer.files?.length
+        ? `files=[${Array.from(e.dataTransfer.files)
+            .map((f) => f.name)
+            .join(', ')}]`
+        : 'files=[]';
+      dropDiagnostic =
+        'Drop received, but the browser did not expose an absolute path. ' +
+        `${typesInfo} ${fileInfo} ` +
+        (formats.length ? formats.join(' | ') : '(no text formats exposed)') +
+        ' — use the Attach-file button instead.';
       return;
     }
+    dropDiagnostic = null;
     for (const p of paths) insertPathAtCursor(p);
   }
 
-  // Upload button → in-app FilePickerModal. We deliberately don't use
-  // the browser's native <input type="file"> (no absolute path) or a
-  // server-side zenity dialog (spawns an OS window that can't match
-  // Bearings styling). The modal walks the server filesystem through
-  // /api/fs/list and hands us absolute paths to inject into the prompt.
-  let filePickerOpen = $state(false);
+  // Upload button → native picker via `POST /api/fs/pick` (zenity on
+  // GTK, kdialog on KDE). Bearings runs on the user's own machine, so
+  // popping a dialog on their desktop is fair game and gives us the
+  // absolute path directly — no sandboxing, no upload, no custom modal
+  // to maintain. Multi-select: zenity supports it; paths come back
+  // NUL-delimited and we inject them in order at the cursor.
+  let picking = $state(false);
 
-  function onPickFile() {
-    filePickerOpen = true;
-  }
-
-  function onFilePickerConfirm(paths: string[]) {
-    filePickerOpen = false;
-    for (const p of paths) insertPathAtCursor(p);
-  }
-
-  function onFilePickerCancel() {
-    filePickerOpen = false;
+  async function onPickFile() {
+    if (picking) return;
+    picking = true;
+    try {
+      const start = sessions.selected?.working_dir ?? null;
+      const result = await fsApi.pickFile({
+        start,
+        multiple: true,
+        title: 'Attach a file to the prompt'
+      });
+      if (result.cancelled) return;
+      for (const p of result.paths) insertPathAtCursor(p);
+    } catch (e) {
+      conversation.error = e instanceof Error ? e.message : String(e);
+    } finally {
+      picking = false;
+    }
   }
 
   // Document-level Esc clears an active search highlight. Scoped to
@@ -1052,13 +1110,6 @@
   onCancel={closePicker}
 />
 
-<FilePickerModal
-  open={filePickerOpen}
-  start={sessions.selected?.working_dir ?? null}
-  onPick={onFilePickerConfirm}
-  onCancel={onFilePickerCancel}
-/>
-
 {#if undo}
   <ReorgUndoToast
     message={undo.message}
@@ -1085,7 +1136,24 @@
   />
 {/if}
 
-<section class="bg-slate-900 overflow-hidden flex flex-col min-w-0">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<section
+  class="relative bg-slate-900 overflow-hidden flex flex-col min-w-0
+    {dragging ? 'ring-2 ring-emerald-500/60 ring-inset' : ''}"
+  ondragenter={onDragEnter}
+  ondragover={onDragOver}
+  ondragleave={onDragLeave}
+  ondrop={onDrop}
+>
+  {#if dragging}
+    <div
+      class="pointer-events-none absolute inset-2 rounded border-2 border-dashed
+        border-emerald-500/70 bg-slate-950/60 flex items-center justify-center z-20"
+      data-testid="conversation-drop-hint"
+    >
+      <p class="text-sm text-emerald-300">Drop to attach file path to the prompt</p>
+    </div>
+  {/if}
   <header class="border-b border-slate-800 px-4 py-3 flex items-baseline justify-between">
     <div class="min-w-0">
       {#if pairedCrumb}
@@ -1290,25 +1358,10 @@
     </div>
   {/if}
 
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     bind:this={scrollContainer}
     class="relative flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4"
-    ondragenter={onDragEnter}
-    ondragover={onDragOver}
-    ondragleave={onDragLeave}
-    ondrop={onDrop}
   >
-    {#if dragActive}
-      <div
-        class="pointer-events-none absolute inset-2 z-10 flex items-center justify-center
-          rounded-lg border-2 border-dashed border-sky-500/60 bg-sky-500/10
-          text-sm font-medium text-sky-200"
-        data-testid="conversation-drop-hint"
-      >
-        Drop to attach file path
-      </div>
-    {/if}
     {#if conversation.hasMore}
       <p class="text-[10px] text-slate-600 text-center">
         {conversation.loadingOlder ? 'Loading older…' : 'Scroll up to load older messages'}
@@ -1356,6 +1409,23 @@
     {/if}
   </div>
 
+  {#if dropDiagnostic}
+    <div
+      class="border-t border-amber-900/50 bg-amber-950/40 px-4 py-2 flex items-start gap-2"
+      data-testid="drop-diagnostic"
+    >
+      <pre class="text-[11px] text-amber-200 whitespace-pre-wrap flex-1 font-mono">{dropDiagnostic}</pre>
+      <button
+        type="button"
+        class="text-amber-400 hover:text-amber-200 text-xs"
+        aria-label="Dismiss drop diagnostic"
+        onclick={() => (dropDiagnostic = null)}
+      >
+        ✕
+      </button>
+    </div>
+  {/if}
+
   <form
     class="relative border-t border-slate-800 px-4 py-3 flex flex-col gap-2"
     onsubmit={(e) => {
@@ -1400,12 +1470,12 @@
           bg-slate-900 px-2.5 py-1 text-xs text-slate-300 hover:border-slate-600
           hover:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={onPickFile}
-        disabled={!sessions.selectedId}
+        disabled={!sessions.selectedId || picking}
         title="Attach a file path"
         data-testid="attach-file"
       >
         <span aria-hidden="true">📎</span>
-        <span>Attach file</span>
+        <span>{picking ? 'Picking…' : 'Attach file'}</span>
       </button>
       <span class="text-[10px] text-slate-500">
         or drag a file onto the conversation

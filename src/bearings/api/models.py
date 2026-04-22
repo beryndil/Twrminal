@@ -220,6 +220,20 @@ class FsListOut(BaseModel):
     entries: list[FsEntryOut]
 
 
+class FsPickOut(BaseModel):
+    """Result of POST /fs/pick. `path` is the absolute filesystem path
+    the user chose (first pick when multi-select is on), or None when
+    they cancelled the dialog. `paths` mirrors `path` for single-select
+    and carries every pick when `multiple` is requested. `cancelled` is
+    true iff the dialog was dismissed without a selection — a signal the
+    UI uses to no-op silently rather than surface an error.
+    """
+
+    path: str | None
+    paths: list[str]
+    cancelled: bool
+
+
 class CommandOut(BaseModel):
     """One entry in the slash-command palette (command or skill).
 
