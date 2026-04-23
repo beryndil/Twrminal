@@ -58,6 +58,13 @@ class ConversationStore {
   );
   contextUsage = $derived<ContextUsageState | null>(this.active()?.contextUsage ?? null);
   todos = $derived<api.TodoItem[] | null>(this.active()?.todos ?? null);
+  // True while `load()` is in flight for the active session. The
+  // Conversation pane reads this to show a centered BearingsMark
+  // spinner on click until the first page of messages lands, which
+  // is noticeable for large sessions (lots of tool calls / long
+  // message windows). Per-session under the hood so rapid A→B→A
+  // clicks don't cross-wire.
+  loadingInitial = $derived<boolean>(this.active()?.loadingInitial ?? false);
 
   /** Highest `_seq` rendered for a session; passed to the server on
    * (re)connect as the replay cursor. */
@@ -78,6 +85,12 @@ class ConversationStore {
     this.sessionId = sessionId;
     const state = this.ensureState(sessionId);
     this.error = null;
+    // Flip the per-session loading flag *before* the first await so
+    // the spinner is visible in the same reactive tick as the click.
+    // Cleared in the finally below — covers both success and error
+    // so a failed fetch doesn't leave the pane showing a stale
+    // spinner forever.
+    state.loadingInitial = true;
     try {
       const [session, page, toolCalls, todos] = await Promise.all([
         api.getSession(sessionId),
@@ -132,6 +145,8 @@ class ConversationStore {
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
       return null;
+    } finally {
+      state.loadingInitial = false;
     }
   }
 

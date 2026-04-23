@@ -1256,12 +1256,21 @@
       {/if}
       <h1 class="text-lg font-medium flex items-center gap-2">
         <!-- Permanent brand mark. Spins reactively while the agent is
-             connecting or a response is streaming — the logo IS the
-             work indicator, so loading states read as the app coming
-             alive rather than as bolted-on spinners. -->
+             connecting, a response is streaming, or the per-session
+             REST bundle is still in flight after a click. The logo IS
+             the work indicator, so loading states read as the app
+             coming alive rather than as bolted-on spinners.
+             `loadingInitial` is what catches the "session clicked, big
+             transcript still loading" case — WS replay usually paints
+             messages before REST finishes, so the centered-pane
+             spinner below rarely gets a chance to render; this header
+             mark keeps a steady signal while tool calls / audits /
+             tags / tokens are still streaming in behind the scenes. -->
         <BearingsMark
           size={20}
-          spin={agent.state === 'connecting' || conversation.streamingActive}
+          spin={agent.state === 'connecting' ||
+            conversation.streamingActive ||
+            conversation.loadingInitial}
         />
         {sessions.selected?.title ?? 'Bearings'}
         {#if sessions.selected}
@@ -1474,6 +1483,20 @@
     {/if}
     {#if !sessions.selectedId}
       <p class="text-slate-500 text-sm">No session selected.</p>
+    {:else if conversation.loadingInitial && conversation.messages.length === 0}
+      <!-- Initial-load pane. Heavy sessions (long transcripts with
+           many tool calls) take visible time to fetch. Showing the
+           brand mark spinning is a clearer signal than a blank pane
+           or the "No messages yet" copy that used to flash here. Only
+           fires when messages haven't been cached yet — re-selecting
+           a previously-loaded session shows its cached content
+           immediately and backfills silently. -->
+      <div
+        class="flex-1 flex items-center justify-center text-sky-400/80"
+        data-testid="conversation-initial-loading"
+      >
+        <BearingsMark size={72} spin label="Loading session" />
+      </div>
     {:else if conversation.messages.length === 0 && !conversation.streamingActive && audits.length === 0}
       <p class="text-slate-500 text-sm">
         No messages yet. Send a prompt to start the conversation.

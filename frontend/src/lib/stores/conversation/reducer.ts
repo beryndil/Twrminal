@@ -130,6 +130,14 @@ export type SessionState = {
   // merging (TodoWrite itself ships no ids and uses positional
   // identity only).
   todos: api.TodoItem[] | null;
+  // True while the initial message-page fetch for this session is in
+  // flight (set by `ConversationStore.load`, cleared in its finally).
+  // Per-session so concurrent clicks on A then B don't race over a
+  // single flag. The Conversation pane reads this to show a centered
+  // BearingsMark spinner instead of "No messages yet." when the
+  // message list is empty because we haven't loaded yet vs. empty
+  // because the session genuinely has no messages.
+  loadingInitial: boolean;
 };
 
 export type ContextUsageState = {
@@ -152,7 +160,11 @@ export function emptyState(): SessionState {
     completedMessageIds: new Set(),
     pendingApproval: null,
     contextUsage: null,
-    todos: null
+    todos: null,
+    // Neutral default: a bare state isn't "loading" until `load()`
+    // flips this on. Any code path that instantiates SessionState
+    // outside the load flow (WS replay, tests) starts not-loading.
+    loadingInitial: false
   };
 }
 

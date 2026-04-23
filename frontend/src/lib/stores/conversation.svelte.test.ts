@@ -333,3 +333,27 @@ describe('todo_write_update reducer', () => {
     expect(conversation.todos?.[0].content).toBe('B-task');
   });
 });
+
+describe('loadingInitial flag', () => {
+  // We don't exercise `conversation.load()` here (that would require
+  // mocking $lib/api at the module boundary — the agent.svelte tests
+  // show the pattern, not worth duplicating for one field). The
+  // interesting invariants are that the flag is per-session and that
+  // the derived getter follows the active session — a race-safety
+  // property for rapid A→B session clicks.
+
+  it('defaults to false for a freshly-seeded session state', () => {
+    const sid = uniqueSession('loading-default');
+    conversation.sessionId = sid;
+    // Any handleEvent call seeds state via ensureState; pick a no-op
+    // for an unknown tool id so we don't actually mutate anything
+    // else on the state.
+    conversation.handleEvent(delta(sid, 'never-started', 'x'));
+    expect(conversation.loadingInitial).toBe(false);
+  });
+
+  it('returns false when no session is selected', () => {
+    conversation.sessionId = null;
+    expect(conversation.loadingInitial).toBe(false);
+  });
+});
