@@ -47,6 +47,7 @@ from bearings.db._messages import (
     list_tool_calls,
     mark_replay_attempted,
     search_messages,
+    update_message_flags,
 )
 from bearings.db._reorg import (
     MoveResult,
@@ -164,6 +165,7 @@ __all__ = [
     "touch_session",
     "update_checklist",
     "update_item",
+    "update_message_flags",
     "update_session",
     "update_tag",
 ]

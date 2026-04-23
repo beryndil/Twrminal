@@ -89,9 +89,14 @@
     class="relative rounded border px-3 py-2 group
       {bulkMode && isSelected(user.id)
         ? 'border-emerald-500 bg-emerald-900/10'
-        : 'border-slate-800 bg-slate-800/60'}"
+        : user.pinned
+          ? 'border-amber-500/60 bg-slate-800/60'
+          : 'border-slate-800 bg-slate-800/60'}
+      {user.hidden_from_context ? 'opacity-50' : ''}"
     data-testid="user-article"
     data-message-id={user.id}
+    data-pinned={user.pinned ? 'true' : 'false'}
+    data-hidden-from-context={user.hidden_from_context ? 'true' : 'false'}
     use:contextmenu={{
       target: {
         type: 'message',
@@ -118,6 +123,14 @@
           />
         {/if}
         <span>user</span>
+        {#if user.pinned}
+          <span class="text-amber-400 normal-case" title="Pinned">📌</span>
+        {/if}
+        {#if user.hidden_from_context}
+          <span class="text-slate-500 normal-case" title="Hidden from context window"
+            >👁‍🗨 hidden</span
+          >
+        {/if}
       </span>
     </header>
     <CollapsibleBody
@@ -189,9 +202,14 @@
         ? 'border-emerald-500 bg-emerald-900/10'
         : isStreaming
           ? 'border-amber-900/50'
-          : 'border-slate-800'}"
+          : assistant?.pinned
+            ? 'border-amber-500/60'
+            : 'border-slate-800'}
+      {assistant?.hidden_from_context ? 'opacity-50' : ''}"
     data-testid="assistant-article"
     data-message-id={assistant?.id ?? ''}
+    data-pinned={assistant?.pinned ? 'true' : 'false'}
+    data-hidden-from-context={assistant?.hidden_from_context ? 'true' : 'false'}
     use:contextmenu={{
       target: assistant
         ? {
@@ -220,6 +238,14 @@
           />
         {/if}
         <span>assistant{isStreaming ? ' · streaming' : ''}</span>
+        {#if assistant?.pinned}
+          <span class="text-amber-400 normal-case" title="Pinned">📌</span>
+        {/if}
+        {#if assistant?.hidden_from_context}
+          <span class="text-slate-500 normal-case" title="Hidden from context window"
+            >👁‍🗨 hidden</span
+          >
+        {/if}
       </span>
     </header>
     {#if assistant}

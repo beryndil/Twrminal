@@ -119,6 +119,14 @@ export type Message = {
   output_tokens?: number | null;
   cache_read_tokens?: number | null;
   cache_creation_tokens?: number | null;
+  /** Message flag pair (migration 0023, Phase 8 of the context-menu
+   * plan). `pinned` floats the row in the conversation header without
+   * affecting the prompt. `hidden_from_context` drops the row from the
+   * context window assembled for the next agent turn — the row still
+   * renders in the conversation (greyed) so the user can toggle it
+   * back. Both default false via the column default. */
+  pinned?: boolean;
+  hidden_from_context?: boolean;
 };
 
 /** Aggregate per-session token counts served by

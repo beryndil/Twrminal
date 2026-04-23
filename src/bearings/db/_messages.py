@@ -68,7 +68,59 @@ async def insert_message(
         "output_tokens": output_tokens,
         "cache_read_tokens": cache_read_tokens,
         "cache_creation_tokens": cache_creation_tokens,
+        # Flags default to 0 on INSERT (column default). Included in
+        # the return shape so api/models.MessageOut round-trips without
+        # a follow-up SELECT. Migration 0023.
+        "pinned": 0,
+        "hidden_from_context": 0,
     }
+
+
+_MESSAGE_COLS = (
+    "id, session_id, role, content, thinking, created_at, "
+    "input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, "
+    "pinned, hidden_from_context"
+)
+
+
+async def update_message_flags(
+    conn: aiosqlite.Connection,
+    message_id: str,
+    *,
+    pinned: bool | None = None,
+    hidden_from_context: bool | None = None,
+) -> dict[str, Any] | None:
+    """Patch `pinned` and/or `hidden_from_context` on a message row.
+    Either argument may be None to skip that column — supplying both as
+    None is a no-op that still returns the current row so the PATCH
+    handler's response shape stays stable.
+
+    Returns the refreshed message dict, or None if the id is unknown.
+    The caller (api/routes_messages.py) is responsible for invalidating
+    any in-memory runner state — `hidden_from_context` toggles change
+    the context window for the NEXT turn, and pinned is pure UX."""
+    updates: list[str] = []
+    params: list[Any] = []
+    if pinned is not None:
+        updates.append("pinned = ?")
+        params.append(1 if pinned else 0)
+    if hidden_from_context is not None:
+        updates.append("hidden_from_context = ?")
+        params.append(1 if hidden_from_context else 0)
+    if updates:
+        params.append(message_id)
+        cursor = await conn.execute(
+            f"UPDATE messages SET {', '.join(updates)} WHERE id = ?",
+            tuple(params),
+        )
+        await conn.commit()
+        if cursor.rowcount == 0:
+            return None
+    async with conn.execute(
+        f"SELECT {_MESSAGE_COLS} FROM messages WHERE id = ?", (message_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+    return dict(row) if row is not None else None
 
 
 async def get_session_token_totals(
@@ -113,6 +165,7 @@ async def list_messages(
     *,
     before: str | None = None,
     limit: int | None = None,
+    exclude_hidden: bool = False,
 ) -> list[dict[str, Any]]:
     """Without `limit`, returns every message in the session in
     creation order — keeps the v0.1.0 behavior for small sessions.
@@ -120,28 +173,32 @@ async def list_messages(
     With `limit`, returns the N most-recent messages in newest-first
     order (so routes / callers that want oldest-first rendering
     reverse the page). Pass `before` (ISO timestamp) to fetch the
-    page immediately older than a known cursor."""
-    cols = (
-        "id, session_id, role, content, thinking, created_at, "
-        "input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens"
-    )
+    page immediately older than a known cursor.
+
+    `exclude_hidden=True` drops rows with `hidden_from_context = 1`
+    (migration 0023). That's the flag the agent's context-window
+    assembler honors — callers rendering the UI view pass False so
+    hidden rows still render (greyed) and the user can toggle the
+    flag back."""
+    hidden_clause = " AND hidden_from_context = 0" if exclude_hidden else ""
     if limit is None:
         async with conn.execute(
-            f"SELECT {cols} FROM messages WHERE session_id = ? ORDER BY created_at ASC, id ASC",
+            f"SELECT {_MESSAGE_COLS} FROM messages WHERE session_id = ?{hidden_clause} "
+            "ORDER BY created_at ASC, id ASC",
             (session_id,),
         ) as cursor:
             return [dict(row) async for row in cursor]
     if before is None:
         params: tuple[Any, ...] = (session_id, limit)
         sql = (
-            f"SELECT {cols} FROM messages WHERE session_id = ? "
+            f"SELECT {_MESSAGE_COLS} FROM messages WHERE session_id = ?{hidden_clause} "
             "ORDER BY created_at DESC, id DESC LIMIT ?"
         )
     else:
         params = (session_id, before, limit)
         sql = (
-            f"SELECT {cols} FROM messages "
-            "WHERE session_id = ? AND created_at < ? "
+            f"SELECT {_MESSAGE_COLS} FROM messages "
+            f"WHERE session_id = ? AND created_at < ?{hidden_clause} "
             "ORDER BY created_at DESC, id DESC LIMIT ?"
         )
     async with conn.execute(sql, params) as cursor:
@@ -365,11 +422,7 @@ async def list_all_messages(
     date_to: str | None = None,
 ) -> list[dict[str, Any]]:
     where, params = _date_filter("created_at", date_from, date_to)
-    sql = (
-        "SELECT id, session_id, role, content, thinking, created_at, "
-        "input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens "
-        "FROM messages" + where + " ORDER BY created_at ASC, id ASC"
-    )
+    sql = f"SELECT {_MESSAGE_COLS} FROM messages" + where + " ORDER BY created_at ASC, id ASC"
     async with conn.execute(sql, params) as cursor:
         return [dict(row) async for row in cursor]
 
@@ -401,6 +454,7 @@ async def search_messages(
         "m.thinking, m.created_at, "
         "m.input_tokens, m.output_tokens, "
         "m.cache_read_tokens, m.cache_creation_tokens, "
+        "m.pinned, m.hidden_from_context, "
         "s.title AS session_title, s.model "
         "FROM messages m JOIN sessions s ON s.id = m.session_id "
         "WHERE m.content LIKE ? OR m.thinking LIKE ? "

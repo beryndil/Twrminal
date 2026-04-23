@@ -79,3 +79,15 @@ checkpoints_forked = Counter(
     "Number of session forks spawned from a checkpoint anchor.",
     registry=REGISTRY,
 )
+
+# Phase 8 of docs/context-menu-plan.md. PATCH /messages/{id} toggles one
+# of two flags — `pinned` (UX only) or `hidden_from_context` (filtered out
+# of the next-turn prompt). One label per flag so operators can tell which
+# affordance is getting exercised. Only successful toggles bump; 404s and
+# no-op patches (body with every field unset) do not.
+message_flag_toggles = Counter(
+    "bearings_message_flag_toggles_total",
+    "Message flag toggles via PATCH /messages/{id}, by flag name.",
+    ["flag"],
+    registry=REGISTRY,
+)

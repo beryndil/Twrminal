@@ -75,7 +75,14 @@ CREATE TABLE IF NOT EXISTS messages (
     -- case) and on every assistant row (the column is meaningless
     -- there). Written BEFORE the replay hits the queue so a second
     -- crash can't trigger an infinite replay loop.
-    replay_attempted_at TEXT
+    replay_attempted_at TEXT,
+    -- Message flag pair (migration 0023). `pinned` floats the row in
+    -- the conversation header; `hidden_from_context` drops it from the
+    -- context window assembled for the next agent turn (the row stays
+    -- in the DB and renders greyed in the conversation view). Both
+    -- INTEGER 0/1, DEFAULT 0 so existing rows backfill correctly.
+    pinned INTEGER NOT NULL DEFAULT 0,
+    hidden_from_context INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);

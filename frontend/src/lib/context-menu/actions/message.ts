@@ -12,12 +12,13 @@
  * would leave copy actions stale when a streaming assistant turn edits
  * itself between right-click and handler fire.
  *
- * Pin / hide-from-context render disabled-with-tooltip per plan §2.3:
- * migration 0023 lands in Phase 8 and un-stubs both. `message.delete`
- * and `message.fork.from_here` are likewise disabled until their
- * primitives arrive (v0.9.2+).
+ * Pin / hide-from-context are live as of Phase 8 (v0.9.2, migration
+ * 0023): both toggle in place via `PATCH /messages/{id}` and reflect
+ * immediately in the conversation via `conversation.applyMessagePatch`.
+ * `message.delete` stays disabled until its primitive arrives.
  */
 
+import * as api from '$lib/api';
 import { checkpoints } from '$lib/stores/checkpoints.svelte';
 import { conversation } from '$lib/stores/conversation.svelte';
 import { sessions } from '$lib/stores/sessions.svelte';
@@ -121,16 +122,32 @@ export const MESSAGE_ACTIONS: readonly Action[] = [
     id: 'message.pin',
     label: 'Pin to turn header',
     section: 'organize',
-    handler: () => notYetImplemented('message.pin'),
-    disabled: () => 'Message pin / hide flags land in Phase 8 (v0.9.2)'
+    handler: async ({ target }) => {
+      const t = asMessage(target);
+      if (!t) return;
+      const live = conversation.messages.find((m) => m.id === t.id);
+      if (!live) return;
+      const nextPinned = !live.pinned;
+      const patched = await api.patchMessage(t.id, { pinned: nextPinned });
+      conversation.applyMessagePatch(t.sessionId, patched);
+    }
   },
   {
     id: 'message.hide_from_context',
     label: 'Hide from context window',
     section: 'organize',
     advanced: true,
-    handler: () => notYetImplemented('message.hide_from_context'),
-    disabled: () => 'Message pin / hide flags land in Phase 8 (v0.9.2)'
+    handler: async ({ target }) => {
+      const t = asMessage(target);
+      if (!t) return;
+      const live = conversation.messages.find((m) => m.id === t.id);
+      if (!live) return;
+      const nextHidden = !live.hidden_from_context;
+      const patched = await api.patchMessage(t.id, {
+        hidden_from_context: nextHidden
+      });
+      conversation.applyMessagePatch(t.sessionId, patched);
+    }
   },
   {
     id: 'message.move_to_session',

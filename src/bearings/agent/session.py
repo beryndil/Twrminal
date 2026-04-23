@@ -190,7 +190,15 @@ class AgentSession:
             return None
         # Pull one extra so the dedupe step still leaves the full
         # history window intact when the trailing row is our own.
-        rows = await list_messages(self.db, self.session_id, limit=_HISTORY_PRIME_MAX_MESSAGES + 1)
+        # `exclude_hidden=True` honors the `hidden_from_context` flag
+        # (migration 0023) — rows the user marked as hidden skip the
+        # history preamble so the next turn doesn't see them.
+        rows = await list_messages(
+            self.db,
+            self.session_id,
+            limit=_HISTORY_PRIME_MAX_MESSAGES + 1,
+            exclude_hidden=True,
+        )
         if not rows:
             return None
         # `list_messages(..., limit=...)` returns newest-first. Drop the

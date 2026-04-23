@@ -220,6 +220,23 @@ class ConversationStore {
     });
   }
 
+  /** Replace one message row in-place with a fresh copy from
+   * `PATCH /messages/{id}`. Used by the pin / hide-from-context menu
+   * handlers so the new flag values paint immediately rather than
+   * waiting for the next refreshMessages. No-ops when the session or
+   * the message id aren't cached (stale click after navigation). */
+  applyMessagePatch(sessionId: string, message: api.Message): void {
+    const state = this.states[sessionId];
+    if (!state) return;
+    const idx = state.messages.findIndex((m) => m.id === message.id);
+    if (idx < 0) return;
+    state.messages = [
+      ...state.messages.slice(0, idx),
+      { ...state.messages[idx], ...message },
+      ...state.messages.slice(idx + 1)
+    ];
+  }
+
   /** Refetch the most recent page of messages for a session without
    * touching streaming state or replacing the active session id. Used
    * to reconcile after `runner_status` reports drift. */

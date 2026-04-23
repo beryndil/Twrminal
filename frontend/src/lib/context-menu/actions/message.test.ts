@@ -51,13 +51,10 @@ describe('message.ts — action-ID stability', () => {
     // plan §2.3: items without a backing primitive render disabled
     // with a tooltip pointing at the phase where they un-stub.
     // Phase 7 (v0.9.2) un-stubbed `message.fork.from_here` — removed
-    // from this set. Pin/hide land in Phase 8; delete lands with the
-    // single-message DELETE primitive (same phase).
-    const expectedDisabled = [
-      'message.pin',
-      'message.hide_from_context',
-      'message.delete'
-    ];
+    // from this set. Phase 8 (v0.9.2) un-stubbed `message.pin` and
+    // `message.hide_from_context` via migration 0023. Delete still
+    // waits on the single-message DELETE primitive.
+    const expectedDisabled = ['message.delete'];
     for (const id of expectedDisabled) {
       const action = MESSAGE_ACTIONS.find((a) => a.id === id);
       expect(action?.disabled?.(MESSAGE)).toBeTruthy();
@@ -69,6 +66,17 @@ describe('message.ts — action-ID stability', () => {
     expect(fork).toBeDefined();
     expect(fork?.disabled).toBeUndefined();
     expect(typeof fork?.handler).toBe('function');
+  });
+
+  it('message.pin and message.hide_from_context are no longer stubs', () => {
+    const pin = MESSAGE_ACTIONS.find((a) => a.id === 'message.pin');
+    const hide = MESSAGE_ACTIONS.find((a) => a.id === 'message.hide_from_context');
+    expect(pin).toBeDefined();
+    expect(pin?.disabled).toBeUndefined();
+    expect(typeof pin?.handler).toBe('function');
+    expect(hide).toBeDefined();
+    expect(hide?.disabled).toBeUndefined();
+    expect(typeof hide?.handler).toBe('function');
   });
 
   it('message.delete is destructive and advanced', () => {
