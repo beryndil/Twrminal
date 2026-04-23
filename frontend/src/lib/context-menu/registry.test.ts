@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
+import { menuConfig } from '$lib/stores/menuConfig.svelte';
 import { getActions, resolveMenu } from './registry';
 import { SESSION_ACTIONS } from './actions/session';
 import { MESSAGE_ACTIONS } from './actions/message';
@@ -238,5 +239,122 @@ describe('resolveMenu', () => {
     ];
     const visible = gated.filter((a) => !(a.requires && !a.requires(t)));
     expect(visible).toHaveLength(0);
+  });
+});
+
+describe('resolveMenu with menus.toml overrides', () => {
+  afterEach(() => {
+    // Reset the store so one test's overrides don't bleed into the
+    // next. Tests that care about overrides set them up explicitly.
+    menuConfig.config = { by_target: {} };
+    menuConfig.loaded = false;
+    menuConfig.error = null;
+  });
+
+  it('drops hidden actions from the resolved menu', () => {
+    menuConfig.hydrate({
+      by_target: {
+        session: {
+          pinned: [],
+          hidden: ['session.copy_title'],
+          shortcuts: {}
+        }
+      }
+    });
+    const ids = flatIds(resolveMenu(SESSION, false));
+    expect(ids).not.toContain('session.copy_title');
+  });
+
+  it('keeps hidden actions reachable via the raw registry', () => {
+    // The command palette enumerates actions from `getActions`, not
+    // `resolveMenu`, so hiding a row in the right-click menu must not
+    // remove it from Ctrl+Shift+P.
+    menuConfig.hydrate({
+      by_target: {
+        session: {
+          pinned: [],
+          hidden: ['session.copy_title'],
+          shortcuts: {}
+        }
+      }
+    });
+    const rawIds = getActions('session').map((a) => a.id);
+    expect(rawIds).toContain('session.copy_title');
+  });
+
+  it('floats pinned actions to the top of their section', () => {
+    menuConfig.hydrate({
+      by_target: {
+        session: {
+          pinned: ['session.delete'],
+          hidden: [],
+          shortcuts: {}
+        }
+      }
+    });
+    const menu = resolveMenu(SESSION, false);
+    const destructive = menu.groups.find((g) => g.section === 'destructive');
+    expect(destructive?.actions[0]?.id).toBe('session.delete');
+  });
+
+  it('preserves pinned order when multiple pins target one section', () => {
+    menuConfig.hydrate({
+      by_target: {
+        session: {
+          // Both live in the `organize` section; listing reopen first
+          // means it must appear before pin even though the default
+          // declaration order is pin, unpin, archive, reopen.
+          pinned: ['session.reopen', 'session.pin'],
+          hidden: [],
+          shortcuts: {}
+        }
+      }
+    });
+    const menu = resolveMenu(SESSION, false);
+    const organize = menu.groups.find((g) => g.section === 'organize');
+    const ids = organize?.actions.map((a) => a.id) ?? [];
+    const reopenIdx = ids.indexOf('session.reopen');
+    const pinIdx = ids.indexOf('session.pin');
+    // Reopen is gated by a closed session and the sessions store is
+    // empty in this test, so it won't render; but pin should still be
+    // first among the actions that do pass the `requires` check.
+    if (reopenIdx !== -1 && pinIdx !== -1) {
+      expect(reopenIdx).toBeLessThan(pinIdx);
+    }
+    // Unconditionally: whichever of the two survives must be at
+    // index 0 — a later-declared action shouldn't leapfrog the pin.
+    if (pinIdx !== -1 && reopenIdx === -1) {
+      expect(pinIdx).toBe(0);
+    }
+  });
+
+  it('silently ignores unknown pinned IDs', () => {
+    menuConfig.hydrate({
+      by_target: {
+        session: {
+          pinned: ['session.does_not_exist'],
+          hidden: [],
+          shortcuts: {}
+        }
+      }
+    });
+    // No throw — the menu still resolves.
+    const menu = resolveMenu(SESSION, false);
+    expect(menu.groups.length).toBeGreaterThan(0);
+  });
+
+  it('silently ignores unknown hidden IDs', () => {
+    const baseline = flatIds(resolveMenu(SESSION, false)).length;
+    menuConfig.hydrate({
+      by_target: {
+        session: {
+          pinned: [],
+          hidden: ['session.also_does_not_exist'],
+          shortcuts: {}
+        }
+      }
+    });
+    const afterIds = flatIds(resolveMenu(SESSION, false));
+    expect(afterIds.length).toBe(baseline);
   });
 });

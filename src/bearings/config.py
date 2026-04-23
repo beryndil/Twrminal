@@ -168,6 +168,13 @@ class Settings(BaseSettings):
     shell: ShellCfg = Field(default_factory=ShellCfg)
 
     config_file: Path = Field(default_factory=lambda: CONFIG_HOME / "config.toml")
+    # `menus.toml` is the Phase 10 customization file: pinned / hidden
+    # / shortcut overrides per context-menu target. Read once at boot
+    # (no hot-reload) by `load_menu_config` off this path. Kept as a
+    # separate file — not merged into config.toml — because the shape
+    # is per-target with nested tables; mixing with the flat server /
+    # auth / agent settings would be noisy.
+    menus_file: Path = Field(default_factory=lambda: CONFIG_HOME / "menus.toml")
 
     def ensure_paths(self) -> None:
         self.config_file.parent.mkdir(parents=True, exist_ok=True)

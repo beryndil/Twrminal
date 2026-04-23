@@ -33,6 +33,7 @@ from bearings.api import (
 )
 from bearings.config import Settings, load_settings
 from bearings.db.store import init_db
+from bearings.menus import load_menu_config
 
 STATIC_DIR = Path(__file__).parent / "web" / "dist"
 
@@ -87,6 +88,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     cfg = settings or load_settings()
     app = FastAPI(title="Bearings", version=__version__, lifespan=lifespan)
     app.state.settings = cfg
+    # Load `menus.toml` once at app construction. Phase 10 deliberately
+    # has no hot-reload: a server restart is required to pick up
+    # override edits. The frontend reads the parsed shape at boot via
+    # `/api/ui-config` and merges it into the in-memory action registry.
+    app.state.menus = load_menu_config(cfg.menus_file)
 
     app.include_router(routes_health.router, prefix="/api")
     app.include_router(routes_config.router, prefix="/api")

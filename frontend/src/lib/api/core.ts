@@ -5,15 +5,38 @@ export type HealthResponse = {
 
 export type BillingMode = 'payg' | 'subscription';
 
+/** Parsed `menus.toml` overrides for one target type. Mirrors
+ * `bearings.menus.TargetMenuConfig` on the backend. The three axes:
+ *   - `pinned`: action IDs the user wants floated to the top of the
+ *     menu in listed order.
+ *   - `hidden`: action IDs the user never wants to see (still
+ *     reachable via Ctrl+Shift+P).
+ *   - `shortcuts`: `{action_id -> key_chord}` rebindings for the
+ *     keyboard FSM. */
+export type TargetMenuConfig = {
+  pinned: string[];
+  hidden: string[];
+  shortcuts: Record<string, string>;
+};
+
+/** Full parsed shape from `menus.toml`. Empty `by_target` when no
+ * overrides are configured. */
+export type MenuConfig = {
+  by_target: Record<string, TargetMenuConfig>;
+};
+
 /** Shape of `/api/ui-config`. Served once at boot so the frontend can
  * pick a cost-vs-tokens display strategy without ever reading the raw
  * config file. Pay-as-you-go users see dollar amounts (the SDK's
  * `total_cost_usd` matches their developer-API bill); Max/Pro
  * subscribers see token totals because flat-rate billing makes dollar
- * figures meaningless for their plan. */
+ * figures meaningless for their plan.
+ * `context_menus` ships the user's `menus.toml` overrides so the
+ * registry can apply pinned/hidden/shortcut rebindings at boot. */
 export type UiConfig = {
   billing_mode: BillingMode;
   billing_plan: string | null;
+  context_menus: MenuConfig;
 };
 
 export type TokenEvent = { type: 'token'; session_id: string; text: string };
