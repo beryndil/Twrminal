@@ -5,6 +5,97 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-04-22
+
+Registry-driven context menu system — the v0.9.1 "productive cut"
+milestone from `docs/context-menu-plan.md`. Right-click across the app
+now opens a menu whose entries come from a central registry instead
+of per-component popovers. Every action ID is a public API keyed by
+`~/.config/bearings/menus.toml` (hot-reload ships later in Phase 10)
+and pinned by frozen-snapshot tests per plan §7.4. Phases 1–6 all
+land here together — previous phase-by-phase commits carried feature
+work without version bumps; this release ties them off.
+
+### Added
+
+- **Phase 1-3 core primitive (commits `ee77b25`, `d8d122b`,
+  `06eee4d`).** `ContextMenu` + `ContextMenuItem` Svelte components,
+  the `use:contextmenu` action with `Ctrl+Shift+right-click`
+  native-menu passthrough, registry lookup + section ordering,
+  viewport / submenu flip positioning (pure `computePlacement`),
+  keyboard FSM (`ArrowUp/Down/Left/Right/Enter/Escape/Mnemonic`),
+  `ConfirmDialog` for destructive actions, `UndoToastHost` queue, and
+  the `StubToast` surface for not-yet-implemented primitives.
+- **Phase 4a backend surface (commit `64e7c0c`).** `/api/shell/open`
+  dispatcher (editor / terminal / file explorer / git GUI / Claude
+  CLI) wired to `shell.<kind>_command` keys in `config.toml`, plus
+  `PATCH /sessions/{id}` extended with `pinned`. Migration 0022 adds
+  `sessions.pinned`. `/ui-config` gains the `context_menus` merge
+  surface (pinned/hidden/shortcuts from `menus.toml`).
+- **Phase 4a.2 session + tag + tag_chip menus (commit `bceac1b`).**
+  18 session actions (open_in.*, pin/unpin, archive/reopen,
+  change_model submenu, duplicate + fork stubs, copy_id/title/
+  share_link, delete with confirmation), plus tag and tag_chip
+  catalogs bound across `TagFilterPanel`, `SessionEdit`, and
+  `NewSessionForm`. Unbuilt primitives render disabled-with-tooltip
+  per plan §2.3.
+- **Phase 4b command palette (commit `4aec1df`).** `Ctrl+Shift+P`
+  opens a flat action finder that reuses the registry. Target
+  auto-resolution scoped to the selected session for now; other
+  target types stay right-click-only until an "current message" or
+  "current tag" concept exists in app state.
+- **Phase 5 message + tool_call menus (commit `695aee3`).**
+  `MessageTurn.svelte`'s `openMenuId` popover deleted — Move-to-
+  session and Split-here now fire as registry actions and route
+  through the new `reorgStore` bridge so `Conversation.svelte` can
+  open its picker modal. 10 message actions + 5 tool_call actions
+  frozen. `message.pin` / `message.hide_from_context` stay disabled
+  pending migration 0023 (Phase 8). `tool_call.copy.output` uses a
+  dynamic predicate that greys the row only while the call is still
+  running.
+- **Phase 6 code_block + link menus (commit `41a5ab7`).**
+  `renderMarkdown` wraps every fenced block in
+  `<div data-bearings-code-block data-language="...">`; a new
+  `contextmenuDelegate` Svelte action on `CollapsibleBody` walks up
+  from `e.target` at right-click time to find code blocks or
+  `<a href>` descendants. 4 code_block actions (copy, copy_with_fence
+  advanced, save_to_file + open_in.editor disabled until a tempfile
+  primitive lands) + 4 link actions (copy_url, copy_text advanced,
+  open_new_tab with `noopener,noreferrer`, open_in.editor gated on
+  `file://`).
+
+### Changed
+
+- `MessageTurn.svelte` shrank from 377 to 257 lines after the
+  `openMenuId` popover + outside-click `$effect` were removed.
+  Move/split reach Conversation through `reorgStore` now, not via
+  prop callbacks.
+- `CollapsibleBody.svelte` gains a nullable `sessionId` prop so the
+  context-menu delegate can attribute code_block / link right-clicks
+  back to their owning session.
+
+### Tests
+
+- Frozen ID snapshot per target file (plan §7.4) — catches
+  unintentional renames at CI time.
+- Palette resolver test covers `requires` filtering, submenu
+  flattening, disabled-reason caching, advanced-flag surfacing.
+- `contextmenu-delegate.test.ts`: anchor-beats-code-block
+  precedence, plain-text passthrough, `Ctrl+Shift` native-menu
+  passthrough, Shift-alone advanced-mode, binding updates.
+- Total vitest count went from 234 (pre-Phase 1) to 413 (+179) —
+  registry / resolver / positioning / keyboard / store coverage
+  plus the per-target frozen lists.
+
+### Notes
+
+- No migration lands in 0.9.1; the backend surface additions reused
+  the 0022 migration that already shipped in 0.7.x.
+- Six plan open questions remain (see `docs/context-menu-plan.md`
+  §8); none block Phase 7. The next version (v0.9.2) covers the
+  checkpoint primitive (migration 0024), message flags (0023), bulk
+  multi-select, and session templates (0025).
+
 ## [0.8.0] - 2026-04-22
 
 Live TodoWrite widget surfaced as a sticky card at the top of the
