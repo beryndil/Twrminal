@@ -5,6 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2026-04-22
+
+Phase 10 of the context-menu plan — `menus.toml` customization. The
+right-click menu is now user-tunable: pin your most-used actions to
+the top of a target's menu, hide the ones you never want to see, and
+rebind shortcut chords. Overrides load once at server start from
+`~/.config/bearings/menus.toml`; reloading requires a restart, which
+matches the planning-doc design decision of keeping the loader
+dead-simple (no filesystem watcher, no partial-reload semantics).
+
+### Added
+
+- **Backend `menus.toml` loader (`src/bearings/menus.py`, new).**
+  `load_menu_config(path)` parses the TOML into a Pydantic `MenuConfig`
+  of `{by_target: {target_type: TargetMenuConfig}}` where each
+  `TargetMenuConfig` carries `pinned: list[str]`, `hidden: list[str]`,
+  `shortcuts: dict[str, str]`. Soft-fails on missing / empty /
+  malformed / unreadable files with a logged warning, so a typo in
+  `menus.toml` can never brick the UI. Unknown target names log a
+  warning and drop; unknown action IDs pass through (the frontend
+  filter is the single source of truth on what's valid).
+  `KNOWN_TARGET_TYPES` mirrors the frontend `ContextTarget` union
+  and is pinned by a drift test.
+- **`/api/ui-config` carries `context_menus`.** The existing boot
+  endpoint grows a third field alongside `billing_mode` /
+  `billing_plan`. Shape mirrors the Pydantic model exactly so the
+  frontend can merge it into `resolveMenu` without a translation
+  layer. Empty-config fallback means a fresh install (no `menus.toml`)
+  serves `context_menus = {by_target: {}}` and the registry renders
+  its defaults unchanged. The endpoint remains unauthenticated — the
+  frontend needs to know its display config before the user submits
+  a token.
+- **`frontend/src/lib/stores/menuConfig.svelte.ts` (new).**
+  Global `menuConfig` store holds the parsed `MenuConfig` and exposes
+  `forTarget(type) -> TargetMenuConfig` returning a frozen empty
+  default on miss. Hydrated once at boot via `billing.init()` — the
+  single `/api/ui-config` round-trip fans out to both stores. A
+  standalone `menuConfig.init()` stays available for tests and any
+  future boot path that wants menuConfig to own its fetch.
+- **`resolveMenu` applies pinned + hidden overrides.**
+  `frontend/src/lib/context-menu/registry.ts` now consults the
+  `menuConfig` store. Hidden IDs drop from the rendered menu (but
+  remain reachable via Ctrl+Shift+P — the command palette queries
+  the raw registry). Pinned IDs float to the top of their section in
+  the listed order; the rest of the section follows in declaration
+  order. Unknown pinned / hidden IDs are silently ignored so a
+  `menus.toml` written against a newer Bearings can be carried back
+  to an older install without errors.
+- **`docs/menus-toml.md` — full action-ID reference.** One markdown
+  table per target type enumerating every registered action with its
+  section, advanced / destructive flags, and notes on gating or
+  disabled state. Covers override semantics (pinned vs hidden
+  precedence, advanced still needing Shift, `requires` still
+  applying) and a debug checklist (tail logs, `curl | jq
+  .context_menus`, Ctrl+Shift+P reachability).
+
+### Version bumps
+
+- `pyproject.toml`: `0.9.2 → 0.9.3`
+- `frontend/package.json`: `0.7.1 → 0.7.2`
+- `uv.lock`: re-resolved.
+
 ## [0.9.2] - 2026-04-22
 
 Context-menu plan Phases 7 → 8 → 9 land together — the four remaining
