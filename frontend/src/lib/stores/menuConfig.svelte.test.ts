@@ -35,6 +35,45 @@ describe('menuConfig.hydrate', () => {
     menuConfig.hydrate(emptyConfig());
     expect(menuConfig.error).toBeNull();
   });
+
+  // Regression: a backend that predates Phase 10 returns `/api/ui-config`
+  // without the `context_menus` field, so `cfg.context_menus` is
+  // `undefined`. Prior versions set `config = undefined`, which made
+  // `forTarget()` throw on the very next right-click and silently
+  // bricked every Bearings context menu in the app. We now latch the
+  // empty default and flag `.error` so the store stays usable.
+  it('latches the empty default when the payload is undefined', () => {
+    menuConfig.hydrate(undefined);
+    expect(menuConfig.loaded).toBe(true);
+    expect(menuConfig.error).toContain('stale backend');
+    expect(() => menuConfig.forTarget('session')).not.toThrow();
+    expect(menuConfig.forTarget('session').pinned).toEqual([]);
+  });
+
+  it('latches the empty default when the payload is null', () => {
+    menuConfig.hydrate(null);
+    expect(menuConfig.loaded).toBe(true);
+    expect(menuConfig.error).toContain('stale backend');
+    expect(menuConfig.forTarget('message').hidden).toEqual([]);
+  });
+
+  it('latches the empty default when by_target is missing or wrong type', () => {
+    // Shapes we've seen or could plausibly see from a half-upgraded
+    // backend or a misconfigured proxy: object without `by_target`,
+    // `by_target` as an array, primitive payload, etc.
+    const badShapes = [
+      {},
+      { by_target: [] },
+      { by_target: null },
+      'not an object',
+      42
+    ];
+    for (const shape of badShapes) {
+      menuConfig.hydrate(shape as unknown as MenuConfig);
+      expect(menuConfig.error).toContain('stale backend');
+      expect(() => menuConfig.forTarget('session')).not.toThrow();
+    }
+  });
 });
 
 describe('menuConfig.forTarget', () => {

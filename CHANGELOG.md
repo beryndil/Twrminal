@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.7] - 2026-04-23
+
+Right-click hardening + version-reporting fix. Two independent bugs
+caught while diagnosing a live right-click outage:
+
+- A long-running `bearings.service` held a stale Python import table
+  from before Phase 10, so `/api/ui-config` returned the old
+  billing-only shape with no `context_menus` field. The v0.9.6 frontend
+  called `menuConfig.hydrate(undefined)`, latched `config = undefined`,
+  and the next call to `forTarget()` threw a TypeError. `resolveMenu`
+  caught the throw silently inside `$derived.by`, so every Bearings
+  context menu in the app rendered nothing when opened — right-click
+  consumed the event (via `preventDefault()`) but no menu appeared.
+- `src/bearings/__init__.py` had `__version__ = "0.6.0"` hardcoded
+  since v0.6.0 and was never bumped through v0.7.x–v0.9.6. Every
+  `/api/health` probe lied about the running version, which made the
+  outage above take ten extra minutes to diagnose (the 0.6.0 string
+  pointed at "impossibly old install" when the real issue was "last
+  restart was before the new code landed").
+
+### Fixed
+
+- **`frontend/src/lib/stores/menuConfig.svelte.ts` — `hydrate` now
+  accepts `MenuConfig | undefined | null` and narrows with a runtime
+  shape check (`isMenuConfig`).** Missing, null, or malformed payloads
+  latch a frozen empty default and flag `.error` with "stale backend"
+  so consumers can observe the skew without crashing. `forTarget()`
+  also guards `this.config?.by_target` defensively in case a test or
+  future caller writes `config` directly bypassing `hydrate`. Three
+  new regression tests cover `undefined`, `null`, and five malformed
+  shapes (missing `by_target`, array/null `by_target`, primitive
+  payloads).
+- **`src/bearings/__init__.py` — `__version__` now reads
+  `importlib.metadata.version("bearings")` at import time.** Falls
+  back to `"0+unknown"` when the package metadata isn't installed
+  (raw-source runs with `PYTHONPATH`). Single source of truth is now
+  `pyproject.toml`; `/api/health` and `bearings --version` auto-track
+  every bump. Verified: fresh import reports `0.9.7`.
+
+### Operational note
+
+This fix does NOT unstick a running service — Python modules are
+cached per-process, so an already-running `bearings.service` needs a
+`systemctl --user restart bearings` to pick up either fix. The
+defensive hydrate guard is for future upgrades where a user runs a
+new frontend against an older or racing backend.
+
 ## [0.9.6] - 2026-04-23
 
 Packaging fix — makes the right-click / context-menu work shipped
