@@ -1073,10 +1073,20 @@ These are bugs, not preferences — no toggle, just fix.
 - [x] **Resolve `CLAUDE.md:12` "Repository TBD"** — pick the org or remove
   the note before the README ships. (Org chosen 2026-04-22:
   `Beryndil/Bearings`. CLAUDE.md edited 2026-04-23.)
-- [ ] **Decide on commit-email exposure.** `beryndil@hardknocks.university`
-  and `dwhennigan@gmail.com` are in commit history. If either should not
-  appear publicly, run `git filter-repo` (or fresh init) before first
-  push to a public remote.
+- [x] **Commit-email exposure scrubbed from history** (2026-04-23).
+  Two personal email addresses (one school-adjacent, one mainline
+  personal) appeared across ~190 commits. Resolved by rewriting all
+  history via `git filter-repo --mailmap` to collapse both to a single
+  public brand identity — `Beryndil <beryndil@users.noreply.github.com>`
+  — and setting the same as the local-repo `user.name`/`user.email`
+  override so future commits stay on-brand. Zero occurrences remain in
+  commit metadata or tree content. Force-push to `origin/main` still
+  pending — remote is already public (beryndil/Bearings) but has no
+  forks and no PRs, so the blast radius is GitHub's own cached history
+  and whatever's in its blame/activity views; those update on
+  force-push. Pre-rewrite backup preserved at
+  `~/Projects/Bearings.pre-filter-repo-backup-*` (remove once the
+  remote is confirmed clean).
 
 ### Permission profiles / toggle layer (v0.2 release scope)
 

@@ -2448,10 +2448,12 @@ These are bugs, not preferences — no toggle, just fix.
   Clamp to a configured allow-root (default `Path.home()`).
 - [ ] **Resolve `CLAUDE.md:12` "Repository TBD"** — pick the org or remove
   the note before the README ships.
-- [ ] **Decide on commit-email exposure.** `beryndil@hardknocks.university`
-  and `dwhennigan@gmail.com` are in commit history. If either should not
-  appear publicly, run `git filter-repo` (or fresh init) before first
-  push to a public remote.
+- [ ] **Decide on commit-email exposure.** Two personal email
+  addresses appear in commit history (redacted from this archive
+  2026-04-23 after the full history rewrite; see live `TODO.md` for
+  the resolution record). If either should not appear publicly, run
+  `git filter-repo` (or fresh init) before first push to a public
+  remote.
 
 ### Permission profiles / toggle layer (v0.2 release scope)
 
