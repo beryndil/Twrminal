@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '$lib/api';
 import type { LiveToolCall } from '$lib/stores/conversation.svelte';
-import { buildTurns, type TurnsInput } from './turns';
+import {
+  buildSettledTurns,
+  buildStreamingTail,
+  buildTurns,
+  type TurnsInput
+} from './turns';
 
 function msg(partial: Partial<Message> & Pick<Message, 'id' | 'role' | 'content'>): Message {
   return {
@@ -107,5 +112,87 @@ describe('buildTurns', () => {
     expect(turns).toHaveLength(2);
     expect(turns[1].user?.id).toBe('u2');
     expect(turns[1].assistant).toBeNull();
+  });
+});
+
+describe('buildSettledTurns (cache)', () => {
+  // The cache is keyed on assistant Message identity — reuse the SAME
+  // object refs across calls to hit it. This mirrors what Svelte's
+  // $state proxy gives us in practice (message objects are mutated
+  // in-place, not replaced).
+  it('returns reference-stable Turn objects when messages + tool-call order are unchanged', () => {
+    const u = msg({ id: 'u1', role: 'user', content: 'q' });
+    const a = msg({ id: 'a1', role: 'assistant', content: 'hello' });
+    const tc1 = call({ id: 't1', messageId: 'a1' });
+    const first = buildSettledTurns([u, a], [tc1]);
+    const second = buildSettledTurns([u, a], [tc1]);
+    expect(second[0]).toBe(first[0]);
+  });
+
+  it('rebuilds the settled turn when a new tool call is attached', () => {
+    const u = msg({ id: 'u1', role: 'user', content: 'q' });
+    const a = msg({ id: 'a1', role: 'assistant', content: 'hello' });
+    const tc1 = call({ id: 't1', messageId: 'a1' });
+    const tc2 = call({ id: 't2', messageId: 'a1' });
+    const first = buildSettledTurns([u, a], [tc1]);
+    const second = buildSettledTurns([u, a], [tc1, tc2]);
+    expect(second[0]).not.toBe(first[0]);
+    expect(second[0].toolCalls.map((t) => t.id)).toEqual(['t1', 't2']);
+  });
+
+  it('rebuilds the settled turn when tool-call order changes', () => {
+    const u = msg({ id: 'u1', role: 'user', content: 'q' });
+    const a = msg({ id: 'a1', role: 'assistant', content: 'hello' });
+    const tc1 = call({ id: 't1', messageId: 'a1' });
+    const tc2 = call({ id: 't2', messageId: 'a1' });
+    const first = buildSettledTurns([u, a], [tc1, tc2]);
+    const second = buildSettledTurns([u, a], [tc2, tc1]);
+    expect(second[0]).not.toBe(first[0]);
+    expect(second[0].toolCalls.map((t) => t.id)).toEqual(['t2', 't1']);
+  });
+
+  it('rebuilds the settled turn when thinking content changes in-place', () => {
+    // The assistant object ref is the same, but its `.thinking` was
+    // mutated (which happens when the reducer patches a message in
+    // place). The cache guard on `thinking` equality catches this.
+    const u = msg({ id: 'u1', role: 'user', content: 'q' });
+    const a = msg({ id: 'a1', role: 'assistant', content: 'hello', thinking: 'v1' });
+    const first = buildSettledTurns([u, a], []);
+    a.thinking = 'v2';
+    const second = buildSettledTurns([u, a], []);
+    expect(second[0]).not.toBe(first[0]);
+    expect(second[0].thinking).toBe('v2');
+  });
+});
+
+describe('buildStreamingTail', () => {
+  it('returns null-safe tail that absorbs an open trailing user turn', () => {
+    const u = msg({ id: 'u1', role: 'user', content: 'q' });
+    const settled = buildSettledTurns([u], []);
+    const result = buildStreamingTail(settled, [], 'live', 'pondering', 'working…');
+    expect(result).not.toBeNull();
+    expect(result!.absorbsLastSettled).toBe(true);
+    expect(result!.tail.user?.id).toBe('u1');
+    expect(result!.tail.isStreaming).toBe(true);
+    expect(result!.tail.streamingContent).toBe('working…');
+    expect(result!.tail.streamingThinking).toBe('pondering');
+  });
+
+  it('does not absorb when the last settled turn is a closed (user, assistant) pair', () => {
+    const u = msg({ id: 'u1', role: 'user', content: 'q' });
+    const a = msg({ id: 'a1', role: 'assistant', content: 'done' });
+    const settled = buildSettledTurns([u, a], []);
+    const result = buildStreamingTail(settled, [], 'live', '', 'next…');
+    expect(result).not.toBeNull();
+    expect(result!.absorbsLastSettled).toBe(false);
+    expect(result!.tail.user).toBeNull();
+    expect(result!.tail.isStreaming).toBe(true);
+  });
+
+  it('attaches live tool calls whose messageId matches the streaming id', () => {
+    const tc1 = call({ id: 't1', messageId: 'live' });
+    const tc2 = call({ id: 't2', messageId: 'other' });
+    const result = buildStreamingTail([], [tc1, tc2], 'live', '', '');
+    expect(result!.tail.toolCalls.map((t) => t.id)).toEqual(['t1']);
   });
 });

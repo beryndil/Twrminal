@@ -21,7 +21,7 @@
   import ContextMeter from '$lib/components/ContextMeter.svelte';
   import LiveTodos from '$lib/components/LiveTodos.svelte';
   import TokenMeter from '$lib/components/TokenMeter.svelte';
-  import { buildTurns } from '$lib/turns';
+  import { buildSettledTurns, buildStreamingTail } from '$lib/turns';
   import {
     connectionLabel,
     copyText,
@@ -29,20 +29,30 @@
     pressureClass
   } from '$lib/utils/conversation-ui';
 
+  // Split derivation (item 5 / perf audit 2026-04-23):
+  // `settledTurns` invalidates only when the messages/toolCalls arrays
+  // themselves change (DB-committed work). `buildSettledTurns` returns
+  // reference-stable Turn objects via its WeakMap cache, so MessageTurn
+  // components for already-settled turns skip re-rendering on every
+  // token frame. `turns` is a cheap combine of `settledTurns` + the
+  // live streaming tail — it re-fires on every token, but only builds
+  // one Turn (the tail) instead of all of them.
+  const settledTurns = $derived.by(() =>
+    buildSettledTurns(conversation.messages, conversation.toolCalls)
+  );
   const turns = $derived.by(() => {
-    // AUDIT (item 7 / Performance optimization): temporary fire counter
-    // so we can size buildTurns recomputes against actual WS event
-    // frequency. Read in DevTools console; remove before merging the
-    // refactor (or sooner if numbers turn out fine).
-    if (import.meta.env.DEV) console.count('bearings:audit:buildTurns');
-    return buildTurns({
-      messages: conversation.messages,
-      toolCalls: conversation.toolCalls,
-      streamingActive: conversation.streamingActive,
-      streamingMessageId: conversation.streamingMessageId,
-      streamingThinking: conversation.streamingThinking,
-      streamingText: conversation.streamingText
-    });
+    if (!conversation.streamingActive) return settledTurns;
+    const result = buildStreamingTail(
+      settledTurns,
+      conversation.toolCalls,
+      conversation.streamingMessageId,
+      conversation.streamingThinking,
+      conversation.streamingText
+    );
+    if (!result) return settledTurns;
+    return result.absorbsLastSettled
+      ? [...settledTurns.slice(0, -1), result.tail]
+      : [...settledTurns, result.tail];
   });
 
   // Slice 5: merge turns + reorg audit dividers into one chronological
@@ -54,11 +64,6 @@
     | { kind: 'audit'; key: string; when: string; audit: api.ReorgAudit };
 
   const timeline = $derived.by((): TimelineItem[] => {
-    // AUDIT (item 7 / Performance optimization): temporary fire counter
-    // so we can confirm whether the timeline is rebuilt + resorted on
-    // every WS event or batched by Svelte's scheduler. Pair with the
-    // counter on `turns` above. Remove with the same cleanup.
-    if (import.meta.env.DEV) console.count('bearings:audit:timeline');
     const items: TimelineItem[] = [];
     for (const t of turns) {
       const when = t.user?.created_at ?? t.assistant?.created_at ?? '';
