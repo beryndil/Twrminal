@@ -225,24 +225,28 @@ export function applyEvent(
       state.streamingThinking += event.text;
       return;
     case 'tool_call_start':
+      // In-place push rather than array-replace. The file header
+      // commits to mutating `state` in place — Svelte 5 `$state`
+      // proxies make per-element mutation reactive, and allocating
+      // a fresh array per delta was the upstream cause of the
+      // 2026-04-21 `buildTurns`/`timeline` re-derivation storm
+      // (every event invalidated `toolCalls` → invalidated `turns`
+      // → invalidated `timeline`, 227 rebuilds per tool-heavy turn).
       if (state.toolCalls.some((tc) => tc.id === event.tool_call_id)) return;
-      state.toolCalls = [
-        ...state.toolCalls,
-        {
-          id: event.tool_call_id,
-          messageId: state.streamingMessageId,
-          name: event.name,
-          input: event.input,
-          output: null,
-          error: null,
-          ok: null,
-          startedAt: Date.now(),
-          finishedAt: null,
-          outputTruncated: false
-        }
-      ];
+      state.toolCalls.push({
+        id: event.tool_call_id,
+        messageId: state.streamingMessageId,
+        name: event.name,
+        input: event.input,
+        output: null,
+        error: null,
+        ok: null,
+        startedAt: Date.now(),
+        finishedAt: null,
+        outputTruncated: false
+      });
       return;
-    case 'tool_output_delta':
+    case 'tool_output_delta': {
       // Four invariants, all enforced here:
       //   1. Ordering — drop if the target call already finished.
       //      The ring buffer's `_seq` already orders events, but a
@@ -253,38 +257,35 @@ export function applyEvent(
       //   4. Persistence — backend does idempotent DB append per
       //      delta, so a reconnecting client pulls cumulative
       //      output from history, not from the missed live frames.
-      state.toolCalls = state.toolCalls.map((tc) => {
-        if (tc.id !== event.tool_call_id) return tc;
-        if (tc.finishedAt !== null) return tc;
-        const combined = (tc.output ?? '') + event.delta;
-        const capped = capToolOutput(combined);
-        return {
-          ...tc,
-          output: capped.output,
-          outputTruncated: tc.outputTruncated || capped.truncated
-        };
-      });
+      // Mutate the matched tool call in place — Svelte 5 $state
+      // proxies propagate field writes without re-allocating the
+      // containing array, so downstream $derived consumers
+      // (`turns`, `timeline`) only refire when the data they
+      // actually depend on changes.
+      const tc = state.toolCalls.find((c) => c.id === event.tool_call_id);
+      if (!tc) return;
+      if (tc.finishedAt !== null) return;
+      const combined = (tc.output ?? '') + event.delta;
+      const capped = capToolOutput(combined);
+      tc.output = capped.output;
+      if (capped.truncated) tc.outputTruncated = true;
       return;
+    }
     case 'tool_call_end': {
       // The canonical final output arrives here. Apply the cap so
       // a huge final string doesn't bypass the bound that deltas
-      // respect.
+      // respect. In-place mutation (see `tool_output_delta`).
+      const tc = state.toolCalls.find((c) => c.id === event.tool_call_id);
+      if (!tc) return;
       const capped =
         event.output !== null
           ? capToolOutput(event.output)
           : { output: null, truncated: false };
-      state.toolCalls = state.toolCalls.map((tc) =>
-        tc.id === event.tool_call_id
-          ? {
-              ...tc,
-              ok: event.ok,
-              output: capped.output,
-              error: event.error,
-              finishedAt: Date.now(),
-              outputTruncated: tc.outputTruncated || capped.truncated
-            }
-          : tc
-      );
+      tc.ok = event.ok;
+      tc.output = capped.output;
+      tc.error = event.error;
+      tc.finishedAt = Date.now();
+      if (capped.truncated) tc.outputTruncated = true;
       return;
     }
     case 'message_complete':

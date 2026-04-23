@@ -823,6 +823,137 @@ calls; captured `bearings_ws_events_sent_total` via
     max but above the 100 average).
 - FTS5 and token-batching stay off the checklist.
 
+### 2026-04-23 — Follow-up audit: additional sluggishness sources
+
+Dave reported the app is "very very sluggish." Re-read the hot path end
+to end. The 2026-04-21 re-derivation finding still holds and is the
+headline. Additional issues found, in priority order:
+
+- [x] **Reducer allocates new `toolCalls` array per delta.** Shipped
+  2026-04-23. `frontend/src/lib/stores/conversation/reducer.ts` —
+  `tool_call_start` now `push`es into `state.toolCalls`, and
+  `tool_output_delta` / `tool_call_end` now `find` the matched tc and
+  mutate its fields in place. Restores the "mutate in place" invariant
+  the file header already documented. Original finding retained below
+  for the audit trail.
+  `frontend/src/lib/stores/conversation/reducer.ts:229,256,276`.
+  The `tool_call_start` / `tool_output_delta` / `tool_call_end` arms
+  all do `state.toolCalls = state.toolCalls.map(...)` or
+  `[...state.toolCalls, newOne]` — a fresh array of fresh objects per
+  event, despite the file's "mutate in place" header. This is the
+  upstream cause of the 1:1 `buildTurns` rebuilds measured on
+  2026-04-21: every delta invalidates `state.toolCalls`, which
+  invalidates `turns`, which invalidates `timeline`. Fix by mutating
+  the matched `tc` in place (`tc.output = capped.output`) and
+  `state.toolCalls.push(...)` for the start case. Svelte 5 `$state`
+  proxies propagate in-place mutation. **This fix is a prerequisite
+  for the sibling re-derivation refactor to actually pay off** — even
+  after promoting `turns` to `$state`, if the reducer keeps replacing
+  `toolCalls`, downstream rebuilds still fire.
+
+- [ ] **Streaming assistant turn re-parses markdown + re-runs shiki
+  on every token.** `frontend/src/lib/components/CollapsibleBody.svelte:110`
+  renders `{@html renderMarkdown(content)}` synchronously on every
+  update. During streaming, `content` changes on every `token` event
+  (~39/turn avg, higher on long replies). `marked.parse` re-walks
+  the full message tree per token, and any fenced code blocks re-run
+  shiki tokenization. For a 20 KB reply with 3 fences, that's ~600+
+  highlight passes per turn. Fix options: (a) render raw text
+  (whitespace-preserved `<pre>`) during `isStreaming`, flip to
+  markdown on `message_complete`; (b) debounce `renderMarkdown` to
+  `requestAnimationFrame`; (c) memoize keyed on content length
+  ladder (re-render only every +256 chars). Prefer (a) — it's
+  trivial and the streaming experience is more readable as plain
+  text anyway.
+
+- [ ] **MessageTurn re-serializes tool-call input per delta.**
+  `frontend/src/lib/components/MessageTurn.svelte:173-193` and
+  `MessageTurn.svelte:61-66`. The `{#each toolCalls}` block calls
+  `JSON.stringify(call.input, null, 2)` inline in the template;
+  every `tool_output_delta` currently replaces `toolCalls`
+  wholesale (see reducer issue above), so every call's `input` is
+  re-stringified on every delta even though `input` is immutable
+  after `tool_call_start`. The `toolStreamSignal` reduce also
+  walks every call's output string per event. Fix: precompute
+  `inputPretty` once when the reducer creates the LiveToolCall
+  (store it on the object); replace the reduce signal with a
+  reducer-incremented counter. Mostly moot once the reducer fix
+  above lands, but the precomputed `inputPretty` still wins.
+
+- [x] **Per-event orjson encode + decode hop in the WS fan-out.**
+  Shipped 2026-04-23. `_Envelope` now carries a pre-encoded `wire: str`
+  built once in `_emit_event`; `ws_agent._forward_events` and the
+  replay loop both `send_text(env.wire)` directly. Removes one
+  `orjson.dumps(...).decode()` per subscriber per event (and per
+  envelope in the replay window). `_send_frame` retained for the
+  one-off `runner_status` snapshot on connect. Original finding
+  retained below for the audit trail.
+  `src/bearings/agent/runner.py:_emit_event` calls
+  `event.model_dump()` (full Pydantic dict materialization) per
+  Token; `src/bearings/api/ws_agent.py:134-158` then calls
+  `orjson.dumps(frame).decode()` in each subscriber forwarder —
+  encoding to bytes then decoding back to str because
+  `send_text` wants str. With two tabs attached that's 2× wasted
+  encode + decode per wire frame (2369 frames measured in the
+  2026-04-21 sample). Fix: pre-encode once in `_emit_event`
+  (cache the bytes on the envelope), then use
+  `websocket.send_bytes(...)` or the raw ASGI send dict path
+  with the already-encoded JSON string. Removes one full JSON
+  round-trip per subscriber per event.
+
+- [ ] **~35 DB commits per turn.** `src/bearings/db/_messages.py`
+  has seven per-helper `await conn.commit()` sites (lines 59, 116,
+  273, 290, 315, 342, 365). A typical turn =
+  insert_message(user) + insert_message(assistant) + 15× tool_call
+  (start + end) + append_tool_output(×N) + attach_tool_calls +
+  cost bump ≈ 30–40 commits. WAL + synchronous=NORMAL makes each
+  an fsync of the WAL (not the main DB), so this is less
+  catastrophic than fsync-FULL would be, but still ~35
+  `run_in_executor` hops through the aiosqlite worker thread per
+  turn. Fix: wrap the turn in one transaction — remove per-helper
+  commits, commit once at the end of `_persist_assistant_turn`,
+  commit per-flush-batch for tool output. Read paths on a separate
+  connection don't see mid-turn state; fine, the UI rebuilds from
+  wire events anyway.
+
+- [ ] **Session `load()` eagerly fetches every tool call.**
+  `frontend/src/lib/stores/conversation.svelte.ts:82-87` →
+  `api.listToolCalls(sessionId)` (no limit, no pagination) →
+  `src/bearings/db/_messages.py:369`. The largest session has 580
+  timeline items. A session with 200 tool calls × ~50 KB output ≈
+  10 MB JSON payload on every session switch, then hydration
+  `JSON.parse`'s each input column. This is why clicking between
+  large sessions feels heavy. Fix: paginate with the same
+  50-message window (pull only tool calls whose `message_id` is in
+  the loaded page), or return a lite view (without `output` /
+  `input` JSON) and fetch full payloads lazily on Inspector open.
+
+- [ ] **Subscribe replay walks full 5k ring buffer on every new
+  WS.** `src/bearings/agent/runner.py:163-166`. Two tabs reconnecting
+  each scan 5000 envelopes. Fix: keep a parallel `dict[seq → index]`
+  or use `bisect` over a sorted `deque` for O(log n) replay start.
+  Low-priority unless reconnect storms show up in practice.
+
+- [ ] **Unbounded subscriber queues.** `src/bearings/agent/runner.py:341-348`.
+  Already flagged in the 2026-04-21 security audit cleanup section;
+  noting the performance angle here too. A slow WS client can make
+  runner memory balloon; bound the queue (match
+  `SessionsBroker.SUBSCRIBER_QUEUE_MAX = 500`) and drop slow
+  subscribers — they reconnect with `since_seq`.
+
+**Recommended fix order** (by "ratio of impact to diff size"):
+1. Reducer in-place mutation (small diff, unblocks everything else).
+2. CollapsibleBody raw-text during streaming (trivial, huge win).
+3. Promote `turns` / `timeline` to `$state` (the 2026-04-21 sketch).
+4. Pre-encode WS frames once in `_emit_event`.
+5. One-transaction-per-turn on the DB.
+6. Paginated `listToolCalls` for session load.
+
+Items 1–3 are frontend-only and together address the majority of the
+streaming-CPU burn. 4–5 matter most when multiple tabs are attached
+or heavy concurrent sessions run. 6 fixes session-switch latency
+independently.
+
 ## Security audit (2026-04-21) — pre-public-release
 
 Full findings live in this session's transcript. Three audits ran in

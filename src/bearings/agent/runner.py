@@ -35,6 +35,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 import aiosqlite
+import orjson
 
 from bearings import metrics
 from bearings.agent.approval_broker import ApprovalBroker
@@ -130,13 +131,25 @@ class _Envelope:
 
     Subscribers receive envelopes so they can update their own
     `lastSeq` cursor for future reconnects. Using a small class rather
-    than a tuple to keep attribute access obvious at call sites."""
+    than a tuple to keep attribute access obvious at call sites.
 
-    __slots__ = ("seq", "payload")
+    `wire` holds the pre-encoded text-frame JSON (payload merged with
+    `_seq`). Encoding the frame once at emit time instead of per
+    subscriber avoids an `orjson.dumps(...).decode()` hop on every
+    WebSocket send — non-trivial on tool-heavy turns where a single
+    event fans out to N tabs plus buffered replay. `payload` is still
+    exposed for tests and for the approval/session-broker code paths
+    that peek at event types without serializing.
+    """
+
+    __slots__ = ("seq", "payload", "wire")
 
     def __init__(self, seq: int, payload: dict[str, Any]) -> None:
         self.seq = seq
         self.payload = payload
+        # Merge `_seq` into the frame once. Subscribers + replay use
+        # `env.wire` directly; see `ws_agent._forward_events`.
+        self.wire = orjson.dumps({**payload, "_seq": seq}).decode()
 
 
 class SessionRunner:

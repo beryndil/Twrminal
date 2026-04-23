@@ -134,9 +134,13 @@ def _parse_since_seq(websocket: WebSocket) -> int:
 async def _send_frame(websocket: WebSocket, frame: dict[str, Any]) -> None:
     """Serialize `frame` with orjson and push it as a text frame.
 
-    Starlette's stock `send_json` routes through the stdlib `json`
-    encoder, which dominates CPU on event-heavy turns (tool output,
-    streaming deltas). orjson is ~2-3x faster on the dict/str/int
+    Used for ad-hoc frames the runner ring buffer doesn't own (the
+    `runner_status` snapshot emitted on connect). Hot-path envelope
+    sends bypass this helper and use the pre-encoded `env.wire` string
+    built in `_Envelope.__init__`, which saves one `orjson.dumps(...)
+    .decode()` per subscriber per event. Starlette's stock `send_json`
+    routes through the stdlib `json` encoder, which dominates CPU on
+    event-heavy turns; orjson is ~2-3x faster on the dict/str/int
     payloads we send. We decode to str because the frontend contract
     is text frames — switching to `send_bytes` would flip the opcode
     and break the client."""
@@ -146,12 +150,14 @@ async def _send_frame(websocket: WebSocket, frame: dict[str, Any]) -> None:
 async def _forward_events(websocket: WebSocket, queue: asyncio.Queue[_Envelope]) -> None:
     """Pull envelopes off the runner's subscriber queue and write them
     to the socket. Each frame carries `_seq` so the client can advance
-    its replay cursor. Exits on send failure (disconnect)."""
+    its replay cursor. The envelope arrives with its wire form already
+    encoded (see `_Envelope.__init__`), so the fan-out cost is a single
+    `send_text` per subscriber — no per-send JSON serialization. Exits
+    on send failure (disconnect)."""
     while True:
         env = await queue.get()
-        frame = {**env.payload, "_seq": env.seq}
         try:
-            await _send_frame(websocket, frame)
+            await websocket.send_text(env.wire)
         except (WebSocketDisconnect, RuntimeError):
             # Socket died under us — normal at navigation. The outer
             # handler's finally block will clean up the subscription.
@@ -213,10 +219,12 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:
         return
 
     # Replay next so the client sees missed events in order before any
-    # live frame arrives.
+    # live frame arrives. Use the envelope's pre-encoded wire form so
+    # a reconnecting tab doesn't pay N × orjson encode for the replay
+    # window.
     for env in replay:
         try:
-            await _send_frame(websocket, {**env.payload, "_seq": env.seq})
+            await websocket.send_text(env.wire)
         except (WebSocketDisconnect, RuntimeError):
             runner.unsubscribe(queue)
             app.state.active_ws.discard(websocket)
