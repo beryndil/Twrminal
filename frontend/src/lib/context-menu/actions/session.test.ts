@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { SESSION_ACTIONS } from './session';
 
 describe('session.ts — action-ID stability', () => {
-  it('exposes the frozen v0.9.1 catalog', () => {
+  it('exposes the frozen v0.9.2 catalog', () => {
     const ids = SESSION_ACTIONS.map((a) => a.id).sort();
     expect(ids).toEqual([
       'session.archive',
@@ -33,6 +33,7 @@ describe('session.ts — action-ID stability', () => {
       'session.open_in.terminal',
       'session.pin',
       'session.reopen',
+      'session.save_as_template',
       'session.unpin'
     ]);
   });
@@ -105,5 +106,16 @@ describe('session.ts — action-ID stability', () => {
     // on the session row existing in the store.
     expect(fork?.disabled).toBeUndefined();
     expect(fork?.requires).toBeDefined();
+  });
+
+  it('session.save_as_template is live in v0.9.2', () => {
+    const save = SESSION_ACTIONS.find(
+      (a) => a.id === 'session.save_as_template'
+    );
+    expect(save).toBeDefined();
+    // No `disabled` predicate — the action fires whenever a session
+    // row exists. `handler` does the prompt + create round-trip.
+    expect(save?.disabled).toBeUndefined();
+    expect(save?.section).toBe('create');
   });
 });

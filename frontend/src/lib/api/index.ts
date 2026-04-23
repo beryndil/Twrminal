@@ -1,6 +1,7 @@
 export * from './core';
 export * from './sessions';
 export * from './sessions_bulk';
+export * from './templates';
 export * from './tags';
 export * from './checklists';
 export * from './checkpoints';

@@ -94,6 +94,12 @@ from bearings.db._tags import (
     session_has_severity_tag,
     update_tag,
 )
+from bearings.db._templates import (
+    create_template,
+    delete_template,
+    get_template,
+    list_templates,
+)
 
 __all__ = [
     "MIGRATIONS_DIR",
@@ -109,12 +115,14 @@ __all__ = [
     "create_item",
     "create_session",
     "create_tag",
+    "create_template",
     "delete_checkpoint",
     "delete_item",
     "delete_session",
     "delete_reorg_audit",
     "delete_tag",
     "delete_tag_memory",
+    "delete_template",
     "detach_tag",
     "detect_tool_call_group_warnings",
     "ensure_default_severity",
@@ -130,6 +138,7 @@ __all__ = [
     "get_session_token_totals",
     "get_tag",
     "get_tag_memory",
+    "get_template",
     "import_session",
     "init_db",
     "insert_message",
@@ -145,6 +154,7 @@ __all__ = [
     "list_session_tags",
     "list_sessions",
     "list_tags",
+    "list_templates",
     "list_tool_calls",
     "mark_replay_attempted",
     "mark_session_completed",

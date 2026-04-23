@@ -11,6 +11,7 @@
   import Settings from '$lib/components/Settings.svelte';
   import SidebarSearch from '$lib/components/SidebarSearch.svelte';
   import TagFilterPanel from '$lib/components/TagFilterPanel.svelte';
+  import TemplatePicker from '$lib/components/TemplatePicker.svelte';
   import SeverityShield from '$lib/components/icons/SeverityShield.svelte';
   import TagIcon from '$lib/components/icons/TagIcon.svelte';
 
@@ -346,6 +347,7 @@
         bind:this={importInput}
         onchange={onImportFile}
       />
+      <TemplatePicker />
       <button
         type="button"
         class="text-[11px] rounded bg-slate-800 hover:bg-slate-700 px-1.5 py-0.5"

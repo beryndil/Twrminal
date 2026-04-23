@@ -104,3 +104,20 @@ sessions_bulk_ops = Counter(
     ["op"],
     registry=REGISTRY,
 )
+
+# Phase 9b of docs/context-menu-plan.md. Template CRUD + instantiation.
+# `templates_created` bumps on POST /templates; `templates_instantiated`
+# bumps on every successful POST /sessions/from_template/{id}. The
+# instantiate counter feeds "is anyone actually using templates?" health
+# monitoring without requiring the frontend to emit a separate event.
+templates_created = Counter(
+    "bearings_templates_created_total",
+    "Session templates created via POST /templates.",
+    registry=REGISTRY,
+)
+
+templates_instantiated = Counter(
+    "bearings_templates_instantiated_total",
+    "Sessions spawned from a saved template.",
+    registry=REGISTRY,
+)

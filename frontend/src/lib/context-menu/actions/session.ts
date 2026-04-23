@@ -24,6 +24,7 @@ import { KNOWN_MODELS } from '$lib/models';
 import { checkpoints } from '$lib/stores/checkpoints.svelte';
 import { conversation } from '$lib/stores/conversation.svelte';
 import { sessions } from '$lib/stores/sessions.svelte';
+import { templates } from '$lib/stores/templates.svelte';
 import { writeClipboard } from '../clipboard';
 import { confirmStore } from '../confirm.svelte';
 import { notYetImplemented, stubStore } from '../stub.svelte';
@@ -219,6 +220,48 @@ export const SESSION_ACTIONS: readonly Action[] = [
     section: 'create',
     handler: () => notYetImplemented('session.duplicate'),
     disabled: () => 'Duplicate lands in Phase 4a.3'
+  },
+  {
+    id: 'session.save_as_template',
+    label: 'Save as template…',
+    section: 'create',
+    mnemonic: 's',
+    // v0.9.2 MVP: window.prompt for the name. A richer modal (with a
+    // working_dir/model preview and a first-prompt textarea) can replace
+    // this when the template editor lands — the action ID stays stable
+    // because `menus.toml` users key off it.
+    handler: async ({ target }) => {
+      const t = asSession(target);
+      if (!t) return;
+      const row = lookup(t.id);
+      if (!row) return;
+      const suggested = row.title ?? row.model;
+      const entered =
+        typeof window !== 'undefined' && typeof window.prompt === 'function'
+          ? window.prompt('Template name:', suggested)
+          : null;
+      if (entered === null) return; // user cancelled
+      const name = entered.trim();
+      if (!name) {
+        stubStore.show({
+          actionId: 'session.save_as_template',
+          reason: 'Template name cannot be empty'
+        });
+        return;
+      }
+      const created = await templates.create({
+        name,
+        working_dir: row.working_dir,
+        model: row.model,
+        tag_ids: [...(row.tag_ids ?? [])]
+      });
+      if (!created) {
+        stubStore.show({
+          actionId: 'session.save_as_template',
+          reason: templates.error ?? 'Failed to save template'
+        });
+      }
+    }
   },
   {
     id: 'session.fork.from_last_message',

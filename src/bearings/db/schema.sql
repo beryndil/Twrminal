@@ -202,3 +202,23 @@ CREATE INDEX IF NOT EXISTS idx_checklist_items_chat_session
     ON checklist_items(chat_session_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_checklist_item
     ON sessions(checklist_item_id);
+
+-- Session templates (migration 0025). Stand-alone snapshot of the
+-- fields needed to spawn a new session from the "Save as template"
+-- action. No FK to the originating session — once extracted a
+-- template outlives its source. `tag_ids_json` is a JSON array of
+-- tag ids; unknown tag ids at instantiation time are silently
+-- skipped.
+CREATE TABLE IF NOT EXISTS session_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    body TEXT,
+    working_dir TEXT,
+    model TEXT,
+    session_instructions TEXT,
+    tag_ids_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_templates_created
+    ON session_templates(created_at);
