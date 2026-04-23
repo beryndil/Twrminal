@@ -21,6 +21,7 @@
   import { agent } from '$lib/agent.svelte';
   import { sessions } from '$lib/stores/sessions.svelte';
   import { templates } from '$lib/stores/templates.svelte';
+  import BearingsMark from '$lib/components/icons/BearingsMark.svelte';
 
   let open = $state(false);
   // Per-row confirm for delete — two-click pattern identical to the
@@ -93,7 +94,12 @@
       >
         <span>Templates</span>
         {#if templates.loading}
-          <span class="text-slate-600 normal-case tracking-normal">loading…</span>
+          <span
+            class="inline-flex items-center gap-1 text-slate-600 normal-case tracking-normal"
+          >
+            <BearingsMark size={10} spin label="Loading templates" />
+            loading…
+          </span>
         {/if}
       </div>
       {#if templates.error}

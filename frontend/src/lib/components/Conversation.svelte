@@ -7,6 +7,7 @@
   import * as fsApi from '$lib/api/fs';
   import * as uploadsApi from '$lib/api/uploads';
   import ApprovalModal from '$lib/components/ApprovalModal.svelte';
+  import BearingsMark from '$lib/components/icons/BearingsMark.svelte';
   import BulkActionBar from '$lib/components/BulkActionBar.svelte';
   import CheckpointGutter from '$lib/components/CheckpointGutter.svelte';
   import CommandMenu from '$lib/components/CommandMenu.svelte';
@@ -1227,7 +1228,10 @@
         border-sky-500/60 bg-slate-950/70 flex items-center justify-center z-20"
       data-testid="conversation-upload-hint"
     >
-      <p class="text-sm text-sky-300">Uploading dropped file…</p>
+      <div class="flex flex-col items-center gap-3 text-sky-300">
+        <BearingsMark size={56} spin label="Uploading file" />
+        <p class="text-sm">Uploading dropped file…</p>
+      </div>
     </div>
   {/if}
   <header class="border-b border-slate-800 px-4 py-3 flex items-baseline justify-between">
@@ -1251,6 +1255,14 @@
         </nav>
       {/if}
       <h1 class="text-lg font-medium flex items-center gap-2">
+        <!-- Permanent brand mark. Spins reactively while the agent is
+             connecting or a response is streaming — the logo IS the
+             work indicator, so loading states read as the app coming
+             alive rather than as bolted-on spinners. -->
+        <BearingsMark
+          size={20}
+          spin={agent.state === 'connecting' || conversation.streamingActive}
+        />
         {sessions.selected?.title ?? 'Bearings'}
         {#if sessions.selected}
           <button
@@ -1448,8 +1460,16 @@
       </div>
     {/if}
     {#if conversation.hasMore}
-      <p class="text-[10px] text-slate-600 text-center">
-        {conversation.loadingOlder ? 'Loading older…' : 'Scroll up to load older messages'}
+      <p
+        class="text-[10px] text-slate-600 text-center inline-flex items-center
+          justify-center gap-1 self-center"
+      >
+        {#if conversation.loadingOlder}
+          <BearingsMark size={10} spin label="Loading older messages" />
+          Loading older…
+        {:else}
+          Scroll up to load older messages
+        {/if}
       </p>
     {/if}
     {#if !sessions.selectedId}
