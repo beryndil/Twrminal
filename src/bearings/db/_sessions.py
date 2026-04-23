@@ -116,43 +116,40 @@ async def list_sessions(
     conn: aiosqlite.Connection,
     *,
     tag_ids: list[int] | None = None,
-    mode: str = "any",
     severity_tag_ids: list[int] | None = None,
 ) -> list[dict[str, Any]]:
     """List sessions, newest-first. Two independent tag-filter axes,
-    combined with AND (migration 0021 — severity group):
+    combined with AND.
 
-    - `tag_ids` / `mode`: the general-group filter. `mode='any'` =
-      sessions carrying any listed tag; `mode='all'` = sessions
-      carrying every listed tag. Empty / None = no general filter.
+    - `tag_ids`: the general-group filter (v0.7.4 — OR semantics).
+      None = no general filter (every session by this axis).
+      Empty list (`[]`) = explicit "match nothing" — the sidebar
+      default when the user hasn't selected any general tags. A
+      non-empty list OR-combines: sessions carrying any listed tag
+      pass. The old AND `mode` parameter was dropped in v0.7.4 along
+      with the Any/All toggle.
     - `severity_tag_ids`: the severity-group filter. Always OR
-      within-group (a session can only carry one severity, so `all`
-      is meaningless and the route hides the toggle). Empty / None =
-      no severity filter.
+      within-group (a session can only carry one severity). Empty
+      / None = no severity filter — severity is an optional narrower
+      on top of the general axis.
 
-    Both axes drop onto the same base query as EXISTS / IN
-    subqueries, so composing them is just two `AND` clauses — no
-    JOIN + GROUP BY gymnastics like the pre-0021 single-axis shape.
     Ordering stays `updated_at DESC, id DESC`.
     """
     where_clauses: list[str] = []
     params: list[Any] = []
 
-    if tag_ids:
-        tag_ph = ",".join("?" for _ in tag_ids)
-        if mode == "all":
-            # Every listed tag must be present on the session. Counting
-            # DISTINCT tag_id in the subquery and requiring it to equal
-            # the request's length is the idiomatic all-of check.
-            where_clauses.append(
-                f"s.id IN (SELECT session_id FROM session_tags "
-                f"WHERE tag_id IN ({tag_ph}) "
-                f"GROUP BY session_id HAVING COUNT(DISTINCT tag_id) = ?)"
-            )
-            params.extend(tag_ids)
-            params.append(len(tag_ids))
+    if tag_ids is not None:
+        if not tag_ids:
+            # Explicit empty list = "match nothing" (v0.7.4). Cheaper
+            # than building an IN() with no params (SQLite rejects
+            # that anyway) and semantically equivalent to "no session
+            # has zero general tags selected."
+            where_clauses.append("1 = 0")
         else:
-            # mode == "any" — simple IN-subquery.
+            # OR across the listed ids — a session carrying any one of
+            # them passes. The pre-v0.7.4 AND path was dropped with
+            # the Any/All toggle.
+            tag_ph = ",".join("?" for _ in tag_ids)
             where_clauses.append(
                 f"s.id IN (SELECT session_id FROM session_tags WHERE tag_id IN ({tag_ph}))"
             )

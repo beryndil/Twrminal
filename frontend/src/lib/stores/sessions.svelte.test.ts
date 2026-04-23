@@ -369,9 +369,9 @@ describe('sessions.softRefresh', () => {
   });
 
   it('forwards the active filter to the server fetch', async () => {
-    // v0.2.15 removed the `mode` field from SessionFilter — the API
-    // client hardcodes `mode=all` on the wire whenever `tags` is set,
-    // so the assertion below still expects it in the query string.
+    // v0.7.4 dropped the `mode=all` wire tag along with the Any/All
+    // toggle. The tag filter is OR-only on the server now, so the
+    // URL just carries `tags=...` — no mode component.
     sessions.filter = { tags: [7, 9] };
     sessions.list = [];
     const capturedUrls: string[] = [];
@@ -394,7 +394,7 @@ describe('sessions.softRefresh', () => {
     await sessions.softRefresh();
     expect(capturedUrls).toHaveLength(1);
     expect(capturedUrls[0]).toContain('tags=7%2C9');
-    expect(capturedUrls[0]).toContain('mode=all');
+    expect(capturedUrls[0]).not.toContain('mode=');
   });
 });
 

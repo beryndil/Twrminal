@@ -178,9 +178,21 @@ describe('tags store', () => {
   it('filter derived reflects selection without a mode field', () => {
     tags.selectGeneral(3);
     tags.selectGeneral(7, { additive: true });
-    // `mode` was removed in v0.2.15 — the API client hardcodes `all`
-    // on the wire. The filter object itself carries only the two axes.
+    // v0.7.4: `tags` key is always included on the filter object
+    // so the API client can distinguish "nothing selected → match
+    // nothing" from the legacy unfiltered path. `severityTags` still
+    // uses `undefined` for "no severity filter" since severity
+    // doesn't share the empty-means-nothing rule.
     expect(tags.filter).toEqual({ tags: [3, 7], severityTags: undefined });
+  });
+
+  it('filter derived sends an empty tags array when no general tag is selected', () => {
+    // Empty selection → `tags: []` → the API client sends `?tags=`
+    // which the backend reads as "match nothing". The pre-v0.7.4
+    // contract was `tags: undefined`, which the backend read as "no
+    // filter, every session". Regression guard for Dave's 2026-04-23
+    // sidebar change.
+    expect(tags.filter.tags).toEqual([]);
   });
 
   it('clearSelection empties the set', () => {
@@ -188,6 +200,23 @@ describe('tags store', () => {
     tags.clearSelection();
     expect(tags.selected).toEqual([]);
     expect(tags.hasFilter).toBe(false);
+  });
+
+  it('selectAllGeneral picks every general-group id and leaves severity alone', () => {
+    // v0.7.4: the "All" button in the panel header hydrates
+    // `selected` with the full general-tag roster. Severity tags are
+    // filtered out — they ride on a separate axis.
+    tags.list = [
+      tag({ id: 1, tag_group: 'general' }),
+      tag({ id: 2, tag_group: 'general' }),
+      tag({ id: 8, tag_group: 'severity' }),
+      tag({ id: 9, tag_group: 'severity' })
+    ];
+    tags.selectedSeverity = [9];
+    tags.selectAllGeneral();
+    expect(tags.selected).toEqual([1, 2]);
+    // Severity axis untouched.
+    expect(tags.selectedSeverity).toEqual([9]);
   });
 
   it('generalList and severityList partition by tag_group', () => {

@@ -79,10 +79,84 @@ async def create_tag(
     return row
 
 
-async def list_tags(conn: aiosqlite.Connection) -> list[dict[str, Any]]:
-    async with conn.execute(
-        f"SELECT {TAG_COLS_WITH_COUNT} FROM tags t ORDER BY {TAG_ORDER}"
-    ) as cursor:
+async def list_tags(
+    conn: aiosqlite.Connection,
+    *,
+    scope_tag_ids: list[int] | None = None,
+) -> list[dict[str, Any]]:
+    """List every tag with its session counts.
+
+    `scope_tag_ids` narrows the severity-group counts to match the
+    sidebar's v0.7.4 semantics — each severity's count reflects how
+    many sessions would show up if that severity were added to the
+    current general-tag filter (which is OR across the scope). The
+    contract:
+
+    - `None` (default / legacy): both severity and general counts are
+      absolute over the full session set. Preserves behavior for
+      callers that just want a tag inventory.
+    - `[]` (scoped, no general tags picked): severity counts are all
+      0 — the sidebar is about to show zero sessions anyway, so the
+      numbers should reflect that. General counts stay absolute so
+      the user still sees how full each tag is and can pick one.
+    - `[a, b, ...]` (scoped, general tags picked): severity counts =
+      sessions matching (any of the scope ids) AND carrying that
+      severity. General counts stay absolute.
+
+    The CASE-WHEN lets us keep a single query — the general-tag
+    branch always falls through to the absolute count so creating /
+    deleting a scope doesn't ripple through the general list's
+    numbers.
+    """
+    if scope_tag_ids is None:
+        async with conn.execute(
+            f"SELECT {TAG_COLS_WITH_COUNT} FROM tags t ORDER BY {TAG_ORDER}"
+        ) as cursor:
+            return [dict(row) async for row in cursor]
+
+    # Build the scoped SELECT. Empty scope → severity counts collapse
+    # to literal 0 (no valid `IN ()` syntax in SQLite); non-empty scope
+    # narrows via an IN-subquery against session_tags. General counts
+    # are always absolute — the scope only affects severity tags.
+    if not scope_tag_ids:
+        severity_total = "0"
+        severity_open = "0"
+        scope_params: list[Any] = []
+    else:
+        scope_ph = ",".join("?" for _ in scope_tag_ids)
+        severity_total = (
+            f"(SELECT COUNT(*) FROM session_tags st "
+            f"WHERE st.tag_id = t.id "
+            f"AND st.session_id IN ("
+            f"SELECT session_id FROM session_tags WHERE tag_id IN ({scope_ph})))"
+        )
+        severity_open = (
+            f"(SELECT COUNT(*) FROM session_tags st "
+            f"JOIN sessions s ON s.id = st.session_id "
+            f"WHERE st.tag_id = t.id AND s.closed_at IS NULL "
+            f"AND st.session_id IN ("
+            f"SELECT session_id FROM session_tags WHERE tag_id IN ({scope_ph})))"
+        )
+        # Two appearances of `scope_tag_ids` in the assembled SQL
+        # (one per severity count column) — pass the ids twice.
+        scope_params = list(scope_tag_ids) * 2
+
+    general_total = "(SELECT COUNT(*) FROM session_tags st WHERE st.tag_id = t.id)"
+    general_open = (
+        "(SELECT COUNT(*) FROM session_tags st "
+        "JOIN sessions s ON s.id = st.session_id "
+        "WHERE st.tag_id = t.id AND s.closed_at IS NULL)"
+    )
+    sql = (
+        "SELECT t.id, t.name, t.color, t.pinned, t.sort_order, t.created_at, "
+        "t.default_working_dir, t.default_model, t.tag_group, "
+        f"CASE WHEN t.tag_group = 'severity' THEN {severity_total} "
+        f"ELSE {general_total} END AS session_count, "
+        f"CASE WHEN t.tag_group = 'severity' THEN {severity_open} "
+        f"ELSE {general_open} END AS open_session_count "
+        f"FROM tags t ORDER BY {TAG_ORDER}"
+    )
+    async with conn.execute(sql, scope_params) as cursor:
         return [dict(row) async for row in cursor]
 
 

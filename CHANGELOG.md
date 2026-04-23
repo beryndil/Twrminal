@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-04-23
+
+Tag-filter sidebar semantics + layout overhaul (frontend v0.8.0). Three
+user-visible changes to how the Tags panel filters the session list,
+plus a header/footer rearrangement to make the new controls obvious:
+
+- **General-tag combination is now OR, not AND.** Selecting two tags
+  previously meant "show only sessions that carry BOTH tags"; it now
+  means "show sessions that carry EITHER". This matches the
+  intuition-of-sets most users bring to a tag filter and removes the
+  footgun where a second click quietly emptied the list.
+- **Empty selection means empty list; All selected means every
+  session.** Previously an empty general-tag selection fell through to
+  "no filter, show everything" — a legitimate state, but one the user
+  couldn't reach *from* a populated selection without a clear button.
+  The new rule makes the two endpoints explicit and symmetric with the
+  new All/None buttons.
+- **Severity counts are now scoped to the current general-tag
+  selection.** The open/total numbers next to each severity row
+  previously reflected every session in the DB regardless of sidebar
+  state; they now reflect the sessions the general-tag filter would
+  currently show. Empty general-tag selection zeroes every severity
+  count (consistent with the "empty = empty" rule above). The virtual
+  "No severity" row follows the same scoping.
+- **Panel layout.** The collapse button moved to the panel footer
+  (HR + chevron, persists via localStorage) so the header can host
+  the new All and None shortcut buttons. Active-filter breadcrumb
+  stays visible in the collapsed footer.
+
+### Changed
+
+- **Breaking: `GET /api/sessions` drops the `mode` query parameter.**
+  Combination is OR-only now. Clients that previously sent
+  `mode=any` were already getting OR behavior and can just drop the
+  param; clients that sent `mode=all` need to adapt.
+- **Breaking: `GET /api/sessions?tags=` semantics.** An empty `tags=`
+  value (the param is present but the list is empty) now means "match
+  nothing" instead of "no tag filter". Omitting the param entirely
+  still means "no tag filter" — the tri-state is: absent → unfiltered,
+  empty → match nothing, `tags=1,2` → OR.
+- **Additive: `GET /api/tags?scope_tags=<csv>`.** New optional query
+  parameter. When present, severity-group counts in the response are
+  scoped to sessions matching the given tag ids (OR, same rules as
+  `/api/sessions`). General-tag counts remain absolute regardless.
+  Absent → legacy absolute counts across every session. Empty →
+  severity counts all zero.
+
+### Added
+
+- Frontend: `tags.selectAllGeneral()` store method, backing the new
+  All button.
+- Frontend: separate `$effect` in `SessionList.svelte` keyed off the
+  general-tag selection that triggers `tags.refresh()` — severity
+  counts must re-pull when the scope changes, but severity selection
+  alone doesn't need it.
+
 ## [0.9.7] - 2026-04-23
 
 Right-click hardening + version-reporting fix. Two independent bugs

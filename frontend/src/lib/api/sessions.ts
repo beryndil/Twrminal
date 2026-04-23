@@ -154,10 +154,18 @@ export type ToolCall = {
 };
 
 export type SessionFilter = {
-  /** General-group tag ids. Multiple ids are AND-combined — a session
-   * must carry every selected tag to appear. The old Any/All toggle
-   * was removed in the v0.2.15 sidebar redesign; the wire format
-   * still uses `mode=all`, hardcoded in `listSessions`. */
+  /** General-group tag ids. Multiple ids are OR-combined (v0.7.4 —
+   * the AND path and the `mode=all` wire tag were both dropped with
+   * Dave's switch to "show anything containing either tag"). Tri-
+   * state:
+   *
+   * - `undefined` → param omitted → legacy "no filter, all sessions".
+   *   Used by the history export and any caller that genuinely wants
+   *   every session.
+   * - `[]` → param sent empty → "match nothing". The v0.7.4 sidebar
+   *   default when no general tags are selected.
+   * - `[a, b, ...]` → OR of the listed ids.
+   */
   tags?: number[];
   /** v0.2.14 severity axis (migration 0021). Severity tags are a
    * separate user-editable group; backend always OR-within-group
@@ -176,21 +184,19 @@ export function listSessions(
   filter: SessionFilter = {},
   fetchImpl: typeof fetch = fetch
 ): Promise<Session[]> {
-  const tagIds = filter.tags ?? [];
+  const tagIds = filter.tags;
   const severityIds = filter.severityTags ?? [];
-  // No filter at all → hit the bare path so the server skips the
-  // WHERE-clause builder entirely. Any filter present → build the
-  // query string with only the populated axes.
-  if (tagIds.length === 0 && severityIds.length === 0) {
+  // Both axes omitted → legacy unfiltered path. Bare URL lets the
+  // server skip the WHERE-clause builder entirely.
+  if (tagIds === undefined && severityIds.length === 0) {
     return jsonFetch<Session[]>(fetchImpl, '/api/sessions');
   }
   const params = new URLSearchParams();
-  if (tagIds.length > 0) {
+  if (tagIds !== undefined) {
+    // Always send the param when `tags` is defined — even empty —
+    // so the backend distinguishes "no general tags selected" (match
+    // nothing) from "tag filter not applied" (match everything).
     params.set('tags', tagIds.join(','));
-    // Always AND — the Any/All toggle was removed in v0.2.15. The
-    // backend route still defaults to 'any' when `mode` is omitted, so
-    // we pin it explicitly here rather than relying on the default.
-    params.set('mode', 'all');
   }
   if (severityIds.length > 0) {
     params.set('severity_tags', severityIds.join(','));

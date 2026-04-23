@@ -104,14 +104,25 @@ async def list_running_sessions(request: Request) -> list[str]:
 
 
 def _parse_tag_csv(raw: str | None, param_name: str) -> list[int] | None:
-    """Parse a comma-separated tag-id query param into a list of ints,
-    returning None when the param is unset or empty. Malformed values
-    raise a 400 so the client learns immediately rather than getting
-    silently empty results."""
-    if not raw:
+    """Parse a comma-separated tag-id query param.
+
+    - `None` → `None` (param absent, no filter on this axis).
+    - Empty string (`?tags=`) → `[]` (param present but empty). The
+      v0.7.4 sidebar sends this when the user has the panel open but
+      no general tags selected — it means "match nothing", not "no
+      filter". `list_sessions` maps the empty list to `1 = 0`.
+    - Non-empty CSV → list of ints.
+
+    Malformed values raise a 400 so the client learns immediately
+    rather than getting silently empty results.
+    """
+    if raw is None:
         return None
+    stripped = raw.strip()
+    if not stripped:
+        return []
     try:
-        return [int(t) for t in raw.split(",") if t.strip()]
+        return [int(t) for t in stripped.split(",") if t.strip()]
     except ValueError as exc:
         raise HTTPException(
             status_code=400,
@@ -122,8 +133,16 @@ def _parse_tag_csv(raw: str | None, param_name: str) -> list[int] | None:
 @router.get("", response_model=list[SessionOut])
 async def list_sessions(
     request: Request,
-    tags: str | None = Query(None, description="Comma-separated tag ids"),
-    mode: str = Query("any", pattern="^(any|all)$"),
+    tags: str | None = Query(
+        None,
+        description=(
+            "Comma-separated tag ids (general group). Omit the param for "
+            "the legacy 'no filter' path (every session). Send an empty "
+            "value (`?tags=`) to request 'match nothing' — the v0.7.4 "
+            "sidebar default when no general tags are selected. "
+            "Non-empty lists OR-combine (any listed tag)."
+        ),
+    ),
     severity_tags: str | None = Query(
         None,
         description=(
@@ -138,7 +157,6 @@ async def list_sessions(
     rows = await store.list_sessions(
         request.app.state.db,
         tag_ids=tag_ids,
-        mode=mode,
         severity_tag_ids=severity_tag_ids,
     )
     return [SessionOut(**r) for r in rows]

@@ -43,9 +43,12 @@ class TagStore {
    * list. Multi-select follows Finder semantics: a plain click replaces
    * the selection with the clicked id (or clears it if that was the
    * only selected id); shift-click toggles the clicked id inside the
-   * current selection (add if absent, remove if present). Combination
-   * inside this list is always AND — a session must carry every
-   * selected general tag to match. Combines with `selectedSeverity`
+   * current selection (add if absent, remove if present).
+   *
+   * Combination inside this list is OR (v0.7.4 — Dave's "anything
+   * containing either tag" change). Empty selection means "show
+   * nothing" — the sidebar starts blank until the user either picks
+   * tags or clicks the All button. Combines with `selectedSeverity`
    * via AND between the two axes. */
   selected = $state<number[]>([]);
   /** Severity-group tag ids selected as a filter. Separate from
@@ -81,8 +84,13 @@ class TagStore {
    * time refresh key. */
   hasAnyFilter = $derived(this.hasFilter || this.hasSeverityFilter);
 
+  /** v0.7.4: always include `tags` (even empty) on the filter payload
+   * so the API client distinguishes "nothing selected → match
+   * nothing" from the legacy unfiltered path that some non-sidebar
+   * callers still use. Empty-general-selection means empty session
+   * list, not every session. */
   filter = $derived<api.SessionFilter>({
-    tags: this.selected.length > 0 ? [...this.selected] : undefined,
+    tags: [...this.selected],
     severityTags:
       this.selectedSeverity.length > 0 ? [...this.selectedSeverity] : undefined
   });
@@ -129,6 +137,15 @@ class TagStore {
     this.selectedSeverity = [];
   }
 
+  /** Select every general-group tag id. Wired to the "All" button in
+   * the v0.7.4 TagFilterPanel header. With OR semantics, selecting
+   * every general tag is equivalent to "show every session that has
+   * any tag" — which, after migration 0021's default-severity
+   * backfill, is every session. */
+  selectAllGeneral(): void {
+    this.selected = this.generalList.map((t) => t.id);
+  }
+
   /** Toggle the collapsed state of the whole panel and persist it. */
   togglePanel(): void {
     this.panelCollapsed = !this.panelCollapsed;
@@ -139,7 +156,12 @@ class TagStore {
     this.loading = true;
     this.error = null;
     try {
-      this.list = await api.listTags();
+      // v0.7.4: pass the current general-tag selection as scope so
+      // severity counts narrow to sessions matching the sidebar's
+      // current filter. Empty selection → every severity count is
+      // rendered as 0, matching the empty session list the user sees
+      // on the right. General counts stay absolute regardless.
+      this.list = await api.listTags({ scopeTagIds: [...this.selected] });
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
     } finally {

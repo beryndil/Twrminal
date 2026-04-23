@@ -1,10 +1,39 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from bearings.api.auth import require_auth
 from bearings.api.models import TagCreate, TagMemoryOut, TagMemoryPut, TagOut, TagUpdate
 from bearings.db import store
+
+
+def _parse_scope_csv(raw: str | None) -> list[int] | None:
+    """Mirror of `_parse_tag_csv` from routes_sessions for the tags
+    route's scope param.
+
+    - `None` (param absent): legacy path, counts are absolute over the
+      full session set.
+    - Empty string: scoped with no general tags → severity counts
+      collapse to 0. The v0.7.4 sidebar sends this on boot when no
+      general tags are selected.
+    - Non-empty CSV: scoped to the OR-union of these tag ids →
+      severity counts narrow to sessions matching.
+
+    Malformed values raise a 400.
+    """
+    if raw is None:
+        return None
+    stripped = raw.strip()
+    if not stripped:
+        return []
+    try:
+        return [int(t) for t in stripped.split(",") if t.strip()]
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="scope_tags must be comma-separated integers",
+        ) from exc
+
 
 router = APIRouter(
     prefix="/tags",
@@ -29,8 +58,25 @@ async def _drop_runners_for_tag(request: Request, tag_id: int) -> None:
 
 
 @router.get("", response_model=list[TagOut])
-async def list_tags(request: Request) -> list[TagOut]:
-    rows = await store.list_tags(request.app.state.db)
+async def list_tags(
+    request: Request,
+    scope_tags: str | None = Query(
+        None,
+        description=(
+            "Optional comma-separated general-group tag ids that scope "
+            "severity counts for the v0.7.4 sidebar. Omit for absolute "
+            "counts; send an empty value (`?scope_tags=`) to zero every "
+            "severity count (no general tags selected); send a CSV to "
+            "narrow severity counts to sessions carrying any of the "
+            "listed ids."
+        ),
+    ),
+) -> list[TagOut]:
+    scope_tag_ids = _parse_scope_csv(scope_tags)
+    rows = await store.list_tags(
+        request.app.state.db,
+        scope_tag_ids=scope_tag_ids,
+    )
     return [TagOut(**r) for r in rows]
 
 

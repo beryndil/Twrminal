@@ -174,7 +174,8 @@
   // encodes both axes — general-tag selection and severity selection —
   // so adding/removing either triggers a refresh without a user also
   // having to touch the other axis. General-tag combination is always
-  // AND now, so there's no separate `mode` component to key off of.
+  // OR now (v0.7.4), so there's no separate `mode` component to key
+  // off of.
   let filterKey = $derived(
     `${tags.selected.join(',')}|${tags.selectedSeverity.join(',')}`
   );
@@ -184,6 +185,23 @@
     if (key === lastAppliedKey) return;
     lastAppliedKey = key;
     sessions.refresh(tags.filter);
+  });
+
+  // v0.7.4: severity counts in the sidebar are scoped to the current
+  // general-tag selection, so each change to `tags.selected` needs
+  // a tag refresh to pull the updated counts from the server.
+  // Severity selection doesn't feed into this — severity counts are
+  // independent of severity selection (the count would otherwise
+  // collapse to the sum of selected severities, which is
+  // meaningless). Keyed off the general selection only to avoid a
+  // wasteful refresh when severity alone toggles.
+  let generalSelectionKey = $derived(tags.selected.join(','));
+  let lastGeneralKey = '';
+  $effect(() => {
+    const key = generalSelectionKey;
+    if (key === lastGeneralKey) return;
+    lastGeneralKey = key;
+    void tags.refresh();
   });
 
   /** Ordered ids of every session currently rendered in the sidebar —

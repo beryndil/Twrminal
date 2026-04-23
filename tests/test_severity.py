@@ -20,6 +20,7 @@ from bearings.db.store import (
     init_db,
     list_session_tags,
     list_sessions,
+    list_tags,
     session_has_severity_tag,
 )
 
@@ -311,6 +312,116 @@ def test_api_create_tag_with_severity_group(client: TestClient) -> None:
     body = resp.json()
     assert body["tag_group"] == "severity"
     assert body["color"] == "#888888"
+
+
+# --- list_tags scope (v0.7.4 context-aware severity counts) ---------
+
+
+@pytest.mark.asyncio
+async def test_list_tags_unscoped_returns_absolute_counts(tmp_path: Path) -> None:
+    """Default / legacy path: `scope_tag_ids=None` gives every tag its
+    absolute session count. Preserves behavior for callers that just
+    want a tag inventory."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        s = await create_session(conn, working_dir="/x", model="m", title="a")
+        infra = await create_tag(conn, name="infra")
+        await attach_tag(conn, s["id"], infra["id"])
+        await ensure_default_severity(conn, s["id"])
+        rows = await list_tags(conn)
+        by_name = {r["name"]: r for r in rows}
+        assert by_name["infra"]["session_count"] == 1
+        assert by_name["Low"]["session_count"] == 1
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_list_tags_empty_scope_zeros_severity_only(tmp_path: Path) -> None:
+    """`scope_tag_ids=[]` means "no general tags selected in the
+    sidebar" — severity counts collapse to 0 (the session list is
+    empty anyway), but general-tag counts stay absolute so the user
+    can still see which tag to pick."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        s = await create_session(conn, working_dir="/x", model="m", title="a")
+        infra = await create_tag(conn, name="infra")
+        await attach_tag(conn, s["id"], infra["id"])
+        await ensure_default_severity(conn, s["id"])
+        rows = await list_tags(conn, scope_tag_ids=[])
+        by_name = {r["name"]: r for r in rows}
+        # General: absolute (untouched).
+        assert by_name["infra"]["session_count"] == 1
+        assert by_name["infra"]["open_session_count"] == 1
+        # Severity: zeroed across the board.
+        assert by_name["Low"]["session_count"] == 0
+        assert by_name["Low"]["open_session_count"] == 0
+        assert by_name["Blocker"]["session_count"] == 0
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_list_tags_scoped_narrows_severity_counts(tmp_path: Path) -> None:
+    """`scope_tag_ids=[infra]` scopes severity counts to sessions that
+    carry any of the listed general tags. General counts stay
+    absolute so the general list isn't distorted by scope."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        s_infra = await create_session(conn, working_dir="/a", model="m", title="a")
+        s_bug = await create_session(conn, working_dir="/b", model="m", title="b")
+        infra = await create_tag(conn, name="infra")
+        bug = await create_tag(conn, name="bug")
+        await attach_tag(conn, s_infra["id"], infra["id"])
+        await attach_tag(conn, s_bug["id"], bug["id"])
+        # Put Blocker on the infra session, leave the bug session with
+        # its default Low severity. Severity counts for scope=[infra]
+        # should see Blocker=1, Low=0 — only infra-tagged sessions are
+        # in scope.
+        async with conn.execute("SELECT id, name FROM tags WHERE tag_group='severity'") as cursor:
+            sev = {r["name"]: int(r["id"]) async for r in cursor}
+        await attach_tag(conn, s_infra["id"], sev["Blocker"])
+        await ensure_default_severity(conn, s_bug["id"])
+        rows = await list_tags(conn, scope_tag_ids=[infra["id"]])
+        by_name = {r["name"]: r for r in rows}
+        # Severity narrowed to the infra session only.
+        assert by_name["Blocker"]["session_count"] == 1
+        assert by_name["Low"]["session_count"] == 0
+        # General counts unchanged — both rows still reflect their
+        # absolute membership.
+        assert by_name["infra"]["session_count"] == 1
+        assert by_name["bug"]["session_count"] == 1
+        # Scope with OR of both general tags → severity covers both
+        # sessions, so Blocker + Low each = 1.
+        rows = await list_tags(conn, scope_tag_ids=[infra["id"], bug["id"]])
+        by_name = {r["name"]: r for r in rows}
+        assert by_name["Blocker"]["session_count"] == 1
+        assert by_name["Low"]["session_count"] == 1
+    finally:
+        await conn.close()
+
+
+def test_api_list_tags_scope_tags_query(client: TestClient) -> None:
+    """The route exposes the scope via `?scope_tags=`. Empty param
+    zeros severity counts; comma-separated ids narrow to the OR of
+    matching sessions. Bad input is 400."""
+    infra = client.post("/api/tags", json={"name": "infra"}).json()
+    client.post(
+        "/api/sessions",
+        json={"working_dir": "/a", "model": "m", "tag_ids": [infra["id"]]},
+    )
+    # Empty scope → severity counts zero.
+    rows = client.get("/api/tags?scope_tags=").json()
+    by_name = {r["name"]: r for r in rows}
+    assert by_name["Low"]["session_count"] == 0
+    assert by_name["infra"]["session_count"] == 1
+    # Scoped to infra → Low session_count reflects infra-scoped
+    # sessions (1).
+    rows = client.get(f"/api/tags?scope_tags={infra['id']}").json()
+    by_name = {r["name"]: r for r in rows}
+    assert by_name["Low"]["session_count"] == 1
+    bad = client.get("/api/tags?scope_tags=oops")
+    assert bad.status_code == 400
 
 
 def test_api_list_sessions_severity_tags_query(client: TestClient) -> None:

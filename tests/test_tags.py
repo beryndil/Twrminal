@@ -204,7 +204,10 @@ async def test_delete_tag_cascades_session_tags(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_sessions_filter_any(tmp_path: Path) -> None:
+async def test_list_sessions_filter_or(tmp_path: Path) -> None:
+    """v0.7.4: general-tag filter is OR — a session matches if it
+    carries any listed tag. The pre-v0.7.4 AND path was dropped with
+    the Any/All toggle."""
     conn = await init_db(tmp_path / "db.sqlite")
     try:
         s1 = await create_session(conn, working_dir="/a", model="m", title="a")
@@ -214,37 +217,26 @@ async def test_list_sessions_filter_any(tmp_path: Path) -> None:
         t_bug = await create_tag(conn, name="bug")
         await attach_tag(conn, s1["id"], t_infra["id"])
         await attach_tag(conn, s2["id"], t_bug["id"])
-        rows = await list_sessions(conn, tag_ids=[t_infra["id"], t_bug["id"]], mode="any")
+        rows = await list_sessions(conn, tag_ids=[t_infra["id"], t_bug["id"]])
         assert {r["id"] for r in rows} == {s1["id"], s2["id"]}
     finally:
         await conn.close()
 
 
 @pytest.mark.asyncio
-async def test_list_sessions_filter_all_requires_every_tag(tmp_path: Path) -> None:
+async def test_list_sessions_empty_tag_filter_matches_nothing(tmp_path: Path) -> None:
+    """v0.7.4: explicit empty tag list means "match nothing" — the
+    sidebar sends this when no general tags are selected. Distinct
+    from `tag_ids=None` which still means "no filter, every session"
+    for legacy callers like the history export."""
     conn = await init_db(tmp_path / "db.sqlite")
     try:
         s1 = await create_session(conn, working_dir="/a", model="m", title="a")
         s2 = await create_session(conn, working_dir="/b", model="m", title="b")
-        t_infra = await create_tag(conn, name="infra")
-        t_bug = await create_tag(conn, name="bug")
-        await attach_tag(conn, s1["id"], t_infra["id"])
-        await attach_tag(conn, s1["id"], t_bug["id"])
-        await attach_tag(conn, s2["id"], t_infra["id"])
-        rows = await list_sessions(conn, tag_ids=[t_infra["id"], t_bug["id"]], mode="all")
-        assert {r["id"] for r in rows} == {s1["id"]}
-    finally:
-        await conn.close()
-
-
-@pytest.mark.asyncio
-async def test_list_sessions_empty_filter_returns_all(tmp_path: Path) -> None:
-    conn = await init_db(tmp_path / "db.sqlite")
-    try:
-        s1 = await create_session(conn, working_dir="/a", model="m", title="a")
-        s2 = await create_session(conn, working_dir="/b", model="m", title="b")
+        # Empty list → zero results.
         rows = await list_sessions(conn, tag_ids=[])
-        assert {r["id"] for r in rows} == {s1["id"], s2["id"]}
+        assert rows == []
+        # None → every session (legacy unfiltered path).
         rows = await list_sessions(conn, tag_ids=None)
         assert {r["id"] for r in rows} == {s1["id"], s2["id"]}
     finally:
@@ -265,11 +257,24 @@ def test_api_list_sessions_filters_by_tag(client: TestClient) -> None:
         json={"working_dir": "/b", "model": "claude-sonnet-4-6", "tag_ids": [t2["id"]]},
     ).json()
 
-    any_hits = client.get(f"/api/sessions?tags={t1['id']},{t2['id']}&mode=any").json()
-    assert {r["id"] for r in any_hits} == {s1["id"], s2["id"]}
+    # v0.7.4: general-tag filter is OR. Two ids → both sessions.
+    or_hits = client.get(f"/api/sessions?tags={t1['id']},{t2['id']}").json()
+    assert {r["id"] for r in or_hits} == {s1["id"], s2["id"]}
 
     only_infra = client.get(f"/api/sessions?tags={t1['id']}").json()
     assert {r["id"] for r in only_infra} == {s1["id"]}
+
+
+def test_api_list_sessions_empty_tag_param_matches_nothing(client: TestClient) -> None:
+    """v0.7.4: `?tags=` (present but empty) means "match nothing".
+    Omitting the param still returns every session (legacy path)."""
+    t = client.post("/api/tags", json={"name": "infra"}).json()
+    client.post(
+        "/api/sessions",
+        json={"working_dir": "/a", "model": "m", "tag_ids": [t["id"]]},
+    )
+    assert client.get("/api/sessions?tags=").json() == []
+    assert len(client.get("/api/sessions").json()) == 1
 
 
 def test_api_list_sessions_bad_tags_is_400(client: TestClient) -> None:

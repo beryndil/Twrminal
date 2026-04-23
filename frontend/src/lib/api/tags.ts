@@ -51,8 +51,29 @@ export type TagMemory = {
   updated_at: string;
 };
 
-export function listTags(fetchImpl: typeof fetch = fetch): Promise<Tag[]> {
-  return jsonFetch<Tag[]>(fetchImpl, '/api/tags');
+/** Options for {@link listTags}. `scopeTagIds` drives the v0.7.4
+ * context-aware severity counts: the backend only returns absolute
+ * counts when the option is omitted, zeros every severity count when
+ * it's an empty array (no general tags selected in the sidebar), and
+ * narrows severity counts to the OR-union of the listed ids when
+ * non-empty. General-group counts are always absolute regardless. */
+export type ListTagsOptions = {
+  scopeTagIds?: number[];
+};
+
+export function listTags(
+  opts: ListTagsOptions = {},
+  fetchImpl: typeof fetch = fetch
+): Promise<Tag[]> {
+  if (opts.scopeTagIds === undefined) {
+    return jsonFetch<Tag[]>(fetchImpl, '/api/tags');
+  }
+  // Always send the param when `scopeTagIds` is defined — even empty —
+  // so the backend distinguishes "scoped, nothing selected" (zero
+  // severity counts) from "unscoped" (absolute counts).
+  const params = new URLSearchParams();
+  params.set('scope_tags', opts.scopeTagIds.join(','));
+  return jsonFetch<Tag[]>(fetchImpl, `/api/tags?${params}`);
 }
 
 export function listSessionTags(
