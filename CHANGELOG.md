@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.5] - 2026-04-22
+
+Phase 13 of the context-menu plan — cheat-sheet discoverability. The `?`
+overlay now documents the right-click / long-press entry points and, for
+users who have bound chords in `menus.toml`, enumerates their bindings
+with the resolved action labels so they can see what they actually wired
+up.
+
+### Added
+
+- **`frontend/src/lib/context-menu/shortcuts.ts` (new).** Pure
+  collector walking every known `TargetType` and the corresponding
+  `menuConfig.forTarget(target).shortcuts` map, returning
+  `{target, id, label, chord}` tuples sorted alphabetically within a
+  target and by registry order across targets. Falls back to the raw
+  id when the action was retired or typo'd — the user needs to see
+  dangling bindings, not have them silently dropped. Five unit tests
+  cover empty input, label resolution, dangling-id fallback,
+  alphabetical sort, and target order.
+- **`frontend/src/lib/components/CheatSheet.svelte` — Context menu
+  group + dynamic user shortcuts section.** A new static block lists
+  the cross-platform conventions (right-click, Shift+right-click for
+  advanced, Ctrl+Shift+right-click for browser passthrough, long-press,
+  arrow keys, Enter, Esc). A second block, rendered only when the
+  collector returns a non-empty list, shows every user-bound chord
+  under a "Your shortcuts (menus.toml)" heading with per-entry target
+  badges. `splitChord()` normalises `ctrl+shift+d` into individual
+  `<kbd>` chips, with `ctrl` rewritten as `⌘/Ctrl` so macOS users
+  don't have to translate on the fly.
+- **`$derived.by(collectMenuShortcuts)`.** The user-shortcut list
+  reacts to `menuConfig.hydrate`, so the section populates the moment
+  the boot-time `/ui-config` fetch lands without needing a manual
+  refresh of the cheat sheet.
+
+### Why
+
+Phase 10 gave users the power to rebind menu chords in TOML, but
+nothing in the UI told them what they'd bound — they had to keep the
+TOML file open in another window to remember. The cheat sheet is
+already the discoverability surface for every other chord in the app,
+so this is where the self-declared bindings belong. Keeping the
+collector pure and registry-aware means the list updates reactively
+when config is hydrated and stays truthful even when TOML references
+an action the current release no longer ships.
+
 ## [0.9.4] - 2026-04-22
 
 Phase 11 of the context-menu plan — touch + coarse-pointer support.
