@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -294,11 +294,24 @@ async def get_session_tokens(session_id: str, request: Request) -> TokenTotalsOu
 
 
 @router.get("/{session_id}/tool_calls", response_model=list[ToolCallOut])
-async def list_tool_calls(session_id: str, request: Request) -> list[ToolCallOut]:
+async def list_tool_calls(
+    session_id: str,
+    request: Request,
+    message_ids: Annotated[list[str] | None, Query()] = None,
+) -> list[ToolCallOut]:
+    """List tool_calls for a session.
+
+    `message_ids` is an optional repeated query param used by the
+    conversation pane to scope the response to the currently-visible
+    message page. Omit it for the full-history view (export /
+    checkpoints / reorg). Passing an empty list short-circuits to
+    `[]` — FastAPI parses a bare `?message_ids=` as an empty list, and
+    the DB helper treats that as "no visible messages, no rows to
+    return" rather than building a syntactically-invalid `IN ()`."""
     conn = request.app.state.db
     if await store.get_session(conn, session_id) is None:
         raise HTTPException(status_code=404, detail="session not found")
-    rows = await store.list_tool_calls(conn, session_id)
+    rows = await store.list_tool_calls(conn, session_id, message_ids=message_ids)
     return [ToolCallOut(**r) for r in rows]
 
 

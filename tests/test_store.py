@@ -8,6 +8,7 @@ import pytest
 from bearings.db.store import (
     add_session_cost,
     append_tool_output,
+    attach_tool_calls_to_message,
     close_session,
     create_session,
     delete_session,
@@ -611,6 +612,47 @@ async def test_list_tool_calls_orders_oldest_first(tmp_path: Path) -> None:
         )
         rows = await list_tool_calls(conn, sess["id"])
         assert [r["id"] for r in rows] == ["a", "b"]
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_list_tool_calls_filters_by_message_ids(tmp_path: Path) -> None:
+    """The conversation pane pulls only the tool_calls bound to the
+    messages currently on screen. Cover the three shapes the DB helper
+    has to get right: filter=None (full history), filter=[ids] (scoped,
+    orphans dropped), filter=[] (short-circuit to empty)."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        sess = await create_session(conn, working_dir="/x", model="m", title=None)
+        m1 = await insert_message(conn, session_id=sess["id"], role="assistant", content="m1")
+        m2 = await insert_message(conn, session_id=sess["id"], role="assistant", content="m2")
+        # Three tool_calls: one under m1, one under m2, one orphan (no
+        # parent message — simulates a call that streamed but never got
+        # backfilled because the turn crashed before insert_message).
+        await insert_tool_call_start(
+            conn, session_id=sess["id"], tool_call_id="tc-m1", name="R", input_json="{}"
+        )
+        await insert_tool_call_start(
+            conn, session_id=sess["id"], tool_call_id="tc-m2", name="R", input_json="{}"
+        )
+        await insert_tool_call_start(
+            conn, session_id=sess["id"], tool_call_id="tc-orphan", name="R", input_json="{}"
+        )
+        await attach_tool_calls_to_message(conn, message_id=m1["id"], tool_call_ids=["tc-m1"])
+        await attach_tool_calls_to_message(conn, message_id=m2["id"], tool_call_ids=["tc-m2"])
+        # Default (no filter) returns everything, orphans included.
+        full = await list_tool_calls(conn, sess["id"])
+        assert {r["id"] for r in full} == {"tc-m1", "tc-m2", "tc-orphan"}
+        # Scoped filter drops the orphan and the tool_call under m2.
+        scoped = await list_tool_calls(conn, sess["id"], message_ids=[m1["id"]])
+        assert {r["id"] for r in scoped} == {"tc-m1"}
+        # Two-id filter pulls both scoped rows but still drops the orphan.
+        both = await list_tool_calls(conn, sess["id"], message_ids=[m1["id"], m2["id"]])
+        assert {r["id"] for r in both} == {"tc-m1", "tc-m2"}
+        # Empty list short-circuits: no round-trip, no SQL syntax error
+        # from a bare `IN ()`.
+        assert await list_tool_calls(conn, sess["id"], message_ids=[]) == []
     finally:
         await conn.close()
 

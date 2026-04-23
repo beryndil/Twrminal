@@ -366,13 +366,41 @@ async def attach_tool_calls_to_message(
     return cursor.rowcount
 
 
-async def list_tool_calls(conn: aiosqlite.Connection, session_id: str) -> list[dict[str, Any]]:
-    async with conn.execute(
+async def list_tool_calls(
+    conn: aiosqlite.Connection,
+    session_id: str,
+    *,
+    message_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Return tool_call rows for a session in chronological order.
+
+    `message_ids` is the pagination escape hatch used by the
+    conversation pane: the store only needs tool_calls whose parent
+    message is currently on screen, so loading a 50-row page of
+    messages for a session with thousands of historical tool_calls
+    no longer forces a full-table scan and a 2 MB+ JSON payload.
+    Rows whose `message_id` is NULL (orphans that never got backfilled)
+    are dropped when the filter is active, matching the UI's behavior
+    of only rendering tool_calls under a visible message. Pass `None`
+    (the default) for export / reorg / checkpoint paths that legitimately
+    need the full history."""
+    sql = (
         "SELECT id, session_id, message_id, name, input, output, error, "
-        "started_at, finished_at "
-        "FROM tool_calls WHERE session_id = ? ORDER BY started_at ASC, id ASC",
-        (session_id,),
-    ) as cursor:
+        "started_at, finished_at FROM tool_calls WHERE session_id = ?"
+    )
+    params: list[Any] = [session_id]
+    if message_ids is not None:
+        # Empty list => no messages on screen => no tool_calls worth
+        # returning. Short-circuit so we don't build an `IN ()` clause
+        # (SQLite treats empty IN lists as syntax errors) and so we skip
+        # the round-trip entirely.
+        if not message_ids:
+            return []
+        placeholders = ",".join("?" for _ in message_ids)
+        sql += f" AND message_id IN ({placeholders})"
+        params.extend(message_ids)
+    sql += " ORDER BY started_at ASC, id ASC"
+    async with conn.execute(sql, params) as cursor:
         return [dict(row) async for row in cursor]
 
 

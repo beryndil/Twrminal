@@ -309,9 +309,27 @@ export async function listMessagesPage(
 
 export function listToolCalls(
   sessionId: string,
+  opts: { messageIds?: string[] } = {},
   fetchImpl: typeof fetch = fetch
 ): Promise<ToolCall[]> {
-  return jsonFetch<ToolCall[]>(fetchImpl, `/api/sessions/${sessionId}/tool_calls`);
+  // Pass `messageIds` to scope the response to the currently-visible
+  // conversation page — the backend filters by `message_id IN (...)`
+  // and drops orphan rows, which keeps the payload O(page) instead of
+  // O(session history). Omitting `messageIds` returns every tool_call
+  // for the session (legacy behavior, still used by export/checkpoint
+  // paths if they ever call this wrapper). An empty array is a valid
+  // filter meaning "no visible messages" — the server returns [] for
+  // that, which matches what the store would render anyway.
+  let url = `/api/sessions/${sessionId}/tool_calls`;
+  if (opts.messageIds !== undefined) {
+    const params = new URLSearchParams();
+    // FastAPI parses repeated `message_ids=` query params as a list.
+    // URLSearchParams.append is the idiomatic way to emit them; a
+    // comma-joined single param would not round-trip through Query().
+    for (const id of opts.messageIds) params.append('message_ids', id);
+    url += `?${params}`;
+  }
+  return jsonFetch<ToolCall[]>(fetchImpl, url);
 }
 
 export function getSessionTokens(

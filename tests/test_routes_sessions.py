@@ -310,6 +310,38 @@ def test_get_tool_calls_returns_persisted_rows(
     assert call["finished_at"]
 
 
+def test_get_tool_calls_filters_by_message_ids(
+    client: TestClient, mock_agent_tool_stream: None
+) -> None:
+    """The conversation pane scopes the fetch to the on-screen message
+    window — confirms `?message_ids=<id>` narrows the response and that
+    a bogus id returns an empty list instead of everything."""
+    created = _create(client, title="tc-filter")
+    with client.websocket_connect(f"/ws/sessions/{created['id']}") as ws:
+        ws.send_json({"type": "prompt", "content": "read hosts"})
+        for _ in range(4):
+            ws.receive_text()
+
+    rows = client.get(f"/api/sessions/{created['id']}/tool_calls").json()
+    assert len(rows) == 1
+    parent_msg_id = rows[0]["message_id"]
+    assert parent_msg_id is not None
+
+    # Matching id returns the row.
+    scoped = client.get(
+        f"/api/sessions/{created['id']}/tool_calls",
+        params={"message_ids": parent_msg_id},
+    ).json()
+    assert [r["id"] for r in scoped] == ["tool-1"]
+
+    # A non-matching id returns an empty list — the orphan drop.
+    bogus = client.get(
+        f"/api/sessions/{created['id']}/tool_calls",
+        params={"message_ids": "0" * 32},
+    ).json()
+    assert bogus == []
+
+
 def test_tokens_endpoint_missing_session_returns_404(client: TestClient) -> None:
     """The /tokens endpoint is gated on session existence — a bogus id
     must 404 rather than leaking a zero-valued row a non-existent

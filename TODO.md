@@ -916,17 +916,18 @@ headline. Additional issues found, in priority order:
   connection don't see mid-turn state; fine, the UI rebuilds from
   wire events anyway.
 
-- [ ] **Session `load()` eagerly fetches every tool call.**
-  `frontend/src/lib/stores/conversation.svelte.ts:82-87` →
-  `api.listToolCalls(sessionId)` (no limit, no pagination) →
-  `src/bearings/db/_messages.py:369`. The largest session has 580
-  timeline items. A session with 200 tool calls × ~50 KB output ≈
-  10 MB JSON payload on every session switch, then hydration
-  `JSON.parse`'s each input column. This is why clicking between
-  large sessions feels heavy. Fix: paginate with the same
-  50-message window (pull only tool calls whose `message_id` is in
-  the loaded page), or return a lite view (without `output` /
-  `input` JSON) and fetch full payloads lazily on Inspector open.
+- [x] **Session `load()` eagerly fetches every tool call.** (fixed
+  2026-04-23, item 3 of the audit follow-up.) `list_tool_calls` now
+  takes an optional `message_ids` filter; the DB helper scopes the
+  `SELECT` to `message_id IN (...)` and drops orphans. Route exposes
+  it as repeated `?message_ids=` query params. `load()` derives the
+  ids from the 50-message page it just fetched, and `loadOlder()`
+  now pulls the matching tool_calls for each paginated older page
+  so the ToolDrawer still renders under historical messages. Export
+  / checkpoint / reorg callers pass `message_ids=None` and keep the
+  full-history behavior. New coverage: `test_store.py::
+  test_list_tool_calls_filters_by_message_ids`, `test_routes_sessions
+  .py::test_get_tool_calls_filters_by_message_ids`.
 
 - [ ] **Subscribe replay walks full 5k ring buffer on every new
   WS.** `src/bearings/agent/runner.py:163-166`. Two tabs reconnecting
@@ -947,7 +948,7 @@ headline. Additional issues found, in priority order:
 3. Promote `turns` / `timeline` to `$state` (the 2026-04-21 sketch).
 4. Pre-encode WS frames once in `_emit_event`.
 5. One-transaction-per-turn on the DB.
-6. Paginated `listToolCalls` for session load.
+6. Paginated `listToolCalls` for session load. *(shipped 2026-04-23)*
 
 Items 1–3 are frontend-only and together address the majority of the
 streaming-CPU burn. 4–5 matter most when multiple tabs are attached

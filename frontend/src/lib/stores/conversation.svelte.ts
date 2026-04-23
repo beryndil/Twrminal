@@ -92,12 +92,21 @@ class ConversationStore {
     // spinner forever.
     state.loadingInitial = true;
     try {
-      const [session, page, toolCalls, todos] = await Promise.all([
+      // Fetch the first message page first so we can scope the
+      // tool_calls lookup to just those messages. Pre-v0.x.x we pulled
+      // every tool_call for the session on every load(); sessions with
+      // thousands of historical tool_calls made that a 2 MB+ payload
+      // and a full-table scan per navigation. The follow-ups (session
+      // row + todos) don't depend on the page, so they run in parallel
+      // with the page fetch. Tool-calls waits on the page.
+      const [session, page, todos] = await Promise.all([
         api.getSession(sessionId),
         api.listMessagesPage(sessionId, { limit: PAGE_SIZE }),
-        api.listToolCalls(sessionId),
         api.getSessionTodos(sessionId)
       ]);
+      const toolCalls = await api.listToolCalls(sessionId, {
+        messageIds: page.messages.map((m) => m.id)
+      });
       // Don't wipe in-flight streaming state. We're refreshing the
       // completed-message window from the DB; the ring-buffer replay
       // over the WS will catch us up on anything mid-stream.
@@ -161,9 +170,28 @@ class ConversationStore {
         before: first.created_at,
         limit: PAGE_SIZE
       });
+      // Now that listToolCalls is scoped to the visible message window
+      // (see load()), paginating older messages has to pull the
+      // matching tool_calls too — otherwise the ToolDrawer under those
+      // older messages would render empty rows. Fetch both in parallel
+      // so an infinite-scroll tick costs one round-trip.
+      const olderIds = page.messages.map((m) => m.id);
+      const olderToolCalls = olderIds.length
+        ? await api.listToolCalls(this.sessionId, { messageIds: olderIds })
+        : [];
       state.messages = [...page.messages, ...state.messages];
       state.hasMore = page.hasMore;
       for (const m of page.messages) state.completedMessageIds.add(m.id);
+      // Merge: keep any live/unacknowledged tool_calls already on state
+      // and append hydrated rows for the new page. De-dupe by id in
+      // case a streaming tool_call finished between the page fetch and
+      // the tool_calls fetch — the DB row wins (finalised output).
+      const hydrated = olderToolCalls.map(hydrateToolCall);
+      const hydratedIds = new Set(hydrated.map((tc) => tc.id));
+      state.toolCalls = [
+        ...hydrated,
+        ...state.toolCalls.filter((tc) => !hydratedIds.has(tc.id))
+      ];
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
     } finally {
