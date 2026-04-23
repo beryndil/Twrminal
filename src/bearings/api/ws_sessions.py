@@ -30,18 +30,25 @@ from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketDisconnect
 
 from bearings import metrics
-from bearings.api.auth import check_ws_auth
+from bearings.api.auth import check_ws_auth, check_ws_origin
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["sessions-ws"])
 
 CODE_UNAUTHORIZED = 4401
+# 2026-04-21 security audit §1: same cross-origin guard as the
+# per-session agent socket. Both endpoints share the same threat model
+# (attacker tab in same browser) so both enforce the same policy.
+CODE_FORBIDDEN_ORIGIN = 4403
 
 
 @router.websocket("/ws/sessions")
 async def sessions_ws(websocket: WebSocket) -> None:
     await websocket.accept()
+    if not check_ws_origin(websocket):
+        await websocket.close(code=CODE_FORBIDDEN_ORIGIN, reason="origin not allowed")
+        return
     if not check_ws_auth(websocket):
         await websocket.close(code=CODE_UNAUTHORIZED)
         return

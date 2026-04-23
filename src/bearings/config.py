@@ -41,6 +41,14 @@ DATA_HOME = _xdg("XDG_DATA_HOME", Path.home() / ".local" / "share") / "bearings"
 class ServerCfg(BaseModel):
     host: str = "127.0.0.1"
     port: int = 8787
+    # Extra origins accepted on the WS handshake beyond the loopback
+    # defaults (`http://127.0.0.1:<port>`, `http://localhost:<port>`,
+    # `http://[::1]:<port>`). Use to whitelist the Vite dev server
+    # (e.g. `"http://localhost:5173"`) or any custom local deployment.
+    # Entries are compared verbatim against the browser's `Origin`
+    # header — include scheme and port, no trailing slash. Added as a
+    # ship-blocker fix (2026-04-21 security audit §1).
+    allowed_origins: list[str] = Field(default_factory=list)
 
 
 class AuthCfg(BaseModel):
@@ -119,6 +127,22 @@ class UploadsCfg(BaseModel):
     )
 
 
+class FsCfg(BaseModel):
+    """Filesystem-surface policy for the in-app folder/file pickers.
+
+    `allow_root` clamps `/api/fs/list`: the route is authenticated-
+    localhost-only, but even under auth a cross-origin attacker who
+    somehow got a valid token (reused Bearer) shouldn't be able to
+    enumerate the entire host. Default is `$HOME` — narrow enough to
+    matter, wide enough that a returning user doesn't hit 403 on the
+    dirs they actually work in. Set to `/` to restore v0.1.x behavior
+    (full host listing) if you know what you're trading away.
+    Added 2026-04-21 security audit §5.
+    """
+
+    allow_root: Path = Field(default_factory=lambda: Path.home())
+
+
 class ShellCfg(BaseModel):
     """Commands the `/api/shell/open` bridge dispatches to.
 
@@ -140,6 +164,32 @@ class ShellCfg(BaseModel):
     file_explorer_command: list[str] | None = None
     git_gui_command: list[str] | None = None
     claude_cli_command: list[str] | None = None
+
+
+class VaultCfg(BaseModel):
+    """Read-only on-disk markdown surface exposed under `/api/vault/*`.
+
+    Aggregates Dave's planning docs (plans under `~/.claude/plans/`)
+    and per-project `TODO.md` files so the Bearings UI can browse them
+    without terminal-hopping. Paths are expanded with `~` / env-var
+    substitution at request time, so a user rename of `$HOME` or a
+    fresh project-root won't strand the index.
+
+    Security: the values here ARE the allowlist. `/api/vault/doc` only
+    returns bytes for paths that appear in the current scan. Adding or
+    removing patterns is equivalent to granting/revoking read exposure
+    — treat like `fs.allow_root`."""
+
+    plan_roots: list[Path] = Field(
+        default_factory=lambda: [Path.home() / ".claude" / "plans"]
+    )
+    todo_globs: list[str] = Field(
+        default_factory=lambda: [
+            str(Path.home() / "Projects" / "**" / "TODO.md"),
+            str(Path.home() / ".claude" / "TODO.md"),
+            str(Path.home() / "usb_backup" / "TODO.md"),
+        ]
+    )
 
 
 class BillingCfg(BaseModel):
@@ -166,6 +216,8 @@ class Settings(BaseSettings):
     runner: RunnerCfg = Field(default_factory=RunnerCfg)
     uploads: UploadsCfg = Field(default_factory=UploadsCfg)
     shell: ShellCfg = Field(default_factory=ShellCfg)
+    fs: FsCfg = Field(default_factory=FsCfg)
+    vault: VaultCfg = Field(default_factory=VaultCfg)
 
     config_file: Path = Field(default_factory=lambda: CONFIG_HOME / "config.toml")
     # `menus.toml` is the Phase 10 customization file: pinned / hidden

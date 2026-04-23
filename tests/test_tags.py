@@ -526,10 +526,10 @@ async def test_create_tag_accepts_defaults(tmp_path: Path) -> None:
         row = await create_tag(
             conn,
             name="bearings",
-            default_working_dir="/home/beryndil/Projects/Bearings",
+            default_working_dir="/srv/example-project",
             default_model="claude-opus-4-7",
         )
-        assert row["default_working_dir"] == "/home/beryndil/Projects/Bearings"
+        assert row["default_working_dir"] == "/srv/example-project"
         assert row["default_model"] == "claude-opus-4-7"
     finally:
         await conn.close()
@@ -580,13 +580,13 @@ def test_post_tag_accepts_defaults(client: TestClient) -> None:
         "/api/tags",
         json={
             "name": "bearings",
-            "default_working_dir": "/home/beryndil/Projects/Bearings",
+            "default_working_dir": "/srv/example-project",
             "default_model": "claude-opus-4-7",
         },
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["default_working_dir"] == "/home/beryndil/Projects/Bearings"
+    assert body["default_working_dir"] == "/srv/example-project"
     assert body["default_model"] == "claude-opus-4-7"
 
 

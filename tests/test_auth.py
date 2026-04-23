@@ -8,13 +8,16 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from bearings.config import AuthCfg, Settings, StorageCfg
+from bearings.config import AuthCfg, ServerCfg, Settings, StorageCfg
 from bearings.server import create_app
+
+from .conftest import TEST_ORIGIN
 
 
 @pytest.fixture
 def auth_settings(tmp_path) -> Iterator[Settings]:
     cfg = Settings(
+        server=ServerCfg(allowed_origins=[TEST_ORIGIN]),
         storage=StorageCfg(db_path=tmp_path / "db.sqlite"),
         auth=AuthCfg(enabled=True, token="s3cret"),
     )
@@ -30,6 +33,7 @@ def auth_app(auth_settings: Settings) -> FastAPI:
 @pytest.fixture
 def auth_client(auth_app: FastAPI) -> Iterator[TestClient]:
     with TestClient(auth_app) as c:
+        c.headers["origin"] = TEST_ORIGIN
         yield c
 
 

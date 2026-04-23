@@ -985,26 +985,94 @@ assumption is wired into a dozen separate decisions.
 
 These are bugs, not preferences — no toggle, just fix.
 
-- [ ] **WS has no Origin check.** `src/bearings/api/ws_agent.py:144-148`.
-  Any tab in the same browser can drive the agent. Reject WS handshakes
-  whose `Origin` isn't `http://127.0.0.1:<port>` / `localhost`.
-- [ ] **Markdown XSS via `marked` + `{@html}` with no sanitizer.**
-  `frontend/src/lib/render.ts:104-107` + every consumer that mounts
-  `renderMarkdown` output via `{@html}` (`CollapsibleBody.svelte:102`,
-  `TagEdit.svelte:221`). Add `isomorphic-dompurify`; pipe `marked.parse()`
-  through it. Agent/tool output is attacker-influenced.
-- [ ] **`tests/test_tags.py:453,456,507,513`** — `/home/beryndil/Projects/Bearings`
-  hardcoded as test fixture. Identity leak in tracked code. Replace with
-  `tmp_path` or generic placeholder.
-- [ ] **Migrations run with no transaction wrapping, no checksum, no
-  downgrade detection.** `src/bearings/db/_common.py:36-49`. Wrap each
-  in `BEGIN/COMMIT`; record a checksum alongside the name; refuse to
-  start when applied-but-unknown rows exist.
-- [ ] **`/api/fs/list` enumerates the entire host.** `src/bearings/api/routes_fs.py:43-57`.
-  Clamp to a configured allow-root (default `Path.home()`).
-- [ ] **Resolve `CLAUDE.md:12` "Repository TBD"** — pick the org or remove
+- [x] **WS has no Origin check.** `src/bearings/api/ws_agent.py` +
+  `src/bearings/api/ws_sessions.py`. Fixed 2026-04-23:
+  - New `check_ws_origin` / `_allowed_origins` helpers in
+    `bearings.api.auth`. Allowlist derives loopback defaults from
+    `server.port` (`http://127.0.0.1:<port>`, `http://localhost:<port>`,
+    `http://[::1]:<port>`) and merges in the new
+    `ServerCfg.allowed_origins` config field for dev/reverse-proxy
+    scenarios.
+  - Both WS handlers now close with `4403` + `reason="origin not
+    allowed"` before auth runs and before any subscription registers.
+    Missing `Origin` fails closed.
+  - Test fixtures (`tests/conftest.py`, `tests/test_auth.py`) inject
+    `http://testserver` into both the client and the allowlist so
+    existing tests keep working.
+  - New `tests/test_ws_origin.py` (7 tests) covers missing/foreign/
+    allowlisted origin on both endpoints plus helper unit coverage.
+  - 718/718 pytest, ruff + mypy clean.
+- [x] **Markdown XSS via `marked` + `{@html}` with no sanitizer.**
+  `frontend/src/lib/render.ts` + every consumer that mounts
+  `renderMarkdown` output via `{@html}` (`CollapsibleBody.svelte:155`,
+  `TagEdit.svelte:308`). Fixed 2026-04-23: added `isomorphic-dompurify`
+  (frontend dep), wrapped `marked.parse()` output with
+  `DOMPurify.sanitize()` using a narrow tag/attr allowlist that keeps
+  the shiki `class`/`style` markup and the
+  `data-bearings-code-block`/`data-language` attrs needed by the
+  context-menu delegate. New `frontend/src/lib/render.test.ts` pins
+  sanitizer behavior (script strip, event-handler strip, javascript:
+  URL strip, iframe strip, fenced-block wrapper preservation).
+  521/521 vitest green; bundle rebuilt + synced into
+  `src/bearings/web/dist`. `SidebarSearch.svelte:106`'s `highlightText`
+  is already XSS-safe (escapes before mark-injection, test at
+  `highlight.test.ts:23` covers it) — not a hole.
+- [x] **`tests/test_tags.py`** — `/home/beryndil/Projects/Bearings`
+  hardcoded as test fixture. Identity leak in tracked code. Replaced
+  with `/srv/example-project` at the four hit sites (2026-04-23;
+  actual lines 529/532/583/589, not 453/456/507/513 as originally
+  logged). `uv run pytest tests/test_tags.py` green. Remaining mentions
+  of `/home/beryndil` in tracked tree are limited to `TODO.md` and
+  `TODO-archive-2026-04-22.md` — operational logs, not fixtures; left
+  in place pending an explicit decision on public-repo TODO scrubbing.
+- [x] **Migrations run with no transaction wrapping, no checksum, no
+  downgrade detection.** Fixed 2026-04-23:
+  - New `MigrationDriftError` + `_checksum` + `_ensure_migrations_table`
+    in `bearings.db._common`. `schema_migrations` now carries a `checksum`
+    column; pre-existing DBs get the column added via
+    `pragma_table_info` + `ALTER TABLE` (SQLite has no `ADD COLUMN IF
+    NOT EXISTS`). The tracking table is managed at Python level, not
+    as a numbered SQL migration — otherwise the runner would depend on
+    its own output column.
+  - `_apply_migrations` now runs a drift pass before the apply pass:
+    unknown applied rows (downgrade / deleted file) are fatal;
+    checksum mismatches (edited-after-application) are fatal; NULL
+    checksums on pre-existing rows are backfilled from the current
+    file. New migrations are recorded with their sha256 on apply.
+  - No `BEGIN/COMMIT` wrapping: `executescript` auto-commits inside
+    SQLite (documented constraint), so wrapping it is a no-op. The
+    INSERT-into-`schema_migrations` only fires on success, so a failed
+    migration simply isn't recorded and re-runs next boot — migrations
+    must therefore remain idempotent (`IF NOT EXISTS` for creates;
+    `ALTER TABLE` changes need manual cleanup on failure). Comment in
+    `_apply_migrations` records the constraint.
+  - `tests/test_migrations.py` covers: fresh checksum record, NULL
+    backfill, unknown-row-fatal, mismatch-fatal, repeat-init
+    idempotence, legacy (pre-checksum column) DB upgrade, and
+    direct-invocation of `_apply_migrations` against an open
+    connection. 729/729 pytest, ruff + mypy clean.
+- [x] **`/api/fs/list` enumerates the entire host.** Fixed 2026-04-23:
+  - New `FsCfg.allow_root: Path` (default `Path.home()`) in
+    `bearings.config`.
+  - `list_dir` now takes a `Request`, resolves the configured root
+    with `strict=False`, resolves the requested target with
+    `strict=True`, and 403s any target that isn't equal to or beneath
+    the root. `parents`-based check means symlink escapes (inside-root
+    symlink pointing at `/etc`, etc.) are caught.
+  - `tmp_settings` fixture points `fs.allow_root` at `tmp_path` so
+    every existing test still operates inside the clamp.
+  - `test_list_defaults_to_home` renamed to
+    `test_list_defaults_to_allow_root`; new dedicated test
+    `test_list_root_parent_is_null_when_allow_root_is_filesystem_root`
+    replaces the old `/`-parent coverage using an inline
+    `FsCfg(allow_root=Path("/"))` client.
+  - Four new clamp tests (`test_list_rejects_path_outside_allow_root`,
+    `_sibling_of_allow_root`, `_symlink_escape`,
+    `test_list_accepts_nested_subdir`). 722/722 pytest, ruff + mypy
+    clean. `/fs/pick` left alone — user-initiated native dialog.
+- [x] **Resolve `CLAUDE.md:12` "Repository TBD"** — pick the org or remove
   the note before the README ships. (Org chosen 2026-04-22:
-  `Beryndil/Bearings`. CLAUDE.md edit still pending.)
+  `Beryndil/Bearings`. CLAUDE.md edited 2026-04-23.)
 - [ ] **Decide on commit-email exposure.** `beryndil@hardknocks.university`
   and `dwhennigan@gmail.com` are in commit history. If either should not
   appear publicly, run `git filter-repo` (or fresh init) before first

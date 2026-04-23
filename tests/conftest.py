@@ -17,8 +17,15 @@ from bearings.agent.events import (
     ToolCallStart,
 )
 from bearings.agent.session import AgentSession
-from bearings.config import Settings, StorageCfg, UploadsCfg
+from bearings.config import FsCfg, ServerCfg, Settings, StorageCfg, UploadsCfg
 from bearings.server import create_app
+
+# TestClient's default base_url is `http://testserver`; WS tests run
+# under that hostname, so we whitelist it in test settings and have the
+# client fixture send a matching Origin header by default. Individual
+# tests can still probe the origin check by overriding the header on
+# `websocket_connect`.
+TEST_ORIGIN = "http://testserver"
 
 MOCK_MSG_ID = "mock-msg"
 MOCK_TOOL_MSG_ID = "mock-tool-msg"
@@ -27,11 +34,18 @@ MOCK_TOOL_MSG_ID = "mock-tool-msg"
 @pytest.fixture
 def tmp_settings(tmp_path: Path) -> Iterator[Settings]:
     cfg = Settings(
+        server=ServerCfg(allowed_origins=[TEST_ORIGIN]),
         storage=StorageCfg(db_path=tmp_path / "db.sqlite"),
         # Redirect uploads at the tmp dir so routes_uploads tests don't
         # scribble into `~/.local/share/bearings/uploads`. Isolated
         # subdir keeps it clean-cut from the sqlite files.
         uploads=UploadsCfg(upload_dir=tmp_path / "uploads"),
+        # `/api/fs/list` is clamped to `fs.allow_root` (default `$HOME`).
+        # Tests operate inside `tmp_path`; point the allow-root there so
+        # existing fs-route tests don't trip the clamp. Tests that
+        # exercise the clamp itself (rejection, root, etc.) build their
+        # own Settings.
+        fs=FsCfg(allow_root=tmp_path),
     )
     cfg.config_file = tmp_path / "config.toml"
     yield cfg
@@ -45,6 +59,11 @@ def app(tmp_settings: Settings) -> FastAPI:
 @pytest.fixture
 def client(app: FastAPI) -> Iterator[TestClient]:
     with TestClient(app) as c:  # context triggers lifespan (init_db → app.state.db)
+        # WS handshake needs an allowlisted Origin. Setting it on the
+        # httpx-backed TestClient propagates to every request,
+        # including websocket_connect — individual tests can still
+        # override via `headers=` on the call.
+        c.headers["origin"] = TEST_ORIGIN
         yield c
 
 

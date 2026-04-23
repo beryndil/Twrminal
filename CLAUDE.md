@@ -9,7 +9,7 @@
 - **License**: MIT (deliberate deviation from the Unlicense used elsewhere —
   per spec)
 - **Status**: Pre-release (0.x.x development). v0.1.0 is scaffold-only.
-- **Repository**: TBD — decide between `Beryndil/Bearings` and `Dev-VulX/Bearings`
+- **Repository**: `Beryndil/Bearings` (decided 2026-04-22)
 
 ## Tech Stack
 - Python 3.11+ (floor), 3.12 pinned via `.python-version`

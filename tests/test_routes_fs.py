@@ -61,16 +61,16 @@ def test_list_404s_on_file_path(client: TestClient, tmp_path: Path) -> None:
     assert resp.status_code == 404
 
 
-def test_list_defaults_to_home(
+def test_list_defaults_to_allow_root(
     client: TestClient,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With no `path` query param, lists `$HOME`. Uses tmp_path as a
-    fake home so tests don't depend on the developer's real home
-    contents."""
+    """With no `path` query param, lists the configured
+    `fs.allow_root`. The conftest fixture points this at `tmp_path`,
+    so creating a dir there should show up in the default listing —
+    no monkeypatching `Path.home` needed once the clamp is in place.
+    """
     (tmp_path / "ProjectA").mkdir()
-    monkeypatch.setattr("bearings.api.routes_fs.Path.home", lambda: tmp_path)
     resp = client.get("/api/fs/list")
     assert resp.status_code == 200
     body = resp.json()
@@ -78,9 +78,34 @@ def test_list_defaults_to_home(
     assert "ProjectA" in [e["name"] for e in body["entries"]]
 
 
-def test_list_root_parent_is_null(client: TestClient) -> None:
-    """`/` has no parent — the UI uses this to hide the ⬆ button."""
-    resp = client.get("/api/fs/list", params={"path": "/"})
+def test_list_root_parent_is_null_when_allow_root_is_filesystem_root(
+    tmp_path: Path,
+) -> None:
+    """`/` has no parent — the UI uses this to hide the ⬆ button. With
+    `fs.allow_root='/'`, listing `/` must still expose `parent: null`
+    so the unconstrained deployment (e.g. `power-user` profile) behaves
+    as before. Uses a standalone client with `allow_root='/'` because
+    the default conftest fixture clamps to `tmp_path`.
+    """
+    from bearings.config import (
+        FsCfg,
+        ServerCfg,
+        Settings,
+        StorageCfg,
+    )
+    from bearings.server import create_app
+
+    from .conftest import TEST_ORIGIN
+
+    cfg = Settings(
+        server=ServerCfg(allowed_origins=[TEST_ORIGIN]),
+        storage=StorageCfg(db_path=tmp_path / "db.sqlite"),
+        fs=FsCfg(allow_root=Path("/")),
+    )
+    cfg.config_file = tmp_path / "config.toml"
+    with TestClient(create_app(cfg)) as c:
+        c.headers["origin"] = TEST_ORIGIN
+        resp = c.get("/api/fs/list", params={"path": "/"})
     assert resp.status_code == 200
     assert resp.json()["parent"] is None
 
@@ -127,6 +152,85 @@ def test_list_include_files_skips_special_entries(client: TestClient, tmp_path: 
     assert resp.status_code == 200
     names = sorted(e["name"] for e in resp.json()["entries"])
     assert names == ["real.txt"]
+
+
+# ---------------------------------------------------------------------------
+# GET /api/fs/list — `fs.allow_root` clamp (2026-04-21 security audit §5)
+#
+# The conftest `client` fixture points `fs.allow_root` at `tmp_path`,
+# which gives every existing test an implicit sandbox. These tests
+# verify the clamp itself: anything outside `allow_root` (including
+# symlink escapes) is refused, the `is_within` logic handles equality
+# and nesting correctly, and subdirs still list as expected.
+
+
+def test_list_rejects_path_outside_allow_root(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    """A path that's absolute and exists but sits outside the
+    configured `allow_root` returns 403. `/tmp` is the classic probe
+    — `tmp_path` lives beneath it, so `/tmp` is an ancestor and
+    therefore not inside."""
+    resp = client.get("/api/fs/list", params={"path": "/tmp"})
+    assert resp.status_code == 403
+    assert "allow_root" in resp.json()["detail"]
+
+
+def test_list_rejects_sibling_of_allow_root(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    """A peer directory of `allow_root` (same parent, different name)
+    is rejected even though it's a legitimate dir. The clamp is
+    structural, not name-based.
+    """
+    sibling = tmp_path.parent / (tmp_path.name + "-peer")
+    sibling.mkdir()
+    try:
+        resp = client.get("/api/fs/list", params={"path": str(sibling)})
+        assert resp.status_code == 403
+    finally:
+        sibling.rmdir()
+
+
+def test_list_rejects_symlink_escape(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    """A symlink inside `allow_root` pointing *outside* it resolves
+    (via `Path.resolve(strict=True)`) to the real target, which is
+    outside the clamp and must be refused. Covers the classic
+    path-traversal-via-symlink case.
+    """
+    target = tmp_path.parent / "outside-target"
+    target.mkdir(exist_ok=True)
+    try:
+        link = tmp_path / "escape"
+        link.symlink_to(target)
+        resp = client.get("/api/fs/list", params={"path": str(link)})
+        assert resp.status_code == 403
+    finally:
+        # Cleanup: remove the link first, then the target.
+        if (tmp_path / "escape").is_symlink():
+            (tmp_path / "escape").unlink()
+        if target.exists():
+            target.rmdir()
+
+
+def test_list_accepts_nested_subdir(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    """Deeply-nested paths inside `allow_root` still list — the
+    `is_within` check uses `parents`, which walks the full ancestry."""
+    nested = tmp_path / "a" / "b" / "c"
+    nested.mkdir(parents=True)
+    (nested / "leaf").mkdir()
+    resp = client.get("/api/fs/list", params={"path": str(nested)})
+    assert resp.status_code == 200
+    names = [e["name"] for e in resp.json()["entries"]]
+    assert names == ["leaf"]
 
 
 # ---------------------------------------------------------------------------

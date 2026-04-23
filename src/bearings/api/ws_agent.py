@@ -26,7 +26,7 @@ from starlette.websockets import WebSocketDisconnect
 from bearings import metrics
 from bearings.agent.runner import SessionRunner, _Envelope
 from bearings.agent.session import AgentSession
-from bearings.api.auth import check_ws_auth
+from bearings.api.auth import check_ws_auth, check_ws_origin
 from bearings.config import ThinkingMode
 from bearings.db import store
 
@@ -48,6 +48,10 @@ router = APIRouter(tags=["agent-ws"])
 
 CODE_UNAUTHORIZED = 4401
 CODE_SESSION_NOT_FOUND = 4404
+# 2026-04-21 security audit §1: rejects cross-origin attachment so a
+# malicious tab in the same browser can't drive the agent. Paired with
+# `check_ws_origin` in `bearings.api.auth`.
+CODE_FORBIDDEN_ORIGIN = 4403
 # v0.4.0: a client tried to attach the agent loop to a non-chat
 # session. Originally every non-chat kind (checklist, etc.) rejected
 # here; v0.5.2 opened checklist sessions to the agent loop so the
@@ -167,6 +171,12 @@ async def _forward_events(websocket: WebSocket, queue: asyncio.Queue[_Envelope])
 @router.websocket("/ws/sessions/{session_id}")
 async def agent_ws(websocket: WebSocket, session_id: str) -> None:
     await websocket.accept()
+    # Origin check runs before auth so a cross-origin attacker can't
+    # probe the auth error to distinguish configured-vs-unconfigured
+    # servers. Both close before any subscription is registered.
+    if not check_ws_origin(websocket):
+        await websocket.close(code=CODE_FORBIDDEN_ORIGIN, reason="origin not allowed")
+        return
     if not check_ws_auth(websocket):
         await websocket.close(code=CODE_UNAUTHORIZED)
         return

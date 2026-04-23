@@ -51,3 +51,42 @@ def check_ws_auth(websocket: WebSocket) -> bool:
         return False
     presented = str(websocket.query_params.get("token", ""))
     return presented == expected
+
+
+def _allowed_origins(websocket: WebSocket) -> set[str]:
+    """Compute the effective allowlist for this request.
+
+    Loopback defaults are derived from `server.port` so a user who
+    flips the port doesn't lose their own UI. `server.allowed_origins`
+    is merged in to support custom local deployments (Vite dev server,
+    reverse proxies). Built per-request rather than cached because
+    config changes (admin UI reloads) can change the port without a
+    server restart.
+    """
+    settings = websocket.app.state.settings
+    port = settings.server.port
+    origins = {
+        f"http://127.0.0.1:{port}",
+        f"http://localhost:{port}",
+        f"http://[::1]:{port}",
+    }
+    origins.update(settings.server.allowed_origins)
+    return origins
+
+
+def check_ws_origin(websocket: WebSocket) -> bool:
+    """True if the WS handshake's `Origin` header is allowlisted.
+
+    Mitigates cross-origin agent hijacking: without this, any tab in
+    the same browser (including attacker pages served by another
+    localhost process) could open the Bearings WS and drive the agent.
+    Browsers always send `Origin` on WebSocket upgrades, so a missing
+    header fails closed — non-browser clients that need access can set
+    `Origin` explicitly to a value in `server.allowed_origins`.
+
+    Caller is responsible for closing the socket with 4403 on False.
+    """
+    origin = websocket.headers.get("origin")
+    if origin is None:
+        return False
+    return origin in _allowed_origins(websocket)

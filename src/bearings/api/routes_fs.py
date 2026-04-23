@@ -39,10 +39,11 @@ import shutil
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from bearings.api.auth import require_auth
 from bearings.api.models import FsEntryOut, FsListOut, FsPickOut
+from bearings.config import Settings
 
 router = APIRouter(
     prefix="/fs",
@@ -87,13 +88,33 @@ def _list_dir(path: Path, *, hidden: bool, include_files: bool) -> FsListOut:
     return FsListOut(path=str(path), parent=parent, entries=entries)
 
 
+def _resolve_allow_root(request: Request) -> Path:
+    """Fully-resolved allowlist root. `.resolve(strict=False)` so a
+    missing configured root fails later at listing time (404) rather
+    than blowing up every fs request."""
+    settings: Settings = request.app.state.settings
+    return settings.fs.allow_root.resolve(strict=False)
+
+
+def _is_within(target: Path, root: Path) -> bool:
+    """True if `target` equals `root` or sits beneath it. Both paths
+    must already be resolved so symlink escapes are caught — a symlink
+    inside `root` pointing at `/etc` resolves to `/etc`, which is not
+    under `root` and therefore refused."""
+    if target == root:
+        return True
+    return root in target.parents
+
+
 @router.get("/list", response_model=FsListOut)
 async def list_dir(
+    request: Request,
     path: str | None = None,
     hidden: bool = False,
     include_files: bool = False,
 ) -> FsListOut:
-    target = Path(path) if path else Path.home()
+    allow_root = _resolve_allow_root(request)
+    target = Path(path) if path else allow_root
     if not target.is_absolute():
         raise HTTPException(status_code=400, detail="path must be absolute")
     try:
@@ -102,6 +123,15 @@ async def list_dir(
         raise HTTPException(status_code=404, detail="path not found") from exc
     if not resolved.is_dir():
         raise HTTPException(status_code=404, detail="path is not a directory")
+    # Clamp to the configured `fs.allow_root` (default `$HOME`).
+    # Applied after `resolve(strict=True)` so symlink escapes and
+    # `..` traversals both land on a real path we can compare against
+    # the root. 2026-04-21 security audit §5.
+    if not _is_within(resolved, allow_root):
+        raise HTTPException(
+            status_code=403,
+            detail="path is outside the configured fs.allow_root",
+        )
     try:
         return _list_dir(resolved, hidden=hidden, include_files=include_files)
     except PermissionError as exc:

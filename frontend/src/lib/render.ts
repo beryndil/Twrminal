@@ -1,3 +1,4 @@
+import DOMPurify from 'isomorphic-dompurify';
 import { marked } from 'marked';
 import { createHighlighter, type Highlighter } from 'shiki';
 
@@ -112,13 +113,68 @@ marked.setOptions({
   breaks: true
 });
 
+// Shiki emits `<pre class="shiki ...">` with inline `style="color:#..."` on
+// its spans; both need to survive sanitization or every fenced block turns
+// into unstyled black-on-black text. The default DOMPurify allowlist strips
+// `style`, so we explicitly re-enable it and keep the tag set at the markdown
+// subset we actually emit (no `<iframe>`, no `<form>`, no `<object>`). Keep
+// this list narrow — expanding it is how sanitizers get bypassed.
+const SANITIZE_CONFIG = {
+  ALLOWED_TAGS: [
+    'a',
+    'b',
+    'blockquote',
+    'br',
+    'code',
+    'del',
+    'div',
+    'em',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'hr',
+    'i',
+    'img',
+    'li',
+    'ol',
+    'p',
+    'pre',
+    'span',
+    'strong',
+    'sub',
+    'sup',
+    'table',
+    'tbody',
+    'td',
+    'th',
+    'thead',
+    'tr',
+    'ul'
+  ],
+  ALLOWED_ATTR: [
+    'href',
+    'title',
+    'alt',
+    'src',
+    'class',
+    'style',
+    'data-bearings-code-block',
+    'data-language'
+  ]
+};
+
 /** Renders Markdown text into an HTML string.
  *
- * Content is trusted at the localhost-only boundary in v0.1.x — originates
- * from the user or their own agent. The consumer must still use `{@html}`
- * responsibly.
+ * Output is run through DOMPurify before return: agent/tool output is
+ * attacker-influenced (web fetches, file reads, MCP results) and mounts in
+ * consumers via `{@html}`. Sanitization strips `<script>`, event handlers,
+ * `javascript:` URLs, and anything outside `SANITIZE_CONFIG.ALLOWED_TAGS`.
  */
 export function renderMarkdown(text: string): string {
   if (!text) return '';
-  return marked.parse(text, { async: false }) as string;
+  const rawHtml = marked.parse(text, { async: false }) as string;
+  return DOMPurify.sanitize(rawHtml, SANITIZE_CONFIG);
 }
