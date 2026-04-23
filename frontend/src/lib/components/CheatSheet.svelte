@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { collectMenuShortcuts } from '$lib/context-menu/shortcuts';
+
   let { open = $bindable(false) }: { open?: boolean } = $props();
 
   type Shortcut = { keys: string[]; description: string };
@@ -14,6 +16,34 @@
         },
         { keys: ['Esc'], description: 'Clear search / close the search' },
         { keys: ['?'], description: 'Show this cheat sheet' }
+      ]
+    },
+    {
+      group: 'Context menu',
+      items: [
+        { keys: ['Right-click'], description: 'Open the target\u2019s menu' },
+        {
+          keys: ['Shift', 'Right-click'],
+          description: 'Open with advanced actions revealed'
+        },
+        {
+          keys: ['Ctrl', 'Shift', 'Right-click'],
+          description: 'Passthrough to the browser\u2019s native menu'
+        },
+        {
+          keys: ['Long-press'],
+          description: '500ms touch-hold on coarse pointers'
+        },
+        {
+          keys: ['↑', '↓'],
+          description: 'Move focus between menu items'
+        },
+        {
+          keys: ['→', '←'],
+          description: 'Open / close submenus'
+        },
+        { keys: ['Enter'], description: 'Activate the focused item' },
+        { keys: ['Esc'], description: 'Close the menu' }
       ]
     },
     {
@@ -35,6 +65,23 @@
       ]
     }
   ];
+
+  // User-bound chords from `menus.toml`. Read via `$derived.by` so the
+  // cheat sheet refreshes after `menuConfig.hydrate` (e.g. after the
+  // boot-time `/ui-config` fetch lands). Renders nothing when empty —
+  // avoids a dead "Your shortcuts" header for users who haven't
+  // touched the TOML.
+  const userShortcuts = $derived.by(() => collectMenuShortcuts());
+
+  /** Split a chord like "ctrl+shift+d" into display segments so the
+   * renderer can put one `<kbd>` around each modifier + key. */
+  function splitChord(chord: string): string[] {
+    return chord
+      .split('+')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0)
+      .map((p) => (p === 'ctrl' ? '⌘/Ctrl' : p.charAt(0).toUpperCase() + p.slice(1)));
+  }
 
   function onCancel() {
     open = false;
@@ -84,6 +131,29 @@
             </ul>
           </section>
         {/each}
+
+        {#if userShortcuts.length > 0}
+          <section>
+            <h3 class="text-[10px] uppercase tracking-wider text-slate-500 mb-2">
+              Your shortcuts (menus.toml)
+            </h3>
+            <ul class="flex flex-col gap-1">
+              {#each userShortcuts as entry (entry.target + ':' + entry.id)}
+                <li class="flex items-baseline justify-between gap-3">
+                  <span class="text-slate-300">
+                    {entry.label}
+                    <span class="text-slate-500 text-xs">· {entry.target}</span>
+                  </span>
+                  <span class="flex gap-1 shrink-0">
+                    {#each splitChord(entry.chord) as seg}
+                      <kbd class="kbd">{seg}</kbd>
+                    {/each}
+                  </span>
+                </li>
+              {/each}
+            </ul>
+          </section>
+        {/if}
       </div>
     </div>
   </div>
