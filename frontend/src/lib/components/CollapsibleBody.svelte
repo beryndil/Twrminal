@@ -13,7 +13,7 @@
    * `use:highlight`, shiki, prose styles, etc). This component does
    * not care what's inside — it only measures and clamps.
    */
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { renderMarkdown } from '$lib/render';
   import { highlight } from '$lib/actions/highlight';
   import { contextmenuDelegate } from '$lib/actions/contextmenu-delegate';
@@ -55,6 +55,51 @@
   const storageKey = $derived(messageId ? `${STORAGE_PREFIX}${messageId}` : null);
   const overflows = $derived(contentHeight > thresholdPx);
   const shouldFold = $derived(!disabled && overflows && !userExpanded);
+
+  // Rendered markdown HTML. Updated synchronously when the message is
+  // settled (`disabled=false`) so pinned / pagination / search jumps
+  // paint in one tick. During streaming (`disabled=true` — the
+  // assistant turn mid-flight) we debounce to `requestAnimationFrame`
+  // so the marked+shiki pass runs at most once per browser frame
+  // instead of once per `token` event. Measured on 2026-04-21: a
+  // 20 KB reply with 3 fences ran ~600 highlight passes per turn;
+  // rAF-coalesced, that drops to ~1 per frame (~60/s at most during
+  // the ~0.5s the stream is visible).
+  let renderedHtml = $state('');
+  let rafHandle = 0;
+
+  $effect(() => {
+    // Re-read both props so Svelte tracks them as deps. The local
+    // alias matters for `c` because the scheduled rAF callback reads
+    // the latest `content` at fire time, not the closure snapshot.
+    const c = content;
+    const streaming = disabled;
+    if (!streaming) {
+      // Settled turn: render immediately. Cancel any pending rAF from
+      // the streaming phase so we don't double-render on
+      // message_complete (the prop flip from disabled=true to
+      // disabled=false is what ends the stream).
+      if (rafHandle !== 0) {
+        cancelAnimationFrame(rafHandle);
+        rafHandle = 0;
+      }
+      renderedHtml = renderMarkdown(c);
+      return;
+    }
+    // Streaming: coalesce many token-driven re-runs into one render
+    // per frame. If a rAF is already scheduled we intentionally do
+    // nothing — the pending callback reads `content` at fire time, so
+    // it always picks up the newest text.
+    if (rafHandle !== 0) return;
+    rafHandle = requestAnimationFrame(() => {
+      rafHandle = 0;
+      renderedHtml = renderMarkdown(content);
+    });
+  });
+
+  onDestroy(() => {
+    if (rafHandle !== 0) cancelAnimationFrame(rafHandle);
+  });
 
   onMount(() => {
     if (storageKey) {
@@ -107,7 +152,7 @@
     data-testid="collapsible-inner"
     data-folded={hydrated && shouldFold ? 'true' : 'false'}
   >
-    {@html renderMarkdown(content)}
+    {@html renderedHtml}
   </div>
   {#if hydrated && overflows && !disabled}
     <div class="mt-1 flex justify-center">

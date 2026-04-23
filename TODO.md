@@ -851,20 +851,18 @@ headline. Additional issues found, in priority order:
   after promoting `turns` to `$state`, if the reducer keeps replacing
   `toolCalls`, downstream rebuilds still fire.
 
-- [ ] **Streaming assistant turn re-parses markdown + re-runs shiki
-  on every token.** `frontend/src/lib/components/CollapsibleBody.svelte:110`
-  renders `{@html renderMarkdown(content)}` synchronously on every
-  update. During streaming, `content` changes on every `token` event
-  (~39/turn avg, higher on long replies). `marked.parse` re-walks
-  the full message tree per token, and any fenced code blocks re-run
-  shiki tokenization. For a 20 KB reply with 3 fences, that's ~600+
-  highlight passes per turn. Fix options: (a) render raw text
-  (whitespace-preserved `<pre>`) during `isStreaming`, flip to
-  markdown on `message_complete`; (b) debounce `renderMarkdown` to
-  `requestAnimationFrame`; (c) memoize keyed on content length
-  ladder (re-render only every +256 chars). Prefer (a) — it's
-  trivial and the streaming experience is more readable as plain
-  text anyway.
+- [x] **Streaming assistant turn re-parses markdown + re-runs shiki
+  on every token.** (fixed 2026-04-23.) Picked option (b) over (a) so
+  the streaming user still sees formatted headings / fenced code, but
+  the marked+shiki pass now runs at most once per browser frame.
+  `CollapsibleBody.svelte` maintains a `renderedHtml` `$state` that is
+  updated synchronously when `disabled=false` (settled turn, pinned /
+  search / pagination paints stay instant) and rAF-coalesced when
+  `disabled=true` (streaming assistant turn). Pending rAFs are
+  canceled on prop flip and on unmount. New coverage:
+  `CollapsibleBody.test.ts` — sync-paint assertion when not streaming,
+  rAF-coalesce assertion that three content flips during streaming
+  only fire the marked pass once.
 
 - [ ] **MessageTurn re-serializes tool-call input per delta.**
   `frontend/src/lib/components/MessageTurn.svelte:173-193` and

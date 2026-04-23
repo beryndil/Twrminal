@@ -133,4 +133,57 @@ describe('CollapsibleBody', () => {
     expect(setSpy).not.toHaveBeenCalled();
     setSpy.mockRestore();
   });
+
+  it('renders markdown synchronously when not streaming (disabled=false)', async () => {
+    // disabled=false path: marked runs immediately and the rendered
+    // HTML is present on first paint. Tested here because the rAF
+    // debounce only applies while streaming — a regression that
+    // routed settled content through rAF too would break pinned /
+    // search-jump paints.
+    currentHeight = 100;
+    const { findByTestId } = render(
+      CollapsibleBody,
+      baseProps({ content: '# Heading', disabled: false })
+    );
+    const inner = await findByTestId('collapsible-inner');
+    expect(inner.querySelector('h1')?.textContent).toBe('Heading');
+  });
+
+  it('debounces markdown renders to rAF during streaming (disabled=true)', async () => {
+    // During streaming, marked should only run once per frame even if
+    // content flips multiple times. We control rAF to confirm nothing
+    // paints until we fire the frame.
+    const rafCallbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb);
+      return rafCallbacks.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+
+    currentHeight = 100;
+    const { findByTestId, rerender } = render(
+      CollapsibleBody,
+      baseProps({ content: 'first', disabled: true })
+    );
+    const inner = await findByTestId('collapsible-inner');
+    // Nothing rendered yet — the rAF is pending.
+    expect(inner.textContent).toBe('');
+    expect(rafCallbacks.length).toBe(1);
+
+    // Rapid-fire content updates while the rAF is still pending
+    // should NOT schedule additional rAFs — that's the coalescing
+    // guarantee. The first scheduled callback will read the latest
+    // `content` at fire time.
+    await rerender(baseProps({ content: 'second', disabled: true }));
+    await rerender(baseProps({ content: 'third', disabled: true }));
+    expect(rafCallbacks.length).toBe(1);
+
+    // Fire the queued frame — final content ('third') paints once.
+    rafCallbacks[0](performance.now());
+    // Await a tick so Svelte flushes the $state write.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(inner.textContent?.trim()).toBe('third');
+
+    vi.unstubAllGlobals();
+  });
 });
