@@ -22,7 +22,17 @@
   import { onDestroy } from 'svelte';
   import { agent } from '$lib/agent.svelte';
   import { conversation } from '$lib/stores/conversation.svelte';
+  import { drafts } from '$lib/stores/drafts.svelte';
   import { sessions } from '$lib/stores/sessions.svelte';
+  import {
+    caretOnFirstLine,
+    caretOnLastLine,
+    emptyHistoryState,
+    nextHistory,
+    prevHistory,
+    resetHistory,
+    type HistoryState
+  } from '$lib/input-history';
 
   const selected = $derived(sessions.selected);
 
@@ -64,6 +74,62 @@
   let textarea: HTMLTextAreaElement | undefined = $state();
   let scroller: HTMLDivElement | undefined = $state();
 
+  // Per-session draft persistence. Mirrors Conversation.svelte — same
+  // store, same `bearings:draft:<session_id>` key format — so a draft
+  // typed here is the same draft restored when the session is
+  // re-opened, regardless of which pane is active.
+  let lastLoadedSessionId = $state<string | null>(null);
+
+  $effect(() => {
+    const sid = selected?.id ?? null;
+    if (sid === lastLoadedSessionId) return;
+    if (lastLoadedSessionId !== null) drafts.flush(lastLoadedSessionId);
+    lastLoadedSessionId = sid;
+    draft = sid === null ? '' : drafts.get(sid);
+  });
+
+  $effect(() => {
+    const sid = lastLoadedSessionId;
+    const text = draft;
+    if (sid === null) return;
+    drafts.set(sid, text);
+  });
+
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    const flushNow = () => {
+      const sid = lastLoadedSessionId;
+      if (sid !== null) drafts.flush(sid);
+    };
+    window.addEventListener('beforeunload', flushNow);
+    window.addEventListener('pagehide', flushNow);
+    return () => {
+      window.removeEventListener('beforeunload', flushNow);
+      window.removeEventListener('pagehide', flushNow);
+    };
+  });
+
+  // Shell-style Up/Down history over prior user prompts for this
+  // checklist session. Mirrors Conversation.svelte.
+  let historyState = $state<HistoryState>(emptyHistoryState());
+  const historyEntries = $derived(
+    conversation.messages.filter((m) => m.role === 'user').map((m) => m.content)
+  );
+  $effect(() => {
+    void selected?.id;
+    historyState = emptyHistoryState();
+  });
+
+  function setCaretToEnd() {
+    const el = textarea;
+    if (!el) return;
+    queueMicrotask(() => {
+      const end = el.value.length;
+      el.selectionStart = end;
+      el.selectionEnd = end;
+    });
+  }
+
   // Auto-scroll to the newest message whenever messages change or the
   // streaming delta advances. Keeps the latest assistant text visible
   // without the user having to scroll inside the compact panel.
@@ -90,18 +156,65 @@
     const text = draft.trim();
     const ok = agent.send(text);
     if (ok) {
+      // Clear the persisted draft before resetting `draft` so the
+      // save effect doesn't race and re-persist an empty string.
+      const sid = lastLoadedSessionId;
+      if (sid !== null) drafts.clear(sid);
       draft = '';
       textarea?.focus();
+      historyState = emptyHistoryState();
     }
   }
 
   function onKey(ev: KeyboardEvent) {
+    // Shell-style Up/Down history. Same guard shape as the main
+    // Conversation composer.
+    if (
+      (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') &&
+      !ev.shiftKey &&
+      !ev.ctrlKey &&
+      !ev.altKey &&
+      !ev.metaKey &&
+      !ev.isComposing
+    ) {
+      const el = textarea;
+      if (el) {
+        const start = el.selectionStart ?? 0;
+        const end = el.selectionEnd ?? 0;
+        if (ev.key === 'ArrowUp' && caretOnFirstLine(draft, start, end)) {
+          const step = prevHistory(historyState, historyEntries, draft);
+          if (step.changed) {
+            ev.preventDefault();
+            historyState = step.state;
+            draft = step.text;
+            setCaretToEnd();
+            return;
+          }
+        } else if (
+          ev.key === 'ArrowDown' &&
+          caretOnLastLine(draft, start, end)
+        ) {
+          const step = nextHistory(historyState, historyEntries);
+          if (step.changed) {
+            ev.preventDefault();
+            historyState = step.state;
+            draft = step.text;
+            setCaretToEnd();
+            return;
+          }
+        }
+      }
+    }
     // Enter sends, Shift+Enter inserts a newline. Mirrors the main
     // Conversation composer's contract so muscle memory carries over.
     if (ev.key === 'Enter' && !ev.shiftKey) {
       ev.preventDefault();
       send();
     }
+  }
+
+  function onInput() {
+    historyState = resetHistory(historyState);
   }
 
   function stop() {
@@ -183,6 +296,7 @@
       bind:this={textarea}
       bind:value={draft}
       onkeydown={onKey}
+      oninput={onInput}
       class="flex-1 resize-y rounded border border-slate-800 bg-slate-900 px-2 py-1 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
       rows="2"
       placeholder={selected?.closed_at

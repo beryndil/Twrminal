@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 
 import type { Message, Session } from '$lib/api';
 import { conversation } from '$lib/stores/conversation.svelte';
+import { drafts } from '$lib/stores/drafts.svelte';
 import { sessions } from '$lib/stores/sessions.svelte';
 
 // Controllable stand-in for the agent singleton. ChecklistChat reads
@@ -128,6 +129,13 @@ beforeEach(() => {
   // Reset the conversation store between tests by pointing it at a
   // fresh session id so stale messages don't bleed between tests.
   conversation.sessionId = null;
+  // Draft persistence uses localStorage keyed by session id. Clear
+  // between tests so prior writes don't hydrate the next render.
+  // `drafts.clear` also cancels any debounced write from the previous
+  // test — that timer outlives `localStorage.clear()` and would
+  // otherwise rewrite the key mid-test.
+  drafts.clear('sess-cl');
+  localStorage.clear();
 });
 
 afterEach(() => {
@@ -213,5 +221,46 @@ describe('ChecklistChat', () => {
     await fireEvent.input(input, { target: { value: 'q' } });
     await fireEvent.keyDown(input, { key: 'Enter' });
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('restores a draft persisted for this session on mount', async () => {
+    localStorage.setItem('bearings:draft:sess-cl', 'half-typed thought');
+    const { getByTestId } = render(ChecklistChat);
+    const input = getByTestId('checklist-chat-input') as HTMLTextAreaElement;
+    await waitFor(() => expect(input.value).toBe('half-typed thought'));
+  });
+
+  it('clears the persisted draft after a successful send', async () => {
+    const { getByTestId } = render(ChecklistChat);
+    const input = getByTestId('checklist-chat-input') as HTMLTextAreaElement;
+    await fireEvent.input(input, { target: { value: 'ship it' } });
+    await fireEvent.click(getByTestId('checklist-chat-send'));
+    await waitFor(() =>
+      expect(localStorage.getItem('bearings:draft:sess-cl')).toBeNull()
+    );
+  });
+
+  it('ArrowUp on an empty input loads the most recent user prompt', async () => {
+    seedConversation('sess-cl', [
+      message({ id: 'm-u', role: 'user', content: 'prior prompt' })
+    ]);
+    const { getByTestId } = render(ChecklistChat);
+    const input = getByTestId('checklist-chat-input') as HTMLTextAreaElement;
+    input.focus();
+    await fireEvent.keyDown(input, { key: 'ArrowUp' });
+    await waitFor(() => expect(input.value).toBe('prior prompt'));
+  });
+
+  it('ArrowDown past newest restores the stashed in-progress draft', async () => {
+    seedConversation('sess-cl', [
+      message({ id: 'm-u', role: 'user', content: 'earlier' })
+    ]);
+    const { getByTestId } = render(ChecklistChat);
+    const input = getByTestId('checklist-chat-input') as HTMLTextAreaElement;
+    await fireEvent.input(input, { target: { value: 'work-in-progress' } });
+    await fireEvent.keyDown(input, { key: 'ArrowUp' });
+    await waitFor(() => expect(input.value).toBe('earlier'));
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    await waitFor(() => expect(input.value).toBe('work-in-progress'));
   });
 });

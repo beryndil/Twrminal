@@ -1,4 +1,5 @@
 import * as api from '$lib/api';
+import { drafts } from '$lib/stores/drafts.svelte';
 import { tags } from '$lib/stores/tags.svelte';
 
 const STORAGE_KEY = 'bearings:selectedSessionId';
@@ -101,6 +102,9 @@ class SessionStore {
     try {
       await api.deleteSession(id);
       this.list = this.list.filter((s) => s.id !== id);
+      // Composer draft for a deleted session is unreachable — clear
+      // the localStorage key so it doesn't accumulate.
+      drafts.clear(id);
       if (this.selectedId === id) this.select(null);
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
@@ -130,6 +134,9 @@ class SessionStore {
     try {
       const closed = await api.closeSession(id);
       this.list = this.list.map((s) => (s.id === id ? closed : s));
+      // A closed session is read-only — drop any composer draft so
+      // the user doesn't find stale half-typed text on reopen.
+      drafts.clear(id);
       void tags.refresh();
       return closed;
     } catch (e) {
@@ -297,6 +304,9 @@ class SessionStore {
     const had = this.list.some((s) => s.id === sessionId);
     if (!had) return;
     this.list = this.list.filter((s) => s.id !== sessionId);
+    // Mirror `remove()` — a session deleted in another tab is
+    // equally unreachable, so its persisted draft is garbage.
+    drafts.clear(sessionId);
     if (this.selectedId === sessionId) this.select(null);
   }
 

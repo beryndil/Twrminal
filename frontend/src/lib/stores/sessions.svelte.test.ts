@@ -6,10 +6,15 @@
  * without a full `/api/sessions` refresh.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Session } from '$lib/api';
+import { drafts } from './drafts.svelte';
 import { sessions } from './sessions.svelte';
+
+beforeEach(() => {
+  localStorage.clear();
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -469,6 +474,44 @@ describe('sessions.applyDelete', () => {
     sessions.list = [sess({ id: 'a' })];
     sessions.applyDelete('not-there');
     expect(sessions.list.map((s) => s.id)).toEqual(['a']);
+  });
+
+  it('clears the persisted composer draft for the deleted session', () => {
+    drafts.set('a', 'some draft');
+    drafts.flush('a');
+    expect(localStorage.getItem('bearings:draft:a')).toBe('some draft');
+    sessions.list = [sess({ id: 'a' })];
+    sessions.applyDelete('a');
+    expect(localStorage.getItem('bearings:draft:a')).toBeNull();
+  });
+});
+
+describe('draft cleanup hooks', () => {
+  it('sessions.remove drops the composer draft for the deleted session', async () => {
+    drafts.set('sess-a', 'stale');
+    drafts.flush('sess-a');
+    expect(localStorage.getItem('bearings:draft:sess-a')).toBe('stale');
+    sessions.list = [sess({ id: 'sess-a' })];
+    queueResponses([{ ok: true, body: null }]);
+    await sessions.remove('sess-a');
+    expect(localStorage.getItem('bearings:draft:sess-a')).toBeNull();
+  });
+
+  it('sessions.close drops the composer draft (closed sessions are read-only)', async () => {
+    drafts.set('sess-a', 'half thought');
+    drafts.flush('sess-a');
+    expect(localStorage.getItem('bearings:draft:sess-a')).toBe('half thought');
+    sessions.list = [sess({ id: 'sess-a', closed_at: null })];
+    queueResponses([
+      {
+        ok: true,
+        body: { ...sess({ id: 'sess-a' }), closed_at: '2026-04-22T00:00:00+00:00' }
+      },
+      // The store also calls tags.refresh() as a side effect — swallow it.
+      { ok: true, body: [] }
+    ]);
+    await sessions.close('sess-a');
+    expect(localStorage.getItem('bearings:draft:sess-a')).toBeNull();
   });
 });
 

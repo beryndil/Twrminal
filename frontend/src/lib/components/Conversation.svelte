@@ -1,8 +1,18 @@
 <script lang="ts">
   import { billing } from '$lib/stores/billing.svelte';
   import { conversation } from '$lib/stores/conversation.svelte';
+  import { drafts } from '$lib/stores/drafts.svelte';
   import { sessions } from '$lib/stores/sessions.svelte';
   import { agent } from '$lib/agent.svelte';
+  import {
+    caretOnFirstLine,
+    caretOnLastLine,
+    emptyHistoryState,
+    nextHistory,
+    prevHistory,
+    resetHistory,
+    type HistoryState
+  } from '$lib/input-history';
   import * as api from '$lib/api';
   import type { MessageAttachment } from '$lib/api/sessions';
   import * as fsApi from '$lib/api/fs';
@@ -99,6 +109,79 @@
   let copiedMsgId = $state<string | null>(null);
   let copiedSession = $state(false);
   let textareaEl: HTMLTextAreaElement | undefined = $state();
+
+  // Per-session draft persistence: when the user types and navigates
+  // away without sending, the text survives reloads and session
+  // switches. The two effects below are split so loading on session
+  // change doesn't retrigger on every keystroke. `lastLoadedSessionId`
+  // also drives the pre-switch flush in `onSend` and cleanup — without
+  // it we'd read the wrong session's id once selection has already
+  // moved on.
+  let lastLoadedSessionId = $state<string | null>(null);
+
+  $effect(() => {
+    const sid = sessions.selected?.id ?? null;
+    if (sid === lastLoadedSessionId) return;
+    // Commit the outgoing session's in-flight debounced write before
+    // hydrating the incoming one. Otherwise the last few characters
+    // typed just before the switch would be lost.
+    if (lastLoadedSessionId !== null) drafts.flush(lastLoadedSessionId);
+    lastLoadedSessionId = sid;
+    promptText = sid === null ? '' : drafts.get(sid);
+  });
+
+  $effect(() => {
+    const sid = lastLoadedSessionId;
+    const text = promptText;
+    if (sid === null) return;
+    drafts.set(sid, text);
+  });
+
+  // Flush the pending debounced write on page hide so the tail end
+  // of the user's typing survives an abrupt tab close or reload.
+  // `beforeunload` covers full navigation; `pagehide` catches
+  // bfcache-restored tabs and mobile suspensions the former misses.
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    const flushNow = () => {
+      const sid = lastLoadedSessionId;
+      if (sid !== null) drafts.flush(sid);
+    };
+    window.addEventListener('beforeunload', flushNow);
+    window.addEventListener('pagehide', flushNow);
+    return () => {
+      window.removeEventListener('beforeunload', flushNow);
+      window.removeEventListener('pagehide', flushNow);
+    };
+  });
+
+  // Shell-style Up/Down arrow history over prior user prompts for the
+  // current session. Entries are derived from the client-side message
+  // cache — no new API, and "recent history" (whatever's paginated in)
+  // is an acceptable scope. Reset on session switch so walking doesn't
+  // leak across sessions.
+  let historyState = $state<HistoryState>(emptyHistoryState());
+  const historyEntries = $derived(
+    conversation.messages.filter((m) => m.role === 'user').map((m) => m.content)
+  );
+  $effect(() => {
+    void sessions.selectedId;
+    historyState = emptyHistoryState();
+  });
+
+  /** Move caret to the end of the textarea after a history swap.
+   * queueMicrotask lets Svelte push the new `promptText` into the DOM
+   * before we read `.value.length`, otherwise the range would target
+   * the pre-update contents. */
+  function setCaretToEnd() {
+    const el = textareaEl;
+    if (!el) return;
+    queueMicrotask(() => {
+      const end = el.value.length;
+      el.selectionStart = end;
+      el.selectionEnd = end;
+    });
+  }
 
   // Slash-command palette. Entries are fetched once per session
   // (keyed by id) so opening the menu doesn't restart the filesystem
@@ -878,9 +961,18 @@
     while ((match = re.exec(text)) !== null) referenced.add(Number(match[1]));
     const activeAttachments = composerAttachments.filter((a) => referenced.has(a.n));
     if (!agent.send(text, activeAttachments)) return;
+    // Clear the persisted draft before resetting `promptText` so the
+    // debounced writer in the save effect doesn't race the clear and
+    // re-persist an empty string (harmless but pointless I/O).
+    const sid = lastLoadedSessionId;
+    if (sid !== null) drafts.clear(sid);
     promptText = '';
     composerAttachments = [];
     nextAttachmentN = 1;
+    // A successful send is an implicit "leave history mode" — the
+    // next Up should stash the (empty) draft and walk back through
+    // the newly-extended history.
+    historyState = emptyHistoryState();
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -888,12 +980,63 @@
     // user can navigate without leaving the textarea. It returns false
     // for other keys so normal typing still flows through.
     if (commandMenu?.handleKey(e)) return;
+    // Shell-style history on Up/Down. Guards mirror readline: no
+    // modifiers (so Shift-select and Ctrl-shortcuts are untouched),
+    // no IME composition, caret must be at the first/last visual
+    // line with no active selection (so multi-line editing still
+    // works the obvious way).
+    if (
+      (e.key === 'ArrowUp' || e.key === 'ArrowDown') &&
+      !e.shiftKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !e.isComposing
+    ) {
+      const el = textareaEl;
+      if (el) {
+        const start = el.selectionStart ?? 0;
+        const end = el.selectionEnd ?? 0;
+        if (e.key === 'ArrowUp' && caretOnFirstLine(promptText, start, end)) {
+          const step = prevHistory(historyState, historyEntries, promptText);
+          if (step.changed) {
+            e.preventDefault();
+            historyState = step.state;
+            promptText = step.text;
+            setCaretToEnd();
+            return;
+          }
+        } else if (
+          e.key === 'ArrowDown' &&
+          caretOnLastLine(promptText, start, end)
+        ) {
+          const step = nextHistory(historyState, historyEntries);
+          if (step.changed) {
+            e.preventDefault();
+            historyState = step.state;
+            promptText = step.text;
+            setCaretToEnd();
+            return;
+          }
+        }
+      }
+    }
     // Enter sends; Shift+Enter falls through so the textarea inserts
     // a newline. Skip while the user is mid-IME composition.
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       onSend();
     }
+  }
+
+  /** Called on textarea `input`. If the user edits the text after
+   * walking into history, exit history mode so the next Up treats
+   * the edited text as the new baseline and stashes it. Programmatic
+   * updates (history swap, slash-insert, paste) shouldn't trigger
+   * the reset — those set `promptText` directly without firing
+   * `input`, or are handled elsewhere. */
+  function onInput() {
+    historyState = resetHistory(historyState);
   }
 
   // Prompt textarea auto-grow. Starts at a single row and stretches
@@ -1733,6 +1876,7 @@
         bind:value={promptText}
         bind:this={textareaEl}
         onkeydown={onKeydown}
+        oninput={onInput}
         onpaste={onPaste}
         disabled={!sessions.selectedId || agent.state !== 'open'}
       ></textarea>
