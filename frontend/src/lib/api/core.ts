@@ -266,35 +266,47 @@ export function fetchUiConfig(fetchImpl: typeof fetch = fetch): Promise<UiConfig
   return jsonFetch<UiConfig>(fetchImpl, '/api/ui-config');
 }
 
+/** Build the Sec-WebSocket-Protocol list for a bearer-authed connection.
+ * The server echoes only the marker (`bearings.bearer.v1`) in the
+ * handshake response — the `bearer.<token>` entry carries the secret
+ * on the REQUEST side but never lands in logs/history. Matches
+ * `ws_accept_subprotocol` in `bearings.api.auth`. Returns `undefined`
+ * when no token is configured so the `WebSocket` constructor falls
+ * through to its two-arg form with no subprotocol.
+ * See 2026-04-21 security audit §1 (2026-04-23 follow-up). */
+function wsBearerProtocols(): string[] | undefined {
+  const token = readAuthToken();
+  if (!token) return undefined;
+  return ['bearings.bearer.v1', `bearer.${token}`];
+}
+
 export function openAgentSocket(sessionId: string, sinceSeq = 0): WebSocket {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const token = readAuthToken();
-  const params = new URLSearchParams();
-  if (token) params.set('token', token);
   // `since_seq=0` is the no-op default (replay whatever's in the
   // buffer). Reconnects pass the last seq the client rendered so the
-  // server only replays events newer than that.
+  // server only replays events newer than that. `since_seq` is not a
+  // secret and stays on the query string; the bearer token moves to
+  // `Sec-WebSocket-Protocol` to keep it out of URLs / access logs /
+  // browser history.
+  const params = new URLSearchParams();
   if (sinceSeq > 0) params.set('since_seq', String(sinceSeq));
   const query = params.toString();
   const tail = query ? `?${query}` : '';
   return new WebSocket(
-    `${proto}://${window.location.host}/ws/sessions/${sessionId}${tail}`
+    `${proto}://${window.location.host}/ws/sessions/${sessionId}${tail}`,
+    wsBearerProtocols()
   );
 }
 
 /** Open the sessions-list broadcast channel. Carries upsert / delete /
  * runner_state frames so the sidebar stays live without polling.
- * Auth mirrors `openAgentSocket`; no `since_seq` — this channel has
- * no replay window, the frontend reconciles via `softRefresh` on
- * reconnect. */
+ * Auth mirrors `openAgentSocket` (bearer via subprotocol); no
+ * `since_seq` — this channel has no replay window, the frontend
+ * reconciles via `softRefresh` on reconnect. */
 export function openSessionsSocket(): WebSocket {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const token = readAuthToken();
-  const params = new URLSearchParams();
-  if (token) params.set('token', token);
-  const query = params.toString();
-  const tail = query ? `?${query}` : '';
   return new WebSocket(
-    `${proto}://${window.location.host}/ws/sessions${tail}`
+    `${proto}://${window.location.host}/ws/sessions`,
+    wsBearerProtocols()
   );
 }
