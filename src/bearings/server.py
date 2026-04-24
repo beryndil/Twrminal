@@ -15,6 +15,7 @@ from bearings.api import (
     routes_checkpoints,
     routes_commands,
     routes_config,
+    routes_diag,
     routes_fs,
     routes_health,
     routes_history,
@@ -112,6 +113,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(routes_shell.router, prefix="/api")
     app.include_router(routes_pending.router, prefix="/api")
     app.include_router(routes_vault.router, prefix="/api")
+    app.include_router(routes_diag.router, prefix="/api")
     app.include_router(routes_metrics.router)
     app.include_router(ws_agent.router)
     app.include_router(ws_sessions.router)
