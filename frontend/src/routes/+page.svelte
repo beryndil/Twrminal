@@ -28,23 +28,28 @@
     booted = true;
     // billing.init fetches /ui-config so the header and session cards
     // know whether to render dollars (PAYG) or token totals
-    // (subscription). Run alongside the other boot fetches — a
-    // failure here leaves the PAYG default in place, it does not
-    // block boot.
-    // v0.8.0: seed the session refresh with the current tag filter
-    // instead of an unfiltered call. At boot `tags.selected = []`, so
-    // the derived `tags.filter` is `{ tags: [] }` — the tri-state
-    // "empty" value that the backend maps to "match nothing." Without
-    // this, boot returned every session and only SUBSEQUENT filter
-    // changes (which fire through the SessionList $effect) were
-    // honored — the sidebar lied about its effective state until the
-    // user touched it. `tags.filter` is a synchronous $derived off
-    // store defaults; no await needed.
-    await Promise.all([
-      billing.init(),
-      sessions.refresh(tags.filter),
-      tags.refresh()
-    ]);
+    // (subscription). Runs alongside the tag+session boot — a failure
+    // here leaves the PAYG default in place, it does not block boot.
+    //
+    // v0.8.2 boot ordering: the old `Promise.all([sessions.refresh,
+    // tags.refresh])` parallel fan-out doesn't work once boot needs to
+    // apply the "All selected" default, because `selectAll()` needs
+    // the tag list populated first — and the sessions fetch needs
+    // `tags.filter` AFTER the selection has been seeded, not before.
+    // So the tag+session path serializes: tags first, seed selection,
+    // then sessions with the now-populated filter. billing still runs
+    // in parallel since it touches neither.
+    const billingInit = billing.init();
+    await tags.refresh();
+    // Fresh boot: start with every tag selected so the session list
+    // shows everything by default. Dave's ask on 2026-04-24 — the
+    // "empty = empty" rule is correct as a state transition (click
+    // None → see nothing) but wrong as a first-run default (open the
+    // app → see nothing). `selectAll()` populates both axes including
+    // the "No severity" sentinel, so sessions without a severity tag
+    // still appear. No persistence yet; every reload resets to All.
+    tags.selectAll();
+    await Promise.all([billingInit, sessions.refresh(tags.filter)]);
     // Start the background runner poll so session rows flag which
     // sessions are still working even when you're on a different one.
     sessions.startRunningPoll();

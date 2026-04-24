@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.2] - 2026-04-24
+
+Boot default: "All selected" instead of "empty" (frontend v0.8.2).
+
+The v0.10.0 rule "empty selection → empty list" is correct as a
+state transition (click None → see nothing) but wrong as a first-run
+default — opening the app and seeing an empty session pane is
+disorienting. Boot now serializes the tag path so the tag list is
+populated before `selectAll()` runs, then fires the session fetch
+with the now-populated filter. `billing.init()` still runs in
+parallel since it touches neither.
+
+No persistence yet; every reload resets to All. Per-axis chips
+(X tags / Y severities) and the None button continue to clear the
+selection when the user wants to drill down from there.
+
 ## [0.10.1] - 2026-04-24
 
 Follow-up bug fixes on the v0.10.0 sidebar overhaul (frontend v0.8.1).
