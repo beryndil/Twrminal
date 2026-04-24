@@ -346,7 +346,7 @@ it then. Do not exercise the historical checklists as-is.
     `54b9290a287648f6b1516a449a72d95d` ("Install TODO discipline
     hooks+migrate") — installs the hooks once this CLI is on PATH.
 
-- [ ] **Silence gap during long Task sub-agent runs (2026-04-21, diagnosed 2026-04-23, P0–P2 shipped 2026-04-23).**
+- [x] **Silence gap during long Task sub-agent runs (2026-04-21, diagnosed 2026-04-23, P0–P3 shipped 2026-04-23).**
   Dave reported the UI sat silent for far too long between his "are you
   hung up?" prompt and the plan-agent response during the token-cost
   mitigation planning session (transcript
@@ -389,10 +389,12 @@ it then. Do not exercise the historical checklists as-is.
     matched `LiveToolCall`; `MessageTurn.formatElapsed` uses
     `max(local delta, server floor)` so a throttled backgrounded tab
     still paints honest elapsed numbers.
-  - P3 (deferred) — belt-and-suspenders: WS-level `{type:"ping",ts:…}`
-    every 15s when idle in `_forward_events`, to surface corpse sockets
-    that `WebSocketDisconnect` missed. Not blocking; `tool_progress`
-    itself already keeps the wire warm during the common bad case.
+  - P3 ✅ shipped 68d9e9b — 15s idle ping in `_forward_events` using
+    `asyncio.wait_for(queue.get(), timeout=…)`. Frame shape
+    `{type:"ping",ts}` with no `_seq` so replay cursors stay on
+    real events. Failed ping sends break the forwarder out so the
+    handler's finally block cleans up corpse sockets whose FIN was
+    lost. Three unit tests against `_forward_events` directly.
 
   **Verify:** DevTools → Network → WS should show `tool_progress` frames
   every ~3s spanning the full sub-agent window, each `tool_call_id`
