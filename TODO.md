@@ -17,6 +17,35 @@ Scaffold reference (still useful for plans):
 
 ---
 
+## TEMP probe — session-switch interrupt diagnostic — 2026-04-23
+
+**Active, remove after diagnosis.** Dave reported an intermittent bug:
+switching sessions in the UI sometimes interrupts the running Claude
+instance. Code audit shows no session-switch path that should call
+`agent.interrupt()` — WS disconnect explicitly keeps the runner alive,
+and the reaper won't touch a `running` runner. To pin down which of
+the three real interrupt sites (`runner.shutdown` / `runner.request_stop`
+/ `_execute_turn` stop-check) is actually firing, I added a dedicated
+probe at:
+
+- `src/bearings/agent/_interrupt_probe.py` — new module, writes to
+  `~/.local/share/bearings/interrupt-probe.log`.
+- `src/bearings/agent/session.py:AgentSession.interrupt` — catches
+  every actual SDK interrupt with the full caller chain.
+- `src/bearings/agent/runner.py:SessionRunner.shutdown` — logs who
+  triggered the shutdown path.
+- `src/bearings/agent/runner.py:SessionRunner.request_stop` — logs
+  who triggered the user-stop path.
+- `src/bearings/api/ws_agent.py` finally block — logs WS disconnect
+  timing + runner state for correlation.
+
+**Removal checklist when bug is pinned down:** delete
+`_interrupt_probe.py`, remove the four call sites (each marked with
+`# TEMP 2026-04-23`), and delete this TODO entry. Don't ship this to
+a tagged release — the FileHandler is cheap but unconditional.
+
+---
+
 ## Per-message glass refraction — 2026-04-23
 
 **Deferred.** First pass of Midnight Glass applied
@@ -317,19 +346,68 @@ it then. Do not exercise the historical checklists as-is.
     `54b9290a287648f6b1516a449a72d95d` ("Install TODO discipline
     hooks+migrate") — installs the hooks once this CLI is on PATH.
 
-- [ ] **Investigate long hang on a single assistant turn (2026-04-21).**
-  Dave reported I sat silent for far too long between his "are you hung
-  up?" prompt and the eventual plan-agent response during the token-cost
+- [ ] **Silence gap during long Task sub-agent runs (2026-04-21, diagnosed 2026-04-23).**
+  Dave reported the UI sat silent for far too long between his "are you
+  hung up?" prompt and the plan-agent response during the token-cost
   mitigation planning session (transcript
   `~/.claude/projects/-home-beryndil-Projects-Bearings/f57209ca-38b8-41b8-a6e7-cf1439c0b50d.jsonl`).
-  Unknown whether the culprit is (a) a long-running sub-agent not
-  forwarding progress events, (b) the WS pipeline buffering without
-  flushing partial deltas, or (c) Claude Code itself. Check: does the
-  Bearings stream-loop emit any keepalive / "thinking" frames while a
-  Task sub-agent is running? Does `message_delta` make it to the socket
-  mid-sub-agent? Does the frontend show *anything* during the gap or a
-  dead spinner? Reproduce with a deliberately long Task call and
-  instrument.
+
+  **Timeline reconstructed from the transcript** (session `f57209ca`):
+  T+0 (17:29:07Z) user prompt → T+12.8s `thinking` block → T+14.8s
+  `text` block → T+31.8s `tool_use` name=`Agent` sub-agent kickoff
+  (`toolu_01Bjpv…`) → **82s of dead silence, zero SDK entries** →
+  T+113.5s `tool_result` lands and the outer turn resumes. No
+  `isSidechain` entries anywhere in the file. The SDK surfaced nothing
+  from the sub-agent until the tool_result returned.
+
+  **Diagnosis:** mostly (a) compounded by (c). Bearings *does* forward
+  the outer-turn `Agent` tool_use block the moment it arrives —
+  `src/bearings/agent/session.py:336-340` (ToolUseBlock → ToolCallStart)
+  and `src/bearings/agent/runner.py:557-566` (`_emit_event` before the
+  coalescer). What's missing:
+  - No keepalive in `src/bearings/api/ws_agent.py` — `_forward_events`
+    is a bare `await queue.get()` loop. When the runner's `async for`
+    parks waiting on the SDK, the socket goes idle.
+  - No elapsed / pulse affordance in
+    `frontend/src/lib/components/MessageTurn.svelte` on a running tool
+    call. The `runningCount` badge exists at line 56 but carries no
+    liveness signal — no timer, no subtitle, no pulse. User reads the
+    static tile as a dead spinner.
+
+  **Fix plan (priority order, all four mind the 4e5d532 `buildTurns`
+  split — nudges must land on the `LiveToolCall` `$state` proxy, not a
+  sibling field, to avoid breaking WeakMap caching):**
+  - P0 — frontend-only: render an animated pulse + elapsed seconds +
+    subtitle on any `LiveToolCall` with `finishedAt === null` in
+    `MessageTurn.svelte`. Special-case `name === 'Agent'` → "Running
+    sub-agent…" with `input.description` as subtitle.
+  - P1 — backend `tool_progress` keepalive. New `ToolProgress` event in
+    `src/bearings/agent/events.py`. Spawn a 3s ticker `asyncio.Task` on
+    each `ToolCallStart`, cancel on matching `ToolCallEnd`. Fan-out only
+    — do NOT append to `_event_log`, do NOT call `store.*`. Keeps the
+    single-writer SQLite invariant intact and prevents reconnect-replay
+    from firing hundreds of stale ticks.
+  - P2 — reducer case for `tool_progress` that nudges the matched
+    `LiveToolCall` (e.g. bumps a `lastProgressAt` field) so Svelte
+    repaints the elapsed timer while the tab is backgrounded.
+  - P3 — belt-and-suspenders: WS-level `{type:"ping",ts:…}` every 15s
+    when idle in `_forward_events`, to surface corpse sockets that
+    `WebSocketDisconnect` missed.
+
+  **Verify:** DevTools → Network → WS should show `tool_progress` frames
+  every ~3s spanning the full sub-agent window, each `tool_call_id`
+  matching the outer `Agent` `ToolCallStart`. The Claude transcript
+  JSONL stays unchanged (we don't write upstream). `/api/diag`
+  subscriber count can back up the ticker-lifetime check.
+
+  **Risk callouts:** (1) `sessions_broker.py` now runs alongside the
+  runner — the keepalive task must live under the runner task tree,
+  not the broker, so shutdown / stop cancels it cleanly. (2) runner.py
+  is 823 lines (over the 400-line cap flagged elsewhere in this file);
+  P1 adds ~30 lines, which should land inside the planned runner
+  extraction if close on the queue, or carry a tombstone otherwise.
+  (3) Midnight Glass is now the default theme — P0 affordance must use
+  theme tokens / existing tailwind utilities, not hardcoded colors.
 
 - [ ] **Feature: "More info" button next to Copy on assistant responses
   (2026-04-21).** Dave's ask: each assistant turn already has a Copy
