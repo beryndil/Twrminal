@@ -180,6 +180,73 @@ describe('tool_output_delta reducer', () => {
   });
 });
 
+describe('tool_progress reducer', () => {
+  function progress(
+    sessionId: string,
+    toolCallId: string,
+    elapsedMs: number
+  ): AgentEvent {
+    return {
+      type: 'tool_progress',
+      session_id: sessionId,
+      tool_call_id: toolCallId,
+      elapsed_ms: elapsedMs
+    };
+  }
+
+  it('records elapsed_ms on the matching running tool call', () => {
+    const sid = uniqueSession('progress-basic');
+    conversation.sessionId = sid;
+    conversation.handleEvent(startCall(sid, 'tc-p1', 'Agent'));
+    conversation.handleEvent(progress(sid, 'tc-p1', 3000));
+    const tc = conversation.toolCalls.find((t) => t.id === 'tc-p1');
+    expect(tc?.lastProgressMs).toBe(3000);
+  });
+
+  it('overwrites with the latest elapsed_ms (monotonic on the server)', () => {
+    const sid = uniqueSession('progress-monotonic');
+    conversation.sessionId = sid;
+    conversation.handleEvent(startCall(sid, 'tc-p2', 'Agent'));
+    conversation.handleEvent(progress(sid, 'tc-p2', 3000));
+    conversation.handleEvent(progress(sid, 'tc-p2', 6000));
+    conversation.handleEvent(progress(sid, 'tc-p2', 9000));
+    const tc = conversation.toolCalls.find((t) => t.id === 'tc-p2');
+    expect(tc?.lastProgressMs).toBe(9000);
+  });
+
+  it('ignores tool_progress for unknown tool call ids (no crash)', () => {
+    const sid = uniqueSession('progress-unknown');
+    conversation.sessionId = sid;
+    expect(() =>
+      conversation.handleEvent(progress(sid, 'never-started', 3000))
+    ).not.toThrow();
+    expect(conversation.toolCalls).toEqual([]);
+  });
+
+  it('drops tool_progress that arrives after tool_call_end', () => {
+    // Matches the tool_output_delta ordering guard: once a call has
+    // finished, late keepalives from a replay-after-reconnect must
+    // not mutate the completed call's fields.
+    const sid = uniqueSession('progress-after-end');
+    conversation.sessionId = sid;
+    conversation.handleEvent(startCall(sid, 'tc-p3', 'Agent'));
+    conversation.handleEvent(progress(sid, 'tc-p3', 3000));
+    conversation.handleEvent(endCall(sid, 'tc-p3', 'done'));
+    conversation.handleEvent(progress(sid, 'tc-p3', 9000));
+    const tc = conversation.toolCalls.find((t) => t.id === 'tc-p3');
+    expect(tc?.lastProgressMs).toBe(3000);
+    expect(tc?.finishedAt).not.toBe(null);
+  });
+
+  it('lastProgressMs starts as null on tool_call_start', () => {
+    const sid = uniqueSession('progress-initial');
+    conversation.sessionId = sid;
+    conversation.handleEvent(startCall(sid, 'tc-p4', 'Agent'));
+    const tc = conversation.toolCalls.find((t) => t.id === 'tc-p4');
+    expect(tc?.lastProgressMs).toBe(null);
+  });
+});
+
 describe('approval reducer', () => {
   function approvalRequest(
     sessionId: string,

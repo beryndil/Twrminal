@@ -126,6 +126,7 @@ describe('MessageTurn (tool-call rows)', () => {
       startedAt: 0,
       finishedAt: 1,
       outputTruncated: false,
+      lastProgressMs: null,
       ...overrides
     };
   }
@@ -216,6 +217,57 @@ describe('MessageTurn (tool-call rows)', () => {
     );
     expect(getByTestId('tool-call-pulse')).not.toBeNull();
     expect(queryByTestId('tool-call-subagent')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('lastProgressMs floors the readout when the local clock is stale', () => {
+    // Simulates a backgrounded tab: the local `now` is only 2s past
+    // startedAt (setInterval was throttled), but the server's
+    // tool_progress keepalives reported 40s of elapsed work. The
+    // readout must honor the server floor, not the stale local delta.
+    const fixedNow = 1_700_000_000_000;
+    vi.setSystemTime(new Date(fixedNow));
+    const { getByTestId } = render(
+      MessageTurn,
+      baseProps({
+        toolCalls: [
+          call({
+            id: 'tc-floor',
+            name: 'Agent',
+            ok: null,
+            finishedAt: null,
+            startedAt: fixedNow - 2_000,
+            lastProgressMs: 40_000
+          })
+        ]
+      })
+    );
+    expect(getByTestId('tool-call-elapsed').textContent).toBe('40s');
+    vi.useRealTimers();
+  });
+
+  it('local clock wins when it is ahead of the server floor', () => {
+    // Foreground tab — the local tick has already advanced past the
+    // last keepalive, which is the common case. Readout uses the
+    // local delta.
+    const fixedNow = 1_700_000_000_000;
+    vi.setSystemTime(new Date(fixedNow));
+    const { getByTestId } = render(
+      MessageTurn,
+      baseProps({
+        toolCalls: [
+          call({
+            id: 'tc-live',
+            name: 'Agent',
+            ok: null,
+            finishedAt: null,
+            startedAt: fixedNow - 10_000,
+            lastProgressMs: 6_000
+          })
+        ]
+      })
+    );
+    expect(getByTestId('tool-call-elapsed').textContent).toBe('10s');
     vi.useRealTimers();
   });
 

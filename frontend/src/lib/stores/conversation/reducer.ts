@@ -30,6 +30,16 @@ export type LiveToolCall = {
    * stay under TOOL_OUTPUT_CAP_CHARS. UI-only; not round-tripped to
    * DB. Set once and stays set for the lifetime of the tc. */
   outputTruncated: boolean;
+  /** Server-reported wall-clock since `tool_call_start`, captured from
+   * the most recent `tool_progress` keepalive. Null until the first
+   * keepalive arrives (or forever, for short calls that finish before
+   * TOOL_PROGRESS_INTERVAL_S). Used as a floor for the elapsed readout
+   * in `MessageTurn`: a backgrounded tab's `setInterval` is throttled
+   * by the browser to ~1/min, so the local `now` clock freezes; the
+   * server's monotonic number keeps the readout honest on wake.
+   * Mutating this field also nudges Svelte's $state proxy so any
+   * derived consumer (tool-call row render) refires. */
+  lastProgressMs: number | null;
 };
 
 /** Hard cap on a single tool call's `output` string length held in
@@ -81,7 +91,8 @@ export function hydrateToolCall(row: api.ToolCall): LiveToolCall {
     ok,
     startedAt,
     finishedAt,
-    outputTruncated: capped.truncated
+    outputTruncated: capped.truncated,
+    lastProgressMs: null
   };
 }
 
@@ -255,7 +266,8 @@ export function applyEvent(
         ok: null,
         startedAt: Date.now(),
         finishedAt: null,
-        outputTruncated: false
+        outputTruncated: false,
+        lastProgressMs: null
       });
       return;
     case 'tool_output_delta': {
@@ -281,6 +293,28 @@ export function applyEvent(
       const capped = capToolOutput(combined);
       tc.output = capped.output;
       if (capped.truncated) tc.outputTruncated = true;
+      return;
+    }
+    case 'tool_progress': {
+      // Ephemeral keepalive from the server — our only wire signal
+      // while a long sub-agent runs. Two jobs:
+      //   1. Floor the elapsed readout: a backgrounded tab's
+      //      `setInterval` is throttled hard (≥1 min in most
+      //      browsers), so the local `now` clock freezes. Recording
+      //      the server's monotonic number as a floor keeps the
+      //      readout honest when the tab wakes. `MessageTurn`
+      //      reads it via `max(now - startedAt, lastProgressMs)`.
+      //   2. Reactivity nudge: mutating a field on the tc fires
+      //      Svelte's $state proxy, which refires derived consumers
+      //      (the tool-call row) without relying on the local timer.
+      // Silently drop if the target call is unknown (replay-after-
+      // reconnect corner case) or already finished (a straggler
+      // progress tick that races tool_call_end). Matches the
+      // `tool_output_delta` guard policy.
+      const tc = state.toolCalls.find((c) => c.id === event.tool_call_id);
+      if (!tc) return;
+      if (tc.finishedAt !== null) return;
+      tc.lastProgressMs = event.elapsed_ms;
       return;
     }
     case 'tool_call_end': {

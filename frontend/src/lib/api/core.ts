@@ -69,6 +69,23 @@ export type ToolOutputDeltaEvent = {
   tool_call_id: string;
   delta: string;
 };
+/** Ephemeral keepalive fired every few seconds while a tool call is
+ * still running. Exists so the UI has a steady wire signal during long
+ * out-of-band tool calls where the SDK surfaces nothing — primarily a
+ * `Task`/`Agent` sub-agent that runs for tens of seconds between its
+ * outer-turn `tool_use` and the eventual `tool_result`. Not in the
+ * ring buffer (server skips `_event_log.append`), so a reconnecting
+ * client doesn't replay a wall of throwaway keepalives. `elapsed_ms`
+ * is the server's wall-clock since `ToolCallStart`; the reducer
+ * records it as a floor for the elapsed readout so a backgrounded tab
+ * whose `setInterval` is throttled still paints an honest number when
+ * it wakes. See TODO.md silence-gap entry. */
+export type ToolProgressEvent = {
+  type: 'tool_progress';
+  session_id: string;
+  tool_call_id: string;
+  elapsed_ms: number;
+};
 export type MessageStartEvent = {
   type: 'message_start';
   session_id: string;
@@ -186,6 +203,7 @@ export type AgentEvent = (
   | ToolCallStartEvent
   | ToolCallEndEvent
   | ToolOutputDeltaEvent
+  | ToolProgressEvent
   | MessageStartEvent
   | MessageCompleteEvent
   | ContextUsageEvent

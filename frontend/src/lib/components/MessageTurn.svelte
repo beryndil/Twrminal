@@ -84,8 +84,21 @@
     return () => clearInterval(id);
   });
 
-  function formatElapsed(startedAt: number, nowMs: number): string {
-    const s = Math.max(0, Math.floor((nowMs - startedAt) / 1000));
+  function formatElapsed(
+    startedAt: number,
+    nowMs: number,
+    lastProgressMs: number | null
+  ): string {
+    // Take the max of (local wall-clock delta) and (server-reported
+    // monotonic). Foreground tabs use the local clock almost
+    // exclusively — it ticks every 1s via the effect above. A
+    // backgrounded tab whose `setInterval` got throttled has a stale
+    // `nowMs`; the server's monotonic number from `tool_progress`
+    // keepalives prevents the readout from freezing. See reducer
+    // `tool_progress` case and TODO.md silence-gap entry.
+    const localMs = Math.max(0, nowMs - startedAt);
+    const effectiveMs = Math.max(localMs, lastProgressMs ?? 0);
+    const s = Math.floor(effectiveMs / 1000);
     if (s < 60) return `${s}s`;
     const m = Math.floor(s / 60);
     const rem = s % 60;
@@ -250,7 +263,7 @@
             data-testid="tool-call-pulse"
             aria-hidden="true">●</span> <span
             class="text-amber-300"
-            data-testid="tool-call-elapsed">{formatElapsed(call.startedAt, now)}</span>{#if isSubAgent(call.name)} <span
+            data-testid="tool-call-elapsed">{formatElapsed(call.startedAt, now, call.lastProgressMs)}</span>{#if isSubAgent(call.name)} <span
             class="text-amber-200"
             data-testid="tool-call-subagent">— running sub-agent: {subAgentSubtitle(call.input)}</span>{/if}{/if}{#if call.outputTruncated} <span
             class="text-amber-400">[truncated]</span>{/if}
