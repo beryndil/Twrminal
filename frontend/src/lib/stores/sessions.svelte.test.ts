@@ -682,3 +682,34 @@ describe('sessions.applyRunnerState', () => {
   });
 });
 
+describe('sessions.startRunningPoll catch behavior', () => {
+  it('preserves the previous running Set when listRunningSessions fails', async () => {
+    // Seed a non-empty set — represents the prior successful poll.
+    sessions.running = new Set(['sess-live']);
+
+    // Next fetch throws. `softRefresh` also runs inside the tick, so
+    // it has to see a fetch failure too — queue one rejecting response
+    // and enable the passthrough fallback for everything else.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('transport blip');
+      })
+    );
+
+    sessions.startRunningPoll();
+    // startRunningPoll fires its tick synchronously and schedules the
+    // interval. Await the microtask queue so the catch branch runs.
+    await new Promise((r) => setTimeout(r, 0));
+    sessions.stopRunningPoll();
+
+    expect(sessions.running.has('sess-live')).toBe(true);
+    expect(sessions.running.size).toBe(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('sessions.running poll failed'),
+      expect.any(Error)
+    );
+  });
+});
+

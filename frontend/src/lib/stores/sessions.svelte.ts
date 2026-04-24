@@ -405,11 +405,19 @@ class SessionStore {
         try {
           const ids = await api.listRunningSessions();
           this.running = new Set(ids);
-        } catch {
-          // Polling is a cosmetic feature — if the token expired or the
-          // server blinked, just drop the running set. The auth layer
-          // handles real 401s elsewhere.
-          this.running = new Set();
+        } catch (err) {
+          // Preserve the previous running Set on transport blips. A
+          // failed fetch is "I don't know what's running right now",
+          // NOT "nothing is running" — overwriting with an empty Set
+          // flips every live indicator off for up to one poll tick
+          // (3 s), which Daisy sees as the sidebar ping flickering
+          // gone-then-back while an agent is demonstrably still
+          // working. The next successful tick reconciles any real
+          // idle transition we missed. Real 401s are handled by the
+          // auth layer; other failures get logged so a persistent
+          // server problem surfaces in the devtools console instead
+          // of silently degrading the badge.
+          console.warn('sessions.running poll failed; keeping last snapshot', err);
         }
       })();
       await Promise.all([runningCall, this.softRefresh()]);
