@@ -346,7 +346,7 @@ it then. Do not exercise the historical checklists as-is.
     `54b9290a287648f6b1516a449a72d95d` ("Install TODO discipline
     hooks+migrate") — installs the hooks once this CLI is on PATH.
 
-- [ ] **Silence gap during long Task sub-agent runs (2026-04-21, diagnosed 2026-04-23).**
+- [ ] **Silence gap during long Task sub-agent runs (2026-04-21, diagnosed 2026-04-23, P0–P2 shipped 2026-04-23).**
   Dave reported the UI sat silent for far too long between his "are you
   hung up?" prompt and the plan-agent response during the token-cost
   mitigation planning session (transcript
@@ -377,22 +377,22 @@ it then. Do not exercise the historical checklists as-is.
   **Fix plan (priority order, all four mind the 4e5d532 `buildTurns`
   split — nudges must land on the `LiveToolCall` `$state` proxy, not a
   sibling field, to avoid breaking WeakMap caching):**
-  - P0 — frontend-only: render an animated pulse + elapsed seconds +
-    subtitle on any `LiveToolCall` with `finishedAt === null` in
-    `MessageTurn.svelte`. Special-case `name === 'Agent'` → "Running
-    sub-agent…" with `input.description` as subtitle.
-  - P1 — backend `tool_progress` keepalive. New `ToolProgress` event in
-    `src/bearings/agent/events.py`. Spawn a 3s ticker `asyncio.Task` on
-    each `ToolCallStart`, cancel on matching `ToolCallEnd`. Fan-out only
-    — do NOT append to `_event_log`, do NOT call `store.*`. Keeps the
-    single-writer SQLite invariant intact and prevents reconnect-replay
-    from firing hundreds of stale ticks.
-  - P2 — reducer case for `tool_progress` that nudges the matched
-    `LiveToolCall` (e.g. bumps a `lastProgressAt` field) so Svelte
-    repaints the elapsed timer while the tab is backgrounded.
-  - P3 — belt-and-suspenders: WS-level `{type:"ping",ts:…}` every 15s
-    when idle in `_forward_events`, to surface corpse sockets that
-    `WebSocketDisconnect` missed.
+  - P0 ✅ shipped 8a5a9d4 — pulse + elapsed seconds + sub-agent subtitle
+    on running `LiveToolCall`s in `MessageTurn.svelte`. Open-by-default
+    `<details>` while any call runs.
+  - P1 ✅ shipped 95bb9c2 — `ToolProgress` event in `events.py` and a
+    3s asyncio ticker in `runner.py` per in-flight `tool_call_id`.
+    Fan-out only (ephemeral via `_emit_ephemeral`), not in the ring
+    buffer and not persisted. Tickers cancel on `ToolCallEnd` and in
+    the turn-finally teardown.
+  - P2 ✅ shipped 2788b60 — reducer records `lastProgressMs` on the
+    matched `LiveToolCall`; `MessageTurn.formatElapsed` uses
+    `max(local delta, server floor)` so a throttled backgrounded tab
+    still paints honest elapsed numbers.
+  - P3 (deferred) — belt-and-suspenders: WS-level `{type:"ping",ts:…}`
+    every 15s when idle in `_forward_events`, to surface corpse sockets
+    that `WebSocketDisconnect` missed. Not blocking; `tool_progress`
+    itself already keeps the wire warm during the common bad case.
 
   **Verify:** DevTools → Network → WS should show `tool_progress` frames
   every ~3s spanning the full sub-agent window, each `tool_call_id`
