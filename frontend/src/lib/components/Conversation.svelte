@@ -1224,6 +1224,45 @@
       ' — use the Attach-file button instead.';
   }
 
+  /** Paste handler — Chrome-on-Wayland compatible alternative to the
+   * broken drop-dispatch path. Clipboard uses a different Wayland
+   * protocol than DnD and works reliably when drag-and-drop silently
+   * fails on Hyprland/Chromium. Workflow: copy a file in the file
+   * manager (Dolphin, Nautilus) → focus the textarea → Ctrl+V. The
+   * clipboard exposes File objects with readable bytes, so we feed
+   * them straight into the same `/api/uploads` pipeline the drop path
+   * uses.
+   *
+   * Only preventDefault when files are present — a paste of plain text
+   * (the common case) must still land in the textarea normally. */
+  function onPaste(e: ClipboardEvent): void {
+    const files = e.clipboardData?.files;
+    if (!files || files.length === 0) return;
+    e.preventDefault();
+    void uploadDroppedFiles(files);
+  }
+
+  /** Browser-native file picker — a second affordance that doesn't
+   * depend on the server's zenity/kdialog bridge OR the compositor's
+   * drag-and-drop bridge. Works identically in every Chromium and
+   * Firefox build, Wayland or X11. Complements the zenity button,
+   * which is still useful because it honors `working_dir`. */
+  let fileInputEl: HTMLInputElement | null = $state(null);
+
+  function onBrowseClick(): void {
+    fileInputEl?.click();
+  }
+
+  async function onFileInputChange(e: Event): Promise<void> {
+    const target = e.currentTarget as HTMLInputElement;
+    if (!target.files || target.files.length === 0) return;
+    await uploadDroppedFiles(target.files);
+    // Reset so picking the SAME file twice in a row re-fires `change`.
+    // Without this the input's value is sticky and a repeat selection
+    // is silently ignored.
+    target.value = '';
+  }
+
   // Upload button → native picker via `POST /api/fs/pick` (zenity on
   // GTK, kdialog on KDE). Bearings runs on the user's own machine, so
   // popping a dialog on their desktop is fair game and gives us the
@@ -1689,11 +1728,12 @@
           resize-none focus:outline-none focus:border-slate-600 disabled:opacity-50"
         rows="1"
         placeholder={sessions.selectedId
-          ? 'Send a prompt (Enter · Shift+Enter for newline · / for commands)'
+          ? 'Send a prompt (Enter · Shift+Enter for newline · / for commands · Ctrl+V to paste files)'
           : 'Select a session first'}
         bind:value={promptText}
         bind:this={textareaEl}
         onkeydown={onKeydown}
+        onpaste={onPaste}
         disabled={!sessions.selectedId || agent.state !== 'open'}
       ></textarea>
       <button
@@ -1739,14 +1779,35 @@
           hover:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={onPickFile}
         disabled={!sessions.selectedId || picking}
-        title="Attach a file path"
+        title="Attach a file path via native dialog (honors session working dir)"
         data-testid="attach-file"
       >
         <span aria-hidden="true">📎</span>
         <span>{picking ? 'Picking…' : 'Attach file'}</span>
       </button>
+      <button
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded border border-slate-800
+          bg-slate-900 px-2.5 py-1 text-xs text-slate-300 hover:border-slate-600
+          hover:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+        onclick={onBrowseClick}
+        disabled={!sessions.selectedId || uploading}
+        title="Browse via the browser's file picker (no compositor deps)"
+        data-testid="browse-file"
+      >
+        <span aria-hidden="true">📁</span>
+        <span>{uploading ? 'Uploading…' : 'Browse'}</span>
+      </button>
+      <input
+        type="file"
+        multiple
+        bind:this={fileInputEl}
+        onchange={onFileInputChange}
+        class="hidden"
+        data-testid="file-input"
+      />
       <span class="text-[10px] text-slate-500">
-        or drag a file onto the conversation
+        or drag · Ctrl+V to paste files
       </span>
     </div>
   </form>
