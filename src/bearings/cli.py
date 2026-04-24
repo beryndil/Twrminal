@@ -17,7 +17,7 @@ from bearings.bearings_dir import pending as pending_ops
 from bearings.bearings_dir.check import run_check
 from bearings.bearings_dir.init_dir import init_directory
 from bearings.bearings_dir.onboard import render_brief
-from bearings.config import Settings, load_settings
+from bearings.config import DATA_HOME, Settings, load_settings
 
 # Hostnames / IPs that the interlock treats as loopback-only. Anything
 # else (wildcard binds like `0.0.0.0` / `::`, a LAN address, an
@@ -28,9 +28,26 @@ from bearings.config import Settings, load_settings
 # a real interface too. 2026-04-21 security audit §6 (2026-04-23 fix).
 _LOOPBACK_BINDS: frozenset[str] = frozenset({"127.0.0.1", "localhost", "::1", "::ffff:127.0.0.1"})
 
-# Ordered by popularity on Linux so the first hit on PATH is likely
-# the one the user actually uses. All of these accept --app=URL to
-# launch a chromeless standalone window.
+# Autodetect order for the `window` subcommand. Firefox-family
+# binaries come first because Chromium on Hyprland silently drops
+# external file drops (dragenter/dragover fire; drop does not —
+# confirmed via server-side DND_PROBE instrumentation on 2026-04-24).
+# Firefox handles the same wl_data_device exchange correctly on the
+# same compositor, so we prefer it when both are installed. Chromium
+# stays on the list as a fallback — the paste / Browse button /
+# zenity attach-file paths still work there for users without Firefox.
+FIREFOX_BROWSERS: tuple[str, ...] = (
+    "firefox",
+    "firefox-esr",
+    "firefox-developer-edition",
+    "firefox-nightly",
+    "librewolf",
+    "waterfox",
+    "floorp",
+)
+
+# Chromium-family binaries. All accept --app=URL to launch a
+# chromeless standalone window.
 CHROMIUM_FLAVORED_BROWSERS: tuple[str, ...] = (
     "google-chrome-stable",
     "google-chrome",
@@ -41,6 +58,68 @@ CHROMIUM_FLAVORED_BROWSERS: tuple[str, ...] = (
     "microsoft-edge-stable",
     "microsoft-edge",
 )
+
+# Combined autodetect order — Firefox wins when both are present.
+SUPPORTED_BROWSERS: tuple[str, ...] = FIREFOX_BROWSERS + CHROMIUM_FLAVORED_BROWSERS
+
+# Firefox profile directory owned by Bearings. Created on first
+# `bearings window` launch and kept stable across runs so cache /
+# cookies / session history survive. Kept separate from the user's
+# regular Firefox profile so our userChrome.css customizations don't
+# interfere with normal browsing.
+FIREFOX_SSB_PROFILE_DIR: Path = DATA_HOME / "firefox-ssb"
+
+# Preferences that make userChrome.css actually load (legacy stylesheet
+# customization is off by default since Firefox 69). Written once on
+# first profile bootstrap; subsequent `bearings window` launches leave
+# this file alone so a user can add prefs without getting stomped.
+_FIREFOX_USER_JS = """\
+// Bearings SSB profile — written on first bootstrap, safe to edit.
+// `bearings window` will not overwrite this file once it exists.
+user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
+user_pref("browser.shell.checkDefaultBrowser", false);
+user_pref("browser.startup.homepage_override.mstone", "ignore");
+user_pref("browser.aboutwelcome.enabled", false);
+user_pref("datareporting.policy.firstRunURL", "");
+"""
+
+# userChrome.css collapses the tab strip, nav bar, and bookmarks
+# toolbar so the Bearings UI fills the window — reproduces the old
+# Chrome `--app` SSB visual feel. Also written once; user edits are
+# preserved across launches.
+_FIREFOX_USERCHROME_CSS = """\
+/* Bearings SSB profile — hide Firefox chrome so the Bearings UI looks
+ * like a native app window. Safe to edit locally; `bearings window`
+ * will not overwrite this file once it exists. */
+#TabsToolbar,
+#nav-bar,
+#PersonalToolbar {
+  visibility: collapse !important;
+}
+"""
+
+
+def _ensure_firefox_ssb_profile() -> Path:
+    """Create the bearings-owned Firefox profile if missing.
+
+    Writes ``user.js`` and ``chrome/userChrome.css`` on first call.
+    Subsequent calls are no-ops when the files already exist, so a
+    user who tweaks the CSS (wider hide rules, a titlebar fixup, a
+    custom accent color) keeps their edits across launches.
+
+    Idempotent: safe to call on every ``bearings window`` invocation.
+    """
+    profile_dir = FIREFOX_SSB_PROFILE_DIR
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    chrome_dir = profile_dir / "chrome"
+    chrome_dir.mkdir(exist_ok=True)
+    userchrome = chrome_dir / "userChrome.css"
+    if not userchrome.exists():
+        userchrome.write_text(_FIREFOX_USERCHROME_CSS)
+    user_js = profile_dir / "user.js"
+    if not user_js.exists():
+        user_js.write_text(_FIREFOX_USER_JS)
+    return profile_dir
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,14 +132,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     window = sub.add_parser(
         "window",
-        help="Open the UI in a standalone Chromium-flavored app window",
+        help="Open the UI in a standalone browser window (Firefox preferred, Chromium fallback)",
     )
     window.add_argument("--host", default=None, help="Server host (default: from config)")
     window.add_argument("--port", type=int, default=None, help="Server port (default: from config)")
     window.add_argument(
         "--browser",
         default=None,
-        help="Path to a Chromium-flavored browser binary. Defaults to autodetect.",
+        help="Path to a Firefox- or Chromium-family browser binary. Defaults to autodetect.",
     )
 
     send = sub.add_parser("send", help="Send a one-shot prompt to an agent session")
@@ -193,10 +272,14 @@ async def _run_send(url: str, prompt: str, out: IO[str], *, pretty: bool = False
     return 0
 
 
-def find_chromium_browser(
-    candidates: Sequence[str] = CHROMIUM_FLAVORED_BROWSERS,
+def find_browser(
+    candidates: Sequence[str] = SUPPORTED_BROWSERS,
 ) -> str | None:
-    """Return the path to the first candidate found on PATH, or None."""
+    """Return the path to the first candidate found on PATH, or None.
+
+    The default candidate order is Firefox-family first, Chromium
+    fallback second — see SUPPORTED_BROWSERS for the rationale.
+    """
     for name in candidates:
         path = shutil.which(name)
         if path:
@@ -204,12 +287,44 @@ def find_chromium_browser(
     return None
 
 
+def _is_firefox_like(browser_path: str) -> bool:
+    """True when the binary basename matches a Firefox-family browser.
+
+    Match is substring-based so wrappers like ``/opt/firefox/firefox-bin``
+    or ``librewolf-stable`` still resolve correctly. Unknown names fall
+    through to the Chromium --app path, preserving legacy behavior for
+    anyone pointing --browser at a custom Chrome wrapper.
+    """
+    name = Path(browser_path).name.lower()
+    return any(fam in name for fam in ("firefox", "librewolf", "waterfox", "floorp"))
+
+
 def launch_app_window(browser: str, url: str) -> subprocess.Popen[bytes]:
-    """Spawn a chromeless standalone window pointed at `url`. Detaches
-    so `bearings window` returns immediately — the window lives as long
-    as the user keeps it open, decoupled from this CLI invocation."""
+    """Spawn a standalone browser window pointed at `url` and detach.
+
+    Firefox-family browsers get a bearings-owned SSB profile (via
+    ``--profile <dir>``) plus ``--new-window URL`` — the profile's
+    ``userChrome.css`` collapses tabs/nav/bookmarks so the window
+    looks like the old Chrome ``--app`` SSB. The profile is bootstrapped
+    lazily on first launch and never overwrites user edits afterward.
+
+    Chromium-family browsers get ``--app=URL`` (native chromeless SSB)
+    for users without Firefox. The flag split exists because Chromium
+    on Hyprland silently drops external file drops — Firefox is the
+    default launcher so drag-and-drop file attachments survive the
+    composer path. See TODO.md 2026-04-24.
+
+    The process is detached (``start_new_session``) so ``bearings window``
+    returns immediately and the window's lifetime is decoupled from
+    this CLI invocation.
+    """
+    if _is_firefox_like(browser):
+        profile = _ensure_firefox_ssb_profile()
+        argv = [browser, "--profile", str(profile), "--new-window", url]
+    else:
+        argv = [browser, f"--app={url}"]
     return subprocess.Popen(
-        [browser, f"--app={url}"],
+        argv,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
@@ -277,12 +392,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         host = args.host or cfg.server.host
         port = args.port or cfg.server.port
         url = f"http://{host}:{port}/"
-        browser = args.browser or find_chromium_browser()
+        browser = args.browser or find_browser()
         if browser is None:
             print(
-                "bearings window: no Chromium-flavored browser found on PATH.\n"
+                "bearings window: no supported browser found on PATH.\n"
                 "  Install one of: "
-                + ", ".join(CHROMIUM_FLAVORED_BROWSERS)
+                + ", ".join(SUPPORTED_BROWSERS)
                 + "\n  …or pass --browser /path/to/binary.\n"
                 f"  You can also open {url} in your default browser.",
                 file=sys.stderr,

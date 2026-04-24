@@ -46,6 +46,55 @@ a tagged release — the FileHandler is cheap but unconditional.
 
 ---
 
+## `bearings window` default browser: Firefox — 2026-04-24
+
+**Shipped.** `bearings window` now autodetects Firefox-family binaries
+first and Chromium-family binaries second. Firefox launches with a
+bearings-owned SSB profile (`--profile <dir> --new-window URL`);
+Chromium keeps the legacy `--app=URL` SSB-style flag. Motivation is
+the Chromium-on-Hyprland drop-dispatch bug logged below: the launcher
+used to hand every new user a Chrome window where drag-and-drop
+silently fails. Firefox has working DnD on the same compositor and
+— with userChrome.css collapsing tabs/nav/bookmarks — looks like the
+old Chrome `--app` SSB window.
+
+Code changes (commit pending):
+- `src/bearings/cli.py`: new `FIREFOX_BROWSERS` tuple, combined
+  `SUPPORTED_BROWSERS = FIREFOX_BROWSERS + CHROMIUM_FLAVORED_BROWSERS`,
+  `find_chromium_browser` renamed to `find_browser`, new
+  `_is_firefox_like` helper. `FIREFOX_SSB_PROFILE_DIR` = `$XDG_DATA_HOME/
+  bearings/firefox-ssb`, bootstrapped by `_ensure_firefox_ssb_profile`
+  on first launch (writes `user.js` with
+  `toolkit.legacyUserProfileCustomizations.stylesheets = true` + a few
+  onboarding-noise prefs, plus `chrome/userChrome.css` collapsing
+  `#TabsToolbar`, `#nav-bar`, `#PersonalToolbar`). Idempotent — user
+  edits to either file survive subsequent launches because bootstrap
+  only writes when the file is absent.
+- `tests/test_cli_window.py`: prefer-Firefox + fallback-to-Chromium +
+  Firefox-wrapper + both-flag-paths coverage, plus profile-bootstrap
+  create-files and preserve-user-edits tests (12 tests, all green).
+
+**Red lines still honored** — nothing was removed from the upload
+pipeline: DnD receiver, `dropDiagnostic` amber banner, DND_PROBE
+instrumentation, `Ctrl+V` paste handler, 📁 Browse button, and 📎
+zenity attach-file fallback all remain. Every input path survives;
+only the default launcher + its profile changed.
+
+**Open follow-ups (not blocking):**
+
+- [ ] Escape hatch flag for the SSB profile — `bearings window --plain`
+  (or `--profile /custom/path`) if someone wants the normal Firefox
+  window back without editing config. Not needed today; add if Dave
+  hits a case where the SSB window is in the way.
+- [ ] First-launch window sizing. Firefox remembers window geometry
+  in the profile, but the very first SSB window opens at Firefox's
+  default size — on a multi-monitor setup that can land awkwardly.
+  Could set `toolkit.startup.max_resumed_crashes` + a default width/
+  height via `browser.link.open_newwindow.override.external` or just
+  let the user move it once and trust sessionStore.
+
+---
+
 ## Drag-and-drop browser compatibility — 2026-04-23
 
 **Findings after shipping the bytes-upload fallback (commits `fac7382`
