@@ -1792,15 +1792,21 @@
     <CheckpointGutter sessionId={sessions.selectedId} />
   {/if}
 
+  {#if conversation.todos !== null}
+    <!-- Sits between the session header (or CheckpointGutter, when
+         checkpoints exist) and the scrollable message area. Previously
+         nested inside the scroll container with `sticky top-0` and
+         negative margins to cancel parent padding — the padding gap
+         above the card was too stubborn, and since the widget was
+         always pinned to the top anyway, hoisting it out is simpler
+         and hugs the element above it cleanly. -->
+    <LiveTodos todos={conversation.todos} />
+  {/if}
+
   <div
     bind:this={scrollContainer}
     class="relative flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4"
   >
-    {#if conversation.todos !== null}
-      <div class="sticky top-0 z-10 -mx-4 -mt-4 px-4 pt-4 pb-2 bg-slate-950/95 backdrop-blur">
-        <LiveTodos todos={conversation.todos} />
-      </div>
-    {/if}
     {#if conversation.hasMore}
       <p
         class="text-[10px] text-slate-600 text-center inline-flex items-center
