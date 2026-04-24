@@ -366,6 +366,15 @@
         onchange={onImportFile}
       />
       <TemplatePicker />
+      <a
+        href="/vault"
+        class="text-[11px] rounded bg-slate-800 hover:bg-slate-700 px-1.5 py-0.5"
+        aria-label="Open vault (plans + TODOs)"
+        title="Open vault — browse plans and TODO.md files"
+        data-testid="vault-link"
+      >
+        📚
+      </a>
       <button
         type="button"
         class="text-[11px] rounded bg-slate-800 hover:bg-slate-700 px-1.5 py-0.5"

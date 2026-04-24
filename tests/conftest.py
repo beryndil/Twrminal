@@ -17,7 +17,7 @@ from bearings.agent.events import (
     ToolCallStart,
 )
 from bearings.agent.session import AgentSession
-from bearings.config import FsCfg, ServerCfg, Settings, StorageCfg, UploadsCfg
+from bearings.config import FsCfg, ServerCfg, Settings, StorageCfg, UploadsCfg, VaultCfg
 from bearings.server import create_app
 
 # TestClient's default base_url is `http://testserver`; WS tests run
@@ -46,6 +46,15 @@ def tmp_settings(tmp_path: Path) -> Iterator[Settings]:
         # exercise the clamp itself (rejection, root, etc.) build their
         # own Settings.
         fs=FsCfg(allow_root=tmp_path),
+        # Vault defaults point at `~/.claude/plans` and `~/Projects`,
+        # which would leak the developer's real filesystem into the
+        # test run. Pin both to empty under `tmp_path` so vault tests
+        # populate their own fixture files and tests that don't touch
+        # the vault see an empty index.
+        vault=VaultCfg(
+            plan_roots=[tmp_path / "plans"],
+            todo_globs=[str(tmp_path / "todos" / "**" / "TODO.md")],
+        ),
     )
     cfg.config_file = tmp_path / "config.toml"
     yield cfg
