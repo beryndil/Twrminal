@@ -152,6 +152,38 @@ class UploadsCfg(BaseModel):
     )
 
 
+class ArtifactsCfg(BaseModel):
+    """On-disk surface for agent-authored artifacts served back to the UI.
+
+    The mirror image of `UploadsCfg`: uploads carry browser bytes *to* the
+    agent; artifacts carry agent-written files *back* to the browser so
+    the Conversation view can render them inline (an image `<img>` today,
+    a PDF/DOCX preview in later phases). Files land here when Claude
+    calls `POST /api/sessions/{sid}/artifacts` to register a path it has
+    already written; the GET endpoint streams them by id with the right
+    Content-Type and `Content-Disposition: inline`.
+    `serve_roots` is the allowlist the register endpoint enforces — a
+    file is registerable iff its resolved path lives under one of these
+    roots. Defaults: the artifacts dir itself, plus the uploads dir (so a
+    user-dropped file can also be re-served back into the view via the
+    deferred attachment-chip path). Add to this list via `config.toml` if
+    you want Claude to be able to serve files it writes elsewhere under
+    the working dir — but weigh the read-exposure cost: every path in
+    this list becomes readable via `GET /api/artifacts/{id}` by any
+    authenticated caller.
+    `max_register_size_mb` caps what `POST /api/sessions/{sid}/artifacts`
+    will accept by `stat().st_size`. 100 MB is generous — agent-authored
+    PDFs and screenshots are small; bigger artifacts (video, large
+    datasets) should be referenced by path through the filesystem picker
+    rather than served inline."""
+
+    artifacts_dir: Path = Field(default_factory=lambda: DATA_HOME / "artifacts")
+    serve_roots: list[Path] = Field(
+        default_factory=lambda: [DATA_HOME / "artifacts", DATA_HOME / "uploads"]
+    )
+    max_register_size_mb: int = 100
+
+
 class FsCfg(BaseModel):
     """Filesystem-surface policy for the in-app folder/file pickers.
 
@@ -262,6 +294,7 @@ class Settings(BaseSettings):
     billing: BillingCfg = Field(default_factory=BillingCfg)
     runner: RunnerCfg = Field(default_factory=RunnerCfg)
     uploads: UploadsCfg = Field(default_factory=UploadsCfg)
+    artifacts: ArtifactsCfg = Field(default_factory=ArtifactsCfg)
     shell: ShellCfg = Field(default_factory=ShellCfg)
     fs: FsCfg = Field(default_factory=FsCfg)
     commands: CommandsCfg = Field(default_factory=CommandsCfg)

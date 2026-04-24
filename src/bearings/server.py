@@ -11,6 +11,7 @@ from bearings import __version__
 from bearings.agent.registry import RunnerRegistry
 from bearings.agent.sessions_broker import SessionsBroker
 from bearings.api import (
+    routes_artifacts,
     routes_checklists,
     routes_checkpoints,
     routes_commands,
@@ -109,6 +110,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(routes_history.router, prefix="/api")
     app.include_router(routes_fs.router, prefix="/api")
     app.include_router(routes_uploads.router, prefix="/api")
+    app.include_router(routes_artifacts.session_router, prefix="/api")
+    app.include_router(routes_artifacts.serve_router, prefix="/api")
     app.include_router(routes_commands.router, prefix="/api")
     app.include_router(routes_shell.router, prefix="/api")
     app.include_router(routes_pending.router, prefix="/api")

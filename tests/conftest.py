@@ -17,7 +17,15 @@ from bearings.agent.events import (
     ToolCallStart,
 )
 from bearings.agent.session import AgentSession
-from bearings.config import FsCfg, ServerCfg, Settings, StorageCfg, UploadsCfg, VaultCfg
+from bearings.config import (
+    ArtifactsCfg,
+    FsCfg,
+    ServerCfg,
+    Settings,
+    StorageCfg,
+    UploadsCfg,
+    VaultCfg,
+)
 from bearings.server import create_app
 
 # TestClient's default base_url is `http://testserver`; WS tests run
@@ -40,6 +48,14 @@ def tmp_settings(tmp_path: Path) -> Iterator[Settings]:
         # scribble into `~/.local/share/bearings/uploads`. Isolated
         # subdir keeps it clean-cut from the sqlite files.
         uploads=UploadsCfg(upload_dir=tmp_path / "uploads"),
+        # Mirror the uploads redirect for artifacts. `serve_roots`
+        # restricts the register + serve endpoints to paths under
+        # tmp_path so no test can accidentally register `/etc/passwd`
+        # against the real config's default roots.
+        artifacts=ArtifactsCfg(
+            artifacts_dir=tmp_path / "artifacts",
+            serve_roots=[tmp_path / "artifacts", tmp_path / "uploads"],
+        ),
         # `/api/fs/list` is clamped to `fs.allow_root` (default `$HOME`).
         # Tests operate inside `tmp_path`; point the allow-root there so
         # existing fs-route tests don't trip the clamp. Tests that

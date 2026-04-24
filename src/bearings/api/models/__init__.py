@@ -8,6 +8,7 @@ module is re-exported here, so callers continue to use
 
 from __future__ import annotations
 
+from .artifacts import ArtifactOut, ArtifactRegister
 from .checklists import (
     ChecklistOut,
     ChecklistUpdate,
@@ -56,6 +57,8 @@ from .vault import (
 )
 
 __all__ = [
+    "ArtifactOut",
+    "ArtifactRegister",
     "Attachment",
     "ChecklistOut",
     "ChecklistUpdate",

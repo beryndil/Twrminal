@@ -11,6 +11,12 @@ concern, then re-export here.
 
 from __future__ import annotations
 
+from bearings.db._artifacts import (
+    create_artifact,
+    delete_artifact,
+    get_artifact,
+    list_artifacts,
+)
 from bearings.db._checklists import (
     create_checklist,
     create_item,
@@ -110,12 +116,14 @@ __all__ = [
     "attach_tag",
     "attach_tool_calls_to_message",
     "close_session",
+    "create_artifact",
     "create_checklist",
     "create_checkpoint",
     "create_item",
     "create_session",
     "create_tag",
     "create_template",
+    "delete_artifact",
     "delete_checkpoint",
     "delete_item",
     "delete_session",
@@ -128,6 +136,7 @@ __all__ = [
     "ensure_default_severity",
     "find_replayable_prompt",
     "finish_tool_call",
+    "get_artifact",
     "get_checklist",
     "get_checkpoint",
     "get_default_severity_tag_id",
@@ -147,6 +156,7 @@ __all__ = [
     "list_all_messages",
     "list_all_sessions",
     "list_all_tool_calls",
+    "list_artifacts",
     "list_checkpoints",
     "list_messages",
     "list_reorg_audits",

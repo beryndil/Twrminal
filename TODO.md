@@ -1776,3 +1776,76 @@ for first-paint. Derived from the latest `tool_calls` row where
   widget-placement conflicts with future sticky rows, empty-list
   hide-vs-show). Re-evaluate each when the agent has run a handful
   of real TodoWrite turns in Dave's normal workflow.
+
+## Agent-authored artifacts — Phase 1 shipped, Phases 2–4 open — 2026-04-24
+
+**Phase 1 shipped.** Outbound file-display surface: the agent writes a
+file, `POST /api/sessions/{sid}/artifacts` registers the path, and
+`GET /api/artifacts/{id}` streams it back with inline
+`Content-Disposition` so the existing markdown `<img>` allowlist
+renders it in the conversation view. Migration 0028 adds the
+`artifacts` table (id, session_id, path, filename, mime_type,
+size_bytes, sha256, created_at). Config: `[artifacts] artifacts_dir`
+(default `$XDG_DATA_HOME/bearings/artifacts`), `serve_roots` (default
+artifacts_dir + uploads_dir), `max_register_size_mb` (default 100).
+18 tests in `tests/test_routes_artifacts.py` cover happy path,
+path-allowlist, cross-session isolation, serve-time revocation, and
+MIME detection overrides for svg/markdown.
+
+**Phase 2 — PDF + HTML preview.**
+
+- [ ] **FilePreview Svelte component.** MIME-keyed dispatch — image
+  goes straight to `<img>`, text/json/csv to a shiki code block, PDF
+  to `pdfjs-dist`, html to a sandboxed `<iframe src="/api/artifacts/{id}"
+  sandbox>`. Component owns the loading + error states so every
+  embedder gets consistent UX. Lives alongside the existing message
+  renderer; the markdown pass emits a stub `<artifact-preview>` tag
+  that the Svelte layer upgrades post-sanitize.
+- [ ] **Add `pdfjs-dist` to frontend deps.** Canvas-based inline
+  viewer; budget ~400 KB gzipped lazy-loaded chunk. Render a single
+  first page by default with a "next page" affordance; full-document
+  scroll is overkill for agent-generated one-pagers.
+- [ ] **Sandboxed HTML preview.** Use `<iframe src="/api/artifacts/{id}"
+  sandbox="allow-scripts">` — no allow-same-origin, no allow-top-
+  navigation. Consider a strict CSP header served with `text/html`
+  artifacts. The agent can already produce an HTML file via Write; no
+  new install needed for this slice.
+- [ ] **Text / markdown / JSON / CSV.** Fetch the artifact, render via
+  the existing `renderMarkdown()` for `text/markdown`, shiki for
+  code, a table component for CSV. No new deps — everything's already
+  in the bundle for chat rendering.
+
+**Phase 3 — DOCX + XLSX + PPTX.**
+
+- [ ] **Add `python-docx`, `openpyxl`, `python-pptx`** to
+  `pyproject.toml`. Server-side preview endpoint
+  `GET /api/artifacts/{id}/preview` returns HTML rendered from the
+  Office format; result is cached per artifact id (bytes don't
+  change — sha256 is stable). Frontend `FilePreview` routes these
+  MIMEs to the rendered HTML viewer.
+- [ ] **Download-original path.** `?download=1` already flips the
+  disposition; the original DOCX/XLSX download works today, only
+  inline preview needs the conversion step.
+
+**Phase 4 — Authoring tools.**
+
+- [ ] **Add Pillow + matplotlib + reportlab** to a dev-time
+  installable extra so the agent can generate raster images + PDFs
+  without a separate `pip install`. Keep `weasyprint` out of the
+  default set — it pulls large C deps (cairo, pango). Agent can
+  `uv add --script` for one-off needs.
+- [ ] **Convenience tool for "generate + register" as one step.**
+  Today Claude does `Write` then `curl POST /api/sessions/.../artifacts`;
+  a helper MCP tool / CLI subcommand (`bearings artifact register
+  <path>`) would make it one call. Low priority — curl works and is
+  traceable in the transcript.
+
+**Unblocked upstream by Phase 1:**
+
+- Attachment-chip UI (see § "Drag-and-drop file uploads — follow-ups"
+  above) now has a backing store. To light up the inbound-chip path,
+  extend `routes_uploads.upload_file` to also `store.create_artifact`
+  for the uploaded bytes and persist the resulting `artifact_id` on
+  the message row. Shared GC sweep can then walk the `artifacts`
+  table's `created_at` column instead of scanning the upload dir by
+  mtime.
