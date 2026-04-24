@@ -291,27 +291,60 @@ a tagged release — the FileHandler is cheap but unconditional.
 
 **Defensive layer added 2026-04-24 while root cause still open.**
 `agent.stop()` no longer sends the WS frame synchronously — it queues
-the frame behind a 3s countdown and pushes an undo toast. The toast's
-`inverse` cancels the pending send. This serves two purposes:
+the frame behind a 3s countdown and surfaces an inline "Stopping Xs
+· Undo" pill in place of the Stop button. Clicking the pill's Undo
+button cancels the pending send. This serves two purposes:
 
-1. Every Stop click is now **visible** — the toast pops whether Dave
-   meant to click or not. Accidental stops become observable instead
-   of mysterious.
+1. Every Stop click is now **visible** — the pill appears whether
+   Dave meant to click or not. Accidental stops become observable
+   instead of mysterious.
 2. Accidental stops are **recoverable** during the 3s window.
 
-Relevant code: `frontend/src/lib/agent.svelte.ts` (`STOP_DELAY_MS`
-const, `pendingStopTimer` field, `stop()` defers via `setTimeout` +
-`undoStore.push`, new `cancelPendingStop()` method also called from
-`close()` so a session switch drops the queued frame). Tests in
-`frontend/src/lib/agent.svelte.test.ts` cover deferral, undo-cancel,
-no-stack guard, and session-switch cancel (4 new, 546 total green).
+Shipped in two commits:
+- `ba98d70` — first pass via the shared `undoStore` + bottom-right
+  toast. Dave flagged the position as wrong ("it should popup by
+  the stop button") because hunting for a bottom-right toast eats
+  the 3-second window.
+- `08ab470` — replaced the bottom-right toast with an inline pill
+  that morphs the Stop button in place. New component
+  `frontend/src/lib/components/StopUndoInline.svelte` reads the
+  reactive `agent.stopPendingStartedAt` (`number | null`) and
+  `stopPendingWindowMs` to render the countdown. `undoStore`
+  import dropped from `agent.svelte.ts`; wiring is pure reactive
+  state. `Conversation.svelte` + `ChecklistChat.svelte` both swap
+  Stop→pill based on the flag.
 
-**Disposition when bug closes:** this is worth keeping as a feature
-— three-second undo on Stop is a generally nice affordance. But
-re-evaluate the window length (3s was chosen for diagnostic
-visibility; 1.5s might feel snappier once the bug is gone) and strip
-the probe instrumentation from the frame (`_trace` / `_isTrusted` /
-`_eventType` fields) at the same time.
+Relevant code (current state):
+- `frontend/src/lib/agent.svelte.ts` — `STOP_DELAY_MS` const,
+  `stopPendingStartedAt` / `stopPendingWindowMs` `$state` fields,
+  `pendingStopTimer` private timer, `cancelPendingStop()` (also
+  called from `close()` so a session switch drops the queued
+  frame).
+- `frontend/src/lib/components/StopUndoInline.svelte` — the
+  inline pill.
+- `frontend/src/lib/agent.svelte.test.ts` — 4 tests cover
+  deferral, undo-cancel, no-stack guard, and session-switch
+  cancel. 608/608 frontend suite green.
+
+Browser→server diagnostics (also TEMP 2026-04-24, remove with the
+probe):
+- `src/bearings/api/routes_diag.py:log_undo_diag` — `/api/diag/undo`
+  endpoint that writes to the same `interrupt-probe.log`.
+- Stop frame carries `_clickedAt`, `_undoPushed`, plus the earlier
+  `_trace` / `_isTrusted` / `_eventType`. Server-side probe in
+  `ws_agent.py` stop branch echoes `fe_clickToRecv_ms` so I can
+  confirm the 3s defer actually runs in Dave's browser.
+- Rule `~/.claude/rules/no-devtools-dave.md` — Dave doesn't open
+  browser devtools; all diagnostics MUST come back via the server
+  (probe log, Playwright, instrumented frames).
+
+**Disposition when bug closes:** the inline pill is worth keeping
+as a feature — three-second undo on Stop is a generally nice
+affordance. But re-evaluate the window length (3s was chosen for
+diagnostic visibility; 1.5s might feel snappier once the bug is
+gone) and strip the probe instrumentation from the frame (`_trace`
+/ `_isTrusted` / `_eventType` / `_clickedAt` / `_undoPushed`
+fields) + delete `/api/diag/undo` at the same time.
 
 ---
 
