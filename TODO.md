@@ -1270,11 +1270,19 @@ ruff + mypy clean.
     protocol response header. Keeps the token out of URLs, access
     logs, browser history, process listings.
   - Query-string path preserved for `bearings send` (CLI, no
-    convenient subprotocol plumbing). Frontend migration from
-    `?token=` to subprotocol is a follow-up — tracked under the
-    permission-profile session.
+    convenient subprotocol plumbing).
+  - Frontend migration landed same day (2026-04-23):
+    `frontend/src/lib/api/core.ts` now builds a `wsBearerProtocols()`
+    list and passes it as the `WebSocket` constructor's second arg;
+    `openAgentSocket` and `openSessionsSocket` no longer append
+    `token=` to the URL. Browser clients keep the secret out of
+    access logs / Referer / browser history entirely.
   - `tests/test_auth.py` +3 tests (subprotocol-good-token,
     subprotocol-bad-token, marker-without-bearer-entry).
+  - `frontend/src/lib/api/core.test.ts` +5 vitest cases (agent socket
+    subprotocol path, agent socket no-token path, since_seq in URL
+    with no token leakage, sessions socket subprotocol path, sessions
+    socket no-token path).
 - [x] **DB file written at default umask.** `src/bearings/db/_common.py`.
   Fixed 2026-04-23: `init_db` now calls `_clamp_db_permissions(path)`
   after the connection opens and migrations commit, chmod'ing the
