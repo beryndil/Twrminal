@@ -17,6 +17,172 @@ Scaffold reference (still useful for plans):
 
 ---
 
+## Autonomous checklist execution — 2026-04-24
+
+**Goal.** Point Claude at a `kind='checklist'` session and have him work
+through unchecked items sequentially — one fresh paired chat session per
+item — with zero human input between items. Context protection, followup
+nesting, and handoff legs are first-class primitives, not afterthoughts.
+
+**Why this is tractable.** The primitives already exist:
+- Per-item paired chat sessions (`routes_checklists.py`, spawn endpoint)
+  already provide across-item context isolation.
+- `checklist_items.parent_item_id` (schema.sql:187) already supports
+  nested followups.
+- `sessions.checklist_item_id` (schema.sql:38) already lets us find every
+  session spawned for an item.
+- The agent runner's worker queue (`runner.py`) doesn't care whether
+  prompts come from WS or server-side code — enqueuing programmatically
+  is trivial.
+- `ContextUsage` events (`session.py:258-266`) already expose `percentage`
+  of context window consumed — watchdog input is free.
+
+**Three axes of context protection.**
+
+| Axis | Mechanism |
+|------|-----------|
+| Across items | Fresh paired chat session per item (exists) |
+| Nesting (followups) | `parent_item_id` tree + depth cap (schema exists) |
+| Within an item | **Handoff-to-successor leg when window fills** ← new |
+
+**Design.**
+
+1. **Autonomous driver.** Long-lived async task per checklist session.
+   Pseudocode:
+
+   ```
+   async def drive(checklist_session_id):
+       while item := next_unchecked(checklist_session_id):
+           if has_incomplete_children(item):
+               await drive_children_first(item)
+           leg = 1
+           while not item.checked:
+               session = spawn_paired_chat(item, leg=leg,
+                                          plug=previous_plug or None)
+               await run_with_watchdog(session)  # may emit handoff
+               if session.emitted_handoff:
+                   previous_plug = session.handoff_plug
+                   leg += 1
+                   continue
+               if session.spawned_children:
+                   await drive_children_first(item)
+                   # re-enter loop; parent re-executes with children done
+                   continue
+               if session.failed:
+                   record_failure(item); break
+           # item checked; advance
+   ```
+
+2. **Completion signal.** New MCP tool exposed to the agent:
+   `mark_checklist_item_done(item_id, notes?)`. Agent self-marks when
+   truly done. Driver polls `checked_at` to advance. (Alternatives —
+   end-of-turn heuristic, `<DONE/>` token — are fragile; self-mark is
+   the only one where the agent owns the completion decision.)
+
+3. **Followup / nesting tool.** New MCP tool:
+   `add_checklist_followup(parent_item_id, label, block_parent: bool)`.
+   When `block_parent=True`, driver recurses into children before the
+   parent can complete. Depth cap (initially 3) guards against runaway
+   spawning — on violation, mark item failed with "nested too deep."
+
+4. **Context watchdog & handoff.** Driver subscribes to `ContextUsage`
+   events for the active session. At threshold (~60% of max_tokens —
+   conservative, matches Dave's manual handoff discipline):
+   - Driver injects prompt: "You're approaching context limit. Emit a
+     handoff plug via the `handoff` tool describing state, work done,
+     work remaining, files touched, red lines. Do not continue the
+     task this turn."
+   - New MCP tool: `handoff(plug_text)`. Persists plug on the item.
+   - Driver kills current runner, spawns successor paired chat for the
+     same item with `description = plug_text` and
+     `session_instructions` containing the plug for per-turn
+     persistence. Title suffix: "(leg N)".
+   - Successor resumes the work with only the plug as context.
+
+5. **Schema delta.** `checklist_items.chat_session_id` is currently a
+   single FK (schema.sql:205). For legs, switch to the reverse pointer:
+   query `SELECT * FROM sessions WHERE checklist_item_id = ? ORDER BY
+   created_at` to get the leg chain. Drop `chat_session_id` column via
+   numbered migration. Zero new tables. The UI shows each leg as an
+   expandable row under the item.
+
+6. **Safety rails.**
+   - Per-item token/time budget (reuse `max_budget_usd` already plumbed
+     in `session.py:276`).
+   - Total checklist budget cap (config or per-run parameter).
+   - Hard stop button: kills driver + active runner.
+   - Failure policy: halt-on-first-fail (default) vs.
+     mark-failed-continue (opt-in). Log failures to item notes.
+   - Max legs per item cap (e.g. 5) — if item keeps demanding handoffs
+     past this, something is wrong with how it's scoped.
+   - Max items per run cap (e.g. 50) — cheap safeguard against a
+     runaway checklist.
+
+7. **UI surface.**
+   - "Run autonomously" button on `kind='checklist'` sessions.
+   - Status pill: "running item 3 of 7 — leg 2 — 45% context" or similar.
+   - Stop button (already-existing session Stop, extended to tear down
+     the driver).
+   - Leg chain display per item (expandable).
+   - Failure indicator per item with link to the failed leg's session.
+
+**Build order.**
+
+1. **Migration + schema change.** Drop `checklist_items.chat_session_id`,
+   rely on reverse pointer. (Smallest, unblocks everything else.)
+2. **MCP tools.** `mark_checklist_item_done`,
+   `add_checklist_followup`, `handoff`. Wire into the agent runner's
+   tool surface. These are independent of the driver and testable.
+3. **Context watchdog.** Subscriber on `ContextUsage`, threshold check,
+   handoff-prompt injection. Testable in isolation with a mock agent.
+4. **Autonomous driver (flat case).** Just linear iteration, no nesting,
+   no handoff — prove the spawn-run-advance loop works.
+5. **Followup nesting.** Layer `parent_item_id` recursion + depth cap
+   onto the driver.
+6. **Handoff legs.** Layer watchdog + successor spawn onto the driver.
+7. **UI.** "Run autonomously" button, status pill, legs expander, stop.
+8. **Safety rails + config.** Budgets, caps, failure policy.
+
+**Red lines.**
+- Do not invent a within-session context-clearing mechanism. Legs-via-
+  new-session is the handoff primitive; that's how Dave works manually
+  and it's what the schema/session model already supports.
+- Do not touch `agent/_interrupt_probe.py` or its call sites — those are
+  scheduled for removal once the session-switch interrupt bug closes.
+- Do not wedge the driver into the WS handler. It's a standalone async
+  task owned by a new module (e.g. `src/bearings/agent/auto_driver.py`),
+  registered alongside the runner but independent.
+- No cross-session context leakage. Each leg and each item starts with
+  ONLY the plug + checklist overview — no inheritance of prior SDK
+  session ids.
+
+**Files most likely to touch.**
+- `src/bearings/db/schema.sql` + new migration
+- `src/bearings/agent/auto_driver.py` (new)
+- `src/bearings/agent/tools_checklist.py` (new — MCP tool handlers)
+- `src/bearings/agent/runner.py` (hook for programmatic prompt enqueue,
+  probably already supports it)
+- `src/bearings/api/routes_checklists.py` (add "run autonomously"
+  endpoint)
+- `src/bearings/api/models/checklists.py` (add DTOs for legs + run
+  status)
+- `frontend/src/lib/components/...` (new UI button + status pill +
+  legs expander — specific paths TBD during the UI slice)
+
+**Verification.**
+- Unit tests per MCP tool (mark, followup, handoff).
+- Unit tests for the driver in isolation against a stub agent.
+- Integration test: 3-item checklist, stub agent that marks each done
+  immediately → driver advances cleanly, all three checked.
+- Integration test: 1 item, stub agent emits handoff at 60% → driver
+  spawns leg 2, which marks done → item checked, 2 sessions present.
+- Integration test: 1 item, stub agent creates blocking child → driver
+  recurses, child completes, parent re-executes and completes.
+- Browser QC via Playwright: click "Run autonomously" on a real
+  checklist, watch it complete end-to-end.
+
+---
+
 ## AskUserQuestion tool_result arrives empty — 2026-04-24
 
 **Symptom.** During plan mode, the AI calls the first-party

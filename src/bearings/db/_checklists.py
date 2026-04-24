@@ -350,6 +350,78 @@ async def get_item_by_chat_session(
     return dict(row) if row is not None else None
 
 
+async def list_item_sessions(
+    conn: aiosqlite.Connection,
+    item_id: int,
+) -> list[dict[str, Any]]:
+    """Return every chat session that was ever paired to `item_id`,
+    oldest first. Used by the autonomous driver to enumerate the
+    "legs" of an item's work — when context fills up, the driver
+    spawns a successor paired chat for the same item and the list
+    here grows by one. Each row carries the session columns the
+    caller is likely to render in a legs expander: `id`, `title`,
+    `created_at`, `last_completed_at`, `closed_at`, and
+    `total_cost_usd`. Returns an empty list when the item has never
+    been paired.
+
+    Uses the reverse pointer (`sessions.checklist_item_id`) rather
+    than `checklist_items.chat_session_id`, because the forward
+    pointer only remembers the most recent leg. See TODO.md
+    "Autonomous checklist execution" for the legs-chain design.
+    """
+    async with conn.execute(
+        "SELECT id, title, created_at, last_completed_at, closed_at, "
+        "total_cost_usd FROM sessions WHERE checklist_item_id = ? "
+        "ORDER BY created_at ASC, id ASC",
+        (item_id,),
+    ) as cursor:
+        return [dict(row) async for row in cursor]
+
+
+async def next_unchecked_top_level_item(
+    conn: aiosqlite.Connection,
+    checklist_id: str,
+) -> dict[str, Any] | None:
+    """Return the first top-level item in `checklist_id` that still
+    carries `checked_at IS NULL`, ordered by `sort_order` then `id`.
+    "Top-level" means `parent_item_id IS NULL` — nested children are
+    handled by the driver's recursion layer, not this helper.
+    Returns `None` when every top-level item is checked (which is
+    also the condition `is_checklist_complete` reports `True`).
+
+    Used by the autonomous driver's outer loop to pick the next
+    item to work on. Order-of-attack matches what the UI shows so
+    an observer sees the driver stepping top-to-bottom."""
+    async with conn.execute(
+        f"SELECT {ITEM_COLS} FROM checklist_items "
+        "WHERE checklist_id = ? AND parent_item_id IS NULL "
+        "AND checked_at IS NULL "
+        f"ORDER BY {ITEM_ORDER} LIMIT 1",
+        (checklist_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    return dict(row) if row is not None else None
+
+
+async def list_unchecked_children(
+    conn: aiosqlite.Connection,
+    parent_item_id: int,
+) -> list[dict[str, Any]]:
+    """Return every direct child of `parent_item_id` whose
+    `checked_at IS NULL`, ordered by `sort_order` then `id`. Used by
+    the autonomous driver when the parent spawned a blocking
+    followup: drive the children before re-entering the parent.
+    Does not recurse — a grandchild with an unchecked parent is the
+    concern of whoever drives the intermediate level."""
+    async with conn.execute(
+        f"SELECT {ITEM_COLS} FROM checklist_items "
+        "WHERE parent_item_id = ? AND checked_at IS NULL "
+        f"ORDER BY {ITEM_ORDER}",
+        (parent_item_id,),
+    ) as cursor:
+        return [dict(row) async for row in cursor]
+
+
 async def reorder_items(
     conn: aiosqlite.Connection,
     checklist_id: str,
