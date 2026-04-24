@@ -52,7 +52,13 @@ CREATE TABLE IF NOT EXISTS sessions (
     -- tag group regardless of recency. Per plan decision §2.2 there
     -- is no separate archived_at column; archive is an alias for
     -- close via the `session.archive` action ID.
-    pinned INTEGER NOT NULL DEFAULT 0
+    pinned INTEGER NOT NULL DEFAULT 0,
+    -- Latched flag for the "needs attention — red flashing" sidebar
+    -- indicator (migration 0029). Set to 1 when the runner emits an
+    -- `ErrorEvent` for this session; cleared back to 0 when a later
+    -- turn completes successfully. Closed sessions render no indicator
+    -- regardless, so closing is the natural "I won't retry" out.
+    error_pending INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (

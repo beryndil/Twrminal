@@ -443,6 +443,10 @@ def test_running_endpoint_empty_when_no_runners(client: TestClient) -> None:
     resp = client.get("/api/sessions/running")
     assert resp.status_code == 200
     assert resp.json() == []
+    # Sibling endpoint reports the red-flashing axis — also empty on boot.
+    awaiting = client.get("/api/sessions/awaiting")
+    assert awaiting.status_code == 200
+    assert awaiting.json() == []
 
 
 def test_running_endpoint_reports_session_with_live_turn(
@@ -476,6 +480,10 @@ def test_running_endpoint_reports_session_with_live_turn(
 
         running = client.get("/api/sessions/running").json()
         assert sid in running
+        # A plain streaming turn isn't parked on a user decision,
+        # so the awaiting endpoint must NOT report it.
+        awaiting = client.get("/api/sessions/awaiting").json()
+        assert sid not in awaiting
 
         # Stop cleanly so the test shuts down the turn instead of
         # leaving the long-stream mock hanging.

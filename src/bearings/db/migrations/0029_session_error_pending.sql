@@ -1,0 +1,25 @@
+-- Migration 0029: error_pending flag on sessions.
+--
+-- Feeds the "needs attention" sidebar indicator (red flashing) for
+-- sessions whose last turn ended by throwing an exception out of the
+-- runner stream loop — an `ErrorEvent` fire. Without this column the
+-- only sidebar surface for a crashed turn is the conversation view
+-- itself, which requires opening the session.
+--
+-- Lifecycle:
+--   set to 1 when the runner emits an `ErrorEvent` for this session.
+--   cleared back to 0 when a subsequent turn reaches `MessageComplete`
+--   successfully. An explicit "user acknowledged, move on" path is
+--   the natural out of closing the session (closed rows render no
+--   indicator regardless). No explicit dismiss UI — the error's
+--   whole point is "this actually needs handling," so latching on
+--   successful retry is the correct clear.
+--
+-- Backfill: all existing rows start at 0 (no retroactive surfacing of
+-- historical errors that users have already moved past).
+--
+-- SQLite quirk: ALTER TABLE ADD COLUMN with NOT NULL DEFAULT 0 is
+-- supported since 3.35 and is the idiomatic idempotent add. This file
+-- is additive-only on that column; a revert drops the column but
+-- nothing else depends on its absence.
+ALTER TABLE sessions ADD COLUMN error_pending INTEGER NOT NULL DEFAULT 0;

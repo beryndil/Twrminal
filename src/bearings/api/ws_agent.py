@@ -262,6 +262,7 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:
                 "type": "runner_status",
                 "session_id": session_id,
                 "is_running": runner.is_running,
+                "is_awaiting_user": runner.is_awaiting_user,
             },
         )
     except (WebSocketDisconnect, RuntimeError):
@@ -316,6 +317,26 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:
                             )
                 await runner.submit_prompt(prompt, attachments=attachments or None)
             elif msg_type == "stop":
+                # TEMP 2026-04-23: session-switch interrupt probe — log
+                # the WS client's identifying headers and any frame-level
+                # annotations the frontend may have attached, so we can
+                # tell apart stops from Dave's browser vs. from an
+                # automated client (playwright, curl, another agent).
+                from bearings.agent._interrupt_probe import probe as _probe
+
+                headers = websocket.headers
+                client = websocket.client
+                _probe(
+                    "ws_agent.stop_frame",
+                    session_id,
+                    user_agent=headers.get("user-agent", "?"),
+                    origin=headers.get("origin", "?"),
+                    client_host=client.host if client else "?",
+                    client_port=client.port if client else "?",
+                    fe_isTrusted=payload.get("_isTrusted"),
+                    fe_eventType=payload.get("_eventType"),
+                    fe_trace_head=(payload.get("_trace") or "").split("\n", 4)[0:4],
+                )
                 await runner.request_stop()
             elif msg_type == "set_permission_mode":
                 mode = payload.get("mode")

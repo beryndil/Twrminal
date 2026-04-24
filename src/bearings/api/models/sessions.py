@@ -113,6 +113,14 @@ class SessionOut(BaseModel):
     # group in the sidebar regardless of recency. False on every pre-
     # 0022 row via the column default.
     pinned: bool = False
+    # Latched on an `ErrorEvent` fire, cleared on the next successful
+    # `MessageComplete` (migration 0029). Drives the sidebar's
+    # red-flashing "look at this now" indicator for crashed turns,
+    # alongside the in-flight `awaiting_user` signal carried on the
+    # `runner_state` WS frame. Backed by a server-side column so a
+    # crashed turn survives page reload without the error signal
+    # disappearing. False on every pre-0029 row via the column default.
+    error_pending: bool = False
 
 
 class SessionBulkBody(BaseModel):

@@ -71,6 +71,14 @@ class RunnerRegistry:
         to call — just iterates the dict."""
         return {sid for sid, r in self._runners.items() if r.is_running}
 
+    def awaiting_user_ids(self) -> set[str]:
+        """Sessions whose runner is parked on a `can_use_tool` decision
+        right now (tool-use approval OR AskUserQuestion). Cheap — same
+        dict walk as `running_ids`. Feeds the sidebar's red-flashing
+        indicator via the `/api/sessions/running` fallback poll; the
+        WS `runner_state` broadcast is the live path."""
+        return {sid for sid, r in self._runners.items() if r.is_awaiting_user}
+
     async def drop(self, session_id: str) -> None:
         """Shut down and remove the runner for a deleted session. Safe
         when no runner exists (no-op)."""

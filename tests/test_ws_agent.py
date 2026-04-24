@@ -340,6 +340,7 @@ def test_ws_emits_runner_status_on_connect_for_idle_session(client: TestClient) 
         "type": "runner_status",
         "session_id": sid,
         "is_running": False,
+        "is_awaiting_user": False,
     }
 
 

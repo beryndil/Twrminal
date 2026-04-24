@@ -11,8 +11,13 @@ Event shapes sent on the wire:
 - `{kind: "upsert", session: SessionOut}` — any state change on an
   existing session OR a newly-created session. Frontend upserts by id.
 - `{kind: "delete", session_id: str}` — session was deleted.
-- `{kind: "runner_state", session_id: str, is_running: bool}` — the
-  in-flight-turn badge for the sidebar.
+- `{kind: "runner_state", session_id: str, is_running: bool,
+  is_awaiting_user: bool}` — the in-flight-turn badge for the
+  sidebar. `is_awaiting_user` is true while the runner is parked
+  inside a `can_use_tool` callback waiting for a user decision (tool
+  approval OR AskUserQuestion) and drives the red-flashing "needs
+  attention" state. Pre-0.x frames without the field are treated as
+  `is_awaiting_user=false` client-side for rolling-deploy safety.
 
 Subscriber queues are bounded (`SUBSCRIBER_QUEUE_MAX`) — a consumer that
 can't keep up gets dropped rather than back-pressuring the publisher.
@@ -133,10 +138,22 @@ def publish_runner_state(
     session_id: str,
     *,
     is_running: bool,
+    is_awaiting_user: bool = False,
 ) -> None:
-    """Announce a runner state transition (idle ↔ running). The sidebar
-    uses this to update the green "currently running" ping without
-    waiting on the Phase-1 running poll."""
+    """Announce a runner state transition (idle ↔ running ↔ awaiting).
+    The sidebar uses this to drive the session indicator without
+    waiting on the Phase-1 running poll. `is_awaiting_user` is the
+    "runner is parked on a user decision" signal that promotes the
+    indicator from orange-flashing (working) to red-flashing (look at
+    this now). Defaults to False so callers that still only care
+    about the running flag (tests, simple transitions) stay terse."""
     if broker is None:
         return
-    broker.publish({"kind": "runner_state", "session_id": session_id, "is_running": is_running})
+    broker.publish(
+        {
+            "kind": "runner_state",
+            "session_id": session_id,
+            "is_running": is_running,
+            "is_awaiting_user": is_awaiting_user,
+        }
+    )

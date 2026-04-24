@@ -225,6 +225,15 @@ class SessionRunner:
         # `resolve_approval` from the WS handler and tells it to deny
         # everything on stop / shutdown.
         self._approval = ApprovalBroker(session_id, self._emit_event)
+        # Count of `can_use_tool` calls currently parked on a user
+        # decision. Bumped on entry to the wrapped callback (see
+        # `can_use_tool` property) and decremented in the finally.
+        # A non-zero count drives `is_awaiting_user` → sidebar red
+        # flash. Counter (not bool) because the SDK can stack parks
+        # — e.g. an approval prompt immediately followed by an
+        # AskUserQuestion in the same turn; both should keep the
+        # indicator lit until ALL of them resolve.
+        self._awaiting_count: int = 0
         # Per-tool-call coalescing buffers for `ToolOutputDelta` →
         # `append_tool_output` writes. Entries are created on first
         # chunk arrival and removed on flush or on `ToolCallEnd`
@@ -306,6 +315,19 @@ class SessionRunner:
     @property
     def is_running(self) -> bool:
         return self._status == "running"
+
+    @property
+    def is_awaiting_user(self) -> bool:
+        """True iff the runner is currently parked inside a
+        `can_use_tool` callback, waiting for a user decision. Covers
+        both the native tool-use permission path and the
+        AskUserQuestion flow, because both ride the approval broker
+        and flow through the wrapped `can_use_tool` below. Drives the
+        sidebar's red-flashing "look at this now" indicator — distinct
+        from `is_running`, which stays true across the whole turn
+        including the park itself.
+        """
+        return self._awaiting_count > 0
 
     async def submit_prompt(
         self,
@@ -416,8 +438,44 @@ class SessionRunner:
         """Callback bound onto `AgentSession.can_use_tool` by
         `ws_agent._build_runner`. Forwarding property so callers don't
         need to know a broker exists; the runner remains the single
-        public surface the WS layer talks to."""
-        return self._approval.can_use_tool
+        public surface the WS layer talks to.
+
+        Wraps the broker's callback so each entry/exit broadcasts an
+        updated `runner_state` frame to every connected sidebar. The
+        sidebar reads `awaiting_user` off that frame and flips the
+        session's indicator to the red-flashing "needs attention"
+        state for the duration of the park. The broker itself remains
+        ignorant of the broadcast — this keeps the approval protocol
+        transport-agnostic and avoids a second code path to coordinate
+        with the AskUserQuestion work parked in approval_broker.py."""
+        broker_cb = self._approval.can_use_tool
+
+        async def wrapped(tool_name: Any, tool_input: Any, context: Any) -> Any:
+            self._awaiting_count += 1
+            self._publish_runner_state()
+            try:
+                return await broker_cb(tool_name, tool_input, context)
+            finally:
+                # Decrement THEN broadcast so the published frame
+                # reflects the post-resolve count. A stacked approval
+                # + AskUserQuestion keeps the indicator lit until the
+                # last one resolves — the counter's whole point.
+                self._awaiting_count -= 1
+                self._publish_runner_state()
+
+        return wrapped
+
+    def _publish_runner_state(self) -> None:
+        """Broadcast this runner's current `(is_running, is_awaiting_user)`
+        tuple on the sessions broker. No-op when no broker is wired
+        (test runners). Idempotent — a frame identical to the last one
+        is harmless; subscribers just re-apply the same state."""
+        publish_runner_state(
+            self._sessions_broker,
+            self.session_id,
+            is_running=self.is_running,
+            is_awaiting_user=self.is_awaiting_user,
+        )
 
     async def resolve_approval(
         self,
@@ -592,12 +650,32 @@ class SessionRunner:
             # the poll tick. Publish AFTER touch_session so the upsert
             # payload carries the bumped timestamp.
             await publish_session_upsert(self._sessions_broker, self.db, self.session_id)
-            publish_runner_state(self._sessions_broker, self.session_id, is_running=True)
+            self._publish_runner_state()
+            turn_ok = False
             try:
                 await self._execute_turn(prompt, persist_user=persist_user, attachments=attachments)
+                turn_ok = True
             except Exception as exc:
                 log.exception("runner %s: turn failed", self.session_id)
                 await self._emit_event(ErrorEvent(session_id=self.session_id, message=str(exc)))
+                # Latch the red-flashing error state onto the session
+                # row so the sidebar surfaces the crash without the
+                # user having to open the conversation to find it.
+                # Cleared on the next successful MessageComplete by
+                # the `_execute_turn` path below, or implicitly by a
+                # subsequent successful turn in this same loop. Swallow
+                # DB errors — missing the latch just means the sidebar
+                # indicator doesn't light, which is a worse UX than
+                # the current (non-existent) state but not a data loss.
+                try:
+                    await store.set_session_error_pending(
+                        self.db, self.session_id, pending=True
+                    )
+                except Exception:
+                    log.exception(
+                        "runner %s: failed to latch error_pending",
+                        self.session_id,
+                    )
             finally:
                 self._status = "idle"
                 # If nobody's watching, start the reaper clock. A
@@ -605,11 +683,28 @@ class SessionRunner:
                 # unsubscribes.
                 if not self._subscribers:
                     self._quiet_since = time.monotonic()
+                # A clean turn clears any stale error_pending latched
+                # by an earlier crash on this session — the red dot
+                # disappears the moment the user's retry lands a
+                # successful reply. Kept inside the finally so an
+                # exception-free turn still gets the clear before we
+                # broadcast the idle upsert.
+                if turn_ok:
+                    try:
+                        await store.set_session_error_pending(
+                            self.db, self.session_id, pending=False
+                        )
+                    except Exception:
+                        log.exception(
+                            "runner %s: failed to clear error_pending",
+                            self.session_id,
+                        )
                 # Broadcast idle so the sidebar clears the running ping
                 # and picks up any cost / message_count / completed
-                # bumps from _persist_assistant_turn in one upsert.
+                # bumps (plus the error_pending transition above) from
+                # _persist_assistant_turn in one upsert.
                 await publish_session_upsert(self._sessions_broker, self.db, self.session_id)
-                publish_runner_state(self._sessions_broker, self.session_id, is_running=False)
+                self._publish_runner_state()
 
     async def _execute_turn(
         self,

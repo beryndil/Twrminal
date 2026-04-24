@@ -168,11 +168,32 @@ async def test_publish_runner_state_shape() -> None:
         "kind": "runner_state",
         "session_id": "abc",
         "is_running": True,
+        "is_awaiting_user": False,
     }
     assert queue.get_nowait() == {
         "kind": "runner_state",
         "session_id": "abc",
         "is_running": False,
+        "is_awaiting_user": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_publish_runner_state_carries_awaiting_user() -> None:
+    """Frame carries the `is_awaiting_user` axis when the runner is
+    parked on a `can_use_tool` decision. Mirrors the `is_running` pair
+    above so the full state space (running/awaiting cross-product) has
+    an explicit wire-shape assertion."""
+    broker = sb.SessionsBroker()
+    queue = broker.subscribe()
+
+    sb.publish_runner_state(broker, "abc", is_running=True, is_awaiting_user=True)
+
+    assert queue.get_nowait() == {
+        "kind": "runner_state",
+        "session_id": "abc",
+        "is_running": True,
+        "is_awaiting_user": True,
     }
 
 

@@ -105,11 +105,31 @@ async def list_running_sessions(request: Request) -> list[str]:
 
     Polled by the UI so the session list can flag sessions the user
     kicked off and walked away from. Cheap — reads in-memory registry
-    state, no DB hit."""
+    state, no DB hit. Shape is a bare `list[str]` for backward
+    compatibility with every frontend bundle shipped before the v0.10
+    indicator redesign — the red-flashing `is_awaiting_user` axis
+    lives on a sibling endpoint (`/api/sessions/awaiting`) so callers
+    that only care about running don't have to adapt."""
     runners = getattr(request.app.state, "runners", None)
     if runners is None:
         return []
     return sorted(runners.running_ids())
+
+
+@router.get("/awaiting", response_model=list[str])
+async def list_awaiting_sessions(request: Request) -> list[str]:
+    """Session ids whose runner is currently parked on a `can_use_tool`
+    decision (tool-use permission OR AskUserQuestion). Drives the
+    sidebar's red-flashing "look at this now" indicator as the poll
+    fallback when the `/ws/sessions` broadcast socket is down.
+
+    A session can be reported by both `/running` and `/awaiting` — the
+    intersection is exactly the red-flashing set; `/running \\ /awaiting`
+    is orange-flashing. Cheap — in-memory registry walk, no DB hit."""
+    runners = getattr(request.app.state, "runners", None)
+    if runners is None:
+        return []
+    return sorted(runners.awaiting_user_ids())
 
 
 def _parse_tag_csv(raw: str | None, param_name: str) -> list[int] | None:

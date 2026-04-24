@@ -15,7 +15,7 @@ SESSION_BASE_COLS = (
     "max_budget_usd, total_cost_usd, session_instructions, sdk_session_id, "
     "permission_mode, last_context_pct, last_context_tokens, last_context_max, "
     "closed_at, kind, checklist_item_id, last_completed_at, last_viewed_at, "
-    "pinned"
+    "pinned, error_pending"
 )
 
 # Valid values for sessions.kind. The column carries a CHECK constraint
@@ -585,3 +585,22 @@ async def mark_session_viewed(conn: aiosqlite.Connection, session_id: str) -> di
     if cursor.rowcount == 0:
         return None
     return await get_session(conn, session_id)
+
+
+async def set_session_error_pending(
+    conn: aiosqlite.Connection, session_id: str, *, pending: bool
+) -> None:
+    """Toggle the `error_pending` latch that drives the red-flashing
+    sidebar indicator for crashed turns. Set to 1 when the runner emits
+    an `ErrorEvent`; cleared to 0 when a later turn reaches
+    `MessageComplete` successfully. Does NOT bump `updated_at` —
+    lifecycle state changes shouldn't re-float a session to the top of
+    the sidebar on their own; the surrounding turn-start / turn-end
+    paths already own the `updated_at` bumps.
+
+    No-op on unknown ids."""
+    await conn.execute(
+        "UPDATE sessions SET error_pending = ? WHERE id = ?",
+        (1 if pending else 0, session_id),
+    )
+    await conn.commit()
