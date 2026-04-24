@@ -93,11 +93,25 @@ class ApprovalBroker:
         finally:
             self._pending.pop(request_id, None)
 
-    async def resolve(self, request_id: str, decision: str, reason: str | None = None) -> None:
+    async def resolve(
+        self,
+        request_id: str,
+        decision: str,
+        reason: str | None = None,
+        updated_input: dict[str, Any] | None = None,
+    ) -> None:
         """Resolve a pending approval raised by `can_use_tool`. Called
         by the WS handler on an `approval_response` frame. No-op if the
         id is unknown or already resolved — duplicate resolutions from
-        two tabs answering the same modal mustn't crash."""
+        two tabs answering the same modal mustn't crash.
+
+        `updated_input` rides along with an allow decision so the
+        permission component (the UI modal) can enrich what the SDK
+        passes to the tool. The canonical use case is AskUserQuestion:
+        the modal collects answers from the user, merges them into the
+        original `questions` payload, and the SDK then invokes the tool
+        with that enriched input — which is how the tool echoes the
+        answers back to the agent. Ignored on deny."""
         entry = self._pending.get(request_id)
         if entry is None:
             return
@@ -105,7 +119,7 @@ class ApprovalBroker:
         if future.done():
             return
         if decision == "allow":
-            future.set_result(PermissionResultAllow())
+            future.set_result(PermissionResultAllow(updated_input=updated_input))
             resolved: Literal["allow", "deny"] = "allow"
         else:
             future.set_result(

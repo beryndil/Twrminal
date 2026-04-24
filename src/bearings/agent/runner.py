@@ -420,11 +420,18 @@ class SessionRunner:
         return self._approval.can_use_tool
 
     async def resolve_approval(
-        self, request_id: str, decision: str, reason: str | None = None
+        self,
+        request_id: str,
+        decision: str,
+        reason: str | None = None,
+        updated_input: dict[str, object] | None = None,
     ) -> None:
         """WS → broker forwarder. Kept on the runner so the WS handler
-        has one object to hold (runner), not two (runner + broker)."""
-        await self._approval.resolve(request_id, decision, reason)
+        has one object to hold (runner), not two (runner + broker).
+        `updated_input` is the UI-collected override the SDK will pass
+        to the tool under an allow decision — see `ApprovalBroker.resolve`
+        for the AskUserQuestion motivation."""
+        await self._approval.resolve(request_id, decision, reason, updated_input)
 
     async def subscribe(
         self, since_seq: int = 0

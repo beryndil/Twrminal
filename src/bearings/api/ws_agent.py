@@ -329,14 +329,20 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:
                 # Resolves a pending `can_use_tool` future. Unknown /
                 # already-resolved ids are no-ops inside the runner, so
                 # two tabs racing to answer the same modal is safe.
+                # `updated_input` is the UI-collected override the SDK
+                # will hand to the tool (AskUserQuestion answers ride
+                # here). Non-dict values are dropped — we never want a
+                # malformed payload to clobber the tool's actual input.
                 request_id = payload.get("request_id")
                 decision = payload.get("decision")
                 reason = payload.get("reason")
+                updated_input = payload.get("updated_input")
                 if isinstance(request_id, str) and decision in ("allow", "deny"):
                     await runner.resolve_approval(
                         request_id,
                         decision,
                         reason if isinstance(reason, str) else None,
+                        updated_input if isinstance(updated_input, dict) else None,
                     )
             # Unknown message types are ignored — keeps the protocol
             # forward-compatible the same way it was pre-refactor.

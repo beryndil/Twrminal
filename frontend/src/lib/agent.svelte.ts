@@ -125,11 +125,20 @@ export class AgentConnection {
    * `approval_resolved` broadcast will arrive shortly after and be a
    * no-op thanks to the store's id check. Returns false when the
    * socket is not open — the modal stays visible and the user can
-   * retry after reconnect (the backend Future is still parked). */
+   * retry after reconnect (the backend Future is still parked).
+   *
+   * `updatedInput` is the UI-collected override forwarded to
+   * `PermissionResultAllow.updated_input` on the backend so the SDK
+   * invokes the tool with an enriched payload. The AskUserQuestion
+   * modal uses this to inject collected `answers` into the original
+   * `questions` input — without it, the tool runs with an empty
+   * answer set and the agent sees "User has answered your questions:".
+   * Ignored on deny; only meaningful when `decision === 'allow'`. */
   respondToApproval(
     requestId: string,
     decision: 'allow' | 'deny',
-    reason?: string
+    reason?: string,
+    updatedInput?: Record<string, unknown>
   ): boolean {
     if (!this.socket || this.state !== 'open' || !this.sessionId) return false;
     this.socket.send(
@@ -137,7 +146,8 @@ export class AgentConnection {
         type: 'approval_response',
         request_id: requestId,
         decision,
-        ...(reason ? { reason } : {})
+        ...(reason ? { reason } : {}),
+        ...(updatedInput ? { updated_input: updatedInput } : {})
       })
     );
     conversation.clearPendingApproval(this.sessionId, requestId);

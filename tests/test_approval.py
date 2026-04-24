@@ -73,6 +73,71 @@ async def test_can_use_tool_emits_request_and_waits(
 
 
 @pytest.mark.asyncio
+async def test_resolve_approval_allow_forwards_updated_input(
+    db: aiosqlite.Connection,
+) -> None:
+    """`updated_input` on an allow response rides through to
+    `PermissionResultAllow.updated_input` so the SDK invokes the tool
+    with the UI-enriched payload. This is the mechanism the
+    AskUserQuestion modal uses: it merges collected `answers` into the
+    original `questions` input, and the tool echoes those answers back
+    to the agent because the SDK passed them in."""
+    sid = await _session_id(db)
+    runner = SessionRunner(sid, ScriptedAgent(sid, scripts=[]), db)
+    await runner.subscribe(0)
+
+    task = asyncio.create_task(
+        runner.can_use_tool(
+            "AskUserQuestion",
+            {"questions": [{"question": "Pick one?", "options": []}]},
+            _ctx("tu_ask"),
+        )
+    )
+    await asyncio.sleep(0)
+    request_id = next(iter(runner._approval._pending))
+
+    await runner.resolve_approval(
+        request_id,
+        "allow",
+        updated_input={
+            "questions": [{"question": "Pick one?", "options": []}],
+            "answers": {"Pick one?": "Option A"},
+        },
+    )
+
+    result = await asyncio.wait_for(task, timeout=1.0)
+    assert isinstance(result, PermissionResultAllow)
+    assert result.updated_input == {
+        "questions": [{"question": "Pick one?", "options": []}],
+        "answers": {"Pick one?": "Option A"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_resolve_approval_allow_without_updated_input_is_backcompat(
+    db: aiosqlite.Connection,
+) -> None:
+    """The generic approval path (ExitPlanMode / Bash / Edit) never
+    needs `updated_input` — the existing Approve button sends no such
+    field. `PermissionResultAllow.updated_input` must be `None` in that
+    case so the SDK falls through to the original tool input. Regression
+    guard against a future refactor that accidentally starts emitting
+    `{}` instead of `None` and silently wipes tool inputs."""
+    sid = await _session_id(db)
+    runner = SessionRunner(sid, ScriptedAgent(sid, scripts=[]), db)
+    await runner.subscribe(0)
+
+    task = asyncio.create_task(runner.can_use_tool("Bash", {"cmd": "ls"}, _ctx("tu_b")))
+    await asyncio.sleep(0)
+    request_id = next(iter(runner._approval._pending))
+    await runner.resolve_approval(request_id, "allow")
+
+    result = await asyncio.wait_for(task, timeout=1.0)
+    assert isinstance(result, PermissionResultAllow)
+    assert result.updated_input is None
+
+
+@pytest.mark.asyncio
 async def test_resolve_approval_deny_returns_deny_with_reason(
     db: aiosqlite.Connection,
 ) -> None:

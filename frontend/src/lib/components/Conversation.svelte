@@ -23,6 +23,7 @@
     formatBytes
   } from '$lib/attachments';
   import ApprovalModal from '$lib/components/ApprovalModal.svelte';
+  import AskUserQuestionModal from '$lib/components/AskUserQuestionModal.svelte';
   import BearingsMark from '$lib/components/icons/BearingsMark.svelte';
   import BulkActionBar from '$lib/components/BulkActionBar.svelte';
   import CheckpointGutter from '$lib/components/CheckpointGutter.svelte';
@@ -1488,11 +1489,26 @@
 {/if}
 
 {#if conversation.pendingApproval}
-  <ApprovalModal
-    request={conversation.pendingApproval}
-    connected={agent.state === 'open'}
-    onRespond={(id, decision, reason) => agent.respondToApproval(id, decision, reason)}
-  />
+  {#if conversation.pendingApproval.tool_name === 'AskUserQuestion'}
+    <!-- AskUserQuestion is a Claude Code built-in whose answers are
+         collected by the permission component and handed to the SDK
+         via `PermissionResultAllow.updated_input`. The generic
+         ApprovalModal's approve/deny gate can't express that, so we
+         route it to a dedicated picker that renders options and
+         builds the `answers` payload. -->
+    <AskUserQuestionModal
+      request={conversation.pendingApproval}
+      connected={agent.state === 'open'}
+      onRespond={(id, decision, reason, updatedInput) =>
+        agent.respondToApproval(id, decision, reason, updatedInput)}
+    />
+  {:else}
+    <ApprovalModal
+      request={conversation.pendingApproval}
+      connected={agent.state === 'open'}
+      onRespond={(id, decision, reason) => agent.respondToApproval(id, decision, reason)}
+    />
+  {/if}
 {/if}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
