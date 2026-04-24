@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from .artifacts import ArtifactOut, ArtifactRegister
 from .checklists import (
+    AutoRunStart,
+    AutoRunStatus,
     ChecklistOut,
     ChecklistUpdate,
     ItemCreate,
@@ -60,6 +62,8 @@ __all__ = [
     "ArtifactOut",
     "ArtifactRegister",
     "Attachment",
+    "AutoRunStart",
+    "AutoRunStatus",
     "ChecklistOut",
     "ChecklistUpdate",
     "CheckpointCreate",

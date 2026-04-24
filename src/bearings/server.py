@@ -115,9 +115,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         reap_interval_seconds=settings.runner.reap_interval_seconds,
     )
     app.state.runners.start_reaper()
+    # AutoDriverRegistry owns running autonomous-checklist drivers.
+    # Each POST /sessions/{id}/checklist/run lands an entry; DELETE
+    # or app shutdown drains them. Empty on fresh boot — drivers are
+    # in-memory only, so a server restart cancels any mid-run driver
+    # (the item's current leg stays in the DB for audit but no fresh
+    # leg spawns until the user re-POSTs).
+    from bearings.agent.auto_driver_runtime import AutoDriverRegistry
+
+    app.state.auto_drivers = AutoDriverRegistry()
     try:
         yield
     finally:
+        # Stop autonomous drivers before runners so the driver's
+        # current leg gets a chance to tear down cleanly via the
+        # runtime's teardown_leg call. Any driver still mid-leg when
+        # this returns has already had its stop flag set.
+        await app.state.auto_drivers.shutdown_all()
         # Drain runners first so in-flight SDK subprocesses get a
         # clean interrupt before the DB handle goes away.
         await app.state.runners.shutdown_all()

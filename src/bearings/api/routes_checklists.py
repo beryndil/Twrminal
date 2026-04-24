@@ -15,8 +15,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from bearings import metrics
+from bearings.agent.auto_driver import DriverConfig
 from bearings.api.auth import require_auth
 from bearings.api.models import (
+    AutoRunStart,
+    AutoRunStatus,
     ChecklistOut,
     ChecklistUpdate,
     ItemCreate,
@@ -259,3 +262,74 @@ async def spawn_paired_chat(
     refreshed = await store.get_session(conn, chat_row["id"])
     assert refreshed is not None
     return SessionOut(**refreshed)
+
+
+# --- autonomous driver (slice 3 of nimble-checking-heron) ------------
+
+
+def _build_driver_config(body: AutoRunStart | None) -> DriverConfig | None:
+    """Translate optional API overrides to a `DriverConfig`.
+
+    `None` body / all-None fields → return `None` so the driver falls
+    back to its hard-coded defaults. Per-invocation scope: callers
+    override on a per-run basis, not globally."""
+    if body is None:
+        return None
+    provided = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if not provided:
+        return None
+    return DriverConfig(**provided)
+
+
+@router.post("/run", response_model=AutoRunStatus, status_code=202)
+async def start_autonomous_run(
+    session_id: str,
+    request: Request,
+    body: AutoRunStart | None = None,
+) -> AutoRunStatus:
+    """Launch the autonomous driver against this checklist. Returns
+    202 with the initial `running` status snapshot. A second POST
+    while a driver is still running returns 409 Conflict — the
+    client is expected to GET the status or DELETE the run first."""
+    await _require_checklist_session(request, session_id)
+    registry = request.app.state.auto_drivers
+    config = _build_driver_config(body)
+    try:
+        await registry.start(
+            app=request.app,
+            checklist_session_id=session_id,
+            config=config,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    snapshot = registry.status(session_id)
+    assert snapshot is not None, "driver was just started"
+    return AutoRunStatus(**snapshot)
+
+
+@router.get("/run", response_model=AutoRunStatus)
+async def get_autonomous_run(session_id: str, request: Request) -> AutoRunStatus:
+    """Poll the autonomous driver's current state. 404 when no driver
+    has ever been started for this checklist; returns `finished` /
+    `errored` for completed runs so the client can read the final
+    outcome before calling DELETE to clear the entry."""
+    await _require_checklist_session(request, session_id)
+    registry = request.app.state.auto_drivers
+    snapshot = registry.status(session_id)
+    if snapshot is None:
+        raise HTTPException(
+            status_code=404,
+            detail="no autonomous driver run for this checklist",
+        )
+    return AutoRunStatus(**snapshot)
+
+
+@router.delete("/run", status_code=204)
+async def stop_autonomous_run(session_id: str, request: Request) -> Response:
+    """Stop a running driver AND forget a finished one in a single
+    call. Idempotent — 204 whether there was a live driver or not."""
+    await _require_checklist_session(request, session_id)
+    registry = request.app.state.auto_drivers
+    await registry.stop(session_id)
+    registry.forget(session_id)
+    return Response(status_code=204)

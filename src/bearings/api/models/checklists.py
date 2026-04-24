@@ -85,3 +85,45 @@ class ReorderResult(BaseModel):
     any ids were skipped (foreign checklist, missing, etc.)."""
 
     reordered: int
+
+
+class AutoRunStart(BaseModel):
+    """Optional overrides for a `POST /sessions/{id}/checklist/run`
+    request. All fields are optional — omit the body entirely to use
+    the autonomous driver's conservative defaults.
+
+    Per-invocation overrides (not settings) because Dave may want to
+    dial caps per checklist — a cleanup list wants a high item cap and
+    low leg cap, an exploratory investigation wants the opposite.
+    """
+
+    max_items_per_run: int | None = None
+    max_legs_per_item: int | None = None
+    max_followup_depth: int | None = None
+
+
+class AutoRunStatus(BaseModel):
+    """Current state of the autonomous driver for a checklist.
+
+    `state` is one of:
+    - `"running"` — driver task is active; counters are live.
+    - `"finished"` — driver reached a terminal outcome; result fields
+      are populated.
+    - `"errored"` — driver task raised an uncaught exception; `error`
+      carries `type(exc).__name__: str(exc)`. Rare (every expected
+      failure is caught in the state machine and surfaces as
+      `outcome=halted_failure` under `state=finished`).
+
+    When `state=finished`, `outcome` matches `DriverOutcome`'s string
+    values (`completed`, `halted_empty`, `halted_failure`,
+    `halted_max_items`, `halted_stop`).
+    """
+
+    state: str
+    items_completed: int | None = None
+    items_failed: int | None = None
+    legs_spawned: int | None = None
+    outcome: str | None = None
+    failed_item_id: int | None = None
+    failure_reason: str | None = None
+    error: str | None = None
