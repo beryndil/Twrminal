@@ -197,3 +197,82 @@ export function getPairedChat(
     `/api/sessions/${sessionId}/checklist/items/${itemId}/chat`
   );
 }
+
+// --- autonomous runner ----------------------------------------------
+//
+// Backed by `POST /run`, `GET /run`, `DELETE /run` on the checklist.
+// Server implementation at `routes_checklists.py`; design note under
+// `TODO.md` § "Autonomous checklist execution".
+
+/** Optional per-run caps posted to `POST /sessions/{id}/checklist/run`.
+ * Omit fields (or the whole body) to use the driver's conservative
+ * defaults: 50 items / 5 legs / depth 3 / 60% handoff threshold. */
+export type AutoRunStart = {
+  max_items_per_run?: number | null;
+  max_legs_per_item?: number | null;
+  max_followup_depth?: number | null;
+};
+
+/** Shape returned by all three /run endpoints.
+ *
+ * `state` is the primary discriminator:
+ *  - `"running"` → driver task is active. `items_completed` /
+ *    `items_failed` / `legs_spawned` are live counters.
+ *  - `"finished"` → driver reached a terminal outcome. `outcome`
+ *    matches the server's `DriverOutcome` string values:
+ *    `completed`, `halted_empty`, `halted_failure`,
+ *    `halted_max_items`, `halted_stop`. On `halted_failure`,
+ *    `failed_item_id` + `failure_reason` carry the detail (the
+ *    reason is also persisted into `ChecklistItem.notes` with an
+ *    `[auto-run]` prefix).
+ *  - `"errored"` → driver task raised an uncaught exception;
+ *    `error` holds `type(exc).__name__: str(exc)`. Rare — every
+ *    expected failure surfaces as `state=finished` /
+ *    `outcome=halted_failure` through the state machine. */
+export type AutoRunStatus = {
+  state: 'running' | 'finished' | 'errored';
+  items_completed?: number | null;
+  items_failed?: number | null;
+  legs_spawned?: number | null;
+  outcome?: string | null;
+  failed_item_id?: number | null;
+  failure_reason?: string | null;
+  error?: string | null;
+};
+
+/** Launch the autonomous driver against this checklist. Returns the
+ * initial `running` status snapshot. Second call while one is
+ * running returns 409 — the client should GET the status or DELETE
+ * the run first. */
+export function startAutoRun(
+  sessionId: string,
+  body: AutoRunStart = {},
+  fetchImpl: typeof fetch = fetch
+): Promise<AutoRunStatus> {
+  return jsonFetch<AutoRunStatus>(fetchImpl, `/api/sessions/${sessionId}/checklist/run`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+
+/** Poll the autonomous driver's current state. Raises on 404 when
+ * no driver has ever been started for this checklist — callers that
+ * want a `null`-on-404 shape should catch and translate. */
+export function getAutoRun(
+  sessionId: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<AutoRunStatus> {
+  return jsonFetch<AutoRunStatus>(fetchImpl, `/api/sessions/${sessionId}/checklist/run`);
+}
+
+/** Stop a running driver AND forget a finished one in a single call.
+ * Idempotent: 204 whether there was a live driver or not. */
+export function stopAutoRun(
+  sessionId: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<void> {
+  return voidFetch(fetchImpl, `/api/sessions/${sessionId}/checklist/run`, {
+    method: 'DELETE'
+  });
+}

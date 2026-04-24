@@ -26,7 +26,8 @@
    */
 
   import { onDestroy } from 'svelte';
-  import type { ChecklistItem } from '$lib/api';
+  import type { AutoRunStatus, ChecklistItem } from '$lib/api';
+  import { getAutoRun, startAutoRun, stopAutoRun } from '$lib/api/checklists';
   import { checklists } from '$lib/stores/checklists.svelte';
   import { sessions } from '$lib/stores/sessions.svelte';
   import { agent } from '$lib/agent.svelte';
@@ -220,6 +221,159 @@
       cancelEdit();
     }
   }
+
+  // --- autonomous run -----------------------------------------------
+  //
+  // Tied to the selected checklist session. `runStatus` is the last
+  // snapshot we've seen from the server; the poll loop below refreshes
+  // it every 1s while `state === 'running'` and stops once the driver
+  // reports `finished` or `errored`. Mounting a different checklist
+  // resets the state cleanly via the `$effect` that watches
+  // `selected.id`.
+  let runStatus = $state<AutoRunStatus | null>(null);
+  let runBusy = $state(false);
+  let runError = $state<string | null>(null);
+  let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Poll interval for the autonomous run. 1s is plenty — individual
+  // agent turns take seconds to tens of seconds, and the status
+  // endpoint is cheap (in-memory lookup). Shorter would burn battery
+  // on an idle tab for no user-visible benefit.
+  const AUTO_RUN_POLL_MS = 1000;
+
+  function clearPollTimer() {
+    if (pollTimer !== null) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function schedulePoll(sessionId: string) {
+    clearPollTimer();
+    pollTimer = setTimeout(() => {
+      void pollAutoRun(sessionId);
+    }, AUTO_RUN_POLL_MS);
+  }
+
+  async function pollAutoRun(sessionId: string) {
+    // If the user switched sessions mid-poll, bail — the switch's
+    // $effect cleanup already reset runStatus and cleared the timer.
+    if (selected?.id !== sessionId) return;
+    try {
+      const status = await getAutoRun(sessionId);
+      runStatus = status;
+      if (status.state === 'running') {
+        schedulePoll(sessionId);
+      } else {
+        // Finished / errored — stop polling and refresh the checklist
+        // so newly-completed items, auto-run failure notes, and any
+        // appended followups all render on the next tick.
+        clearPollTimer();
+        await checklists.load(sessionId);
+      }
+    } catch (err) {
+      // 404 = no run ever started (or it was DELETEd). Clear status
+      // so the button returns to its idle label. Anything else is a
+      // transient network error; show it and stop polling.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('404')) {
+        runStatus = null;
+      } else {
+        runError = msg;
+        clearPollTimer();
+      }
+    }
+  }
+
+  // Reset autonomous-run state when the selected session changes so a
+  // stale status from a prior checklist never bleeds through. We
+  // deliberately do NOT probe the server on mount — a probe race with
+  // the checklist-load fetch complicated test ordering, and the UX
+  // cost of missing a pre-existing run on page refresh is small (a
+  // second "Run" click returns 409; user can DELETE + retry). If
+  // surfacing pre-existing runs becomes important, wire a WS push
+  // on the sessions broker instead of polling.
+  $effect(() => {
+    const _sid = selected?.id ?? null;
+    clearPollTimer();
+    runStatus = null;
+    runError = null;
+  });
+
+  onDestroy(() => {
+    clearPollTimer();
+  });
+
+  async function handleStartAutoRun() {
+    const sid = selected?.id;
+    if (!sid || selected?.kind !== 'checklist' || runBusy) return;
+    runBusy = true;
+    runError = null;
+    try {
+      const status = await startAutoRun(sid);
+      runStatus = status;
+      if (status.state === 'running') schedulePoll(sid);
+    } catch (err) {
+      runError = err instanceof Error ? err.message : String(err);
+    } finally {
+      runBusy = false;
+    }
+  }
+
+  async function handleStopAutoRun() {
+    const sid = selected?.id;
+    if (!sid || runBusy) return;
+    runBusy = true;
+    try {
+      await stopAutoRun(sid);
+      clearPollTimer();
+      runStatus = null;
+      runError = null;
+      // Reload the checklist so any mid-run state (partial
+      // completions, failure notes) surfaces immediately.
+      await checklists.load(sid);
+    } catch (err) {
+      runError = err instanceof Error ? err.message : String(err);
+    } finally {
+      runBusy = false;
+    }
+  }
+
+  /** Short label for the status pill. Kept terse — the pill lives in
+   * the header beside the title, and verbose outcome strings would
+   * push other controls off-screen on narrow panes. */
+  function pillLabel(status: AutoRunStatus): string {
+    if (status.state === 'running') {
+      const done = status.items_completed ?? 0;
+      const legs = status.legs_spawned ?? 0;
+      return legs > 1
+        ? `running · ${done} done · leg ${legs}`
+        : `running · ${done} done`;
+    }
+    if (status.state === 'errored') return 'errored';
+    // Finished — derive from outcome.
+    const outcome = status.outcome ?? 'finished';
+    if (outcome === 'completed') {
+      const done = status.items_completed ?? 0;
+      return `done · ${done} completed`;
+    }
+    if (outcome === 'halted_empty') return 'nothing to do';
+    if (outcome === 'halted_failure') return 'failed';
+    if (outcome === 'halted_max_items') return 'hit item cap';
+    if (outcome === 'halted_stop') return 'stopped';
+    return outcome;
+  }
+
+  function pillTone(status: AutoRunStatus): string {
+    if (status.state === 'running') return 'bg-sky-800 text-sky-100';
+    if (status.state === 'errored') return 'bg-rose-800 text-rose-100';
+    const outcome = status.outcome ?? '';
+    if (outcome === 'completed') return 'bg-emerald-800 text-emerald-100';
+    if (outcome === 'halted_failure') return 'bg-rose-800 text-rose-100';
+    if (outcome === 'halted_stop' || outcome === 'halted_max_items')
+      return 'bg-amber-800 text-amber-100';
+    return 'bg-slate-700 text-slate-200';
+  }
 </script>
 
 <section class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-slate-950 text-slate-100">
@@ -243,7 +397,51 @@
         </button>
       {/if}
     </h2>
+
+    <!-- Autonomous-run affordances. Status pill renders when there's
+         a snapshot; Run / Stop buttons swap based on whether a run is
+         active. Hidden on non-checklist sessions (the enclosing
+         `selected.kind === 'checklist'` render condition covers it
+         indirectly, but the explicit check here is defensive if the
+         header is ever extracted from this component). -->
+    {#if selected?.kind === 'checklist' && !selected.closed_at}
+      {#if runStatus}
+        <span
+          class="rounded px-2 py-0.5 text-xs font-medium {pillTone(runStatus)}"
+          title={runStatus.failure_reason ?? runStatus.error ?? undefined}
+          data-testid="auto-run-pill"
+        >
+          {pillLabel(runStatus)}
+        </span>
+      {/if}
+      {#if runStatus?.state === 'running'}
+        <button
+          type="button"
+          class="rounded border border-rose-700 px-2 py-0.5 text-xs text-rose-300 hover:bg-rose-900 hover:text-rose-100 disabled:opacity-50"
+          disabled={runBusy}
+          onclick={handleStopAutoRun}
+          data-testid="auto-run-stop"
+        >
+          Stop
+        </button>
+      {:else}
+        <button
+          type="button"
+          class="rounded border border-sky-700 px-2 py-0.5 text-xs text-sky-300 hover:bg-sky-900 hover:text-sky-100 disabled:opacity-50"
+          disabled={runBusy}
+          onclick={handleStartAutoRun}
+          data-testid="auto-run-start"
+        >
+          {runStatus ? 'Run again' : 'Run autonomously'}
+        </button>
+      {/if}
+    {/if}
   </header>
+  {#if runError}
+    <p class="border-b border-rose-900 bg-rose-950 px-4 py-2 text-xs text-rose-300">
+      Autonomous run error: {runError}
+    </p>
+  {/if}
 
   <!-- v0.5.2: inline chat about the whole list. Mounted only when a
        checklist is selected so the agent WS never opens for a

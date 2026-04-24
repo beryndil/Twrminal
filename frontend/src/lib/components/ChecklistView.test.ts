@@ -370,6 +370,88 @@ describe('ChecklistView Slice 4.1', () => {
     expect(connectSpy).toHaveBeenCalledWith('chat-1');
   });
 
+  // --- autonomous-run UI ------------------------------------------
+  //
+  // Backed by `POST/GET/DELETE /api/sessions/{id}/checklist/run`.
+  // The ChecklistView header gains a "Run autonomously" button that
+  // flips to "Stop" while a driver is active, with a status pill
+  // that surfaces counters + outcome. Tests drive via the button
+  // clicks; polling-loop timing is covered by the Python driver
+  // tests, not re-proven here.
+
+  it('shows "Run autonomously" button when checklist is loaded and open', async () => {
+    queueResponses([{ ok: true, body: EMPTY_CHECKLIST }]);
+    const { queryByTestId } = render(ChecklistView);
+    await waitFor(() => expect(checklists.current).not.toBeNull());
+    await waitFor(() => {
+      expect(queryByTestId('auto-run-start')).not.toBeNull();
+    });
+    expect(queryByTestId('auto-run-stop')).toBeNull();
+    expect(queryByTestId('auto-run-pill')).toBeNull();
+  });
+
+  it('hides Run button when the checklist session is closed', async () => {
+    queueResponses([{ ok: true, body: EMPTY_CHECKLIST }]);
+    sessions.list = [session({ closed_at: '2026-04-21T00:10:00+00:00' })];
+    const { queryByTestId } = render(ChecklistView);
+    await waitFor(() => expect(checklists.current).not.toBeNull());
+    // Give the $effect a tick to settle.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(queryByTestId('auto-run-start')).toBeNull();
+  });
+
+  it('clicking Run autonomously POSTs /run and shows a running pill + Stop button', async () => {
+    queueResponses([
+      { ok: true, body: EMPTY_CHECKLIST },
+      {
+        ok: true,
+        status: 202,
+        body: {
+          state: 'running',
+          items_completed: 0,
+          items_failed: 0,
+          legs_spawned: 1
+        }
+      }
+    ]);
+    const { getByTestId, queryByTestId } = render(ChecklistView);
+    await waitFor(() => expect(checklists.current).not.toBeNull());
+    const runBtn = getByTestId('auto-run-start');
+    await fireEvent.click(runBtn);
+    await waitFor(() => {
+      expect(queryByTestId('auto-run-pill')).not.toBeNull();
+    });
+    const pill = getByTestId('auto-run-pill');
+    expect(pill.textContent).toMatch(/running/);
+    expect(queryByTestId('auto-run-stop')).not.toBeNull();
+    // The idle button is now gone — Stop has replaced it.
+    expect(queryByTestId('auto-run-start')).toBeNull();
+  });
+
+  it('clicking Stop DELETEs /run and clears the pill', async () => {
+    queueResponses([
+      { ok: true, body: EMPTY_CHECKLIST },
+      {
+        ok: true,
+        status: 202,
+        body: { state: 'running', items_completed: 0, items_failed: 0, legs_spawned: 1 }
+      },
+      // DELETE → 204 (voidFetch tolerates empty body).
+      { ok: true, status: 204, body: '' },
+      // After stop, ChecklistView reloads the checklist.
+      { ok: true, body: EMPTY_CHECKLIST }
+    ]);
+    const { getByTestId, queryByTestId } = render(ChecklistView);
+    await waitFor(() => expect(checklists.current).not.toBeNull());
+    await fireEvent.click(getByTestId('auto-run-start'));
+    await waitFor(() => expect(queryByTestId('auto-run-stop')).not.toBeNull());
+    await fireEvent.click(getByTestId('auto-run-stop'));
+    await waitFor(() => {
+      expect(queryByTestId('auto-run-pill')).toBeNull();
+      expect(queryByTestId('auto-run-start')).not.toBeNull();
+    });
+  });
+
   it('renders parents with a disabled checkbox and nested children', async () => {
     queueResponses([{ ok: true, body: CHECKLIST_WITH_NESTED }]);
     const { container } = render(ChecklistView);
