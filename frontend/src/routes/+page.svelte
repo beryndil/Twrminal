@@ -19,6 +19,7 @@
   import { sessions } from '$lib/stores/sessions.svelte';
   import { sessionsWs } from '$lib/stores/ws_sessions.svelte';
   import { tags } from '$lib/stores/tags.svelte';
+  import { versionWatcher } from '$lib/stores/version_watcher.svelte';
 
   let booted = $state(false);
   let showCheatSheet = $state(false);
@@ -60,6 +61,19 @@
     // sub-second time. On connect / reconnect the WS fires one
     // softRefresh so nothing missed while the socket was down escapes.
     sessionsWs.connect();
+    // Seamless-reload watcher: pin the live build, poll for changes,
+    // and reload the SPA when the operator ships a new bundle. Reload
+    // fires on `visibilitychange → hidden` (so the user never sees a
+    // disruptive reload while looking at the tab) or after a long
+    // foreground idle gap. The disruption guards make sure the idle-
+    // fire branch never reloads while a session is mid-stream — the
+    // visibility branch ignores them on the assumption that "not
+    // looking" makes any reload cheap.
+    versionWatcher.configure({
+      isAgentStreaming: () =>
+        agent.sessionId !== null && sessions.running.has(agent.sessionId)
+    });
+    void versionWatcher.init();
     // v0.5.2: checklist sessions also connect — the ChecklistView
     // hosts an embedded chat panel and the backend runner accepts
     // kind='checklist' since the `checklist_overview` prompt layer
