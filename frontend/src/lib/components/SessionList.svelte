@@ -454,77 +454,100 @@
             placeholder="Session title"
           />
         {:else}
-          <div class="flex items-center gap-1 text-xs" title="Double-click to rename">
-            {#if isRunning(session.id)}
-              <!-- Live-run indicator: emerald ping + solid dot. -->
-              <span
-                class="relative inline-flex h-1.5 w-1.5 shrink-0"
-                aria-label="Agent is working"
-                title="Agent is working — you can switch away and come back"
-              >
+          <!-- Three-row grid: col 1 reserves space for the activity
+               indicator so rows 2–3 indent cleanly under the title.
+               Row 1: [indicator | title … severity shield].
+               Row 2: [—        | general tag icons + working_dir].
+               Row 3: [—        | updated_at … cost]. -->
+          <div
+            class="grid grid-cols-[0.75rem_1fr] gap-x-1 text-xs"
+            title="Double-click to rename"
+          >
+            <!-- Row 1, Col 1: activity indicator slot. Width is
+                 always reserved so titles align whether or not an
+                 indicator is showing. -->
+            <div class="row-start-1 col-start-1 flex items-center justify-center">
+              {#if isRunning(session.id)}
+                <!-- Live-run indicator: emerald ping + solid dot. -->
                 <span
-                  class="absolute inline-flex h-full w-full rounded-full
-                    bg-emerald-400 opacity-60 animate-ping"
-                ></span>
+                  class="relative inline-flex h-1.5 w-1.5 shrink-0"
+                  aria-label="Agent is working"
+                  title="Agent is working — you can switch away and come back"
+                >
+                  <span
+                    class="absolute inline-flex h-full w-full rounded-full
+                      bg-emerald-400 opacity-60 animate-ping"
+                  ></span>
+                  <span
+                    class="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500"
+                  ></span>
+                </span>
+              {:else if isUnviewed(session)}
+                <!-- Finished-but-unviewed indicator. -->
                 <span
-                  class="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500"
-                ></span>
+                  class="relative inline-flex h-1.5 w-1.5 shrink-0"
+                  aria-label="Session finished — unread"
+                  title="Session finished — unread since last view"
+                  data-testid="unviewed-dot"
+                >
+                  <span
+                    class="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-400"
+                  ></span>
+                </span>
+              {/if}
+            </div>
+
+            <!-- Row 1, Col 2: title with severity shield pinned to
+                 the right edge. The checklist marker stays inline
+                 with the title so ☑ still reads as a type badge. -->
+            <div class="row-start-1 col-start-2 flex items-center gap-1 min-w-0">
+              {#if session.kind === 'checklist'}
+                <span
+                  class="text-slate-500 shrink-0"
+                  aria-label="Checklist session"
+                  title="Checklist session">☑</span
+                >
+              {/if}
+              <span class="min-w-0 truncate flex-1">
+                {session.title ?? session.model}
               </span>
-            {:else if isUnviewed(session)}
-              <!-- Finished-but-unviewed indicator. -->
-              <span
-                class="relative inline-flex h-1.5 w-1.5 shrink-0"
-                aria-label="Session finished — unread"
-                title="Session finished — unread since last view"
-                data-testid="unviewed-dot"
-              >
-                <span
-                  class="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-400"
-                ></span>
-              </span>
-            {/if}
-            <!-- Medallion row: shield (severity) + one tag icon per
-                 attached general-group tag. Color comes from the
-                 tag's own `color` column; missing colors fall back
-                 to a dim slate via the icon component so a
-                 severity-less session still shows the slot. -->
-            <span class="inline-flex items-center gap-0.5 shrink-0"
-              data-testid="medallion-row"
-            >
               <SeverityShield
                 color={medals.severity?.color ?? null}
                 title={medals.severity?.name ?? 'No severity'}
                 size={11}
               />
+            </div>
+
+            <!-- Row 2, Col 2: general-group tag icons ("what project
+                 are we on") followed by the working_dir path. -->
+            <div
+              class="row-start-2 col-start-2 flex items-center gap-1 min-w-0"
+              data-testid="medallion-row"
+            >
               {#each medals.general as tag (tag.id)}
                 <TagIcon color={tag.color} title={tag.name} size={11} />
               {/each}
-            </span>
-            {#if session.kind === 'checklist'}
-              <span
-                class="text-slate-500"
-                aria-label="Checklist session"
-                title="Checklist session">☑</span
-              >
-            {/if}
-            <span class="min-w-0 truncate">
-              {session.title ?? session.model}
-            </span>
+              <span class="text-[10px] text-slate-500 font-mono truncate min-w-0">
+                {session.working_dir}
+              </span>
+            </div>
+
+            <!-- Row 3, Col 2: timestamp + optional cost. -->
+            <div
+              class="row-start-3 col-start-2 text-[10px] flex
+                justify-between items-baseline gap-2"
+            >
+              <span class="text-slate-600">
+                {formatTimestamp(session.updated_at)}
+              </span>
+              {#if !billing.showTokens && session.total_cost_usd > 0}
+                <span class="font-mono {costClass(session)}">
+                  ${session.total_cost_usd.toFixed(4)}
+                </span>
+              {/if}
+            </div>
           </div>
         {/if}
-        <div class="text-[10px] text-slate-500 font-mono truncate">
-          {session.working_dir}
-        </div>
-        <div class="text-[10px] flex justify-between items-baseline gap-2">
-          <span class="text-slate-600">
-            {formatTimestamp(session.updated_at)}
-          </span>
-          {#if !billing.showTokens && session.total_cost_usd > 0}
-            <span class="font-mono {costClass(session)}">
-              ${session.total_cost_usd.toFixed(4)}
-            </span>
-          {/if}
-        </div>
       </button>
       <button
         type="button"
