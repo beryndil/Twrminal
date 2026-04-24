@@ -445,11 +445,67 @@ describe('sessions.applyUpsert', () => {
     expect(sessions.list.map((s) => s.id)).toEqual(['c', 'a', 'b']);
   });
 
-  it('is a no-op when a tag filter is active — softRefresh poll reconciles filtered views', () => {
+  it('applies an upsert whose tag_ids intersect the active filter', () => {
     sessions.filter = { tags: [42] };
-    sessions.list = [sess({ id: 'existing' })];
-    sessions.applyUpsert(sess({ id: 'new-row' }));
+    sessions.list = [
+      sess({ id: 'existing', tag_ids: [42], updated_at: '2026-04-22T10:00:00+00:00' })
+    ];
+    sessions.applyUpsert(
+      sess({
+        id: 'existing',
+        tag_ids: [42],
+        updated_at: '2026-04-22T11:00:00+00:00',
+        total_cost_usd: 2.5
+      })
+    );
+    expect(sessions.list).toHaveLength(1);
+    expect(sessions.list[0].total_cost_usd).toBeCloseTo(2.5);
+  });
+
+  it('drops an upsert whose tag_ids do not intersect the active filter (new row)', () => {
+    sessions.filter = { tags: [42] };
+    sessions.list = [sess({ id: 'existing', tag_ids: [42] })];
+    sessions.applyUpsert(sess({ id: 'new-row', tag_ids: [99] }));
     expect(sessions.list.map((s) => s.id)).toEqual(['existing']);
+  });
+
+  it('inserts a brand-new row under a tag filter when its tag_ids share a tag with the filter', () => {
+    sessions.filter = { tags: [42] };
+    sessions.list = [
+      sess({ id: 'existing', tag_ids: [42], updated_at: '2026-04-22T10:00:00+00:00' })
+    ];
+    sessions.applyUpsert(
+      sess({ id: 'new-row', tag_ids: [42, 7], updated_at: '2026-04-22T11:00:00+00:00' })
+    );
+    expect(sessions.list.map((s) => s.id)).toEqual(['new-row', 'existing']);
+  });
+
+  it('removes a listed row whose new tag_ids no longer intersect the filter (retag-out)', () => {
+    sessions.filter = { tags: [42] };
+    sessions.list = [
+      sess({ id: 'a', tag_ids: [42] }),
+      sess({ id: 'b', tag_ids: [42] })
+    ];
+    // Row `a` was retagged to {99} on another tab — the upsert frame
+    // arrives with the new tag set, and it no longer belongs here.
+    sessions.applyUpsert(sess({ id: 'a', tag_ids: [99] }));
+    expect(sessions.list.map((s) => s.id)).toEqual(['b']);
+  });
+
+  it('clears selectedId when the retagged-out row was the selected row', () => {
+    sessions.filter = { tags: [42] };
+    sessions.list = [sess({ id: 'a', tag_ids: [42] })];
+    sessions.selectedId = 'a';
+    sessions.applyUpsert(sess({ id: 'a', tag_ids: [99] }));
+    expect(sessions.list).toEqual([]);
+    expect(sessions.selectedId).toBeNull();
+  });
+
+  it('ignores tag filter when filter.tags is empty array (treated as unfiltered)', () => {
+    sessions.filter = { tags: [] };
+    sessions.list = [];
+    sessions.applyUpsert(sess({ id: 'x', tag_ids: [1] }));
+    expect(sessions.list.map((s) => s.id)).toEqual(['x']);
   });
 });
 

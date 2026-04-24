@@ -275,15 +275,37 @@ class SessionStore {
    * keep the optimistic local copy (same rule as `softRefresh`). Re-sorts
    * by `updated_at DESC, id DESC` to match the server ordering.
    *
-   * When a tag filter is active the broadcast frame carries no filter
-   * context and the frontend's `Session` shape has no tag membership
-   * field to check, so we can't safely decide whether the incoming row
-   * belongs in the current view. In that case the 3s `softRefresh` poll
-   * reconciles the filtered list instead — a brief lag on tag-filtered
-   * views is the price of keeping the default (unfiltered) path live. */
+   * Tag-filter handling: every broadcast frame carries the session's
+   * full `tag_ids` (the backend dumps the whole `SessionOut` shape into
+   * `publish_session_upsert`). Under an active tag filter we intersect
+   * the row's `tag_ids` against `this.filter.tags` and only apply when
+   * there's at least one shared tag — mirroring what the `/sessions`
+   * list endpoint would have returned.
+   *
+   * Two cases the intersection must handle:
+   *   1. Row outside the view: drop the frame. The `softRefresh` poll
+   *      won't pick it up either (different tag set), which is correct.
+   *   2. Row already in the view whose new tags no longer intersect the
+   *      filter (retag via context menu): remove it from `list`. Without
+   *      this branch the row would persist stale in a filter it no
+   *      longer belongs to, reconciled only at the next 3s poll.
+   *
+   * Previous behavior dropped *every* upsert frame under any tag filter,
+   * which made close/reopen/cost-bump look stuck for up to one poll
+   * tick on tag-filtered views. */
   applyUpsert(session: api.Session): void {
     const tagFilter = this.filter.tags ?? [];
-    if (tagFilter.length > 0) return;
+    if (tagFilter.length > 0) {
+      const sessionTags = session.tag_ids ?? [];
+      const inView = sessionTags.some((t) => tagFilter.includes(t));
+      if (!inView) {
+        if (this.list.some((s) => s.id === session.id)) {
+          this.list = this.list.filter((s) => s.id !== session.id);
+          if (this.selectedId === session.id) this.select(null);
+        }
+        return;
+      }
+    }
     const existing = this.list.find((s) => s.id === session.id);
     const incoming =
       existing && existing.updated_at > session.updated_at ? existing : session;
