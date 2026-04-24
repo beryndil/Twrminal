@@ -50,6 +50,14 @@ class AgentRunnerDriverRuntime:
 
     def __init__(self, *, app: FastAPI) -> None:
         self._app = app
+        # Per-session last-observed ContextUsage percentage. Populated
+        # as `run_turn` drains the runner's event stream after the
+        # turn's MessageComplete arrives (ContextUsage fires right
+        # after). The driver polls this via `last_context_percentage`
+        # to decide whether to inject a handoff nudge. Unbounded dict
+        # in principle, but keyed by leg session_id which the driver
+        # tears down on its own cadence — not a leak in practice.
+        self._last_pct: dict[str, float] = {}
 
     async def spawn_leg(
         self,
@@ -137,6 +145,11 @@ class AgentRunnerDriverRuntime:
         try:
             await runner.submit_prompt(prompt)
             message_id = await self._await_message_complete(queue, session_id)
+            # ContextUsage fires right after MessageComplete (see
+            # session.py around line 260). Drain the queue briefly to
+            # catch it — bounded by a short timeout so a runner that
+            # never emits one doesn't stall the driver.
+            await self._drain_trailing_context_usage(queue, session_id)
         finally:
             runner.unsubscribe(queue)
 
@@ -159,6 +172,53 @@ class AgentRunnerDriverRuntime:
         (audit trail, legs expander). Idempotent — `.drop()` no-ops
         when the session id isn't registered."""
         await self._app.state.runners.drop(session_id)
+        # Discard any cached context pressure reading so a future leg
+        # that somehow reuses the same session id (shouldn't happen in
+        # practice but the driver's session_id lookup should stay
+        # honest) doesn't inherit stale state.
+        self._last_pct.pop(session_id, None)
+
+    def last_context_percentage(self, session_id: str) -> float | None:
+        """Return the most recent ContextUsage percentage (0..100)
+        captured for `session_id`, or None if none was observed. Feeds
+        the driver's handoff-nudge branch. See `DriverConfig.
+        handoff_threshold_percent`."""
+        return self._last_pct.get(session_id)
+
+    async def _drain_trailing_context_usage(
+        self,
+        queue: asyncio.Queue[Any],
+        session_id: str,
+    ) -> None:
+        """Peek at any events that arrive right after MessageComplete
+        and stash the percentage from the first `context_usage` event
+        we find. Bounded by a short timeout — if nothing arrives
+        promptly, give up; the runner either isn't going to emit one
+        this turn (synthetic completion path), or we lost the race.
+        Missing a pressure reading opts this leg out of the nudge
+        branch, which is the safe default (no unnecessary nudges)."""
+        # 50ms is enough slack for the runner's post-turn ContextUsage
+        # emit (it fires in-line after MessageComplete on the same
+        # task). Pay the budget once; further drains just slow the
+        # driver's per-turn latency.
+        deadline = asyncio.get_running_loop().time() + 0.05
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return
+            try:
+                env = await asyncio.wait_for(queue.get(), timeout=remaining)
+            except TimeoutError:
+                return
+            payload = env.payload
+            if payload.get("type") != "context_usage":
+                continue
+            if payload.get("session_id") != session_id:
+                continue
+            pct = payload.get("percentage")
+            if pct is not None:
+                self._last_pct[session_id] = float(pct)
+            return
 
     async def _await_message_complete(
         self,

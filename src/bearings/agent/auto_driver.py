@@ -106,6 +106,14 @@ class DriverConfig:
     max_items_per_run: int = 50
     max_legs_per_item: int = 5
     max_followup_depth: int = 3
+    # Context-pressure watchdog threshold (percent 0-100). When a leg's
+    # last ContextUsage event crosses this percentage AND the agent's
+    # turn produced no handoff sentinel, the driver injects a nudge
+    # turn asking for a handoff plug BEFORE treating the quiet turn as
+    # a silent-exit failure. 60% leaves room for the handoff turn
+    # itself + a couple of look-up tool calls; matches Dave's manual
+    # handoff discipline (hand off early, not at the cliff).
+    handoff_threshold_percent: float = 60.0
 
 
 class DriverRuntime(Protocol):
@@ -142,6 +150,16 @@ class DriverRuntime(Protocol):
     ) -> str: ...
 
     async def teardown_leg(self, session_id: str) -> None: ...
+
+    def last_context_percentage(self, session_id: str) -> float | None:
+        """Return the most recent ContextUsage percentage (0..100)
+        captured for `session_id`, or None if no ContextUsage event
+        has been observed yet. The driver polls this after each
+        `run_turn` to decide whether to inject a handoff-request
+        nudge turn. Implementations that can't surface context
+        pressure (e.g. test stubs that don't care) return None to
+        opt out of the pressure-check branch."""
+        ...
 
 
 class Driver:
@@ -275,8 +293,41 @@ class Driver:
                 plug = None
                 continue
 
-            # No done, no handoff, no blocking children — the agent
-            # ended the turn saying nothing. Fail-safe halt.
+            # No done, no handoff, no blocking children. Before calling
+            # it a silent-exit failure, check context pressure: if the
+            # turn burned enough of the window that the NEXT organic
+            # turn is likely to cross the cliff, the agent may just
+            # have forgotten the handoff syntax. Nudge once — one extra
+            # turn asking explicitly for a handoff plug — and re-parse.
+            pct = self._runtime.last_context_percentage(leg_session_id)
+            if pct is not None and pct >= self._config.handoff_threshold_percent:
+                nudge_text = await self._request_handoff_nudge(leg_session_id)
+                nudge_sentinels = parse_sentinels(nudge_text)
+                # A nudge-turn followup would be weird (the ask was
+                # "just emit the plug") but we honor one if it arrives
+                # to avoid losing agent-noted work.
+                await self._apply_followups(item, nudge_sentinels.followups)
+                if nudge_sentinels.handoff_plug is not None:
+                    plug = nudge_sentinels.handoff_plug
+                    continue
+                if nudge_sentinels.item_done:
+                    await self._mark_done(item["id"])
+                    self._items_completed += 1
+                    return True
+                # Nudge also silent — fall through to failure with a
+                # reason that distinguishes the pressure case.
+                await self._record_failure(
+                    item["id"],
+                    (
+                        f"context at {pct:.1f}% but agent refused to emit "
+                        "a handoff plug even when asked explicitly"
+                    ),
+                )
+                return False
+
+            # No done, no handoff, no blocking children, context not
+            # under pressure — the agent ended the turn saying
+            # nothing. Fail-safe halt.
             await self._record_failure(
                 item["id"],
                 (
@@ -349,6 +400,34 @@ class Driver:
             self._failed_item_id = item_id
             self._failure_reason = reason
         log.warning("autonomous driver failure on item %s: %s", item_id, reason)
+
+    async def _request_handoff_nudge(self, leg_session_id: str) -> str:
+        """Submit one extra turn on the current leg asking the agent
+        to emit a handoff plug. Used when the leg's context watchdog
+        crossed threshold but the agent didn't spontaneously emit
+        CHECKLIST_HANDOFF. Returns the assistant's response text for
+        sentinel parsing. Exceptions propagate — the caller treats
+        any error as silent-exit failure.
+
+        Kept as a driver method (not runtime) so the prompt text is
+        authoritative in one place and test stubs don't have to
+        re-implement the nudge shape."""
+        return await self._runtime.run_turn(
+            session_id=leg_session_id,
+            prompt=(
+                "You're approaching the context window limit on this "
+                "leg. Do NOT continue working on the checklist item "
+                "this turn. Instead, emit a handoff plug so a "
+                "successor leg (fresh context) can finish:\n\n"
+                "CHECKLIST_HANDOFF\n"
+                "<what you've done, what's left, files touched, "
+                "anything the successor MUST NOT redo>\n"
+                "CHECKLIST_HANDOFF_END\n\n"
+                "If you're actually done with the item, emit "
+                "CHECKLIST_ITEM_DONE instead. Do one or the other, "
+                "nothing else."
+            ),
+        )
 
     # --- prompts -----------------------------------------------------
 
