@@ -17,6 +17,90 @@ Scaffold reference (still useful for plans):
 
 ---
 
+## Per-message glass refraction — 2026-04-23
+
+**Deferred.** First pass of Midnight Glass applied
+`backdrop-filter: blur(8px)` to `<article>` so message cards got the
+same refractive glass as the sidebars. Chromium promotes each such
+element to its own compositing layer; in a `flex-1 overflow-y-auto`
+messages column with dozens of turns, that produced enough layers
+that the composer form's position didn't settle synchronously, and
+the textarea rendered partly below the viewport until `autosizeTextarea`
+(Conversation.svelte) forced a reflow on first keystroke.
+
+Fix shipped: dropped backdrop-filter from `article` entirely — cards
+still read as discrete surfaces via inner highlight + violet hairline
++ drop shadow. Sidebars and inspector `<aside>`s keep the real glass.
+
+**Reopening requires** either (a) restructuring the composer so its
+position doesn't depend on flex-sibling height settling in one pass,
+or (b) virtualizing the message list so only the currently-visible
+articles are live compositing layers. See `midnight-glass.css` comment
+at the `article` rule for the full diagnosis.
+
+---
+
+## Theme switcher UI — 2026-04-23
+
+**Context:** Midnight Glass theme landed as the active default; the
+pre-Midnight-Glass palette is preserved under `[data-theme='default']`
+in `frontend/src/lib/themes/tokens.css`. Switching is a one-attribute
+flip on `<html>` (`data-theme`) — the Tailwind color scale resolves
+through CSS variables, so no component rewrite is needed.
+
+**Deferred:** Dave plans to build the selector UI later. Likely shape:
+a Settings toggle (or header control) that writes the choice to
+`localStorage` and updates `document.documentElement.dataset.theme`,
+with a matching server-side preference so reload/other-tab stays in
+sync. A no-flash path (inline script in `app.html` before paint that
+reads storage and sets the attribute) is worth doing at the same
+time — otherwise the first paint always shows the default.
+
+**Files involved:**
+- `frontend/src/lib/themes/tokens.css` — add new themes here
+- `frontend/src/lib/themes/midnight-glass.css` — treatment layer;
+  future themes get their own `<name>.css` with scoped selectors
+- `frontend/src/app.html` — current hardcoded `data-theme="midnight-glass"`
+- `frontend/src/app.css` — `@import`s both theme files today
+
+---
+
+## Drift detector lacks forward-only-revert tombstones — 2026-04-23
+
+**Symptom:** `bearings.service` crashlooped with
+`MigrationDriftError: schema_migrations has applied row
+'0011_sdk_reported_cost.sql' but no such file`. Fixed in-place on Dave's
+DB by stopping the unit, backing up to
+`db.sqlite.bak-pre-0011-orphan-fix-20260423-175258`, and running
+`DELETE FROM schema_migrations WHERE name='0011_sdk_reported_cost.sql'`.
+Unit healthy at 17:53:06 CDT, `127.0.0.1:8787`.
+
+**Root cause:** revert commit `7a957e3` (Apr 20, "undo 0.3.6 cost-inflation
+fix — premise was wrong") deleted `src/bearings/db/migrations/0011_sdk_reported_cost.sql`
+and declared "schema is forward-only" — but `_common.py:_apply_migrations`
+(drift-detection pass added 2026-04-23, see comment at `_common.py:72`)
+treats any applied row without a matching file as drift and refuses to
+start. Anyone who ran v0.3.6 before the revert and then updated past the
+drift-detector commit will hit this. Dead column `sdk_reported_cost_usd`
+(NOT NULL DEFAULT 0) survives in `sessions` and is unreferenced in current
+source — harmless but untidy.
+
+**Fix options to consider:**
+1. **Tombstone list** — add a module-level set of intentionally-retired
+   migration names; drift detector skips those. Cheapest, leaves dead
+   column in user DBs.
+2. **Recovery migration** — ship `0026_retire_sdk_reported_cost.sql` that
+   deletes the orphan row (and optionally drops the column). Fixes every
+   affected user DB on next startup; follows the forward-only discipline.
+3. **`--repair-drift` CLI flag** — one-shot op that deletes orphan rows
+   with explicit user confirmation. Good escape hatch but doesn't
+   auto-heal unattended installs.
+
+Recommendation: option 2. Self-healing, no code complexity, keeps schema
+history honest. Option 1 only if we expect more forward-only reverts.
+
+---
+
 ## Session handoff — 2026-04-23 (context-full split)
 
 Previous Claude session ran long (context-menu plan phases 7–13 +
@@ -1165,20 +1249,95 @@ Implementation order:
 
 ### High but not ship-blocker (fold into toggle layer)
 
-- [ ] Auth-token-in-WS-query-string + non-constant-time compare.
-  `src/bearings/api/auth.py:43-53`.
-- [ ] DB file written at default umask (world-readable on multi-user
-  boxes). `os.chmod(path, 0o600)` after create.
-- [ ] Runner survives WS disconnect for `idle_ttl_seconds=900` (closing
-  the browser ≠ stopping the agent). `safe` profile: ttl=0 or much
-  shorter.
-- [ ] Systemd unit has zero hardening — no `ProtectHome`, `PrivateTmp`,
-  `NoNewPrivileges`, `MemoryMax`. `config/bearings.service`.
-- [ ] Skill/command scanner walks `~/.claude/plugins` and surfaces
-  everything in the UI palette. `safe` profile: scope to project only.
-- [ ] `cfg.server.host=0.0.0.0` accepted with no interlock when auth=off.
-  Refuse to start if non-loopback bind + no auth + no TLS.
-- [ ] No global `max_budget_usd` default — runaway loop is unbounded.
+All seven items landed 2026-04-23 in the same pass. Where the fix is
+an unconditional bug-fix (constant-time compare, DB perms, bind
+interlock, systemd hardening) it's applied unconditionally. Where
+the item is a policy knob that different profiles will want different
+values for (commands scope, idle TTL, global budget ceiling) the
+config schema now carries the knob with a backward-compatible default,
+and the profile presets (sibling session — "Permission profiles —
+safe/workstation/power-user") will flip them. 761/761 pytest,
+ruff + mypy clean.
+
+- [x] **Auth-token-in-WS-query-string + non-constant-time compare.**
+  `src/bearings/api/auth.py`. Fixed 2026-04-23:
+  - Compare routed through `secrets.compare_digest` (helper `_consteq`).
+    Applies to both `require_auth` (REST) and `check_ws_auth` (WS).
+  - New `Sec-WebSocket-Protocol` transport: client offers
+    `bearings.bearer.v1, bearer.<tok>`; server extracts the token
+    from the second entry and echoes only the marker via
+    `ws_accept_subprotocol` — secret never lands in the negotiated
+    protocol response header. Keeps the token out of URLs, access
+    logs, browser history, process listings.
+  - Query-string path preserved for `bearings send` (CLI, no
+    convenient subprotocol plumbing). Frontend migration from
+    `?token=` to subprotocol is a follow-up — tracked under the
+    permission-profile session.
+  - `tests/test_auth.py` +3 tests (subprotocol-good-token,
+    subprotocol-bad-token, marker-without-bearer-entry).
+- [x] **DB file written at default umask.** `src/bearings/db/_common.py`.
+  Fixed 2026-04-23: `init_db` now calls `_clamp_db_permissions(path)`
+  after the connection opens and migrations commit, chmod'ing the
+  main DB, `-wal`, and `-shm` sidecars to `0o600`. Idempotent across
+  reboots so DBs created pre-fix get clamped on next startup.
+  `OSError` from exotic filesystems is swallowed (best-effort
+  defense-in-depth). `tests/test_migrations.py` +1 test asserts the
+  mode after `init_db` + a write to force WAL to materialize.
+- [x] **Runner idle_ttl knob toggle-ready.** Already a config knob
+  (`runner.idle_ttl_seconds`, default 900.0) per the existing
+  `RunnerCfg`. No code change needed — the `safe` profile preset in
+  the sibling session will set it to a small value (e.g. 30s or 0)
+  when the profile lands.
+- [x] **Systemd unit hardening.** `config/bearings.service`. Fixed
+  2026-04-23: added `NoNewPrivileges`, `PrivateTmp`, `PrivateDevices`,
+  `ProtectSystem=strict`, `ProtectKernel{Tunables,Modules,Logs}`,
+  `ProtectControlGroups`, `ProtectClock`, `ProtectHostname`,
+  `ProtectProc=invisible`, `RestrictSUIDSGID`, `RestrictRealtime`,
+  `RestrictNamespaces`, `LockPersonality`, empty
+  `CapabilityBoundingSet` + `AmbientCapabilities`,
+  `SystemCallArchitectures=native`, `MemoryMax=2G`, `TasksMax=256`.
+  `ProtectHome` intentionally omitted — Bearings reads `~/.claude`
+  and writes `~/.local/share/bearings` + `~/.config/bearings`, so
+  locking home would require per-path `ReadWritePaths` overrides
+  that break the `%h/.local/bin/bearings` ExecStart.
+- [x] **Skill/command scanner walks `~/.claude/plugins`.**
+  `src/bearings/api/commands_scan.py`. Fixed 2026-04-23:
+  - New `CommandsScope = Literal["all", "user", "project"]` +
+    `CommandsCfg.scope` (default `"all"`, today's behavior).
+  - `collect()` takes a `scope` kwarg; `"user"` skips the plugin
+    walk, `"project"` skips both user and plugin walks. Route
+    (`routes_commands.py`) reads
+    `request.app.state.settings.commands.scope` and passes it
+    through.
+  - `tests/test_commands_scan.py` +3 tests (scope=all default,
+    scope=user skips plugins, scope=project skips user+plugins).
+  - Profile presets: `safe` will set `scope = "project"`,
+    `workstation` will set `scope = "user"`, `power-user` leaves
+    `scope = "all"`.
+- [x] **`cfg.server.host=0.0.0.0` no interlock when auth=off.**
+  `src/bearings/cli.py`. Fixed 2026-04-23:
+  - New `_check_bind_auth_interlock(cfg)` helper + `_LOOPBACK_BINDS`
+    frozenset (`127.0.0.1`, `localhost`, `::1`, `::ffff:127.0.0.1`).
+  - `serve` subcommand runs the check before `uvicorn.run(...)` and
+    returns exit code 2 with a stderr explanation when the operator
+    bound a non-loopback host without configuring `auth.enabled +
+    auth.token`. Reverse-proxy scenarios stay supported (auth on +
+    host=0.0.0.0 → allowed).
+  - `tests/test_config.py` +6 interlock tests covering loopback
+    pass-through, wildcard/LAN refusal, auth-on pass-through, and
+    the `auth.enabled=true + token=None` config-error edge.
+- [x] **No global `max_budget_usd` default.** Fixed 2026-04-23:
+  - New `AgentCfg.default_max_budget_usd: float | None = None`.
+    Default `None` keeps today's uncapped behavior; profiles override
+    (`safe` will set a small ceiling).
+  - Both session-create call sites apply the default when the
+    caller didn't specify: `routes_sessions.py` POST `/api/sessions`
+    and `routes_checklists.py` POST paired-chat spawn. Per-session
+    explicit overrides still win.
+  - `tests/test_routes_sessions.py` +1 test confirms the config
+    default lands on new session rows and that an explicit body
+    value overrides it. `tests/test_config.py` +2 config tests
+    (default-None, config-file-positive-float).
 
 ### Cleanup (low priority)
 
