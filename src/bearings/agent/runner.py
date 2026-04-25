@@ -8,8 +8,8 @@ able to kick off work in one and walk away. The runner owns the
 `AgentSession`, the streaming task, and a ring buffer of recent events.
 WebSocket handlers become thin subscribers that can come and go without
 disturbing execution. Completed messages/tool calls are already
-persisted to SQLite (see `_execute_turn`), so "closed the tab, came
-back an hour later" also works across server restarts.
+persisted to SQLite (see `turn_executor.execute_turn`), so "closed the
+tab, came back an hour later" also works across server restarts.
 
 Lifecycle:
 - First WS connect for a session constructs a runner and registers it.
@@ -22,150 +22,81 @@ Lifecycle:
 
 Nothing in here depends on FastAPI or WebSockets — that's deliberate so
 the runner is trivially testable.
+
+Module layout: this file owns the `SessionRunner` class — public API,
+subscriber set, ring buffer, approval forwarding, reaper hook. Worker-
+loop and per-turn execution live in `turn_executor.py`. Wire types
+(_Envelope, _Replay, _Submit, _Shutdown) and tunables (RING_MAX,
+SUBSCRIBER_QUEUE_MAX, TOOL_PROGRESS_INTERVAL_S) live in `runner_types`
+and are re-exported here for backwards compatibility (tests + ws_agent
+import them from this module). Ticker management is delegated to
+`progress_ticker.ProgressTickerManager`. Assistant-turn persistence is
+delegated to `persist.persist_assistant_turn`.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from collections import deque
-from typing import Any, Literal
-from uuid import uuid4
+from typing import Any
 
 import aiosqlite
-import orjson
 from claude_agent_sdk import ClaudeSDKError
 
-from bearings import metrics
-from bearings.agent._attachments import prune_and_serialize, substitute_tokens
 from bearings.agent.approval_broker import ApprovalBroker
-from bearings.agent.events import (
-    AgentEvent,
-    ContextUsage,
-    ErrorEvent,
-    MessageComplete,
-    MessageStart,
-    Thinking,
-    TodoWriteUpdate,
-    Token,
-    ToolCallEnd,
-    ToolCallStart,
-    ToolOutputDelta,
-    ToolProgress,
-    TurnReplayed,
+from bearings.agent.event_fanout import emit_ephemeral, emit_event
+from bearings.agent.events import AgentEvent
+from bearings.agent.progress_ticker import ProgressTickerManager
+from bearings.agent.runner_types import (
+    _SHUTDOWN,
+    RING_MAX,
+    SUBSCRIBER_QUEUE_MAX,
+    TOOL_PROGRESS_INTERVAL_S,
+    RunnerStatus,
+    _Envelope,
+    _Replay,
+    _Shutdown,
+    _Submit,
 )
 from bearings.agent.session import AgentSession
-from bearings.agent.sessions_broker import (
-    SessionsBroker,
-    publish_runner_state,
-    publish_session_upsert,
-)
+from bearings.agent.sessions_broker import SessionsBroker, publish_runner_state
 from bearings.agent.tool_output_coalescer import ToolOutputCoalescer
 from bearings.db import store
 
 log = logging.getLogger(__name__)
 
-# How many recent events to keep for reconnect replay. Five thousand
-# comfortably covers a long multi-tool turn where each token is a
-# separate event; old entries roll off the front. If a client is away
-# longer than this buffer's window, it misses intermediate tokens but
-# still catches the final `message_complete` (and the completed
-# assistant message is in the DB either way).
-RING_MAX = 5000
-
-# Per-subscriber WS queue cap. A live WebSocket sender drains this in
-# real time, so the queue normally sits at 0-1 events. The cap exists
-# to keep memory bounded if a subscriber stalls (network back-pressure,
-# malicious slow-loris client). At 5000 entries × ~2 KB/event the
-# worst-case per-subscriber footprint is ~10 MB — large enough that
-# the steady state is invisible, small enough that a stalled tab can't
-# OOM the process. On overflow the subscriber is evicted and its
-# WebSocket handler will notice the closure on the next send.
-SUBSCRIBER_QUEUE_MAX = RING_MAX
-
-# Cadence for `ToolProgress` keepalive events emitted while a tool call
-# is still running. Covers the "SDK surfaces nothing for tens of
-# seconds during a Task/Agent sub-agent" class of silence that would
-# otherwise read as a dead spinner. At 3s per tick per in-flight tool,
-# a turn with up to ~3 concurrent tools stays under 1 msg/sec fan-out
-# — comfortably below anything the WS + reducer have to worry about.
-# Events are fan-out only (never persisted to the ring buffer), so
-# this cadence does not eat the 5000-entry replay window either.
-TOOL_PROGRESS_INTERVAL_S = 3.0
+# Re-exported for backwards compatibility — tests, `ws_agent`, and
+# downstream callers import these names from `bearings.agent.runner`.
+# Keeping the symbols rebound at module level (rather than only via
+# `from ... import ...`) makes them visible to both static type
+# checkers and runtime `getattr` callers (sessions broker, monkey-
+# patched test fixtures).
+__all__ = [
+    "RING_MAX",
+    "SUBSCRIBER_QUEUE_MAX",
+    "TOOL_PROGRESS_INTERVAL_S",
+    "RunnerStatus",
+    "SessionRunner",
+    "_Envelope",
+    "_Replay",
+    "_SHUTDOWN",
+    "_Shutdown",
+    "_Submit",
+]
 
 
-# Sentinel queued into `_prompts` by `shutdown()` so the worker exits
-# its blocking `get()` and winds down cleanly.
-class _Shutdown:
-    pass
+def _get_progress_interval() -> float:
+    """Module-level lookup of `TOOL_PROGRESS_INTERVAL_S`.
 
-
-_SHUTDOWN = _Shutdown()
-
-
-class _Replay:
-    """Queue marker for a prompt that was recovered from a prior
-    runner's unfinished turn. The difference from a plain string: the
-    user row is already in the `messages` table — `_execute_turn` must
-    NOT insert it a second time or history will show the user's prompt
-    twice after a restart-mid-turn event."""
-
-    __slots__ = ("prompt", "attachments")
-
-    def __init__(self, prompt: str, attachments: list[dict[str, Any]] | None) -> None:
-        self.prompt = prompt
-        # Parsed list (or None) — the replay row carries the same
-        # token→path mapping so `_execute_turn` can re-substitute
-        # exactly what the SDK saw on the original interrupted turn.
-        self.attachments = attachments
-
-
-class _Submit:
-    """Queue marker for a freshly submitted prompt carrying terminal-
-    style `[File N]` attachments. Plain strings still work for
-    attachment-free prompts — the worker treats them identically — but
-    once a prompt has attachments we need to ride them through the
-    queue so `_execute_turn` can both persist the sidecar and build the
-    substituted SDK text. Kept separate from `_Replay` so the replay
-    path's "don't re-persist user row" rule stays untangled from
-    attachment handling."""
-
-    __slots__ = ("prompt", "attachments")
-
-    def __init__(self, prompt: str, attachments: list[dict[str, Any]]) -> None:
-        self.prompt = prompt
-        self.attachments = attachments
-
-
-RunnerStatus = Literal["idle", "running"]
-
-
-class _Envelope:
-    """Event plus its monotonically-increasing sequence number.
-
-    Subscribers receive envelopes so they can update their own
-    `lastSeq` cursor for future reconnects. Using a small class rather
-    than a tuple to keep attribute access obvious at call sites.
-
-    `wire` holds the pre-encoded text-frame JSON (payload merged with
-    `_seq`). Encoding the frame once at emit time instead of per
-    subscriber avoids an `orjson.dumps(...).decode()` hop on every
-    WebSocket send — non-trivial on tool-heavy turns where a single
-    event fans out to N tabs plus buffered replay. `payload` is still
-    exposed for tests and for the approval/session-broker code paths
-    that peek at event types without serializing.
-    """
-
-    __slots__ = ("seq", "payload", "wire")
-
-    def __init__(self, seq: int, payload: dict[str, Any]) -> None:
-        self.seq = seq
-        self.payload = payload
-        # Merge `_seq` into the frame once. Subscribers + replay use
-        # `env.wire` directly; see `ws_agent._forward_events`.
-        self.wire = orjson.dumps({**payload, "_seq": seq}).decode()
+    Used as the `interval_getter` callable for every runner's progress
+    manager. Reading via this function (rather than capturing the
+    constant at construction) keeps the test contract:
+    `monkeypatch.setattr(runner_mod, "TOOL_PROGRESS_INTERVAL_S", X)`
+    is observed on the very next sleep, because every loop iteration
+    re-reads the module global from inside this function."""
+    return TOOL_PROGRESS_INTERVAL_S
 
 
 class SessionRunner:
@@ -236,19 +167,17 @@ class SessionRunner:
         # runner just forwards `buffer` / `drop` / `flush_all` and
         # stays oblivious to flush cadence and DB write plumbing.
         self._coalescer = ToolOutputCoalescer(db, session_id)
-        # Per-tool-call keepalive tickers. One task per in-flight
-        # tool call; each fires a `ToolProgress` event every
-        # `TOOL_PROGRESS_INTERVAL_S` for fan-out only (no ring buffer
-        # append, no DB write). Started from the `ToolCallStart` arm
-        # of `_execute_turn`, cancelled from the `ToolCallEnd` arm and
-        # from the turn's `finally` block so an interrupted or
-        # exception-exited turn doesn't strand timers. `_progress_started`
-        # records the monotonic start so the event's `elapsed_ms` is
-        # self-contained — the UI doesn't need the original start
-        # timestamp to render the readout. Managed only by the worker
-        # task (tickers are spawned on the runner's loop); no locking.
-        self._progress_tickers: dict[str, asyncio.Task[None]] = {}
-        self._progress_started: dict[str, float] = {}
+        # Per-tool-call keepalive ticker manager. Started from the
+        # `ToolCallStart` arm of `execute_turn`, cancelled from the
+        # `ToolCallEnd` arm and from the turn's `finally` block so an
+        # interrupted or exception-exited turn doesn't strand timers.
+        # Cadence read via `_get_progress_interval` so test
+        # monkeypatching of `TOOL_PROGRESS_INTERVAL_S` flows through.
+        self._progress = ProgressTickerManager(
+            session_id,
+            self._emit_ephemeral,
+            _get_progress_interval,
+        )
         # Monotonic timestamp of the moment the runner most recently
         # became "quiet" — idle AND zero subscribers. The registry's
         # reaper uses `now - _quiet_since` vs. the configured TTL to
@@ -260,14 +189,39 @@ class SessionRunner:
         # so this initial window is effectively zero.
         self._quiet_since: float | None = time.monotonic()
 
+    # ---- backwards-compat ticker accessors ------------------------
+    #
+    # `test_runner_tool_progress.py` reads `runner._progress_tickers`
+    # and `runner._progress_started` directly. Keep that surface as
+    # property forwards onto the manager so the tests keep passing
+    # without churn.
+
+    @property
+    def _progress_tickers(self) -> dict[str, asyncio.Task[None]]:
+        return self._progress.tickers
+
+    @property
+    def _progress_started(self) -> dict[str, float]:
+        return self._progress.started
+
+    def _start_progress_ticker(self, tool_call_id: str) -> None:
+        self._progress.start(tool_call_id)
+
+    def _stop_progress_ticker(self, tool_call_id: str) -> None:
+        self._progress.stop(tool_call_id)
+
+    async def _stop_all_progress_tickers(self) -> None:
+        await self._progress.stop_all()
+
     # ---- lifecycle -------------------------------------------------
 
     def start(self) -> None:
         """Spawn the worker task. Idempotent — safe to call twice."""
         if self._worker is None or self._worker.done():
-            self._worker = asyncio.create_task(
-                self._run_forever(), name=f"runner:{self.session_id}"
-            )
+            # Late import to break the runner ↔ turn_executor cycle.
+            from bearings.agent.turn_executor import run_worker
+
+            self._worker = asyncio.create_task(run_worker(self), name=f"runner:{self.session_id}")
 
     async def shutdown(self) -> None:
         """Drain the prompt queue and stop the worker. Used on app
@@ -347,6 +301,8 @@ class SessionRunner:
         cost accrues, so without this pre-check a user who's past
         their cap can kick off another turn that runs to completion
         before the advisory bites. Fail-closed at the gate."""
+        from bearings.agent.events import ErrorEvent
+
         row = await store.get_session(self.db, self.session_id)
         if row is not None:
             cap = row.get("max_budget_usd")
@@ -532,573 +488,23 @@ class SessionRunner:
             return False
         return (now - self._quiet_since) >= ttl_seconds
 
-    # ---- worker ----------------------------------------------------
-
-    async def _maybe_replay_orphaned_prompt(self) -> None:
-        """If the DB shows a user message with no assistant reply and
-        no prior replay attempt, re-queue it as this runner's first
-        turn and emit a `TurnReplayed` event for any subscriber to
-        notice.
-
-        The failure mode this recovers from: the service was stopped
-        (SIGTERM, OOM, crash) after persisting the user's prompt but
-        before the SDK produced an assistant reply. Without this hook
-        the orphaned prompt sits in history forever with no follow-up
-        unless the user types it again — and the original ask loses
-        its wall-clock urgency ("I came back and nothing happened").
-
-        Best-effort: any DB failure is logged and swallowed. A broken
-        replay scan must never block a fresh runner from accepting new
-        user prompts.
-        """
-        try:
-            orphan = await store.find_replayable_prompt(self.db, self.session_id)
-        except aiosqlite.Error:
-            log.exception(
-                "runner %s: replay scan failed; continuing without replay",
-                self.session_id,
-            )
-            return
-        if orphan is None:
-            return
-        try:
-            marked = await store.mark_replay_attempted(self.db, orphan["id"])
-        except aiosqlite.Error:
-            log.exception(
-                "runner %s: replay mark failed; skipping replay to avoid loop",
-                self.session_id,
-            )
-            return
-        if not marked:
-            # Row vanished or another actor marked it first — treat as
-            # "handled elsewhere" and do nothing.
-            return
-        await self._emit_event(TurnReplayed(session_id=self.session_id, message_id=orphan["id"]))
-        # `attachments` is a JSON string (or None) from the DB column;
-        # parse eagerly so the worker can feed it straight into the
-        # substitute_tokens helper without a second decode path.
-        raw_attachments = orphan.get("attachments")
-        parsed_attachments: list[dict[str, Any]] | None = None
-        if raw_attachments:
-            try:
-                parsed = json.loads(raw_attachments)
-                if isinstance(parsed, list):
-                    parsed_attachments = parsed
-            except (json.JSONDecodeError, TypeError):
-                # A malformed JSON row is a surprise but not a
-                # show-stopper — fall through and replay without
-                # substitution (the text still carries `[File N]`
-                # tokens, which Claude will just see as literal).
-                log.warning(
-                    "runner %s: orphan %s has unparseable attachments JSON",
-                    self.session_id,
-                    orphan["id"],
-                )
-        await self._prompts.put(_Replay(orphan["content"], parsed_attachments))
-        log.info(
-            "runner %s: replayed orphaned user prompt id=%s",
-            self.session_id,
-            orphan["id"],
-        )
-
-    async def _run_forever(self) -> None:
-        # Recover orphaned prompts from prior-crash / prior-restart.
-        # Must run before the first `get()` so the replayed prompt is
-        # the first turn this worker executes — any real user prompt
-        # submitted after reconnect naturally queues behind it.
-        await self._maybe_replay_orphaned_prompt()
-        while True:
-            item = await self._prompts.get()
-            if isinstance(item, _Shutdown):
-                return
-            attachments: list[dict[str, Any]] | None
-            if isinstance(item, _Replay):
-                prompt = item.prompt
-                attachments = item.attachments
-                persist_user = False
-            elif isinstance(item, _Submit):
-                prompt = item.prompt
-                attachments = item.attachments
-                persist_user = True
-            else:
-                prompt = item
-                attachments = None
-                persist_user = True
-            self._status = "running"
-            # A turn is live — not quiet regardless of subscriber count.
-            # Clear here rather than spread the condition through every
-            # status mutation site.
-            self._quiet_since = None
-            self._stop_requested = False
-            # Bump updated_at the moment the runner starts work so the
-            # sidebar floats this session to the top immediately — not
-            # after MessageComplete lands. Covers the replay-path too:
-            # `_Replay` skips `insert_message`, so without this touch
-            # the sort wouldn't move on a resumed orphan prompt. DB
-            # hiccup here must not abort the turn — swallow.
-            try:
-                await store.touch_session(self.db, self.session_id)
-            except aiosqlite.Error:
-                log.exception(
-                    "runner %s: touch_session on turn-start failed",
-                    self.session_id,
-                )
-            # Phase-2 broadcast: every connected sidebar sees the
-            # updated_at bump + the running badge without waiting for
-            # the poll tick. Publish AFTER touch_session so the upsert
-            # payload carries the bumped timestamp.
-            await publish_session_upsert(self._sessions_broker, self.db, self.session_id)
-            self._publish_runner_state()
-            turn_ok = False
-            try:
-                await self._execute_turn(prompt, persist_user=persist_user, attachments=attachments)
-                turn_ok = True
-            except Exception as exc:
-                log.exception("runner %s: turn failed", self.session_id)
-                await self._emit_event(ErrorEvent(session_id=self.session_id, message=str(exc)))
-                # Latch the red-flashing error state onto the session
-                # row so the sidebar surfaces the crash without the
-                # user having to open the conversation to find it.
-                # Cleared on the next successful MessageComplete by
-                # the `_execute_turn` path below, or implicitly by a
-                # subsequent successful turn in this same loop. Swallow
-                # DB errors — missing the latch just means the sidebar
-                # indicator doesn't light, which is a worse UX than
-                # the current (non-existent) state but not a data loss.
-                try:
-                    await store.set_session_error_pending(self.db, self.session_id, pending=True)
-                except aiosqlite.Error:
-                    log.exception(
-                        "runner %s: failed to latch error_pending",
-                        self.session_id,
-                    )
-            finally:
-                self._status = "idle"
-                # If nobody's watching, start the reaper clock. A
-                # connected subscriber keeps the clock off until it
-                # unsubscribes.
-                if not self._subscribers:
-                    self._quiet_since = time.monotonic()
-                # A clean turn clears any stale error_pending latched
-                # by an earlier crash on this session — the red dot
-                # disappears the moment the user's retry lands a
-                # successful reply. Kept inside the finally so an
-                # exception-free turn still gets the clear before we
-                # broadcast the idle upsert.
-                if turn_ok:
-                    try:
-                        await store.set_session_error_pending(
-                            self.db, self.session_id, pending=False
-                        )
-                    except aiosqlite.Error:
-                        log.exception(
-                            "runner %s: failed to clear error_pending",
-                            self.session_id,
-                        )
-                # Broadcast idle so the sidebar clears the running ping
-                # and picks up any cost / message_count / completed
-                # bumps (plus the error_pending transition above) from
-                # _persist_assistant_turn in one upsert.
-                await publish_session_upsert(self._sessions_broker, self.db, self.session_id)
-                self._publish_runner_state()
-
-    async def _execute_turn(
-        self,
-        prompt: str,
-        *,
-        persist_user: bool = True,
-        attachments: list[dict[str, Any]] | None = None,
-    ) -> None:  # noqa: C901
-        """Run one agent turn end-to-end. Mirrors the pre-runner
-        ws_agent loop: persist user message, stream agent events,
-        persist assistant turn + tool calls as they complete. Events
-        are fanned out to subscribers via `_emit_event`.
-
-        `persist_user=False` is used by the runner-boot replay path
-        when recovering an orphaned prompt: the user row is already in
-        `messages` from the original (interrupted) turn, so inserting
-        again would duplicate history.
-
-        `attachments` carries the composer's `[File N]` sidecar (parsed
-        list or None). When present, the SDK receives the same prompt
-        with tokens replaced by absolute paths; the persisted user row
-        keeps the tokenised form so the transcript renders chips on
-        reload. Replay path sends the same list through so the
-        recovered turn hits the SDK identically to its original.
-        """
-        pruned_attachments, attachments_json = prune_and_serialize(prompt, attachments or [])
-        # The SDK only ever sees the substituted text; we don't
-        # substitute in-place on `prompt` because we want to persist
-        # the tokenised form (and we need `prompt` unchanged for the
-        # replay-row content column, which is already tokenised).
-        agent_prompt = substitute_tokens(prompt, pruned_attachments)
-        if persist_user:
-            await store.insert_message(
-                self.db,
-                session_id=self.session_id,
-                role="user",
-                content=prompt,
-                attachments=attachments_json,
-            )
-            metrics.messages_persisted.labels(role="user").inc()
-        # Intentionally not emitting a `user_message` event here. The
-        # frontend pushes the user message optimistically on submit,
-        # and a second client that subscribes while the turn is in
-        # flight will catch up via `GET /messages` on session load —
-        # the ring buffer only needs to carry *streamed* output.
-
-        buf: list[str] = []
-        thinking_buf: list[str] = []
-        tool_call_ids: list[str] = []
-        current_message_id: str | None = None
-        persisted = False
-        stopped = False
-
-        try:
-            async for event in self.agent.stream(agent_prompt):
-                await self._emit_event(event)
-                if isinstance(event, MessageStart):
-                    current_message_id = event.message_id
-                elif isinstance(event, Token):
-                    buf.append(event.text)
-                elif isinstance(event, Thinking):
-                    thinking_buf.append(event.text)
-                elif isinstance(event, ToolCallStart):
-                    await store.insert_tool_call_start(
-                        self.db,
-                        session_id=self.session_id,
-                        tool_call_id=event.tool_call_id,
-                        name=event.name,
-                        input_json=json.dumps(event.input),
-                    )
-                    tool_call_ids.append(event.tool_call_id)
-                    metrics.tool_calls_started.inc()
-                    # Start the keepalive ticker for this call. See
-                    # `_progress_ticker` for the fan-out contract; the
-                    # ticker is torn down in the `ToolCallEnd` arm or
-                    # by `_stop_all_progress_tickers` on turn teardown.
-                    self._start_progress_ticker(event.tool_call_id)
-                    # TodoWrite is a first-class UI signal, not just a
-                    # generic tool call: fire a higher-level
-                    # `TodoWriteUpdate` so the frontend sticky widget
-                    # updates without hand-parsing `tool_calls[*].input`.
-                    # The raw `ToolCallStart` already went out above, so
-                    # Inspector / audit paths keep seeing it verbatim.
-                    if event.name == "TodoWrite":
-                        await self._emit_todo_write_update(event.input)
-                elif isinstance(event, ToolOutputDelta):
-                    # Buffer the chunk instead of writing immediately.
-                    # The coalescer flushes on count/time thresholds so
-                    # a chatty tool doesn't cost one UPDATE + commit
-                    # per delta. History endpoint + reconnecting
-                    # WebSocket see cumulative output within one flush
-                    # window of the live stream. `finish_tool_call`
-                    # later overwrites with the canonical final string,
-                    # so a dropped flush can't leave a permanent gap.
-                    await self._coalescer.buffer(event.tool_call_id, event.delta)
-                elif isinstance(event, ToolCallEnd):
-                    # Stop the keepalive ticker first so a stray tick
-                    # can't race the canonical end frame onto the wire.
-                    self._stop_progress_ticker(event.tool_call_id)
-                    # Drop any buffered deltas before writing the
-                    # canonical output — `finish_tool_call` fully
-                    # overwrites `output` so the buffered chunks
-                    # would be clobbered anyway. Doing it in this
-                    # order also prevents a late timer from racing
-                    # past the canonical write.
-                    self._coalescer.drop(event.tool_call_id)
-                    await store.finish_tool_call(
-                        self.db,
-                        tool_call_id=event.tool_call_id,
-                        output=event.output,
-                        error=event.error,
-                    )
-                    metrics.tool_calls_finished.labels(ok=str(event.ok).lower()).inc()
-                elif isinstance(event, ContextUsage):
-                    # Persist the latest snapshot on the session row
-                    # so a fresh page load / reconnect has a number
-                    # to paint before the next turn's live event
-                    # arrives. Failure here must not drop the event
-                    # for live subscribers — the fan-out to
-                    # `_emit_event` already happened at the top of
-                    # the loop. Swallow DB errors quietly.
-                    try:
-                        await store.set_session_context_usage(
-                            self.db,
-                            self.session_id,
-                            pct=event.percentage,
-                            tokens=event.total_tokens,
-                            max_tokens=event.max_tokens,
-                        )
-                    except aiosqlite.Error:
-                        log.exception(
-                            "runner %s: failed to persist context usage",
-                            self.session_id,
-                        )
-                elif isinstance(event, MessageComplete):
-                    await _persist_assistant_turn(
-                        self.db,
-                        session_id=self.session_id,
-                        message_id=event.message_id,
-                        content="".join(buf),
-                        thinking="".join(thinking_buf) or None,
-                        tool_call_ids=tool_call_ids,
-                        cost_usd=event.cost_usd,
-                        input_tokens=event.input_tokens,
-                        output_tokens=event.output_tokens,
-                        cache_read_tokens=event.cache_read_tokens,
-                        cache_creation_tokens=event.cache_creation_tokens,
-                    )
-                    if self.agent.sdk_session_id is not None:
-                        await store.set_sdk_session_id(
-                            self.db, self.session_id, self.agent.sdk_session_id
-                        )
-                    persisted = True
-                    break
-
-                if self._stop_requested:
-                    stopped = True
-                    try:
-                        await self.agent.interrupt()
-                    except (ClaudeSDKError, OSError):
-                        pass
-                    break
-        finally:
-            # Flush any buffered tool-output deltas on every exit
-            # path (normal completion, stop-requested break, or an
-            # exception bubbling out of the stream). If a `ToolCallEnd`
-            # arrives later — e.g. after a reconnecting turn — the
-            # canonical output still overwrites; this just keeps
-            # mid-stream progress visible for the interrupted case.
-            await self._coalescer.flush_all()
-            # Cancel any in-flight progress tickers. Normal completion
-            # cancels each one in the `ToolCallEnd` arm; this guards
-            # the stop / exception paths where tools were still
-            # running when the turn exited.
-            await self._stop_all_progress_tickers()
-
-        if stopped and not persisted:
-            msg_id = current_message_id or uuid4().hex
-            synthetic = MessageComplete(
-                session_id=self.session_id, message_id=msg_id, cost_usd=None
-            )
-            await self._emit_event(synthetic)
-            await _persist_assistant_turn(
-                self.db,
-                session_id=self.session_id,
-                message_id=msg_id,
-                content="".join(buf),
-                thinking="".join(thinking_buf) or None,
-                tool_call_ids=tool_call_ids,
-                cost_usd=None,
-            )
-
-    # ---- tool-progress keepalive ----------------------------------
-
-    def _start_progress_ticker(self, tool_call_id: str) -> None:
-        """Spawn a per-call keepalive task on the runner's loop.
-
-        Idempotent: a duplicate `ToolCallStart` for the same id (which
-        the turn loop already treats as a no-op) keeps the original
-        ticker rather than leaking a second one. Records the monotonic
-        start so each tick's `elapsed_ms` can be self-contained."""
-        if tool_call_id in self._progress_tickers:
-            return
-        self._progress_started[tool_call_id] = time.monotonic()
-        self._progress_tickers[tool_call_id] = asyncio.create_task(
-            self._progress_ticker(tool_call_id),
-            name=f"tool-progress:{self.session_id}:{tool_call_id}",
-        )
-
-    def _stop_progress_ticker(self, tool_call_id: str) -> None:
-        """Cancel the ticker for one call. Safe to call for an id that
-        has no ticker (never started, or already stopped)."""
-        task = self._progress_tickers.pop(tool_call_id, None)
-        self._progress_started.pop(tool_call_id, None)
-        if task is not None:
-            task.cancel()
-
-    async def _stop_all_progress_tickers(self) -> None:
-        """Cancel every ticker and wait for the cancellations to take
-        effect before returning. Called from the turn's `finally` so
-        an interrupted or exception-exited turn doesn't strand timers.
-
-        Awaiting the gather ensures we don't leave tasks half-cancelled
-        when `_run_forever` flips `_status` back to idle — a dangling
-        `Task` could still try to `put_nowait` onto a subscriber queue
-        after the runner's subscribers set has been mutated elsewhere.
-        `return_exceptions=True` swallows the expected
-        `CancelledError`s from each task."""
-        tasks = list(self._progress_tickers.values())
-        self._progress_tickers.clear()
-        self._progress_started.clear()
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-    async def _progress_ticker(self, tool_call_id: str) -> None:
-        """Emit a `ToolProgress` event every `TOOL_PROGRESS_INTERVAL_S`
-        until cancelled.
-
-        Intentionally robust against late cancellation: if the ticker
-        is cancelled while blocked in `asyncio.sleep`, the raise
-        propagates out cleanly; if the start time was cleared under
-        us (e.g. `_stop_all_progress_tickers` ran first), the loop
-        exits without emitting anything.
-
-        Errors during `_emit_ephemeral` are logged and swallowed — the
-        keepalive is advisory, and a broken fan-out must never kill
-        the user's turn."""
-        while True:
-            try:
-                await asyncio.sleep(TOOL_PROGRESS_INTERVAL_S)
-            except asyncio.CancelledError:
-                return
-            started = self._progress_started.get(tool_call_id)
-            if started is None:
-                return
-            elapsed_ms = int((time.monotonic() - started) * 1000)
-            try:
-                await self._emit_ephemeral(
-                    ToolProgress(
-                        session_id=self.session_id,
-                        tool_call_id=tool_call_id,
-                        elapsed_ms=elapsed_ms,
-                    )
-                )
-            except Exception:
-                log.exception(
-                    "runner %s: tool_progress emit failed for %s",
-                    self.session_id,
-                    tool_call_id,
-                )
-
-    async def _emit_todo_write_update(self, tool_input: dict[str, Any]) -> None:
-        """Translate a raw `TodoWrite` tool input into a
-        `TodoWriteUpdate` event and fan it out through `_emit_event`.
-
-        Tolerant of malformed payloads: if the SDK (or a future schema
-        bump) sends something we can't parse, we log at warning and
-        skip the emit rather than fail the turn. The underlying
-        `tool_call_start` already landed — subscribers still have the
-        raw version via the Inspector pane, so "live widget doesn't
-        update" is recoverable; "turn crashes on unexpected shape" is
-        not."""
-        try:
-            update = TodoWriteUpdate.model_validate({"session_id": self.session_id, **tool_input})
-        except Exception as exc:  # noqa: BLE001 — intentional broad catch
-            log.warning(
-                "todo_write_update parse failed for session %s: %s",
-                self.session_id,
-                exc,
-            )
-            return
-        await self._emit_event(update)
+    # ---- event fan-out --------------------------------------------
+    #
+    # Thin forwarders onto `event_fanout.emit_event` / `emit_ephemeral`.
+    # Kept as methods (rather than swapping every `self._emit_event(...)`
+    # call site to the free function) so the broker, ticker manager,
+    # and turn executor can treat the runner as a callback target.
 
     async def _emit_event(self, event: AgentEvent) -> None:
-        """Fan an event out to every subscriber and append to the ring
-        buffer. Subscriber queues are bounded by `SUBSCRIBER_QUEUE_MAX`
-        — a stalled subscriber that fills its queue is evicted (its WS
-        handler notices the dead queue on its next send and tears down
-        the socket). The reconnecting client replays from the runner's
-        ring buffer using its last `seq`. Broken queues from dead
-        subscribers are also swept on the next emit."""
-        payload = event.model_dump()
-        env = _Envelope(self._next_seq, payload)
-        self._next_seq += 1
-        self._event_log.append(env)
-        metrics.ws_events_sent.labels(type=event.type).inc()
-        for queue in list(self._subscribers):
-            try:
-                queue.put_nowait(env)
-            except asyncio.QueueFull:
-                # Subscriber's WS sender has fallen behind by
-                # SUBSCRIBER_QUEUE_MAX events. Evict rather than
-                # block the runner; the client will reconnect and
-                # replay from `seq` against the ring buffer.
-                log.warning(
-                    "runner %s: evicting subscriber — queue full at %d events",
-                    self.session_id,
-                    SUBSCRIBER_QUEUE_MAX,
-                )
-                self._subscribers.discard(queue)
-            except Exception:
-                # Defensive: any other queue misbehavior also evicts.
-                log.exception(
-                    "runner %s: subscriber put_nowait failed; evicting",
-                    self.session_id,
-                )
-                self._subscribers.discard(queue)
+        await emit_event(self, event)
 
     async def _emit_ephemeral(self, event: AgentEvent) -> None:
-        """Fan an event out to live subscribers WITHOUT appending to
-        the ring buffer.
-
-        Used for keepalives (`ToolProgress`) that need to arrive at
-        connected clients in real time but have no value on replay —
-        a reconnecting client's own clock takes over on the next live
-        tick, and skipping the ring buffer prevents a long turn from
-        chewing through the 5000-entry replay window with throwaway
-        ticks. Seq advances so `_seq` stays monotonic for currently-
-        connected clients; the skipped seqs simply aren't deliverable
-        on future reconnects, which is what makes the event
-        ephemeral."""
-        payload = event.model_dump()
-        env = _Envelope(self._next_seq, payload)
-        self._next_seq += 1
-        metrics.ws_events_sent.labels(type=event.type).inc()
-        for queue in list(self._subscribers):
-            try:
-                queue.put_nowait(env)
-            except asyncio.QueueFull:
-                log.warning(
-                    "runner %s: evicting subscriber on ephemeral — queue full",
-                    self.session_id,
-                )
-                self._subscribers.discard(queue)
-            except Exception:
-                log.exception(
-                    "runner %s: subscriber put_nowait (ephemeral) failed; evicting",
-                    self.session_id,
-                )
-                self._subscribers.discard(queue)
+        await emit_ephemeral(self, event)
 
 
-async def _persist_assistant_turn(
-    conn: aiosqlite.Connection,
-    *,
-    session_id: str,
-    message_id: str,
-    content: str,
-    thinking: str | None,
-    tool_call_ids: list[str],
-    cost_usd: float | None,
-    input_tokens: int | None = None,
-    output_tokens: int | None = None,
-    cache_read_tokens: int | None = None,
-    cache_creation_tokens: int | None = None,
-) -> None:
-    await store.insert_message(
-        conn,
-        session_id=session_id,
-        id=message_id,
-        role="assistant",
-        content=content,
-        thinking=thinking,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        cache_read_tokens=cache_read_tokens,
-        cache_creation_tokens=cache_creation_tokens,
-    )
-    metrics.messages_persisted.labels(role="assistant").inc()
-    await store.attach_tool_calls_to_message(
-        conn, message_id=message_id, tool_call_ids=tool_call_ids
-    )
-    if cost_usd is not None:
-        await store.add_session_cost(conn, session_id, cost_usd)
-    # Stamp last_completed_at for the sidebar's "finished but unviewed"
-    # amber dot. Runs on every assistant turn persist including the
-    # stop-requested synthetic, so an interrupted turn still counts as
-    # completed output for the viewer to read.
-    await store.mark_session_completed(conn, session_id)
+# Re-export for tests that historically reach for `runner._persist_assistant_turn`.
+# The active call sites moved to `bearings.agent.persist.persist_assistant_turn`;
+# this alias keeps any external introspection working.
+from bearings.agent.persist import (  # noqa: E402, F401
+    persist_assistant_turn as _persist_assistant_turn,
+)

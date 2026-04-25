@@ -676,23 +676,29 @@ in `models/__init__.py`; no call-site changes. ruff + mypy strict +
 
 Two violations remain:
 
-- [ ] `src/bearings/agent/runner.py` — **823 lines** (2× cap). Prior
-  entry said 657; it grew further. The earlier plan still applies
-  and is still the right first move:
-  - Extract the `_ToolOutputBuffer` + `_buffer_tool_output` /
-    `_delayed_flush` / `_flush_tool_buffer` /
-    `_flush_all_tool_buffers` / `_drop_tool_buffer` cluster into
-    `agent/tool_output_coalescer.py` with a tiny
-    `ToolOutputCoalescer` class (buffers dict, `db` + `session_id`
-    via constructor). Runner keeps one reference and calls
-    `await coalescer.buffer(id, chunk)` / `coalescer.drop(id)` /
-    `await coalescer.flush_all()`.
-  - May also need to peel the `_Shutdown` / `_Replay` / `_Envelope`
-    helper classes (lines 88–154, ~67 lines) into
-    `agent/runner_types.py` and the module-level
-    `_persist_assistant_turn` function (line 787, standalone) into
-    `agent/persist.py` to close the gap to ≤400 lines.
-  - Verify: `uv run pytest tests/test_runner.py tests/test_agent_session.py tests/test_ws_agent.py`.
+- [ ] `src/bearings/agent/runner.py` — **510 lines** (was 1104, now
+  27% over cap; 54% reduction this round, 2026-04-25). Round 1
+  landed: `runner_types.py` (wire types + constants),
+  `persist.py` (`persist_assistant_turn`),
+  `progress_ticker.py` (`ProgressTickerManager`),
+  `turn_executor.py` (worker loop + `execute_turn`, 434 lines),
+  `event_fanout.py` (`emit_event` / `emit_ephemeral`). All 1063
+  pytests + ruff + mypy strict green. Backwards-compat re-exports
+  for `_Envelope`, `_Replay`, `_Submit`, `_Shutdown`, `RING_MAX`,
+  `SUBSCRIBER_QUEUE_MAX`, `TOOL_PROGRESS_INTERVAL_S`,
+  `_persist_assistant_turn` so `ws_agent` and existing tests keep
+  importing from `bearings.agent.runner`.
+  - Round 2 (deferred): runner.py at 510 is mostly extensive
+    inline comments on `__init__` (bypass-permissions hang context,
+    ApprovalBroker mode_getter rationale, sessions broker None
+    handling). turn_executor.py at 434 is the per-event dispatch
+    cascade in `execute_turn`. Both are over cap but further
+    extraction starts to fragment cohesive behavior — the right
+    next move if the cap is enforced is to (a) split per-event
+    arms of `execute_turn` into `_on_tool_call_start` /
+    `_on_tool_call_end` / `_on_message_complete` etc. helpers,
+    (b) trim some `__init__` comments to module-level docs.
+    Skipped in round 1 to keep diff small + tests green.
 
 - [ ] `frontend/src/lib/components/Conversation.svelte` — **1,631
   lines** (4× cap). Highest-risk of the three: Svelte script +
