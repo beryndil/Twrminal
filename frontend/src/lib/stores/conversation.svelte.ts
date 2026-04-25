@@ -1,22 +1,34 @@
 import * as api from '$lib/api';
 import type { MessageAttachment } from '$lib/api/sessions';
 import { sessions } from '$lib/stores/sessions.svelte';
+import type { Turn } from '$lib/turns';
 
 import {
   TOOL_OUTPUT_CAP_CHARS,
+  appendUserTurn,
   applyEvent,
   capToolOutput,
   emptyState,
   hydrateToolCall,
+  rebuildTurnsFromMessages,
+  recomputeTimeline,
   type ContextUsageState,
   type LiveToolCall,
-  type SessionState
+  type SessionState,
+  type TimelineItem
 } from './conversation/reducer';
 
 // Re-export so existing callers (components, tests) keep importing
 // from `$lib/stores/conversation.svelte` without knowing a reducer
 // module exists.
-export { TOOL_OUTPUT_CAP_CHARS, capToolOutput, type ContextUsageState, type LiveToolCall };
+export {
+  TOOL_OUTPUT_CAP_CHARS,
+  capToolOutput,
+  type ContextUsageState,
+  type LiveToolCall,
+  type TimelineItem,
+  type Turn
+};
 
 const PAGE_SIZE = 50;
 
@@ -70,6 +82,14 @@ class ConversationStore {
   streamingActive = $derived<boolean>(this.active()?.streamingActive ?? false);
   streamingMessageId = $derived<string | null>(this.active()?.streamingMessageId ?? null);
   toolCalls = $derived<LiveToolCall[]>(this.active()?.toolCalls ?? []);
+  // Per-session view caches (item 29 / 2026-04-24): the reducer keeps
+  // these in sync with the wire state via in-place mutation, so the
+  // Conversation pane reads them directly instead of re-deriving on
+  // every WS frame. See `reducer.ts` module docstring for the
+  // mutation contract.
+  turns = $derived<Turn[]>(this.active()?.turns ?? []);
+  audits = $derived<api.ReorgAudit[]>(this.active()?.audits ?? []);
+  timeline = $derived<TimelineItem[]>(this.active()?.timeline ?? []);
   hasMore = $derived<boolean>(this.active()?.hasMore ?? false);
   pendingApproval = $derived<api.ApprovalRequestEvent | null>(
     this.active()?.pendingApproval ?? null
@@ -195,6 +215,11 @@ class ConversationStore {
         ...state.toolCalls.filter((tc) => !toolCalls.some((row) => row.id === tc.id))
       ];
       state.completedMessageIds = new Set(page.messages.map((m) => m.id));
+      // Rebuild the turns + timeline view caches from the freshly
+      // loaded messages. Audits land separately via `setAudits` once
+      // `Conversation.svelte`'s effect fires `listReorgAudits`.
+      rebuildTurnsFromMessages(state);
+      recomputeTimeline(state);
       // Seed the LiveTodos widget from the server's derived snapshot.
       // Live `todo_write_update` events overwrite this on the next
       // TodoWrite call; until then, the first paint matches whatever
@@ -270,6 +295,12 @@ class ConversationStore {
         ...hydrated,
         ...state.toolCalls.filter((tc) => !hydratedIds.has(tc.id))
       ];
+      // Older messages prepend to the array → rebuild both caches so
+      // the new turns land at the top in chronological order. Audits
+      // tied to those older positions will resort on the next
+      // `setAudits` if any were missing from the initial load.
+      rebuildTurnsFromMessages(state);
+      recomputeTimeline(state);
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -301,22 +332,24 @@ class ConversationStore {
     attachments: MessageAttachment[] = []
   ): void {
     const state = this.ensureState(sessionId);
-    state.messages = [
-      ...state.messages,
-      {
-        id: crypto.randomUUID().replaceAll('-', ''),
-        session_id: sessionId,
-        role: 'user',
-        content,
-        thinking: null,
-        created_at: new Date().toISOString(),
-        // Null (not empty array) for attachment-free sends so the
-        // optimistic row matches the shape `GET /messages` returns
-        // for pre-0027 rows — keeps render-branch code that checks
-        // `msg.attachments?.length` honest.
-        attachments: attachments.length > 0 ? attachments : null
-      }
-    ];
+    const msg: api.Message = {
+      id: crypto.randomUUID().replaceAll('-', ''),
+      session_id: sessionId,
+      role: 'user',
+      content,
+      thinking: null,
+      created_at: new Date().toISOString(),
+      // Null (not empty array) for attachment-free sends so the
+      // optimistic row matches the shape `GET /messages` returns
+      // for pre-0027 rows — keeps render-branch code that checks
+      // `msg.attachments?.length` honest.
+      attachments: attachments.length > 0 ? attachments : null
+    };
+    state.messages = [...state.messages, msg];
+    // Append a matching open user turn + timeline item so the new
+    // prompt paints immediately. `message_start` will absorb this
+    // turn into the streaming tail when the agent starts responding.
+    appendUserTurn(state, msg);
     sessions.bumpMessageCount(sessionId, 1);
     // A fresh user entry is new activity — re-sort to top immediately
     // rather than waiting for MessageStart / MessageComplete. Backend
@@ -365,6 +398,12 @@ class ConversationStore {
       { ...state.messages[idx], ...message },
       ...state.messages.slice(idx + 1)
     ];
+    // The patched message object is a fresh reference; existing Turn
+    // entries still point at the stale one. Rebuild the view caches
+    // so the pin / hide flag flips paint immediately. Cold path —
+    // user-initiated context-menu action, not per-WS-event.
+    rebuildTurnsFromMessages(state);
+    recomputeTimeline(state);
   }
 
   /** Refetch the most recent page of messages for a session without
@@ -377,9 +416,24 @@ class ConversationStore {
       state.messages = page.messages;
       state.hasMore = page.hasMore;
       state.completedMessageIds = new Set(page.messages.map((m) => m.id));
+      rebuildTurnsFromMessages(state);
+      recomputeTimeline(state);
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
     }
+  }
+
+  /** Replace the per-session reorg-audit list and re-merge it into
+   * the timeline. Called from `Conversation.svelte`'s `refreshAudits`
+   * effect when the session's audit list is fetched / refreshed.
+   * Audit timestamps don't shift mid-stream, so a single rebuild on
+   * fetch is enough — the per-event reducer paths never touch
+   * audits. */
+  setAudits(sessionId: string, audits: api.ReorgAudit[]): void {
+    const state = this.states[sessionId];
+    if (!state) return;
+    state.audits = audits;
+    recomputeTimeline(state);
   }
 }
 

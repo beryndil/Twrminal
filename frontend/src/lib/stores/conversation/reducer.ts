@@ -13,8 +13,21 @@
  * side effects (session-row cost bump, running total update, error
  * surface, post-drift message refresh) travel through `ctx` so this
  * module stays free of store / API dependencies.
+ *
+ * Per-event tail mutation (item 29 / 2026-04-24 refactor): `state.turns`
+ * and `state.timeline` are first-class arrays held on `SessionState`
+ * and mutated alongside the wire state. Token / thinking / tool-delta
+ * events poke fields on the existing tail Turn instead of recomputing
+ * the whole array — Svelte 5 $state proxies propagate the field write
+ * to subscribers without re-allocating the containing array. Full
+ * rebuilds (`rebuildTurnsFromMessages` + `recomputeTimeline`) only run
+ * on `load` / `loadOlder` / `refreshMessages` / `setAudits`, which is
+ * the prerequisite the 2026-04-21 audit identified for cutting the
+ * 1:1 WS-event-to-rebuild ratio.
  */
 import type * as api from '$lib/api';
+
+import { buildSettledTurns, buildStreamingTail, type Turn } from '$lib/turns';
 
 export type LiveToolCall = {
   id: string;
@@ -149,7 +162,26 @@ export type SessionState = {
   // message list is empty because we haven't loaded yet vs. empty
   // because the session genuinely has no messages.
   loadingInitial: boolean;
+  // --- view caches mutated alongside the wire state ----------------
+  // `turns` and `timeline` are the canonical view data the
+  // Conversation pane subscribes to. The reducer mutates the tail
+  // Turn in place during streaming (token / thinking / tool deltas)
+  // so per-event work is O(1) instead of O(messages + tool calls).
+  // Full rebuilds happen on `load`, `loadOlder`, `refreshMessages`,
+  // and `setAudits` — i.e. when the underlying arrays change shape
+  // wholesale. See module docstring.
+  turns: Turn[];
+  audits: api.ReorgAudit[];
+  timeline: TimelineItem[];
 };
+
+/** Chronologically merged view item — either a turn (user/assistant
+ *  exchange) or a reorg audit divider. The Conversation pane renders
+ *  this list directly via `{#each timeline as item (item.key)}`; the
+ *  reducer keeps it sorted by `when` (ISO timestamp). */
+export type TimelineItem =
+  | { kind: 'turn'; key: string; when: string; turn: Turn }
+  | { kind: 'audit'; key: string; when: string; audit: api.ReorgAudit };
 
 export type ContextUsageState = {
   percentage: number;
@@ -175,8 +207,164 @@ export function emptyState(): SessionState {
     // Neutral default: a bare state isn't "loading" until `load()`
     // flips this on. Any code path that instantiates SessionState
     // outside the load flow (WS replay, tests) starts not-loading.
-    loadingInitial: false
+    loadingInitial: false,
+    turns: [],
+    audits: [],
+    timeline: []
   };
+}
+
+// --- tail mutation helpers -------------------------------------------
+//
+// These keep `state.turns` and `state.timeline` in sync with the wire
+// state without re-allocating either array on every WS event. Exported
+// for the store's `pushUserMessage` / `setAudits` paths and for tests.
+
+/** Locate the in-flight streaming tail by scanning back from the end
+ *  of `turns`. Most of the time the tail is the literal last element,
+ *  but a mid-stream user prompt (`pushUserMessage` while a previous
+ *  reply is still arriving) appends a new user-only turn after the
+ *  streaming one — so a strict `turns[length-1]` check would miss it. */
+function findStreamingTail(state: SessionState): Turn | null {
+  for (let i = state.turns.length - 1; i >= 0; i--) {
+    if (state.turns[i].isStreaming) return state.turns[i];
+  }
+  return null;
+}
+
+/** Promote the trailing open user turn to streaming (mirrors
+ *  `buildStreamingTail`'s `absorbsLastSettled` branch so the user's
+ *  bubble doesn't visually duplicate), or push a fresh streaming tail
+ *  when no open user turn is available. Returns the tail Turn for
+ *  subsequent in-place writes. */
+function ensureStreamingTail(state: SessionState, messageId: string | null): Turn {
+  const existing = findStreamingTail(state);
+  if (existing) return existing;
+  const last = state.turns[state.turns.length - 1];
+  if (last && last.user && !last.assistant && !last.isStreaming) {
+    last.isStreaming = true;
+    last.streamingContent = '';
+    last.streamingThinking = '';
+    return last;
+  }
+  const tail: Turn = {
+    key: messageId ?? 'streaming:pending',
+    user: null,
+    assistant: null,
+    thinking: '',
+    toolCalls: [],
+    streamingContent: '',
+    streamingThinking: '',
+    isStreaming: true
+  };
+  state.turns.push(tail);
+  // `when=''` so `recomputeTimeline`'s sort sinks the streaming tail
+  // to the end until `finalizeStreamingTail` fills it in. Audits, the
+  // only other items with timestamps later than current settled
+  // turns, are appended past it on `setAudits` rebuilds.
+  state.timeline.push({
+    kind: 'turn',
+    key: `turn:${tail.key}`,
+    when: '',
+    turn: tail
+  });
+  return tail;
+}
+
+/** Close out the streaming tail on `message_complete`: attach the
+ *  freshly-persisted assistant message, clear the streaming fringe,
+ *  and backfill the timeline `when` if it was an unrooted tail (no
+ *  user message). The tail Turn object identity is preserved so the
+ *  `{#each}` keyed loop in the Conversation pane doesn't remount the
+ *  MessageTurn — the only field that visibly transitions is
+ *  `isStreaming` flipping false. */
+function finalizeStreamingTail(state: SessionState, msg: api.Message): void {
+  const tail = findStreamingTail(state);
+  if (!tail) return;
+  tail.assistant = msg;
+  tail.thinking = msg.thinking ?? '';
+  tail.streamingContent = '';
+  tail.streamingThinking = '';
+  tail.isStreaming = false;
+  if (!tail.user) {
+    for (const item of state.timeline) {
+      if (item.kind === 'turn' && item.turn === tail && item.when === '') {
+        item.when = msg.created_at;
+        break;
+      }
+    }
+  }
+}
+
+/** Append a new user-only turn for an outgoing prompt. Called from
+ *  the store's `pushUserMessage`. Audits don't shift mid-stream so
+ *  appending to the end of `timeline` is correct: the new turn's
+ *  timestamp is "now," which is later than every existing audit. */
+export function appendUserTurn(state: SessionState, msg: api.Message): void {
+  const turn: Turn = {
+    key: msg.id,
+    user: msg,
+    assistant: null,
+    thinking: '',
+    toolCalls: [],
+    streamingContent: '',
+    streamingThinking: '',
+    isStreaming: false
+  };
+  state.turns.push(turn);
+  state.timeline.push({
+    kind: 'turn',
+    key: `turn:${turn.key}`,
+    when: msg.created_at,
+    turn
+  });
+}
+
+/** Replace `state.turns` from the current `messages` + `toolCalls` +
+ *  streaming fringe. Reuses `buildSettledTurns` (and its WeakMap
+ *  cache) so reference-stability for already-settled turns survives
+ *  the rebuild. Called on `load`, `loadOlder`, and `refreshMessages`
+ *  — the points where the underlying arrays change shape wholesale. */
+export function rebuildTurnsFromMessages(state: SessionState): void {
+  const settled = buildSettledTurns(state.messages, state.toolCalls);
+  let next: Turn[] = settled;
+  if (state.streamingActive) {
+    const tail = buildStreamingTail(
+      settled,
+      state.toolCalls,
+      state.streamingMessageId,
+      state.streamingThinking,
+      state.streamingText
+    );
+    if (tail) {
+      next = tail.absorbsLastSettled
+        ? [...settled.slice(0, -1), tail.tail]
+        : [...settled, tail.tail];
+    }
+  }
+  state.turns.splice(0, state.turns.length, ...next);
+}
+
+/** Rebuild `state.timeline` from `state.turns` + `state.audits`,
+ *  sorted by ISO timestamp. Called after `rebuildTurnsFromMessages`
+ *  and on `setAudits`. Per-event reducer paths (token, thinking,
+ *  tool deltas) never call this — the cost we're cutting. */
+export function recomputeTimeline(state: SessionState): void {
+  const items: TimelineItem[] = [];
+  for (const t of state.turns) {
+    const when = t.user?.created_at ?? t.assistant?.created_at ?? '';
+    items.push({ kind: 'turn', key: `turn:${t.key}`, when, turn: t });
+  }
+  for (const a of state.audits) {
+    items.push({ kind: 'audit', key: `audit:${a.id}`, when: a.created_at, audit: a });
+  }
+  items.sort((a, b) => {
+    if (a.when === b.when) return 0;
+    if (a.when === '') return 1;
+    if (b.when === '') return -1;
+    return a.when < b.when ? -1 : 1;
+  });
+  state.timeline.splice(0, state.timeline.length, ...items);
 }
 
 /**
@@ -223,13 +411,19 @@ export function applyEvent(
       if (state.completedMessageIds.has(event.message_id)) return;
       state.streamingMessageId = event.message_id;
       state.streamingActive = true;
+      // Materialize the streaming tail Turn now so subsequent token /
+      // tool events can poke its fields in place. Either promotes the
+      // trailing user-only turn (the typical case — user just sent a
+      // prompt) or pushes a fresh tail (agentic continuation, no
+      // preceding user message in this exchange).
+      ensureStreamingTail(state, event.message_id);
       // Agent started work — re-sort the session to the top so "where
       // is it working right now?" is always the topmost row. Runs
       // even for a replay-from-buffer start (no completion recorded
       // yet) because that case means "work the user hasn't seen yet."
       ctx.touchSession(event.session_id);
       return;
-    case 'token':
+    case 'token': {
       // Replay guard: if the start frame's message_id is already
       // completed, ignore mid-turn tokens.
       if (
@@ -238,16 +432,25 @@ export function applyEvent(
       )
         return;
       state.streamingText += event.text;
+      // In-place tail mutation — single field write on an existing
+      // Turn instead of rebuilding the whole turns array. This is the
+      // dominant per-frame cost the 2026-04-21 audit measured.
+      const tail = findStreamingTail(state);
+      if (tail) tail.streamingContent = state.streamingText;
       return;
-    case 'thinking':
+    }
+    case 'thinking': {
       if (
         state.streamingMessageId &&
         state.completedMessageIds.has(state.streamingMessageId)
       )
         return;
       state.streamingThinking += event.text;
+      const tail = findStreamingTail(state);
+      if (tail) tail.streamingThinking = state.streamingThinking;
       return;
-    case 'tool_call_start':
+    }
+    case 'tool_call_start': {
       // In-place push rather than array-replace. The file header
       // commits to mutating `state` in place — Svelte 5 `$state`
       // proxies make per-element mutation reactive, and allocating
@@ -256,7 +459,7 @@ export function applyEvent(
       // (every event invalidated `toolCalls` → invalidated `turns`
       // → invalidated `timeline`, 227 rebuilds per tool-heavy turn).
       if (state.toolCalls.some((tc) => tc.id === event.tool_call_id)) return;
-      state.toolCalls.push({
+      const tc: LiveToolCall = {
         id: event.tool_call_id,
         messageId: state.streamingMessageId,
         name: event.name,
@@ -268,8 +471,22 @@ export function applyEvent(
         finishedAt: null,
         outputTruncated: false,
         lastProgressMs: null
-      });
+      };
+      state.toolCalls.push(tc);
+      // Attach to the live tail so the MessageTurn's tool-call list
+      // grows in place. Re-read the freshly inserted entry from
+      // `state.toolCalls` so we share the proxy Svelte 5 $state
+      // wrapped on insert — pushing the raw `tc` literal into a
+      // second proxied array would yield a separate proxy, and
+      // subsequent delta mutations (which look up via
+      // `state.toolCalls.find`) would only update one of the two
+      // views. This way both pointers share the same reactive
+      // proxy and the in-place mutation propagates.
+      const inserted = state.toolCalls[state.toolCalls.length - 1];
+      const tail = findStreamingTail(state);
+      if (tail && inserted.messageId !== null) tail.toolCalls.push(inserted);
       return;
+    }
     case 'tool_output_delta': {
       // Four invariants, all enforced here:
       //   1. Ordering — drop if the target call already finished.
@@ -334,33 +551,36 @@ export function applyEvent(
       if (capped.truncated) tc.outputTruncated = true;
       return;
     }
-    case 'message_complete':
+    case 'message_complete': {
       // Dedupe: replay can deliver a complete for a turn that's
       // already in the DB (and hence in `messages`). Clear the
       // streaming fringe either way so the UI returns to idle.
       if (!state.completedMessageIds.has(event.message_id)) {
-        state.messages = [
-          ...state.messages,
-          {
-            id: event.message_id,
-            session_id: event.session_id,
-            role: 'assistant',
-            content: state.streamingText,
-            thinking: state.streamingThinking || null,
-            created_at: new Date().toISOString()
-          }
-        ];
+        const msg: api.Message = {
+          id: event.message_id,
+          session_id: event.session_id,
+          role: 'assistant',
+          content: state.streamingText,
+          thinking: state.streamingThinking || null,
+          created_at: new Date().toISOString()
+        };
+        state.messages = [...state.messages, msg];
         state.completedMessageIds.add(event.message_id);
         if (event.cost_usd !== null) {
           ctx.addCost(event.session_id, event.cost_usd);
         }
         ctx.addMessageCount(event.session_id);
+        // Flip the streaming tail to settled in place — same Turn
+        // object reference, so the keyed `{#each}` doesn't remount
+        // the MessageTurn. Only `isStreaming` and `assistant` change.
+        finalizeStreamingTail(state, msg);
       }
       state.streamingText = '';
       state.streamingThinking = '';
       state.streamingActive = false;
       state.streamingMessageId = null;
       return;
+    }
     case 'error':
       ctx.setError(event.message);
       state.streamingActive = false;
@@ -407,7 +627,7 @@ export function applyEvent(
       // can render safely.
       state.todos = event.todos;
       return;
-    case 'runner_status':
+    case 'runner_status': {
       // Sent once right after replay on every (re)connect. If the
       // server says no turn is in-flight but we think one is, the
       // most likely cause is a server restart that killed the SDK
@@ -419,8 +639,20 @@ export function applyEvent(
         state.streamingThinking = '';
         state.streamingActive = false;
         state.streamingMessageId = null;
+        // Clear the dangling tail's streaming flag too — the
+        // subsequent `refreshMessages` rebuild will replace `turns`
+        // wholesale, but we want the UI to stop showing a streaming
+        // spinner immediately rather than waiting for the async
+        // refresh to land.
+        const tail = findStreamingTail(state);
+        if (tail) {
+          tail.isStreaming = false;
+          tail.streamingContent = '';
+          tail.streamingThinking = '';
+        }
         ctx.refreshMessages(event.session_id);
       }
       return;
+    }
   }
 }

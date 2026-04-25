@@ -39,7 +39,7 @@
   import ContextMeter from '$lib/components/ContextMeter.svelte';
   import LiveTodos from '$lib/components/LiveTodos.svelte';
   import TokenMeter from '$lib/components/TokenMeter.svelte';
-  import { buildSettledTurns, buildStreamingTail } from '$lib/turns';
+  import VirtualItem from '$lib/components/VirtualItem.svelte';
   import {
     connectionLabel,
     copyText,
@@ -47,58 +47,34 @@
     pressureClass
   } from '$lib/utils/conversation-ui';
 
-  // Split derivation (item 5 / perf audit 2026-04-23):
-  // `settledTurns` invalidates only when the messages/toolCalls arrays
-  // themselves change (DB-committed work). `buildSettledTurns` returns
-  // reference-stable Turn objects via its WeakMap cache, so MessageTurn
-  // components for already-settled turns skip re-rendering on every
-  // token frame. `turns` is a cheap combine of `settledTurns` + the
-  // live streaming tail — it re-fires on every token, but only builds
-  // one Turn (the tail) instead of all of them.
-  const settledTurns = $derived.by(() =>
-    buildSettledTurns(conversation.messages, conversation.toolCalls)
-  );
-  const turns = $derived.by(() => {
-    if (!conversation.streamingActive) return settledTurns;
-    const result = buildStreamingTail(
-      settledTurns,
-      conversation.toolCalls,
-      conversation.streamingMessageId,
-      conversation.streamingThinking,
-      conversation.streamingText
-    );
-    if (!result) return settledTurns;
-    return result.absorbsLastSettled
-      ? [...settledTurns.slice(0, -1), result.tail]
-      : [...settledTurns, result.tail];
-  });
+  // Item 29 / perf audit 2026-04-21 (refactor 2026-04-24):
+  // `turns` and `timeline` now live on `ConversationStore`; the
+  // reducer keeps them in sync via in-place tail mutation so the
+  // Conversation pane no longer recomputes either array on every WS
+  // event. `audits` similarly moved into the store so `setAudits`
+  // owns the timeline merge. See `reducer.ts` module docstring.
+  const turns = $derived(conversation.turns);
+  const timeline = $derived(conversation.timeline);
+  const audits = $derived(conversation.audits);
 
-  // Slice 5: merge turns + reorg audit dividers into one chronological
-  // timeline so the dividers land in the right spot instead of always
-  // being tacked on at the end. Sort stably by ISO timestamp — turns
-  // without a message (streaming placeholder) sink with empty string.
-  type TimelineItem =
-    | { kind: 'turn'; key: string; when: string; turn: (typeof turns)[number] }
-    | { kind: 'audit'; key: string; when: string; audit: api.ReorgAudit };
-
-  const timeline = $derived.by((): TimelineItem[] => {
-    const items: TimelineItem[] = [];
-    for (const t of turns) {
-      const when = t.user?.created_at ?? t.assistant?.created_at ?? '';
-      items.push({ kind: 'turn', key: `turn:${t.key}`, when, turn: t });
-    }
-    for (const a of audits) {
-      items.push({ kind: 'audit', key: `audit:${a.id}`, when: a.created_at, audit: a });
-    }
-    items.sort((a, b) => {
-      if (a.when === b.when) return 0;
-      // Empty (streaming turn, no message yet) always lands last.
-      if (a.when === '') return 1;
-      if (b.when === '') return -1;
-      return a.when < b.when ? -1 : 1;
-    });
-    return items;
-  });
+  // Item 34 / perf audit 2026-04-21: timeline virtualization. The DB
+  // probe found 3 of 41 sessions already exceed 300 timeline items
+  // and the largest is 580. Below the threshold the cost of pinning
+  // an IntersectionObserver per item isn't worth recovering — keep
+  // the simple {#each} render. Above it, wrap each entry in
+  // `VirtualItem` so only items near the viewport mount their full
+  // MessageTurn (markdown + shiki + tool-call rendering). 200 picked
+  // as the floor: well above the 14-msg average session, well below
+  // the 580-item ceiling, and round.
+  const VIRTUALIZE_THRESHOLD = 200;
+  // Number of items at the bottom of the timeline that always mount
+  // unconditionally. The streaming tail mutates in place during a
+  // turn (reducer relies on the existing DOM), and auto-scroll uses
+  // the bottom items as its anchor — both must stay real, never
+  // placeholders. 30 items covers a typical user-prompt + assistant
+  // + several tool calls without bringing in the long-history tail.
+  const ALWAYS_WARM_TAIL = 30;
+  const useVirtualization = $derived(timeline.length > VIRTUALIZE_THRESHOLD);
 
   function onJumpToAuditTarget(targetId: string) {
     sessions.select(targetId);
@@ -109,14 +85,14 @@
    * renders on this turn — see decision 2026-04-22 in TODO.md
    * "Feature: More info button". A streaming turn doesn't qualify
    * (asking for "more detail on your previous response" before that
-   * response finishes is incoherent), so we look only at settled
-   * turns when streaming is active. Returns null when no assistant
-   * has spoken yet, which keeps the empty-conversation state clean.
+   * response finishes is incoherent), but the in-place tail mutation
+   * leaves a streaming tail's `assistant` field null until
+   * `message_complete` finalizes it, so the backwards scan naturally
+   * skips it without needing a separate "settled-only" array.
    */
   const latestAssistantTurnKey = $derived.by((): string | null => {
-    const source = conversation.streamingActive ? settledTurns : turns;
-    for (let i = source.length - 1; i >= 0; i -= 1) {
-      const t = source[i];
+    for (let i = turns.length - 1; i >= 0; i -= 1) {
+      const t = turns[i];
       if (t.assistant !== null) return t.key;
     }
     return null;
@@ -436,18 +412,16 @@
 
   // Slice 5: persistent reorg-audit dividers. Fetched on session
   // switch, refreshed after every reorg op (including undos) so the
-  // timeline stays truthful without waiting for a reload.
-  let audits = $state<api.ReorgAudit[]>([]);
-
+  // timeline stays truthful without waiting for a reload. The list
+  // itself lives on `ConversationStore` (item 29 / 2026-04-24 refactor)
+  // so `setAudits` can re-merge it into the store-owned timeline; the
+  // pane still owns the fetch trigger.
   async function refreshAudits(): Promise<void> {
     const sid = sessions.selectedId;
-    if (!sid) {
-      audits = [];
-      return;
-    }
+    if (!sid) return;
     try {
       const rows = await api.listReorgAudits(sid);
-      if (sessions.selectedId === sid) audits = rows;
+      if (sessions.selectedId === sid) conversation.setAudits(sid, rows);
     } catch {
       // Non-fatal — the conversation still renders without dividers.
     }
@@ -455,10 +429,7 @@
 
   $effect(() => {
     const sid = sessions.selected?.id ?? null;
-    if (!sid) {
-      audits = [];
-      return;
-    }
+    if (!sid) return;
     // Track updated_at so a server-side bump (e.g., a move from the
     // other end) also invalidates the audit list on refocus.
     void sessions.selected?.updated_at;
@@ -1858,7 +1829,7 @@
         No messages yet. Send a prompt to start the conversation.
       </p>
     {:else}
-      {#each timeline as item (item.key)}
+      {#snippet timelineEntry(item: (typeof timeline)[number])}
         {#if item.kind === 'turn'}
           <MessageTurn
             user={item.turn.user}
@@ -1879,6 +1850,21 @@
           />
         {:else}
           <ReorgAuditDivider audit={item.audit} onJumpTo={onJumpToAuditTarget} />
+        {/if}
+      {/snippet}
+
+      {#each timeline as item, idx (item.key)}
+        {#if useVirtualization}
+          {@const isStreamingTail = item.kind === 'turn' && item.turn.isStreaming}
+          {@const inWarmTail = idx >= timeline.length - ALWAYS_WARM_TAIL}
+          <VirtualItem
+            scrollRoot={scrollContainer}
+            forceVisible={isStreamingTail || inWarmTail}
+          >
+            {@render timelineEntry(item)}
+          </VirtualItem>
+        {:else}
+          {@render timelineEntry(item)}
         {/if}
       {/each}
 

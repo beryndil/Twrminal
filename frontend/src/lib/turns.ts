@@ -1,5 +1,8 @@
 import type { Message } from '$lib/api';
-import type { LiveToolCall } from '$lib/stores/conversation.svelte';
+// Imported directly from the reducer module (not the store re-export)
+// to keep `reducer.ts` free to import the rebuild helpers below
+// without forming a cycle (reducer → turns → conversation → reducer).
+import type { LiveToolCall } from '$lib/stores/conversation/reducer';
 
 export type Turn = {
   key: string;

@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.2] - 2026-04-24
+
+Frontend perf: timeline virtualization + completed in-place tail
+mutation (frontend v0.8.4). Closes the two children of the 2026-04-21
+performance audit.
+
+### Changed
+
+- **Reducer-owned `turns` / `timeline` / `audits` arrays.** Promoted
+  the three view caches from `Conversation.svelte` `$derived.by`
+  blocks to first-class `$state` arrays on `SessionState`. Per-WS-
+  event paths (`token`, `thinking`, `tool_call_start`,
+  `tool_output_delta`, `tool_progress`, `tool_call_end`,
+  `message_complete`, `runner_status`) mutate the existing tail Turn
+  in place instead of recomputing the whole array. Full rebuilds
+  (`rebuildTurnsFromMessages` + `recomputeTimeline`) only run on
+  `load`, `loadOlder`, `refreshMessages`, `applyMessagePatch`, and
+  `setAudits` — points where the underlying arrays change shape
+  wholesale. Cuts the 1:1 WS-event-to-rebuild ratio the audit
+  measured at 224/227 fires per tool-heavy turn down to 0 rebuilds
+  on the streaming hot path.
+- **Timeline virtualization above 200 items.** New
+  `frontend/src/lib/components/VirtualItem.svelte` lazy-mounts each
+  timeline entry via IntersectionObserver + ResizeObserver: off-
+  screen items render as a `min-height` placeholder (resolved to the
+  measured height after first paint), on-screen items render their
+  full slot. `Conversation.svelte` flips on virtualization when
+  `timeline.length > 200` and force-mounts the streaming tail plus
+  the bottom-30 warm band so auto-scroll and reducer in-place
+  mutations land on real DOM. DB probe found 3 of 41 sessions
+  already exceed 300 items and the largest is 580; opening one used
+  to paint every MessageTurn (markdown + shiki + tool-call render)
+  up front. Below threshold the existing `{#each}` render is
+  preserved verbatim.
+
+### Notes
+
+- 5 new reducer tests (`in-place tail mutation` block in
+  `stores/conversation.svelte.test.ts`) lock the contract: tail Turn
+  identity stable across 50 token events, tail `toolCalls` array
+  reference stable across 25 deltas, finalize preserves Turn
+  identity (only `isStreaming` / `assistant` flip), open-user-turn
+  absorption on `message_start`, timeline array reference stability
+  across token events.
+- 7 new VirtualItem unit tests (`components/VirtualItem.test.ts`):
+  starts unmounted, promotes on intersection, returns to placeholder
+  with measured min-height on exit, applies `fallbackHeightPx`
+  before first measurement, threads `scrollRoot` + `rootMargin` to
+  the IO, disconnects on unmount, fails open when
+  IntersectionObserver is unavailable.
+- All previous suites pass. ruff + ruff-format + mypy strict +
+  svelte-check + 639 frontend tests + 963 backend tests green.
+- The Svelte 5 `$state` proxy quirk where pushing the same plain
+  object into two proxied arrays yields two distinct proxies is
+  caught by the toolCalls-stability test — the reducer re-reads the
+  post-push proxy from `state.toolCalls` before pushing into
+  `tail.toolCalls` so both arrays share the reactive identity.
+
 ## [0.12.0] - 2026-04-24
 
 ### Added

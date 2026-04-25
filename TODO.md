@@ -1605,6 +1605,32 @@ calls; captured `bearings_ws_events_sent_total` via
     max but above the 100 average).
 - FTS5 and token-batching stay off the checklist.
 
+**Resolution 2026-04-24 (item 34 / timeline virtualization):** shipped
+on the heels of item 29's full $state promotion. New
+`frontend/src/lib/components/VirtualItem.svelte` is a per-entry
+lazy-mount wrapper backed by IntersectionObserver + ResizeObserver:
+off-screen items render as a `min-height` placeholder that resolves to
+the item's measured height after the first paint, on-screen items
+render their full slot. `Conversation.svelte` flips on virtualization
+when `timeline.length > 200` (the threshold from this audit) and force-
+mounts the streaming tail plus the bottom-30 warm band so auto-scroll
+and the in-place reducer mutations land on real DOM. Below threshold
+the existing `{#each}` render is preserved verbatim — virtualization
+isn't free (one IO + one RO per item) so we only pay the cost when
+there's something to recover. `loadOlder`'s existing scroll-anchor
+arithmetic (`scrollTop = scrollHeight - prevHeight`) keeps working
+unchanged because the placeholder reserves height via `min-height`,
+so prepended items contribute their fallback or measured height to
+`scrollHeight` immediately. Test coverage in
+`frontend/src/lib/components/VirtualItem.test.ts`: starts unmounted,
+promotes on intersection, returns to placeholder with measured min-
+height on exit, applies `fallbackHeightPx` before first measurement,
+threads `scrollRoot` + `rootMargin` to the IO, disconnects on unmount,
+fails open (renders content) when IntersectionObserver is unavailable.
+Threshold + warm-tail logic in `Conversation.svelte` is trivial inline
+math (`> 200`, `idx >= length - 30`) so no integration test was added
+— the meaningful behavior is in `VirtualItem` itself.
+
 ### 2026-04-23 — Follow-up audit: additional sluggishness sources
 
 Dave reported the app is "very very sluggish." Re-read the hot path end

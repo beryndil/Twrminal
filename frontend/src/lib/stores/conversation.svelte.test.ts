@@ -401,6 +401,107 @@ describe('todo_write_update reducer', () => {
   });
 });
 
+describe('in-place tail mutation (item 29 / perf audit refactor)', () => {
+  // The 2026-04-21 audit measured 224/227 buildTurns/timeline rebuilds
+  // per tool-heavy turn — one per WS event. The refactor's contract
+  // is that token / thinking / tool-delta events mutate the existing
+  // tail Turn instead of producing a fresh one, so the underlying
+  // `turns` array reference stays stable and the keyed `{#each}` in
+  // Conversation.svelte doesn't churn its MessageTurn children.
+
+  function messageStart(sessionId: string, messageId: string): AgentEvent {
+    return { type: 'message_start', session_id: sessionId, message_id: messageId };
+  }
+  function token(sessionId: string, text: string): AgentEvent {
+    return { type: 'token', session_id: sessionId, text };
+  }
+  function messageComplete(
+    sessionId: string,
+    messageId: string,
+    cost: number | null = 0
+  ): AgentEvent {
+    return {
+      type: 'message_complete',
+      session_id: sessionId,
+      message_id: messageId,
+      cost_usd: cost
+    };
+  }
+
+  it('preserves the tail Turn object identity across many token events', () => {
+    const sid = uniqueSession('tail-identity');
+    conversation.sessionId = sid;
+    conversation.handleEvent(messageStart(sid, 'm-1'));
+    const tailBefore = conversation.turns[conversation.turns.length - 1];
+    expect(tailBefore.isStreaming).toBe(true);
+    for (let i = 0; i < 50; i++) {
+      conversation.handleEvent(token(sid, 'x'));
+    }
+    const tailAfter = conversation.turns[conversation.turns.length - 1];
+    expect(tailAfter).toBe(tailBefore);
+    expect(tailAfter.streamingContent).toBe('x'.repeat(50));
+  });
+
+  it('preserves the toolCalls array reference on the tail across deltas', () => {
+    const sid = uniqueSession('tc-array-stable');
+    conversation.sessionId = sid;
+    conversation.handleEvent(messageStart(sid, 'm-tc'));
+    conversation.handleEvent(startCall(sid, 'tc-A'));
+    const tail = conversation.turns[conversation.turns.length - 1];
+    const toolCallsArrayBefore = tail.toolCalls;
+    const tcBefore = tail.toolCalls[0];
+    for (let i = 0; i < 25; i++) {
+      conversation.handleEvent(delta(sid, 'tc-A', 'd'));
+    }
+    expect(tail.toolCalls).toBe(toolCallsArrayBefore);
+    expect(tail.toolCalls[0]).toBe(tcBefore);
+    expect(tail.toolCalls[0].output).toBe('d'.repeat(25));
+  });
+
+  it('finalizes the streaming tail in place on message_complete (same object)', () => {
+    const sid = uniqueSession('finalize-identity');
+    conversation.sessionId = sid;
+    conversation.handleEvent(messageStart(sid, 'm-fin'));
+    conversation.handleEvent(token(sid, 'hello'));
+    const tailBefore = conversation.turns[conversation.turns.length - 1];
+    expect(tailBefore.isStreaming).toBe(true);
+    conversation.handleEvent(messageComplete(sid, 'm-fin'));
+    const tailAfter = conversation.turns[conversation.turns.length - 1];
+    expect(tailAfter).toBe(tailBefore);
+    expect(tailAfter.isStreaming).toBe(false);
+    expect(tailAfter.assistant?.id).toBe('m-fin');
+    expect(tailAfter.assistant?.content).toBe('hello');
+  });
+
+  it('absorbs an open user turn into the streaming tail (no duplicate row)', () => {
+    const sid = uniqueSession('absorb-user');
+    conversation.sessionId = sid;
+    conversation.pushUserMessage(sid, 'hello there');
+    expect(conversation.turns).toHaveLength(1);
+    const userTurn = conversation.turns[0];
+    expect(userTurn.user?.content).toBe('hello there');
+    expect(userTurn.isStreaming).toBe(false);
+    conversation.handleEvent(messageStart(sid, 'm-absorb'));
+    expect(conversation.turns).toHaveLength(1);
+    expect(conversation.turns[0]).toBe(userTurn);
+    expect(conversation.turns[0].isStreaming).toBe(true);
+  });
+
+  it('keeps the timeline array reference stable across token events', () => {
+    const sid = uniqueSession('timeline-stable');
+    conversation.sessionId = sid;
+    conversation.handleEvent(messageStart(sid, 'm-tl'));
+    const timelineBefore = conversation.timeline;
+    expect(timelineBefore).toHaveLength(1);
+    for (let i = 0; i < 20; i++) {
+      conversation.handleEvent(token(sid, '.'));
+    }
+    expect(conversation.timeline).toBe(timelineBefore);
+    expect(conversation.timeline).toHaveLength(1);
+    expect(conversation.timeline[0].kind).toBe('turn');
+  });
+});
+
 describe('loadingInitial flag', () => {
   // We don't exercise `conversation.load()` here (that would require
   // mocking $lib/api at the module boundary — the agent.svelte tests
