@@ -3,6 +3,8 @@
   import type { LiveToolCall } from '$lib/stores/conversation.svelte';
   import { stickToBottom } from '$lib/actions/autoscroll';
   import { contextmenu } from '$lib/actions/contextmenu';
+  import { contextmenuDelegate } from '$lib/actions/contextmenu-delegate';
+  import { linkify } from '$lib/linkify';
   import { preferences } from '$lib/stores/preferences.svelte';
   import CollapsibleBody from './CollapsibleBody.svelte';
 
@@ -36,6 +38,13 @@
     bulkMode?: boolean;
     selectedIds?: ReadonlySet<string>;
     onToggleSelect?: (msg: Message, shiftKey: boolean) => void;
+    /** Session working directory. Plumbed through so the tool-output
+     * linkifier can resolve relative paths (e.g. `frontend/src/lib/foo.ts`
+     * in a Read result) into absolute `file://` URLs the existing
+     * "Open in editor" link handler can dispatch. Null when the host
+     * session isn't selected yet — relative paths then stay plain text.
+     * Absolute paths and bare URLs work regardless. */
+    workingDir?: string | null;
   };
 
   /**
@@ -62,8 +71,17 @@
     isLatestAssistant = false,
     bulkMode = false,
     selectedIds,
-    onToggleSelect
+    onToggleSelect,
+    workingDir = null
   }: Props = $props();
+
+  /** Render a tool-call payload (input JSON, output, error) with URLs
+   * and file paths converted to anchors. Wraps the existing
+   * `linkify` helper into a per-call closure so the template stays
+   * readable. */
+  function linkifiedSegment(text: string | null | undefined): string {
+    return linkify(text ?? '', workingDir);
+  }
 
   const runningCount = $derived(toolCalls.filter((t) => t.ok === null).length);
   // First still-running sub-agent call, if any. Its description is
@@ -277,6 +295,10 @@
           data-testid="tool-call-row"
           data-tool-call-id={call.id}
           data-running={running ? 'true' : 'false'}
+          use:contextmenuDelegate={{
+            sessionId: assistant?.session_id ?? user?.session_id ?? null,
+            messageId: call.messageId
+          }}
           use:contextmenu={{
             target: {
               type: 'tool_call',
@@ -295,9 +317,9 @@
             class="text-amber-200"
             data-testid="tool-call-subagent">— running sub-agent: {subAgentSubtitle(call.input)}</span>{/if}{/if}{#if call.outputTruncated} <span
             class="text-amber-400">[truncated]</span>{/if}
-{JSON.stringify(call.input, null, 2)}{#if call.output !== null}
-{call.output}{/if}{#if call.error}
-<span class="text-rose-400">error: {call.error}</span>{/if}</pre>
+{@html linkifiedSegment(JSON.stringify(call.input, null, 2))}{#if call.output !== null}
+{@html linkifiedSegment(call.output)}{/if}{#if call.error}
+<span class="text-rose-400">error: {@html linkifiedSegment(call.error)}</span>{/if}</pre>
       {/each}
     </div>
   </details>

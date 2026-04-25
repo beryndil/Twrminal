@@ -142,7 +142,14 @@ export function contextmenuDelegate(
     const payload = resolvePayload(target, node, current);
     if (!payload) return; // fall through — message menu takes over
     e.preventDefault();
-    e.stopPropagation();
+    // `stopImmediatePropagation` (not just `stopPropagation`) so a
+    // sibling `use:contextmenu` directive on the SAME element doesn't
+    // also fire its handler. Required for the tool-output `<pre>` in
+    // `MessageTurn.svelte`, which co-locates this delegate (for
+    // anchors inside) with a `tool_call` `use:contextmenu` (for the
+    // pre itself). Plain `stopPropagation` only blocks ancestor
+    // listeners; same-element ones still fire.
+    e.stopImmediatePropagation();
     contextMenu.open(payload, e.clientX, e.clientY, e.shiftKey);
   }
 

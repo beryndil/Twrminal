@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.2] - 2026-04-25
+
+Tool-output linkifier — closes audit follow-up v2 item 188 ("Clickable
+options"). URLs and file paths in the tool-work `<pre>` block in
+`MessageTurn.svelte` were rendering as inert plain text — bash stdout,
+Read results, and grep hits dumped paths the user had to copy-paste
+into a terminal. The right-click `link.open_in.editor` action already
+knew how to dispatch any `<a href="file://…">`, so the gap was purely
+upstream: emitting those anchors.
+
+### Added
+
+- **`frontend/src/lib/linkify.ts`** — pure linkifier helper. Tight
+  regex pass over plain text emits `<a target="_blank"
+  rel="noopener noreferrer">` for `https?://` and `file://` URLs, and
+  for absolute / project-relative file paths (resolved against the
+  session's `working_dir`). Conservative detection rules — relative
+  paths require a recognized extension tail to keep prose-y tokens
+  (`it/its`, `e.g.,`) from being linkified. 27 unit tests cover URL
+  detection, path detection, overlap with URLs, trailing-punctuation
+  trim, and HTML escaping.
+- **Tool-output `<pre>` rendering in `MessageTurn.svelte`** — input
+  JSON, output, and error text now flow through `linkify(text,
+  workingDir)` before mounting via `{@html}`. The `<pre>` carries
+  both `use:contextmenu` (for the existing `tool_call` menu —
+  unchanged) and `use:contextmenuDelegate` (so a right-click on an
+  anchor inside opens the link menu instead of the tool-call menu).
+  The new `workingDir` prop on `MessageTurn` plumbs
+  `sessions.selected.working_dir` from `Conversation.svelte`.
+
+### Changed
+
+- **`contextmenuDelegate` switched from `stopPropagation` to
+  `stopImmediatePropagation`** when it finds an anchor or code-block
+  match. Required so a sibling `use:contextmenu` directive on the
+  *same* element (the tool-output `<pre>` is the first such caller)
+  doesn't also fire its handler. The CollapsibleBody caller path is
+  unaffected — it had no co-located listener.
+
+### Notes
+
+- Browser-verified per CLAUDE.md: a session with 126 tool-call rows
+  rendered 1058 anchors (1049 `file://`, 9 `https://`), all with
+  `target="_blank" rel="noopener noreferrer"`. Right-click on a
+  `file://` anchor opened the link menu (`link.open_new_tab` +
+  `link.copy_url`) cleanly — the tool_call menu was suppressed.
+- Three follow-ups deferred to TODO.md ("Tool-output linkifier — v1
+  follow-ups"): `~/...` paths stay plain text (no `$HOME` on client),
+  API-style abs paths like `/api/foo` produce broken-but-harmless
+  `file://` URLs (~3 of 1058 anchors), markdown-body path
+  linkification (URLs already work via `gfm: true`).
+
 ## [0.16.1] - 2026-04-25
 
 File Display — Phase 1. Closes Phase 1 of the scope-locked plan in

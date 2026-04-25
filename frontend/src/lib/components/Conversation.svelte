@@ -1817,6 +1817,7 @@
             {bulkMode}
             {selectedIds}
             onToggleSelect={onBulkToggleSelect}
+            workingDir={sessions.selected?.working_dir ?? null}
           />
         {:else}
           <ReorgAuditDivider audit={item.audit} onJumpTo={onJumpToAuditTarget} />

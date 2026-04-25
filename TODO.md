@@ -2455,3 +2455,44 @@ registry so it stays in sync automatically.
 **Source of truth for execution:** Bearings session
 `f66e25b263ad42cba4e84a676637da8a` description (this same picked set,
 condensed) and the next checklist item that owns the build.
+
+## Tool-output linkifier — v1 follow-ups — 2026-04-25
+
+`frontend/src/lib/linkify.ts` ships in v0.10.x. URLs and absolute /
+project-relative file paths in tool output (`MessageTurn.svelte` tool-
+work `<pre>`) now render as anchors that route through the existing
+context-menu link actions. Two known v1 gaps that are explicit "ship
+now, iterate later" — not blockers:
+
+1. **`~/...` paths stay plain text.** No `$HOME` available on the
+   client. Two viable fixes: (a) add a thin `/api/system/home` shim
+   that returns `os.path.expanduser("~")`, or (b) expand `~` server-
+   side in `/api/shell/open` so the editor handler can accept
+   `file://~/...` URLs. (b) is the cleaner cut — it keeps the linker
+   ignorant of HOME and pushes resolution down to where the actual
+   exec happens. Either fix is bounded; pick one when this comes up
+   in the wild.
+2. **API-style absolute paths (`/api/foo`, `/v1/sessions/{id}`) get
+   linkified to broken `file://` URLs.** Clicking right-click → "Open
+   in editor" then errors at the editor with no-such-file. Conservative
+   tightening: add an extension requirement OR a known-FS-prefix
+   allowlist (`/home/`, `/usr/`, `/var/`, `/etc/`, `/opt/`, `/tmp/`,
+   `/root/`, `/srv/`, `/mnt/`, `/media/`, `/dev/`, `/proc/`, `/sys/`,
+   `/run/`, `/boot/`) on the abs-path RE. Allowlist is preferable —
+   `/usr/bin/foo` (no extension) would still link. ~10 LOC change in
+   `linkify.ts:ABS_PATH_RE`. Defer until the false-positive bites in
+   the wild — current rate is ~3 of 1058 anchors on a heavy-traffic
+   session, well under the noise floor.
+3. **Path linkification in markdown bodies.** Bare URLs already
+   auto-link via `marked` `gfm: true`; the gap is *paths* (e.g. agent
+   reply mentions `frontend/src/lib/foo.ts` in prose). Plumb-in path:
+   post-process the rendered HTML in `render.ts:renderMarkdown` with a
+   text-node walker that runs the path REs on text nodes outside
+   `<a>`, `<code>`, and `<pre>` ancestors. Keep DOMPurify happy
+   (anchors only, file:// allowed via `ALLOWED_URI_REGEXP`).
+   Lower priority — Dave said "all links" so include if cheap; the
+   tool-output ship is the bigger value gap.
+
+Originating session: `4fdad62a20f04bd7906ad3aef2e9ccc4` (v2 follow-up
+audit, item 188).
+
