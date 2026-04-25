@@ -288,6 +288,93 @@ async def test_can_use_tool_parks_under_default_mode(
 
 
 @pytest.mark.asyncio
+async def test_can_use_tool_parks_ask_user_question_under_bypass(
+    db: aiosqlite.Connection,
+) -> None:
+    """`AskUserQuestion` MUST park even under `bypassPermissions` so
+    the user actually sees the modal and the answer rides back via
+    `PermissionResultAllow(updated_input=...)`. Auto-allowing it
+    invokes the SDK tool with no `updated_input`, which produces the
+    stock "User has answered your questions: ." (empty answer) string
+    and the agent loops or stalls — exactly the 2026-04-25 symptom on
+    the autonomous tier-1 prereq leg where three AskUserQuestion calls
+    in 30 minutes all auto-completed in <100ms with empty answers."""
+    sid = await _session_id(db)
+    runner = SessionRunner(sid, ScriptedAgent(sid, scripts=[]), db)
+    queue, _ = await runner.subscribe(0)
+
+    await runner.set_permission_mode("bypassPermissions")
+
+    # Park an AskUserQuestion call. The fast-path must NOT auto-allow.
+    t_ask = asyncio.create_task(
+        runner.can_use_tool(
+            "AskUserQuestion",
+            {"questions": [{"question": "pick one"}]},
+            _ctx("q"),
+        )
+    )
+    env = await asyncio.wait_for(queue.get(), timeout=1.0)
+    assert env.payload["type"] == "approval_request", (
+        "AskUserQuestion must park even under bypassPermissions"
+    )
+    assert env.payload["tool_name"] == "AskUserQuestion"
+
+    # Sanity: a non-input-collecting tool in the same session still
+    # auto-allows under bypass — only AskUserQuestion is special-cased.
+    result = await asyncio.wait_for(
+        runner.can_use_tool("Edit", {"file_path": "/etc/x"}, _ctx("e")),
+        timeout=1.0,
+    )
+    assert isinstance(result, PermissionResultAllow)
+
+    # Resolve the parked AskUserQuestion so the test doesn't leak.
+    await runner.resolve_approval(env.payload["request_id"], "allow")
+    r = await asyncio.wait_for(t_ask, timeout=1.0)
+    assert isinstance(r, PermissionResultAllow)
+
+
+@pytest.mark.asyncio
+async def test_resolve_for_mode_leaves_ask_user_question_parked(
+    db: aiosqlite.Connection,
+) -> None:
+    """Mid-modal flip to `bypassPermissions` clears parked Edit/Bash
+    approvals (existing behavior) but must LEAVE `AskUserQuestion`
+    parked so the user still answers the question. Otherwise flipping
+    the header selector mid-turn would skip the question with no
+    answer and the agent would loop the same way auto-allow does."""
+    sid = await _session_id(db)
+    runner = SessionRunner(sid, ScriptedAgent(sid, scripts=[]), db)
+    queue, _ = await runner.subscribe(0)
+
+    t_ask = asyncio.create_task(
+        runner.can_use_tool(
+            "AskUserQuestion",
+            {"questions": [{"question": "pick one"}]},
+            _ctx("q"),
+        )
+    )
+    t_edit = asyncio.create_task(runner.can_use_tool("Edit", {"path": "/a"}, _ctx("a")))
+    # Drain both ApprovalRequest envelopes so the Futures are registered.
+    for _ in range(2):
+        env = await asyncio.wait_for(queue.get(), timeout=1.0)
+        assert env.payload["type"] == "approval_request"
+
+    await runner.set_permission_mode("bypassPermissions")
+
+    # Edit clears.
+    r_edit = await asyncio.wait_for(t_edit, timeout=1.0)
+    assert isinstance(r_edit, PermissionResultAllow)
+    # AskUserQuestion stays parked.
+    assert not t_ask.done(), "AskUserQuestion must stay parked when mode flips to bypassPermissions"
+
+    # Drain the one approval_resolved for the cleared Edit, then clean up.
+    env = await asyncio.wait_for(queue.get(), timeout=1.0)
+    assert env.payload["type"] == "approval_resolved"
+    await runner.request_stop()
+    await asyncio.wait_for(t_ask, timeout=1.0)
+
+
+@pytest.mark.asyncio
 async def test_set_permission_mode_bypass_resolves_all_pending(
     db: aiosqlite.Connection,
 ) -> None:

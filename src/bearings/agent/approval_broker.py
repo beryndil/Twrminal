@@ -38,6 +38,22 @@ EventEmitter = Callable[[AgentEvent], Awaitable[None]]
 # means it auto-resolves under `acceptEdits` the same as the rest.
 EDIT_TOOLS: frozenset[str] = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 
+# Tools whose whole purpose is to collect a user response, so they
+# must NEVER auto-allow regardless of permission_mode. Auto-allowing
+# returns `PermissionResultAllow()` with no `updated_input`, which
+# means the SDK invokes the tool with the original payload (the
+# questions, no answers). The tool's stock output then says "User
+# has answered your questions: ." (the empty value where the user's
+# pick should go) and the agent loops or stalls — exactly the
+# 2026-04-25 symptom on the autonomous tier-1 prereq leg where three
+# AskUserQuestion calls in 30 minutes all auto-completed in <100ms
+# with empty answers and the agent never made progress.
+#
+# Park these every time so the user actually sees the modal and the
+# answer rides back via `PermissionResultAllow(updated_input=...)`
+# (the AskUserQuestion modal's normal flow).
+NEVER_AUTO_ALLOW_TOOLS: frozenset[str] = frozenset({"AskUserQuestion"})
+
 
 class ApprovalBroker:
     """Owns the pending-approval Futures dict for one session.
@@ -105,17 +121,26 @@ class ApprovalBroker:
 
         Matrix:
         - `bypassPermissions`: auto-allow every call (no event emitted,
-          no Future, no park).
+          no Future, no park) — EXCEPT tools in
+          `NEVER_AUTO_ALLOW_TOOLS` (e.g. `AskUserQuestion`) whose
+          whole purpose is to collect user input.
         - `acceptEdits`: auto-allow Edit-class tools (`Edit`, `Write`,
           `MultiEdit`, `NotebookEdit`); park everything else.
         - `default` / `plan` / mode unknown: park as before so the user
           decides per call.
         """
         mode = self._mode_getter()
-        if mode == "bypassPermissions":
-            return PermissionResultAllow()
-        if mode == "acceptEdits" and tool_name in EDIT_TOOLS:
-            return PermissionResultAllow()
+        # `AskUserQuestion` and any future input-collecting tool MUST
+        # park even under `bypassPermissions`. Otherwise the SDK
+        # invokes the tool with the original payload (no answer) and
+        # the agent gets back "User has answered: ." (literal empty
+        # answer), which loops the autonomous run. Place this check
+        # BEFORE the bypass fast-path so it wins.
+        if tool_name not in NEVER_AUTO_ALLOW_TOOLS:
+            if mode == "bypassPermissions":
+                return PermissionResultAllow()
+            if mode == "acceptEdits" and tool_name in EDIT_TOOLS:
+                return PermissionResultAllow()
         request_id = uuid4().hex
         loop = asyncio.get_running_loop()
         future: asyncio.Future[PermissionResult] = loop.create_future()
@@ -187,7 +212,10 @@ class ApprovalBroker:
         wholesale.
 
         Matrix:
-        - `bypassPermissions`: allow every parked approval.
+        - `bypassPermissions`: allow every parked approval EXCEPT
+          tools in `NEVER_AUTO_ALLOW_TOOLS` (e.g. `AskUserQuestion`)
+          whose whole purpose is to collect user input. Those stay
+          parked so the user actually answers the question.
         - `acceptEdits`: allow parked approvals for SDK edit tools
           (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`); leave others
           parked.
@@ -207,6 +235,13 @@ class ApprovalBroker:
         targets: list[str] = []
         for request_id, (tool_name, future) in self._pending.items():
             if future.done():
+                continue
+            # Mirror the `can_use_tool` fast-path policy: input-
+            # collecting tools always park, even on a mid-park
+            # bypass-mode flip. Otherwise the modal clears with no
+            # answer and the agent loops the same way it does on a
+            # fresh call.
+            if tool_name in NEVER_AUTO_ALLOW_TOOLS:
                 continue
             if new_mode == "bypassPermissions" or tool_name in EDIT_TOOLS:
                 targets.append(request_id)
