@@ -23,6 +23,7 @@ from bearings.api.models import (
     ChecklistOut,
     ChecklistUpdate,
     ItemCreate,
+    ItemLink,
     ItemOut,
     ItemToggle,
     ItemUpdate,
@@ -127,6 +128,60 @@ async def toggle_item(session_id: str, item_id: int, body: ItemToggle, request: 
     # the parent session. One-directional — unchecking never reopens.
     if body.checked and await store.is_checklist_complete(conn, session_id):
         await store.close_session(conn, session_id)
+    return ItemOut(**row)
+
+
+@router.post("/items/{item_id}/link", response_model=ItemOut)
+async def link_item_to_session(
+    session_id: str, item_id: int, body: ItemLink, request: Request
+) -> ItemOut:
+    """Link this item to an existing chat session (or detach when
+    `chat_session_id=null`). Used by the autonomous driver's
+    visit-existing mode to walk a curated set of pre-built sessions
+    instead of spawning fresh ones per item.
+
+    Validates the target session exists, has `kind='chat'`, and is
+    not closed. A closed target would defeat the visit-mode skip
+    logic (the driver would see the closed link and skip anyway), so
+    we reject up front with a clear 400 instead.
+
+    Detaching (chat_session_id=null) is unconditional — the prior
+    pointer is cleared and the item reverts to "no session linked"
+    state, ready for either a fresh spawn or a re-link to a
+    different session."""
+    await _require_checklist_session(request, session_id)
+    conn = request.app.state.db
+    existing = await store.get_item(conn, item_id)
+    if existing is None or existing["checklist_id"] != session_id:
+        raise HTTPException(status_code=404, detail="item not found")
+    target = body.chat_session_id
+    if target is not None:
+        target_row = await store.get_session(conn, target)
+        if target_row is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"target session {target!r} not found",
+            )
+        if target_row.get("kind") != "chat":
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"target session {target!r} has kind="
+                    f"{target_row.get('kind')!r}; only chat sessions can be "
+                    "linked to checklist items"
+                ),
+            )
+        if target_row.get("closed_at") is not None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"target session {target!r} is closed; visit-existing "
+                    "mode requires an open session"
+                ),
+            )
+    row = await store.set_item_chat_session(conn, item_id, target)
+    if row is None:
+        raise HTTPException(status_code=404, detail="item not found")
     return ItemOut(**row)
 
 
@@ -268,6 +323,7 @@ async def spawn_paired_chat(
 
 
 _AUTO_RUN_PERMISSION_MODES = frozenset({"default", "acceptEdits", "bypassPermissions"})
+_AUTO_RUN_FAILURE_POLICIES = frozenset({"halt", "skip"})
 
 
 def _build_driver_config(body: AutoRunStart | None) -> DriverConfig | None:
@@ -280,7 +336,11 @@ def _build_driver_config(body: AutoRunStart | None) -> DriverConfig | None:
     `leg_permission_mode` is validated against the SDK's PermissionMode
     enum, minus `plan` — autonomous legs need to actually edit files,
     and plan-mode prevents that, so accepting it here would silently
-    break every run."""
+    break every run.
+
+    `failure_policy` is validated against `halt` / `skip` so a typo
+    doesn't silently land in the column and surprise the user when
+    the next failure halts unexpectedly (or doesn't)."""
     if body is None:
         return None
     provided = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
@@ -293,6 +353,14 @@ def _build_driver_config(body: AutoRunStart | None) -> DriverConfig | None:
             detail=(
                 f"leg_permission_mode must be one of "
                 f"{sorted(_AUTO_RUN_PERMISSION_MODES)!r}; got {pm!r}"
+            ),
+        )
+    fp = provided.get("failure_policy")
+    if fp is not None and fp not in _AUTO_RUN_FAILURE_POLICIES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"failure_policy must be one of {sorted(_AUTO_RUN_FAILURE_POLICIES)!r}; got {fp!r}"
             ),
         )
     return DriverConfig(**provided)

@@ -980,6 +980,296 @@ async def test_custom_threshold_via_driver_config(tmp_path: Path) -> None:
         await conn.close()
 
 
+# --- visit-existing mode -------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_visit_existing_reuses_linked_session_for_leg_one(
+    tmp_path: Path,
+) -> None:
+    """When `visit_existing_sessions=True` and the item has a linked
+    open chat session, the driver runs leg 1 against that session
+    without calling spawn_leg or teardown_leg — the user's session
+    is theirs, the driver just borrows it for one turn."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        checklist_id = await _fresh_checklist(conn)
+        item = await create_item(conn, checklist_id, label="visit-me")
+        # Pre-create a chat session and link it to the item.
+        existing_chat = await create_session(
+            conn,
+            working_dir="/tmp",
+            model="stub-model",
+            kind="chat",
+            checklist_item_id=item["id"],
+        )
+        from bearings.db.store import set_item_chat_session
+
+        await set_item_chat_session(conn, item["id"], existing_chat["id"])
+        # Refresh item dict so it carries chat_session_id when the
+        # driver looks it up via next_unchecked_top_level_item.
+        runtime = StubRuntime(conn=conn)
+        # Pre-register the existing session in the stub's reverse map
+        # so run_turn can look up the item id.
+        runtime._session_to_item[existing_chat["id"]] = item["id"]
+        runtime.turns_by_item[item["id"]] = ["CHECKLIST_ITEM_DONE"]
+        config = DriverConfig(visit_existing_sessions=True)
+        driver = Driver(
+            conn=conn,
+            runtime=runtime,
+            checklist_session_id=checklist_id,
+            config=config,
+        )
+        result = await driver.drive()
+        assert result.outcome == DriverOutcome.COMPLETED
+        assert result.items_completed == 1
+        # Critically: NO spawn_leg call, NO teardown_leg call —
+        # the session was the user's, not ours.
+        assert runtime.spawn_calls == []
+        assert runtime.teardown_calls == []
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_visit_existing_skips_items_without_linked_session(
+    tmp_path: Path,
+) -> None:
+    """An item with no linked chat session is skipped — counted in
+    items_skipped, run advances to the next item. The unchecked
+    state stays so the user can revisit it later."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        checklist_id = await _fresh_checklist(conn)
+        a = await create_item(conn, checklist_id, label="unlinked", sort_order=0)
+        b = await create_item(conn, checklist_id, label="linked", sort_order=1)
+        # Only `b` gets a linked session.
+        existing_chat = await create_session(
+            conn,
+            working_dir="/tmp",
+            model="stub-model",
+            kind="chat",
+            checklist_item_id=b["id"],
+        )
+        from bearings.db.store import set_item_chat_session
+
+        await set_item_chat_session(conn, b["id"], existing_chat["id"])
+        runtime = StubRuntime(conn=conn)
+        runtime._session_to_item[existing_chat["id"]] = b["id"]
+        runtime.turns_by_item[b["id"]] = ["CHECKLIST_ITEM_DONE"]
+        config = DriverConfig(visit_existing_sessions=True)
+        driver = Driver(
+            conn=conn,
+            runtime=runtime,
+            checklist_session_id=checklist_id,
+            config=config,
+        )
+        result = await driver.drive()
+        assert result.outcome == DriverOutcome.COMPLETED
+        assert result.items_completed == 1
+        assert result.items_skipped == 1
+        # Item `a` stayed unchecked.
+        a_refreshed = await get_item(conn, a["id"])
+        assert a_refreshed is not None
+        assert a_refreshed["checked_at"] is None
+        # Item `b` got marked done.
+        b_refreshed = await get_item(conn, b["id"])
+        assert b_refreshed is not None
+        assert b_refreshed["checked_at"] is not None
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_visit_existing_skips_when_linked_session_is_closed(
+    tmp_path: Path,
+) -> None:
+    """A closed linked session counts the same as no link — skip the
+    item rather than try to drive a closed session's runner.
+
+    Uses an UNPAIRED chat session (no `checklist_item_id` at create
+    time, only forward-link via `set_item_chat_session`). The
+    paired-chat close cascade in `close_session` would otherwise
+    auto-check the item and close the parent checklist before the
+    driver even runs — that's the intended close-cascade behavior for
+    real paired chats but it would short-circuit this test."""
+    from bearings.db.store import close_session, set_item_chat_session
+
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        checklist_id = await _fresh_checklist(conn)
+        item = await create_item(conn, checklist_id, label="stale-link")
+        existing_chat = await create_session(
+            conn,
+            working_dir="/tmp",
+            model="stub-model",
+            kind="chat",
+        )
+        await set_item_chat_session(conn, item["id"], existing_chat["id"])
+        await close_session(conn, existing_chat["id"])
+        runtime = StubRuntime(conn=conn)
+        config = DriverConfig(visit_existing_sessions=True)
+        driver = Driver(
+            conn=conn,
+            runtime=runtime,
+            checklist_session_id=checklist_id,
+            config=config,
+        )
+        result = await driver.drive()
+        assert result.outcome == DriverOutcome.COMPLETED
+        assert result.items_completed == 0
+        assert result.items_skipped == 1
+        assert runtime.spawn_calls == []
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_visit_existing_handoff_spawns_fresh_for_leg_two(
+    tmp_path: Path,
+) -> None:
+    """Visit mode: leg 1 reuses linked session. If that leg hands
+    off, leg 2 spawns fresh (the contract is `first leg uses what's
+    there, successors are mine`)."""
+    from bearings.db.store import set_item_chat_session
+
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        checklist_id = await _fresh_checklist(conn)
+        item = await create_item(conn, checklist_id, label="legs")
+        existing_chat = await create_session(
+            conn,
+            working_dir="/tmp",
+            model="stub-model",
+            kind="chat",
+            checklist_item_id=item["id"],
+        )
+        await set_item_chat_session(conn, item["id"], existing_chat["id"])
+        runtime = StubRuntime(conn=conn)
+        runtime._session_to_item[existing_chat["id"]] = item["id"]
+        # Leg 1 = existing session emits handoff; leg 2 (spawned) wraps it up.
+        runtime.turns_by_item[item["id"]] = [
+            "CHECKLIST_HANDOFF\nstate snapshot\nCHECKLIST_HANDOFF_END",
+            "CHECKLIST_ITEM_DONE",
+        ]
+        config = DriverConfig(visit_existing_sessions=True)
+        driver = Driver(
+            conn=conn,
+            runtime=runtime,
+            checklist_session_id=checklist_id,
+            config=config,
+        )
+        result = await driver.drive()
+        assert result.outcome == DriverOutcome.COMPLETED
+        assert result.items_completed == 1
+        # legs_spawned counts both legs (existing + spawned), but
+        # spawn_calls only fires for the second one.
+        assert result.legs_spawned == 2
+        assert len(runtime.spawn_calls) == 1
+        assert runtime.spawn_calls[0][1] == 2  # leg_number=2
+        assert runtime.spawn_calls[0][2] == "state snapshot"  # plug threaded
+        # Only the spawned leg was torn down — the user's existing
+        # session is left alone.
+        assert len(runtime.teardown_calls) == 1
+    finally:
+        await conn.close()
+
+
+# --- skip-on-failure mode ------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_skip_failure_advances_past_silent_item(tmp_path: Path) -> None:
+    """With `failure_policy='skip'`, a silent-exit item doesn't halt
+    the run — record the failure on its notes and advance to the
+    next item. Item stays unchecked."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        checklist_id = await _fresh_checklist(conn)
+        a = await create_item(conn, checklist_id, label="silent", sort_order=0)
+        b = await create_item(conn, checklist_id, label="ok", sort_order=1)
+        runtime = StubRuntime(
+            conn=conn,
+            turns_by_item={
+                a["id"]: ["I did stuff but said nothing"],
+                b["id"]: ["CHECKLIST_ITEM_DONE"],
+            },
+        )
+        config = DriverConfig(failure_policy="skip")
+        driver = Driver(
+            conn=conn,
+            runtime=runtime,
+            checklist_session_id=checklist_id,
+            config=config,
+        )
+        result = await driver.drive()
+        assert result.outcome == DriverOutcome.COMPLETED
+        assert result.items_completed == 1
+        assert result.items_failed == 1
+        # Item `a` stayed unchecked but carries a failure note.
+        a_refreshed = await get_item(conn, a["id"])
+        assert a_refreshed is not None
+        assert a_refreshed["checked_at"] is None
+        assert "[auto-run]" in (a_refreshed.get("notes") or "")
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_skip_failure_does_not_loop_on_failed_item(tmp_path: Path) -> None:
+    """A failed-and-skipped item must not be re-picked by the outer
+    loop — otherwise the run would loop forever on the same
+    uncompleted item. Verify by giving the agent only ONE silent
+    turn for the failing item; if it got re-picked, run_turn would
+    raise on missing script."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        checklist_id = await _fresh_checklist(conn)
+        await create_item(conn, checklist_id, label="silent")
+        runtime = StubRuntime(
+            conn=conn,
+            turns_by_item={1: ["silent, no sentinel"]},  # exactly one script
+        )
+        config = DriverConfig(failure_policy="skip")
+        driver = Driver(
+            conn=conn,
+            runtime=runtime,
+            checklist_session_id=checklist_id,
+            config=config,
+        )
+        result = await driver.drive()
+        assert result.outcome == DriverOutcome.COMPLETED
+        assert result.items_completed == 0
+        assert result.items_failed == 1
+        # Only ONE leg fired — no re-pick loop.
+        assert len(runtime.spawn_calls) == 1
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_halt_failure_default_still_halts(tmp_path: Path) -> None:
+    """Sanity: default failure_policy='halt' preserves the
+    pre-existing first-failure-stops-run behavior."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        checklist_id = await _fresh_checklist(conn)
+        await create_item(conn, checklist_id, label="silent", sort_order=0)
+        await create_item(conn, checklist_id, label="never-reached", sort_order=1)
+        runtime = StubRuntime(
+            conn=conn,
+            turns_by_item={1: ["silent, no sentinel"]},
+        )
+        # Default config — failure_policy="halt"
+        driver = Driver(conn=conn, runtime=runtime, checklist_session_id=checklist_id)
+        result = await driver.drive()
+        assert result.outcome == DriverOutcome.HALTED_FAILURE
+        # Item 2 was never touched.
+        assert len(runtime.spawn_calls) == 1
+    finally:
+        await conn.close()
+
+
 # --- shape assertions for the kickoff prompt ----------------------
 
 

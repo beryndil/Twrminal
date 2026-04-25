@@ -41,6 +41,15 @@ class ItemToggle(BaseModel):
     checked: bool
 
 
+class ItemLink(BaseModel):
+    """Body for the link endpoint. Sets the item's `chat_session_id`
+    pointer to an existing chat-kind session so visit-existing mode
+    in the autonomous driver picks it up. Pass `None` to detach a
+    prior link without spawning a fresh chat."""
+
+    chat_session_id: str | None
+
+
 class ItemOut(BaseModel):
     id: int
     checklist_id: str
@@ -110,6 +119,19 @@ class AutoRunStart(BaseModel):
     max_legs_per_item: int | None = None
     max_followup_depth: int | None = None
     leg_permission_mode: str | None = None
+    # Visit-existing mode: when True, leg 1 of each item reuses the
+    # session linked via `checklist_items.chat_session_id` (set by
+    # PATCH /items/{id} or the manual "Work on this" flow) instead of
+    # spawning fresh. Items with no linked session are skipped (left
+    # unchecked, run advances). Handoff legs still spawn fresh.
+    # Defaults to False to preserve the spawn-per-item behavior.
+    visit_existing_sessions: bool | None = None
+    # Failure policy: "halt" (default — first failure stops the run)
+    # or "skip" (record the failure on the item, leave it unchecked,
+    # advance to the next item). Use "skip" for tour runs over a
+    # curated set of pre-existing sessions when you want the driver
+    # to do everything it can and leave hard items for human review.
+    failure_policy: str | None = None
 
 
 class AutoRunStatus(BaseModel):
@@ -132,6 +154,7 @@ class AutoRunStatus(BaseModel):
     state: str
     items_completed: int | None = None
     items_failed: int | None = None
+    items_skipped: int | None = None
     legs_spawned: int | None = None
     outcome: str | None = None
     failed_item_id: int | None = None

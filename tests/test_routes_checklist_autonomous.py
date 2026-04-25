@@ -301,6 +301,123 @@ def test_run_rejects_invalid_permission_mode(client: TestClient) -> None:
         assert resp.status_code == 400, f"expected 400 for mode={bad!r}, got {resp.status_code}"
 
 
+def test_link_existing_session_to_item_succeeds(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """POST /items/{id}/link sets `chat_session_id` to an existing
+    open chat session. Subsequent GETs reflect the pointer."""
+    _install_sentinel_stream(monkeypatch, "irrelevant")
+    checklist = _create_checklist(client)
+    item = _add_item(client, checklist["id"], "linkable")
+    # Create a chat session to link to.
+    tag_id = _default_tag(client)
+    chat_resp = client.post(
+        "/api/sessions",
+        json={
+            "working_dir": "/tmp",
+            "model": "claude-sonnet-4-6",
+            "kind": "chat",
+            "tag_ids": [tag_id],
+        },
+    )
+    chat_id = chat_resp.json()["id"]
+    link_resp = client.post(
+        f"/api/sessions/{checklist['id']}/checklist/items/{item['id']}/link",
+        json={"chat_session_id": chat_id},
+    )
+    assert link_resp.status_code == 200
+    assert link_resp.json()["chat_session_id"] == chat_id
+
+
+def test_link_rejects_unknown_session(client: TestClient) -> None:
+    checklist = _create_checklist(client)
+    item = _add_item(client, checklist["id"], "x")
+    resp = client.post(
+        f"/api/sessions/{checklist['id']}/checklist/items/{item['id']}/link",
+        json={"chat_session_id": "nope-not-real"},
+    )
+    assert resp.status_code == 400
+    assert "not found" in resp.json()["detail"]
+
+
+def test_link_rejects_checklist_session_target(client: TestClient) -> None:
+    """Only chat-kind sessions can be linked. Linking a checklist
+    session as a target is a 400."""
+    a = _create_checklist(client)
+    b = _create_checklist(client)
+    item = _add_item(client, a["id"], "x")
+    resp = client.post(
+        f"/api/sessions/{a['id']}/checklist/items/{item['id']}/link",
+        json={"chat_session_id": b["id"]},
+    )
+    assert resp.status_code == 400
+
+
+def test_link_rejects_closed_session(client: TestClient) -> None:
+    """A closed chat session is unusable in visit mode (driver would
+    skip), so linking is rejected at the gate with a clear reason."""
+    checklist = _create_checklist(client)
+    item = _add_item(client, checklist["id"], "x")
+    tag_id = _default_tag(client)
+    chat_resp = client.post(
+        "/api/sessions",
+        json={
+            "working_dir": "/tmp",
+            "model": "claude-sonnet-4-6",
+            "kind": "chat",
+            "tag_ids": [tag_id],
+        },
+    )
+    chat_id = chat_resp.json()["id"]
+    # Close the chat session.
+    client.post(f"/api/sessions/{chat_id}/close")
+    resp = client.post(
+        f"/api/sessions/{checklist['id']}/checklist/items/{item['id']}/link",
+        json={"chat_session_id": chat_id},
+    )
+    assert resp.status_code == 400
+    assert "closed" in resp.json()["detail"]
+
+
+def test_link_with_null_detaches(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Passing chat_session_id=null detaches the prior link."""
+    _install_sentinel_stream(monkeypatch, "irrelevant")
+    checklist = _create_checklist(client)
+    item = _add_item(client, checklist["id"], "x")
+    tag_id = _default_tag(client)
+    chat_resp = client.post(
+        "/api/sessions",
+        json={
+            "working_dir": "/tmp",
+            "model": "claude-sonnet-4-6",
+            "kind": "chat",
+            "tag_ids": [tag_id],
+        },
+    )
+    chat_id = chat_resp.json()["id"]
+    client.post(
+        f"/api/sessions/{checklist['id']}/checklist/items/{item['id']}/link",
+        json={"chat_session_id": chat_id},
+    )
+    detach_resp = client.post(
+        f"/api/sessions/{checklist['id']}/checklist/items/{item['id']}/link",
+        json={"chat_session_id": None},
+    )
+    assert detach_resp.status_code == 200
+    assert detach_resp.json()["chat_session_id"] is None
+
+
+def test_run_rejects_invalid_failure_policy(client: TestClient) -> None:
+    checklist = _create_checklist(client)
+    _add_item(client, checklist["id"], "x")
+    resp = client.post(
+        f"/api/sessions/{checklist['id']}/checklist/run",
+        json={"failure_policy": "yolo"},
+    )
+    assert resp.status_code == 400
+    assert "failure_policy" in resp.json()["detail"]
+
+
 def test_run_with_custom_config_overrides_defaults(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

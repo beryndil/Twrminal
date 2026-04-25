@@ -323,6 +323,7 @@ class AutoDriverRegistry:
                 "state": "running",
                 "items_completed": driver._items_completed,
                 "items_failed": driver._items_failed,
+                "items_skipped": driver._items_skipped,
                 "legs_spawned": driver._legs_spawned,
             }
         # Task finished — either cleanly with a result, or with an

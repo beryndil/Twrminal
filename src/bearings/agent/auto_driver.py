@@ -56,6 +56,25 @@ from bearings.db import store
 log = logging.getLogger(__name__)
 
 
+class _ItemOutcome(StrEnum):
+    """Per-item completion state surfaced from `_drive_item` to
+    `drive`. The outer loop reads this to decide:
+
+    - DONE → advance, item is checked.
+    - FAILED → work was attempted but didn't complete; honor
+      `failure_policy` (halt vs skip-and-advance).
+    - SKIPPED → no work attempted (e.g. visit-existing mode hit an
+      item with no linked session); advance unconditionally,
+      regardless of failure_policy. Must still be added to the
+      exclusion set so the SAME item isn't re-picked next iteration
+      (which would loop forever).
+    """
+
+    DONE = "done"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
 class DriverOutcome(StrEnum):
     """Terminal states the driver can reach. Every `.drive()` call
     returns exactly one of these in its `DriverResult`."""
@@ -79,6 +98,13 @@ class DriverResult:
     items_completed: int
     items_failed: int
     legs_spawned: int
+    # Items the driver chose not to attempt. In visit-existing mode,
+    # an item with no linked chat session contributes a skip rather
+    # than a failure; in skip-failure mode, items that fail to
+    # complete are also recorded as `items_failed` AND the loop
+    # advances rather than halting. `items_skipped` covers only the
+    # "no work attempted" case so the two counters stay distinct.
+    items_skipped: int = 0
     failed_item_id: int | None = None
     failure_reason: str | None = None
 
@@ -123,6 +149,24 @@ class DriverConfig:
     # but other tools still gated (interactive mid-ground), or to
     # "default" if the leg is supposed to be supervised after all.
     leg_permission_mode: str = "bypassPermissions"
+    # Visit-existing-sessions mode. When True, the driver's first leg
+    # for each item REUSES the session already linked via
+    # `checklist_items.chat_session_id` instead of spawning a new
+    # one. Items with no linked session (or a closed one) are skipped
+    # — counted in `items_skipped`, the outer loop advances. Handoff
+    # legs (after CHECKLIST_HANDOFF) still spawn fresh as usual; the
+    # contract is "first leg uses what's there, successors are mine".
+    # Use this for tour-style runs over a pre-curated set of paired
+    # chats: each item already has a session containing the relevant
+    # context, the driver just walks them in order.
+    visit_existing_sessions: bool = False
+    # Failure policy. "halt" (default) ends the run on first failure,
+    # matching the conservative autonomous-mode default. "skip"
+    # records the failure on the item, leaves it unchecked, and
+    # advances to the next — useful for tour mode where you want the
+    # driver to do everything it can and leave hard items for human
+    # review rather than stopping the whole run.
+    failure_policy: str = "halt"
 
 
 class DriverRuntime(Protocol):
@@ -197,9 +241,17 @@ class Driver:
         self._stop = asyncio.Event()
         self._items_completed = 0
         self._items_failed = 0
+        self._items_skipped = 0
         self._legs_spawned = 0
         self._failed_item_id: int | None = None
         self._failure_reason: str | None = None
+        # Set of item ids that the driver has already attempted and
+        # failed under skip-failure mode. They stay unchecked in the
+        # DB (per the "leave it open" request), but the outer loop
+        # must not re-pick them, or the run would loop forever on
+        # the same uncompleted item. Excluded from
+        # `next_unchecked_top_level_item` lookups.
+        self._attempted_failed: set[int] = set()
 
     # --- external control --------------------------------------------
 
@@ -211,34 +263,78 @@ class Driver:
     # --- main loop ---------------------------------------------------
 
     async def drive(self) -> DriverResult:
-        """Run the autonomous loop to a terminal state and return."""
+        """Run the autonomous loop to a terminal state and return.
+
+        With `failure_policy="halt"` (default), the first item that
+        fails to complete halts the run with `HALTED_FAILURE`. With
+        `failure_policy="skip"`, the failure is recorded on the item
+        but the outer loop advances — useful for tour-style runs
+        where you want the driver to do everything it can and leave
+        hard items for human review."""
         items_seen = 0
+        skip_failures = self._config.failure_policy == "skip"
         while True:
             if self._stop.is_set():
                 return self._result(DriverOutcome.HALTED_STOP)
             if items_seen >= self._config.max_items_per_run:
                 return self._result(DriverOutcome.HALTED_MAX_ITEMS)
-            item = await store.next_unchecked_top_level_item(self._conn, self._checklist_id)
+            item = await store.next_unchecked_top_level_item(
+                self._conn,
+                self._checklist_id,
+                exclude_ids=self._attempted_failed or None,
+            )
             if item is None:
-                if self._items_completed == 0:
+                # HALTED_EMPTY = the run started against a checklist
+                # that had no unchecked items. After we've touched
+                # ANYTHING (completed, skipped, or failed-and-recorded
+                # in skip mode), the run made progress and the right
+                # outcome is COMPLETED. Without this, a run that
+                # records only failures would surprise the user with
+                # "nothing was here" — wrong, plenty was there, the
+                # agent just couldn't finish it.
+                touched_any = (
+                    self._items_completed > 0
+                    or self._items_skipped > 0
+                    or self._items_failed > 0
+                )
+                if not touched_any:
                     return self._result(DriverOutcome.HALTED_EMPTY)
                 return self._result(DriverOutcome.COMPLETED)
             items_seen += 1
-            ok = await self._drive_item(item, depth=0)
-            if not ok:
-                return self._result(DriverOutcome.HALTED_FAILURE)
+            outcome = await self._drive_item(item, depth=0)
+            if outcome == _ItemOutcome.FAILED:
+                if not skip_failures:
+                    return self._result(DriverOutcome.HALTED_FAILURE)
+                # Skip-mode failure: record the item id so the next
+                # `next_unchecked_top_level_item` lookup excludes it
+                # — without this guard the same uncompleted item gets
+                # re-picked forever.
+                self._attempted_failed.add(int(item["id"]))
+            elif outcome == _ItemOutcome.SKIPPED:
+                # Skip is unconditional advance (independent of
+                # failure_policy) but the item still needs exclusion
+                # to avoid re-pick.
+                self._attempted_failed.add(int(item["id"]))
 
     # --- per-item state machine --------------------------------------
 
-    async def _drive_item(self, item: dict[str, Any], *, depth: int) -> bool:
-        """Work a single item (possibly recursively). Returns True on
-        success (item marked done), False on any failure or stop."""
+    async def _drive_item(self, item: dict[str, Any], *, depth: int) -> _ItemOutcome:
+        """Work a single item (possibly recursively). Returns one of
+        DONE / FAILED / SKIPPED so the outer loop can apply the
+        right policy:
+
+        - DONE: item is checked, advance.
+        - FAILED: item couldn't complete; halt (default) or advance
+          (failure_policy=skip).
+        - SKIPPED: item was deliberately not attempted (visit-mode
+          with no linked session); always advance.
+        """
         if depth > self._config.max_followup_depth:
             await self._record_failure(
                 item["id"],
                 f"followup nesting exceeded depth {self._config.max_followup_depth}",
             )
-            return False
+            return _ItemOutcome.FAILED
 
         # A prior leg may have left blocking children. Drive them
         # first — the parent can't complete until every child is
@@ -246,13 +342,42 @@ class Driver:
         # layer, but the driver needs to respect it explicitly so we
         # don't waste a leg proving the point).
         if not await self._drive_blocking_children(item, depth=depth):
-            return False
+            return _ItemOutcome.FAILED
+
+        # Visit-existing mode: leg 1 uses the session already linked
+        # to this item via `chat_session_id`, if one exists and is
+        # open. Items with no usable existing session are skipped
+        # entirely — recorded in `items_skipped` and the outer loop
+        # advances. Handoff legs (leg 2+) still spawn fresh as usual;
+        # the contract is "first leg uses what's there, successors
+        # are mine".
+        existing_for_leg_one: str | None = None
+        if self._config.visit_existing_sessions:
+            existing_for_leg_one = await self._existing_open_session(item)
+            if existing_for_leg_one is None:
+                # No usable existing session — skip the item, leave it
+                # unchecked, advance.
+                self._items_skipped += 1
+                log.info(
+                    "autonomous driver: skipping item %s — no open chat "
+                    "session linked (visit_existing_sessions=True)",
+                    item["id"],
+                )
+                return _ItemOutcome.SKIPPED
 
         plug: str | None = None
         for leg in range(1, self._config.max_legs_per_item + 1):
             if self._stop.is_set():
-                return False
-            leg_session_id = await self._runtime.spawn_leg(item=item, leg_number=leg, plug=plug)
+                return _ItemOutcome.FAILED
+            # Leg 1 in visit mode reuses the linked session (no spawn,
+            # no teardown). All other legs (visit-mode handoffs OR any
+            # leg in spawn mode) spawn fresh and will be torn down.
+            leg_was_spawned = True
+            if leg == 1 and existing_for_leg_one is not None:
+                leg_session_id = existing_for_leg_one
+                leg_was_spawned = False
+            else:
+                leg_session_id = await self._runtime.spawn_leg(item=item, leg_number=leg, plug=plug)
             self._legs_spawned += 1
             try:
                 prompt = self._kickoff_prompt(item, leg, plug)
@@ -263,13 +388,15 @@ class Driver:
                 # A runtime-raised exception ends the leg as a failure;
                 # the item is not retryable via another leg because we
                 # don't know the agent's state. Fail-safe halt.
-                await self._runtime.teardown_leg(leg_session_id)
+                if leg_was_spawned:
+                    await self._runtime.teardown_leg(leg_session_id)
                 await self._record_failure(
                     item["id"],
                     f"runtime error in leg {leg}: {exc}",
                 )
-                return False
-            await self._runtime.teardown_leg(leg_session_id)
+                return _ItemOutcome.FAILED
+            if leg_was_spawned:
+                await self._runtime.teardown_leg(leg_session_id)
 
             sentinels = parse_sentinels(assistant_text)
             created_blocking = await self._apply_followups(item, sentinels.followups)
@@ -283,10 +410,10 @@ class Driver:
                 # order the agent implied.
                 if created_blocking:
                     if not await self._drive_blocking_children(item, depth=depth):
-                        return False
+                        return _ItemOutcome.FAILED
                 await self._mark_done(item["id"])
                 self._items_completed += 1
-                return True
+                return _ItemOutcome.DONE
 
             if sentinels.handoff_plug is not None:
                 plug = sentinels.handoff_plug
@@ -298,7 +425,7 @@ class Driver:
                 # then re-enter the parent (fresh context, no plug —
                 # the blocking children's completion is the plug).
                 if not await self._drive_blocking_children(item, depth=depth):
-                    return False
+                    return _ItemOutcome.FAILED
                 plug = None
                 continue
 
@@ -322,7 +449,7 @@ class Driver:
                 if nudge_sentinels.item_done:
                     await self._mark_done(item["id"])
                     self._items_completed += 1
-                    return True
+                    return _ItemOutcome.DONE
                 # Nudge also silent — fall through to failure with a
                 # reason that distinguishes the pressure case.
                 await self._record_failure(
@@ -332,7 +459,7 @@ class Driver:
                         "a handoff plug even when asked explicitly"
                     ),
                 )
-                return False
+                return _ItemOutcome.FAILED
 
             # No done, no handoff, no blocking children, context not
             # under pressure — the agent ended the turn saying
@@ -344,7 +471,7 @@ class Driver:
                     "sentinel (CHECKLIST_ITEM_DONE / CHECKLIST_HANDOFF)"
                 ),
             )
-            return False
+            return _ItemOutcome.FAILED
 
         # Max legs exceeded — the agent kept handing off. Something is
         # wrong with how the item is scoped.
@@ -352,12 +479,14 @@ class Driver:
             item["id"],
             f"exceeded max_legs_per_item ({self._config.max_legs_per_item})",
         )
-        return False
+        return _ItemOutcome.FAILED
 
     async def _drive_blocking_children(self, item: dict[str, Any], *, depth: int) -> bool:
         """Drive every unchecked direct child of `item` to completion.
         Returns True when every child succeeds, False on the first
-        failure (the parent can't proceed)."""
+        failure (the parent can't proceed). A child SKIPPED outcome
+        also blocks the parent — a blocking child the driver couldn't
+        even attempt is still incomplete from the parent's POV."""
         while True:
             if self._stop.is_set():
                 return False
@@ -365,8 +494,8 @@ class Driver:
             if not children:
                 return True
             child = children[0]
-            ok = await self._drive_item(child, depth=depth + 1)
-            if not ok:
+            child_outcome = await self._drive_item(child, depth=depth + 1)
+            if child_outcome != _ItemOutcome.DONE:
                 return False
 
     async def _apply_followups(self, item: dict[str, Any], followups: list[Followup]) -> bool:
@@ -470,6 +599,31 @@ class Driver:
                 item_id,
             )
 
+    async def _existing_open_session(self, item: dict[str, Any]) -> str | None:
+        """Return the open chat session linked to `item`, or None.
+
+        Used in visit-existing mode to decide leg 1's session. The
+        item dict already carries `chat_session_id` (set by the
+        manual "Work on this" path or by `PATCH /items/{id}` in tour
+        mode). We re-fetch the session row here to also gate on
+        `closed_at` — a closed session would yield a runner the user
+        can't see in the open sidebar list, and trying to drive an
+        SDK turn against it is not useful.
+
+        Returns the session id when there's an open chat session
+        linked to this item; None when no link, the link is stale
+        (session deleted), or the linked session is closed.
+        """
+        existing_id = item.get("chat_session_id")
+        if not existing_id:
+            return None
+        row = await store.get_session(self._conn, str(existing_id))
+        if row is None:
+            return None
+        if row.get("closed_at") is not None:
+            return None
+        return str(existing_id)
+
     async def _request_handoff_nudge(self, leg_session_id: str) -> str:
         """Submit one extra turn on the current leg asking the agent
         to emit a handoff plug. Used when the leg's context watchdog
@@ -546,6 +700,7 @@ class Driver:
             items_completed=self._items_completed,
             items_failed=self._items_failed,
             legs_spawned=self._legs_spawned,
+            items_skipped=self._items_skipped,
             failed_item_id=self._failed_item_id,
             failure_reason=self._failure_reason,
         )

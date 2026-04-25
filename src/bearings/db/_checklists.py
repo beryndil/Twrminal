@@ -381,6 +381,8 @@ async def list_item_sessions(
 async def next_unchecked_top_level_item(
     conn: aiosqlite.Connection,
     checklist_id: str,
+    *,
+    exclude_ids: set[int] | None = None,
 ) -> dict[str, Any] | None:
     """Return the first top-level item in `checklist_id` that still
     carries `checked_at IS NULL`, ordered by `sort_order` then `id`.
@@ -389,15 +391,37 @@ async def next_unchecked_top_level_item(
     Returns `None` when every top-level item is checked (which is
     also the condition `is_checklist_complete` reports `True`).
 
+    `exclude_ids` lets the autonomous driver skip past items it has
+    already tried and failed in a `failure_policy="skip"` run — those
+    items stay unchecked (per the user's request) but must not be
+    re-picked, or the loop would never advance. Defaults to None for
+    callers that don't need exclusion (the common case).
+
     Used by the autonomous driver's outer loop to pick the next
     item to work on. Order-of-attack matches what the UI shows so
     an observer sees the driver stepping top-to-bottom."""
+    excluded = exclude_ids or set()
+    if not excluded:
+        async with conn.execute(
+            f"SELECT {ITEM_COLS} FROM checklist_items "
+            "WHERE checklist_id = ? AND parent_item_id IS NULL "
+            "AND checked_at IS NULL "
+            f"ORDER BY {ITEM_ORDER} LIMIT 1",
+            (checklist_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        return dict(row) if row is not None else None
+    # NOT IN (...) requires a placeholder per id since SQLite doesn't
+    # bind sequences. Build the placeholder list inline; the values
+    # come from a Python set we control, so injection isn't a risk.
+    placeholders = ", ".join("?" * len(excluded))
     async with conn.execute(
         f"SELECT {ITEM_COLS} FROM checklist_items "
         "WHERE checklist_id = ? AND parent_item_id IS NULL "
         "AND checked_at IS NULL "
+        f"AND id NOT IN ({placeholders}) "
         f"ORDER BY {ITEM_ORDER} LIMIT 1",
-        (checklist_id,),
+        (checklist_id, *sorted(excluded)),
     ) as cursor:
         row = await cursor.fetchone()
     return dict(row) if row is not None else None
