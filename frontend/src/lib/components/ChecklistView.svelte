@@ -234,6 +234,16 @@
   let runBusy = $state(false);
   let runError = $state<string | null>(null);
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
+  // Tour-mode toggle: when on, the next "Run autonomously" click
+  // launches with `failure_policy='skip'` AND
+  // `visit_existing_sessions=true`. These two flags travel together
+  // because the documented use case is the same — walk a curated
+  // list of pre-paired sessions, skip the ones that don't tidy up,
+  // and don't halt the whole run on the first hard item. Off by
+  // default to preserve the original spawn-fresh / halt-on-failure
+  // behavior. Persists across the same selected session but resets
+  // when the user switches checklists (the $effect below clears it).
+  let tourMode = $state(false);
 
   // Poll interval for the autonomous run. 1s is plenty — individual
   // agent turns take seconds to tens of seconds, and the status
@@ -298,6 +308,9 @@
     clearPollTimer();
     runStatus = null;
     runError = null;
+    // Reset the tour-mode checkbox on session switch so a tour-mode
+    // run on one checklist doesn't silently apply to the next.
+    tourMode = false;
   });
 
   onDestroy(() => {
@@ -309,8 +322,14 @@
     if (!sid || selected?.kind !== 'checklist' || runBusy) return;
     runBusy = true;
     runError = null;
+    // Tour mode: visit each item's pre-linked chat session and skip
+    // failures rather than halting. Otherwise omit the body entirely
+    // so the server uses the conservative spawn-fresh + halt defaults.
+    const body = tourMode
+      ? { failure_policy: 'skip' as const, visit_existing_sessions: true }
+      : {};
     try {
-      const status = await startAutoRun(sid);
+      const status = await startAutoRun(sid, body);
       runStatus = status;
       if (status.state === 'running') schedulePoll(sid);
     } catch (err) {
@@ -425,6 +444,18 @@
           Stop
         </button>
       {:else}
+        <label
+          class="flex items-center gap-1 text-xs text-slate-400"
+          title="Tour mode: visit each item's pre-linked chat session and skip failures (instead of spawning fresh chats and halting on first failure)."
+        >
+          <input
+            type="checkbox"
+            class="h-3 w-3 rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-sky-500"
+            bind:checked={tourMode}
+            data-testid="auto-run-tour-mode"
+          />
+          Tour
+        </label>
         <button
           type="button"
           class="rounded border border-sky-700 px-2 py-0.5 text-xs text-sky-300 hover:bg-sky-900 hover:text-sky-100 disabled:opacity-50"

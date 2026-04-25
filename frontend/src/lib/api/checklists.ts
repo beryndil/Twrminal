@@ -206,11 +206,29 @@ export function getPairedChat(
 
 /** Optional per-run caps posted to `POST /sessions/{id}/checklist/run`.
  * Omit fields (or the whole body) to use the driver's conservative
- * defaults: 50 items / 5 legs / depth 3 / 60% handoff threshold. */
+ * defaults: 50 items / 5 legs / depth 3 / 60% handoff threshold,
+ * spawn-per-item, halt-on-first-failure.
+ *
+ * `failure_policy` and `visit_existing_sessions` together encode
+ * "tour mode": visit each item's pre-linked chat session and advance
+ * past failures rather than halting the whole run. The UI exposes
+ * both behind a single "Tour mode" checkbox (see `ChecklistView`).
+ * Specifying them individually via this type is fine for callers
+ * (tests, scripts) that want one without the other. */
 export type AutoRunStart = {
   max_items_per_run?: number | null;
   max_legs_per_item?: number | null;
   max_followup_depth?: number | null;
+  /** `'halt'` (default) ends the run on the first failed item;
+   * `'skip'` records the failure on the item, leaves it unchecked,
+   * and advances to the next item. */
+  failure_policy?: 'halt' | 'skip' | null;
+  /** When `true`, leg 1 of each item reuses the session linked via
+   * `checklist_items.chat_session_id` instead of spawning a fresh
+   * paired chat. Items with no linked session are skipped (counted
+   * in `items_skipped`, run advances). Handoff legs still spawn
+   * fresh. */
+  visit_existing_sessions?: boolean | null;
 };
 
 /** Shape returned by all three /run endpoints.

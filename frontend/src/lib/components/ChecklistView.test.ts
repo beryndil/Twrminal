@@ -330,8 +330,11 @@ describe('ChecklistView Slice 4.1', () => {
     const confirmSpy = vi.spyOn(window, 'confirm');
     const { container } = render(ChecklistView);
     await waitFor(() => expect(checklists.current?.items.length).toBe(1));
+    // Scope the selector to the item LI — the header now also carries
+    // a tour-mode checkbox, so a bare `input[type="checkbox"]` would
+    // grab that one instead of the item's.
     const box = container.querySelector(
-      'input[type="checkbox"]'
+      'li[data-item-id] input[type="checkbox"]'
     ) as HTMLInputElement | null;
     expect(box).not.toBeNull();
     await fireEvent.click(box!);
@@ -398,6 +401,69 @@ describe('ChecklistView Slice 4.1', () => {
     // Give the $effect a tick to settle.
     await new Promise((r) => setTimeout(r, 20));
     expect(queryByTestId('auto-run-start')).toBeNull();
+  });
+
+  it('Tour-mode checkbox sends failure_policy=skip + visit_existing on POST /run', async () => {
+    // Captures the actual POST body so the assertion can prove the
+    // tour-mode payload reaches the wire — the regression in the
+    // 2026-04-24 fae8f1a8 run was that the UI couldn't even SEND
+    // these fields, so the run silently used halt-mode defaults.
+    const stub = queueResponses([
+      { ok: true, body: EMPTY_CHECKLIST },
+      {
+        ok: true,
+        status: 202,
+        body: {
+          state: 'running',
+          items_completed: 0,
+          items_failed: 0,
+          legs_spawned: 0
+        }
+      }
+    ]);
+    const { getByTestId } = render(ChecklistView);
+    await waitFor(() => expect(checklists.current).not.toBeNull());
+    const tourBox = getByTestId('auto-run-tour-mode') as HTMLInputElement;
+    expect(tourBox.checked).toBe(false);
+    await fireEvent.click(tourBox);
+    expect(tourBox.checked).toBe(true);
+    await fireEvent.click(getByTestId('auto-run-start'));
+    await waitFor(() => expect(stub).toHaveBeenCalledTimes(2));
+    // Second call is POST /run; first is the initial checklist load.
+    const postCall = stub.mock.calls[1];
+    const init = postCall[1] as RequestInit;
+    expect(init.method).toBe('POST');
+    const body = JSON.parse(init.body as string);
+    expect(body.failure_policy).toBe('skip');
+    expect(body.visit_existing_sessions).toBe(true);
+  });
+
+  it('Tour-mode off sends an empty body so the server uses defaults', async () => {
+    // Negative case: the absence of tour-mode means the body is `{}`
+    // and the server falls through to halt-mode + spawn-fresh defaults.
+    // Confirms the tourMode toggle is the ONLY thing flipping the
+    // payload — no leakage from prior runs or unrelated state.
+    const stub = queueResponses([
+      { ok: true, body: EMPTY_CHECKLIST },
+      {
+        ok: true,
+        status: 202,
+        body: {
+          state: 'running',
+          items_completed: 0,
+          items_failed: 0,
+          legs_spawned: 0
+        }
+      }
+    ]);
+    const { getByTestId } = render(ChecklistView);
+    await waitFor(() => expect(checklists.current).not.toBeNull());
+    await fireEvent.click(getByTestId('auto-run-start'));
+    await waitFor(() => expect(stub).toHaveBeenCalledTimes(2));
+    const init = stub.mock.calls[1][1] as RequestInit;
+    expect(init.method).toBe('POST');
+    const body = JSON.parse(init.body as string);
+    expect(body).toEqual({});
   });
 
   it('clicking Run autonomously POSTs /run and shows a running pill + Stop button', async () => {
