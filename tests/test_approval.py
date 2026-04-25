@@ -201,6 +201,93 @@ async def test_request_stop_denies_pending_with_interrupt(
 
 
 @pytest.mark.asyncio
+async def test_can_use_tool_auto_allows_under_bypass_permissions(
+    db: aiosqlite.Connection,
+) -> None:
+    """Mode-aware fast path. With `permission_mode='bypassPermissions'`
+    set BEFORE the call, `can_use_tool` returns Allow immediately
+    without emitting an `ApprovalRequest` or parking on a Future.
+    Without this fast path, autonomous runs hang on the first tool
+    invocation because the SDK still calls the registered callback
+    even when its `permission_mode` option says bypass — exactly the
+    2026-04-24 fae8f1a8 Settings-UX 4-hour Edit hang."""
+    sid = await _session_id(db)
+    runner = SessionRunner(sid, ScriptedAgent(sid, scripts=[]), db)
+    queue, _ = await runner.subscribe(0)
+
+    await runner.set_permission_mode("bypassPermissions")
+
+    # Call the SDK callback. Should return Allow immediately — no
+    # event, no Future, no park.
+    result = await asyncio.wait_for(
+        runner.can_use_tool("Edit", {"file_path": "/etc/foo"}, _ctx("a")),
+        timeout=1.0,
+    )
+    assert isinstance(result, PermissionResultAllow)
+    # No approval-related events on the wire.
+    assert queue.empty(), (
+        f"unexpected event emitted under bypassPermissions: {queue.get_nowait().payload}"
+    )
+    # Pending registry stays empty — nothing parked.
+    assert runner._approval._pending == {}
+
+
+@pytest.mark.asyncio
+async def test_can_use_tool_auto_allows_edit_tools_under_accept_edits(
+    db: aiosqlite.Connection,
+) -> None:
+    """`acceptEdits` mode auto-allows the edit-class tools (Edit, Write,
+    MultiEdit, NotebookEdit) without parking; non-edit tools (Bash,
+    etc.) still park as normal so the user keeps a human-in-the-loop
+    on side effects beyond file edits."""
+    sid = await _session_id(db)
+    runner = SessionRunner(sid, ScriptedAgent(sid, scripts=[]), db)
+    queue, _ = await runner.subscribe(0)
+
+    await runner.set_permission_mode("acceptEdits")
+
+    # Edit auto-allows.
+    result = await asyncio.wait_for(
+        runner.can_use_tool("Write", {"file_path": "/x", "content": "y"}, _ctx("w")),
+        timeout=1.0,
+    )
+    assert isinstance(result, PermissionResultAllow)
+    assert queue.empty()
+
+    # Bash parks (would emit ApprovalRequest if we awaited the queue).
+    t_bash = asyncio.create_task(runner.can_use_tool("Bash", {"command": "rm -rf /"}, _ctx("b")))
+    env = await asyncio.wait_for(queue.get(), timeout=1.0)
+    assert env.payload["type"] == "approval_request"
+    assert env.payload["tool_name"] == "Bash"
+
+    # Clean up the parked Bash so the test doesn't leak a pending task.
+    await runner.request_stop()
+    await asyncio.wait_for(t_bash, timeout=1.0)
+
+
+@pytest.mark.asyncio
+async def test_can_use_tool_parks_under_default_mode(
+    db: aiosqlite.Connection,
+) -> None:
+    """Sanity: with `default` (or unset) mode, every call parks the
+    same way it always did. This is the supervised-by-default path —
+    the new fast paths must NOT change behavior for users who haven't
+    flipped to bypass / accept-edits."""
+    sid = await _session_id(db)
+    runner = SessionRunner(sid, ScriptedAgent(sid, scripts=[]), db)
+    queue, _ = await runner.subscribe(0)
+
+    # No set_permission_mode call — agent stays at None / default.
+    task = asyncio.create_task(runner.can_use_tool("Edit", {"file_path": "/a"}, _ctx("e")))
+    env = await asyncio.wait_for(queue.get(), timeout=1.0)
+    assert env.payload["type"] == "approval_request"
+    # Resolve so the test doesn't leak.
+    await runner.resolve_approval(env.payload["request_id"], "allow")
+    result = await asyncio.wait_for(task, timeout=1.0)
+    assert isinstance(result, PermissionResultAllow)
+
+
+@pytest.mark.asyncio
 async def test_set_permission_mode_bypass_resolves_all_pending(
     db: aiosqlite.Connection,
 ) -> None:

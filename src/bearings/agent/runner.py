@@ -207,7 +207,21 @@ class SessionRunner:
         # `ApprovalResolved` event emission; the runner just forwards
         # `resolve_approval` from the WS handler and tells it to deny
         # everything on stop / shutdown.
-        self._approval = ApprovalBroker(session_id, self._emit_event)
+        #
+        # The `mode_getter` closure reads the agent's live
+        # `permission_mode` so the broker can fast-path auto-allow when
+        # the mode is `bypassPermissions` (or `acceptEdits` for edit
+        # tools). Without this, a turn under bypassPermissions still
+        # parks the SDK callback on a Future — which is what made the
+        # 2026-04-24 fae8f1a8 Settings-UX run hang for 4 hours on a
+        # single Edit tool call. Closure (not stored value) so a
+        # mid-turn `set_permission_mode` flip is observed on the very
+        # next `can_use_tool` invocation.
+        self._approval = ApprovalBroker(
+            session_id,
+            self._emit_event,
+            mode_getter=lambda: self.agent.permission_mode,
+        )
         # Count of `can_use_tool` calls currently parked on a user
         # decision. Bumped on entry to the wrapped callback (see
         # `can_use_tool` property) and decremented in the finally.

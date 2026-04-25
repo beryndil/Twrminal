@@ -54,9 +54,22 @@ class ApprovalBroker:
       instead of having to click through it.
     """
 
-    def __init__(self, session_id: str, emit: EventEmitter) -> None:
+    def __init__(
+        self,
+        session_id: str,
+        emit: EventEmitter,
+        mode_getter: Callable[[], str | None] | None = None,
+    ) -> None:
         self.session_id = session_id
         self._emit = emit
+        # Live read of the agent's current permission_mode. Threaded
+        # through as a callable (not a stored value) so a mid-turn
+        # `set_permission_mode` call is observed on the next
+        # `can_use_tool` invocation without the broker having to
+        # subscribe to anything. Default `None` getter preserves the
+        # old "always park" behavior for tests / callers that don't
+        # want mode-aware fast-paths.
+        self._mode_getter: Callable[[], str | None] = mode_getter or (lambda: None)
         # Tool name is carried alongside the Future so `resolve_for_mode`
         # can apply the `acceptEdits` filter without reconstructing it
         # from the original `ApprovalRequest` event.
@@ -74,7 +87,35 @@ class ApprovalBroker:
         and blocks on a Future until the WS handler receives the
         matching `approval_response` frame (or a stop/shutdown denies
         it). Bound to `agent.can_use_tool` by `ws_agent._build_runner`
-        so the agent stays ignorant of the runner."""
+        so the agent stays ignorant of the runner.
+
+        Mode-aware fast path (added 2026-04-25 after the fae8f1a8
+        Settings-UX hang). The claude-agent-sdk invokes this callback
+        for EVERY tool use even when `permission_mode='bypassPermissions'`
+        is set on the SDK options — the mode controls the SDK's own
+        prompt UI but a registered `can_use_tool` overrides it. Without
+        the fast path below, an autonomous run hits a tool, our broker
+        emits an `ApprovalRequest`, parks on a Future, and waits forever
+        for a click that will never come. The 4-hour Edit hang on
+        `~/.claude/plans/quiet-configuring-lighthouse.md` (item 42 of
+        the fae8f1a8 tour) was exactly this: bypassPermissions on the
+        row, factory rebuilt the runner with the right mode, agent
+        invoked Edit, broker parked. Skipping the park entirely when
+        the live mode says "auto-approve" is the correct answer.
+
+        Matrix:
+        - `bypassPermissions`: auto-allow every call (no event emitted,
+          no Future, no park).
+        - `acceptEdits`: auto-allow Edit-class tools (`Edit`, `Write`,
+          `MultiEdit`, `NotebookEdit`); park everything else.
+        - `default` / `plan` / mode unknown: park as before so the user
+          decides per call.
+        """
+        mode = self._mode_getter()
+        if mode == "bypassPermissions":
+            return PermissionResultAllow()
+        if mode == "acceptEdits" and tool_name in EDIT_TOOLS:
+            return PermissionResultAllow()
         request_id = uuid4().hex
         loop = asyncio.get_running_loop()
         future: asyncio.Future[PermissionResult] = loop.create_future()
