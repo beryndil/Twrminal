@@ -7,7 +7,9 @@ const config = {
     adapter: adapter({
       pages: 'build',
       assets: 'build',
-      fallback: 'index.html',
+      // No SPA fallback: every route is prerendered (see +layout.ts), so
+      // the fallback is redundant and would overwrite the prerendered
+      // index.html with a stylesheet-less shell.
       precompress: false,
       strict: true
     })
