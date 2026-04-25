@@ -61,6 +61,7 @@ from bearings.agent.sessions_broker import (
     publish_runner_state,
     publish_session_upsert,
 )
+from bearings.agent.tool_output_coalescer import ToolOutputCoalescer
 from bearings.db import store
 
 log = logging.getLogger(__name__)
@@ -72,17 +73,6 @@ log = logging.getLogger(__name__)
 # still catches the final `message_complete` (and the completed
 # assistant message is in the DB either way).
 RING_MAX = 5000
-
-# Coalescing window for `ToolOutputDelta` → DB writes. A chatty tool
-# (tree, grep, long build log) can emit hundreds of small deltas per
-# second; persisting each one ran a full UPDATE + commit on the
-# aiosqlite thread. Buffering per `tool_call_id` and flushing on either
-# threshold reduces write count by ~20–30× for bursty tools while
-# keeping mid-turn history endpoint reads within one flush window of
-# the live stream. WS fan-out is NOT coalesced — subscribers still see
-# every delta in real time; only the DB write is batched.
-TOOL_OUTPUT_FLUSH_INTERVAL_S = 0.075
-TOOL_OUTPUT_FLUSH_CHUNK_COUNT = 32
 
 # Cadence for `ToolProgress` keepalive events emitted while a tool call
 # is still running. Covers the "SDK surfaces nothing for tens of
@@ -136,24 +126,6 @@ class _Submit:
     def __init__(self, prompt: str, attachments: list[dict[str, Any]]) -> None:
         self.prompt = prompt
         self.attachments = attachments
-
-
-class _ToolOutputBuffer:
-    """Pending deltas for one `tool_call_id` waiting on a coalesced write.
-
-    `flush_task` is the asyncio timer that will fire at
-    `TOOL_OUTPUT_FLUSH_INTERVAL_S` after the first chunk landed. It's
-    `None` between flushes; a new timer is scheduled the next time a
-    chunk arrives into an empty buffer. `chunks` accumulates raw delta
-    strings — they're joined once at flush time so we only pay the
-    concat cost per flush, not per arrival.
-    """
-
-    __slots__ = ("chunks", "flush_task")
-
-    def __init__(self) -> None:
-        self.chunks: list[str] = []
-        self.flush_task: asyncio.Task[None] | None = None
 
 
 RunnerStatus = Literal["idle", "running"]
@@ -234,13 +206,11 @@ class SessionRunner:
         # AskUserQuestion in the same turn; both should keep the
         # indicator lit until ALL of them resolve.
         self._awaiting_count: int = 0
-        # Per-tool-call coalescing buffers for `ToolOutputDelta` →
-        # `append_tool_output` writes. Entries are created on first
-        # chunk arrival and removed on flush or on `ToolCallEnd`
-        # (`finish_tool_call` writes the canonical output so any
-        # dropped buffered chunks are irrelevant by then). Managed
-        # only by the worker task — no locking needed.
-        self._tool_buffers: dict[str, _ToolOutputBuffer] = {}
+        # Coalesces `ToolOutputDelta` → `append_tool_output` writes
+        # per `tool_call_id`. Owned by this runner's worker task; the
+        # runner just forwards `buffer` / `drop` / `flush_all` and
+        # stays oblivious to flush cadence and DB write plumbing.
+        self._coalescer = ToolOutputCoalescer(db, session_id)
         # Per-tool-call keepalive tickers. One task per in-flight
         # tool call; each fires a `ToolProgress` event every
         # `TOOL_PROGRESS_INTERVAL_S` for fan-out only (no ring buffer
@@ -797,7 +767,7 @@ class SessionRunner:
                     # window of the live stream. `finish_tool_call`
                     # later overwrites with the canonical final string,
                     # so a dropped flush can't leave a permanent gap.
-                    await self._buffer_tool_output(event.tool_call_id, event.delta)
+                    await self._coalescer.buffer(event.tool_call_id, event.delta)
                 elif isinstance(event, ToolCallEnd):
                     # Stop the keepalive ticker first so a stray tick
                     # can't race the canonical end frame onto the wire.
@@ -808,7 +778,7 @@ class SessionRunner:
                     # would be clobbered anyway. Doing it in this
                     # order also prevents a late timer from racing
                     # past the canonical write.
-                    self._drop_tool_buffer(event.tool_call_id)
+                    self._coalescer.drop(event.tool_call_id)
                     await store.finish_tool_call(
                         self.db,
                         tool_call_id=event.tool_call_id,
@@ -872,7 +842,7 @@ class SessionRunner:
             # arrives later — e.g. after a reconnecting turn — the
             # canonical output still overwrites; this just keeps
             # mid-stream progress visible for the interrupted case.
-            await self._flush_all_tool_buffers()
+            await self._coalescer.flush_all()
             # Cancel any in-flight progress tickers. Normal completion
             # cancels each one in the `ToolCallEnd` arm; this guards
             # the stop / exception paths where tools were still
@@ -894,95 +864,6 @@ class SessionRunner:
                 tool_call_ids=tool_call_ids,
                 cost_usd=None,
             )
-
-    # ---- tool-output coalescing -----------------------------------
-
-    async def _buffer_tool_output(self, tool_call_id: str, chunk: str) -> None:
-        """Append a `ToolOutputDelta` chunk to its per-tool-call buffer.
-
-        Triggers an immediate synchronous flush if the chunk count hits
-        `TOOL_OUTPUT_FLUSH_CHUNK_COUNT`; otherwise arms a timer so the
-        buffer drains within `TOOL_OUTPUT_FLUSH_INTERVAL_S` of the
-        first buffered chunk. Called only from the worker task."""
-        buf = self._tool_buffers.get(tool_call_id)
-        if buf is None:
-            buf = _ToolOutputBuffer()
-            self._tool_buffers[tool_call_id] = buf
-        buf.chunks.append(chunk)
-        if len(buf.chunks) >= TOOL_OUTPUT_FLUSH_CHUNK_COUNT:
-            # Count-triggered flush: cancel the pending timer so it
-            # doesn't fire on an already-drained buffer, then write now.
-            if buf.flush_task is not None:
-                buf.flush_task.cancel()
-                buf.flush_task = None
-            await self._flush_tool_buffer(tool_call_id)
-            return
-        if buf.flush_task is None:
-            buf.flush_task = asyncio.create_task(
-                self._delayed_flush(tool_call_id),
-                name=f"tool-flush:{self.session_id}:{tool_call_id}",
-            )
-
-    async def _delayed_flush(self, tool_call_id: str) -> None:
-        """Timer coroutine: wait the coalescing window, then flush.
-
-        No-op if the buffer was already drained (count trigger, turn
-        teardown, or `ToolCallEnd`) before the timer fired. Swallows
-        `CancelledError` from the synchronous-flush path."""
-        try:
-            await asyncio.sleep(TOOL_OUTPUT_FLUSH_INTERVAL_S)
-        except asyncio.CancelledError:
-            return
-        buf = self._tool_buffers.get(tool_call_id)
-        if buf is not None:
-            # Clear the handle before flushing so a chunk that arrives
-            # mid-flush is free to arm a fresh timer.
-            buf.flush_task = None
-            await self._flush_tool_buffer(tool_call_id)
-
-    async def _flush_tool_buffer(self, tool_call_id: str) -> None:
-        """Pop the buffer for `tool_call_id` and write its joined
-        chunks in a single `append_tool_output` call.
-
-        No-op if no buffer exists or it's empty. Safe to call any
-        number of times; each call is a single UPDATE + commit."""
-        buf = self._tool_buffers.pop(tool_call_id, None)
-        if buf is None or not buf.chunks:
-            return
-        if buf.flush_task is not None:
-            # Defensive: the caller is expected to clear/cancel, but
-            # covering both paths keeps the contract simple.
-            buf.flush_task.cancel()
-            buf.flush_task = None
-        payload = "".join(buf.chunks)
-        try:
-            await store.append_tool_output(self.db, tool_call_id=tool_call_id, chunk=payload)
-        except Exception:
-            # Mirror the pre-coalescing behavior: a DB hiccup on a
-            # streamed delta shouldn't kill the turn. `finish_tool_call`
-            # will still land the canonical output on `ToolCallEnd`.
-            log.exception(
-                "runner %s: failed to flush tool output for %s",
-                self.session_id,
-                tool_call_id,
-            )
-
-    async def _flush_all_tool_buffers(self) -> None:
-        """Drain every buffered tool call. Called on turn teardown
-        (normal completion, stop, exception) and runner shutdown so
-        mid-stream chunks don't get stranded if no `ToolCallEnd`
-        arrives (e.g. interrupted turn)."""
-        for tool_call_id in list(self._tool_buffers):
-            await self._flush_tool_buffer(tool_call_id)
-
-    def _drop_tool_buffer(self, tool_call_id: str) -> None:
-        """Discard any buffered deltas for `tool_call_id` without
-        writing them. Used by the `ToolCallEnd` arm: `finish_tool_call`
-        overwrites `output` with the canonical final string, so any
-        buffered chunks would be immediately clobbered anyway."""
-        buf = self._tool_buffers.pop(tool_call_id, None)
-        if buf is not None and buf.flush_task is not None:
-            buf.flush_task.cancel()
 
     # ---- tool-progress keepalive ----------------------------------
 

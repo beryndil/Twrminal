@@ -29,12 +29,12 @@ from bearings.agent.events import (
     ToolCallStart,
     ToolOutputDelta,
 )
-from bearings.agent.runner import (
-    TOOL_OUTPUT_FLUSH_CHUNK_COUNT,
-    TOOL_OUTPUT_FLUSH_INTERVAL_S,
-    SessionRunner,
-)
+from bearings.agent.runner import SessionRunner
 from bearings.agent.session import AgentSession
+from bearings.agent.tool_output_coalescer import (
+    FLUSH_CHUNK_COUNT,
+    FLUSH_INTERVAL_S,
+)
 from bearings.db import store
 from bearings.db._common import init_db
 
@@ -93,17 +93,17 @@ async def _drain_turn(runner: SessionRunner) -> None:
     raise AssertionError("turn did not complete within timeout")
 
 
-# ---- _buffer_tool_output: count-triggered flush ---------------------
+# ---- coalescer.buffer: count-triggered flush ------------------------
 
 
 @pytest.mark.asyncio
 async def test_count_threshold_flushes_immediately(
     db: aiosqlite.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Hitting `TOOL_OUTPUT_FLUSH_CHUNK_COUNT` chunks triggers a flush
-    without waiting for the timer. Keeps burst tools (grep/find/etc.)
-    from sitting on a backlog just because the 75ms window hasn't
-    elapsed yet."""
+    """Hitting `FLUSH_CHUNK_COUNT` chunks triggers a flush without
+    waiting for the timer. Keeps burst tools (grep/find/etc.) from
+    sitting on a backlog just because the 75ms window hasn't elapsed
+    yet."""
     sid = await _session_id(db)
     runner = _make_runner(sid, db, script=[])
 
@@ -120,19 +120,19 @@ async def test_count_threshold_flushes_immediately(
         db, session_id=sid, tool_call_id="t-burst", name="bash", input_json="{}"
     )
 
-    for i in range(TOOL_OUTPUT_FLUSH_CHUNK_COUNT):
-        await runner._buffer_tool_output("t-burst", f"c{i}|")
+    for i in range(FLUSH_CHUNK_COUNT):
+        await runner._coalescer.buffer("t-burst", f"c{i}|")
 
     # Exactly one flush, containing every chunk joined.
     assert len(calls) == 1
     assert calls[0][0] == "t-burst"
-    assert calls[0][1] == "".join(f"c{i}|" for i in range(TOOL_OUTPUT_FLUSH_CHUNK_COUNT))
+    assert calls[0][1] == "".join(f"c{i}|" for i in range(FLUSH_CHUNK_COUNT))
 
     # Buffer is drained; no pending timer.
-    assert "t-burst" not in runner._tool_buffers
+    assert "t-burst" not in runner._coalescer._buffers
 
 
-# ---- _buffer_tool_output: timer-triggered flush ---------------------
+# ---- coalescer.buffer: timer-triggered flush ------------------------
 
 
 @pytest.mark.asyncio
@@ -140,9 +140,9 @@ async def test_time_threshold_flushes_small_burst(
     db: aiosqlite.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A few chunks below the count threshold flush within one
-    `TOOL_OUTPUT_FLUSH_INTERVAL_S` window. This is the "tool that
-    drips output slowly" case — the user must still see progress
-    land in the DB, just at a coarser cadence than before."""
+    `FLUSH_INTERVAL_S` window. This is the "tool that drips output
+    slowly" case — the user must still see progress land in the DB,
+    just at a coarser cadence than before."""
     sid = await _session_id(db)
     runner = _make_runner(sid, db, script=[])
 
@@ -159,22 +159,22 @@ async def test_time_threshold_flushes_small_burst(
         db, session_id=sid, tool_call_id="t-drip", name="bash", input_json="{}"
     )
 
-    await runner._buffer_tool_output("t-drip", "a")
-    await runner._buffer_tool_output("t-drip", "b")
-    await runner._buffer_tool_output("t-drip", "c")
+    await runner._coalescer.buffer("t-drip", "a")
+    await runner._coalescer.buffer("t-drip", "b")
+    await runner._coalescer.buffer("t-drip", "c")
     # Not flushed yet — still inside the window.
     assert calls == []
-    assert "t-drip" in runner._tool_buffers
+    assert "t-drip" in runner._coalescer._buffers
 
     # Wait past the window + a generous margin for CI jitter.
-    await asyncio.sleep(TOOL_OUTPUT_FLUSH_INTERVAL_S * 3)
+    await asyncio.sleep(FLUSH_INTERVAL_S * 3)
 
     assert len(calls) == 1
     assert calls[0] == ("t-drip", "abc")
-    assert "t-drip" not in runner._tool_buffers
+    assert "t-drip" not in runner._coalescer._buffers
 
 
-# ---- _drop_tool_buffer: ToolCallEnd discards buffered deltas --------
+# ---- coalescer.drop: ToolCallEnd discards buffered deltas -----------
 
 
 @pytest.mark.asyncio
@@ -201,18 +201,18 @@ async def test_drop_buffer_cancels_pending_timer(
         db, session_id=sid, tool_call_id="t-end", name="bash", input_json="{}"
     )
 
-    await runner._buffer_tool_output("t-end", "buffered")
-    assert "t-end" in runner._tool_buffers
+    await runner._coalescer.buffer("t-end", "buffered")
+    assert "t-end" in runner._coalescer._buffers
 
-    runner._drop_tool_buffer("t-end")
-    assert "t-end" not in runner._tool_buffers
+    runner._coalescer.drop("t-end")
+    assert "t-end" not in runner._coalescer._buffers
 
     # Wait well past the flush window — no write should happen.
-    await asyncio.sleep(TOOL_OUTPUT_FLUSH_INTERVAL_S * 3)
+    await asyncio.sleep(FLUSH_INTERVAL_S * 3)
     assert calls == []
 
 
-# ---- _flush_all_tool_buffers: turn teardown flushes everything -----
+# ---- coalescer.flush_all: turn teardown flushes everything ----------
 
 
 @pytest.mark.asyncio
@@ -220,9 +220,9 @@ async def test_flush_all_drains_every_pending_buffer(
     db: aiosqlite.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Multiple concurrent tool calls each keep their own buffer;
-    `_flush_all_tool_buffers` drains every one. Exercised on turn
-    teardown paths so mid-stream chunks aren't stranded if no
-    `ToolCallEnd` arrives (e.g. user-initiated stop)."""
+    `flush_all` drains every one. Exercised on turn teardown paths
+    so mid-stream chunks aren't stranded if no `ToolCallEnd` arrives
+    (e.g. user-initiated stop)."""
     sid = await _session_id(db)
     runner = _make_runner(sid, db, script=[])
 
@@ -239,19 +239,19 @@ async def test_flush_all_drains_every_pending_buffer(
         await store.insert_tool_call_start(
             db, session_id=sid, tool_call_id=tid, name="bash", input_json="{}"
         )
-        await runner._buffer_tool_output(tid, f"{tid}:part1|")
-        await runner._buffer_tool_output(tid, f"{tid}:part2|")
+        await runner._coalescer.buffer(tid, f"{tid}:part1|")
+        await runner._coalescer.buffer(tid, f"{tid}:part2|")
 
     assert calls == []  # nothing flushed yet
 
-    await runner._flush_all_tool_buffers()
+    await runner._coalescer.flush_all()
 
     by_tid = {tid: chunk for tid, chunk in calls}
     assert by_tid == {
         "t-1": "t-1:part1|t-1:part2|",
         "t-2": "t-2:part1|t-2:part2|",
     }
-    assert runner._tool_buffers == {}
+    assert runner._coalescer._buffers == {}
 
 
 # ---- integration: full turn with streaming tool call ---------------
