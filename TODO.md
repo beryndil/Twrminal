@@ -1243,33 +1243,71 @@ appears. Frontend (MessageTurn.svelte, Inspector.svelte) already reacts
 to `tc.output` reactively and auto-scrolls; no component change needed
 downstream.
 
-### Blocking investigation (do first)
+### Blocking investigation (resolved 2026-04-24)
 
-- [ ] **Verify SDK custom-tool registration in `claude-agent-sdk` 0.1.63.**
-  Grep `.venv/lib/python3.12/site-packages/claude_agent_sdk/` for a way
-  to register an in-process Python callable as a tool the model can
-  invoke. If present, this unlocks Path B (below) without a fork.
-- [ ] **Protocol trace of `subprocess_cli.py`.** Dump the raw JSON the
-  Claude CLI sends over stdout during a long Bash call to confirm
-  whether partial tool output is ever emitted on the wire. If the CLI
-  only sends complete `ToolResultBlock`s, Path A gets you nothing —
-  the limitation is in the closed-source CLI.
+- [x] **Verify SDK custom-tool registration in `claude-agent-sdk` 0.1.66.**
+  ✅ Available. `create_sdk_mcp_server()` + `@tool` decorator are
+  exported from `claude_agent_sdk` and Bearings already uses them in
+  `agent/mcp_tools.py` (the `bearings__get_tool_output` tool from the
+  token-cost wave). Path B is unblocked without a fork.
+- [x] **Protocol trace of `subprocess_cli.py`.** Resolved by reading
+  the SDK + Anthropic streaming spec — no live trace needed. The CLI
+  follows Anthropic's streaming protocol: `content_block_delta` only
+  carries `text_delta` / `thinking_delta` / `input_json_delta`; tool
+  results come back as complete `ToolResultBlock` items inside a
+  trailing `UserMessage`, never streamed. Confirmed against
+  `_internal/transport/subprocess_cli.py:_read_messages_impl` (yields
+  complete JSON objects only — speculative parse until full object) and
+  `types.py:StreamEvent` (`event: dict[str, Any]` with no partial-tool-
+  output schema in the spec). **Path A is dead** — even with a fork
+  there are no partial frames on the wire to forward.
 
 ### Paths
 
-- **Path C — Synthetic-delta spike (2–3h).** Add `ToolOutputDelta`
-  event + reducer + fake backend emission (split final output into
-  chunks with setTimeout). Proves frontend + event schema end-to-end.
-  De-risk step before committing to A or B.
-- **Path B — Bearings-owned Bash tool via SDK custom tool (6–10h).**
-  Register an in-process Bash implementation; run the subprocess
-  locally; stream chunks to the WS event bus; return final combined
-  output to the SDK synchronously. No fork. Cleanest path *if SDK
-  exposes custom-tool registration*.
-- **Path A — SDK fork + subprocess stream parsing (8–16h + merge tax).**
-  Fork `claude-agent-sdk`, modify `_internal/transport/subprocess_cli.py`
-  to emit partial chunks as the CLI streams bytes. Only viable if the
-  protocol trace confirms the CLI actually sends partial output.
+- **Path C — Synthetic-delta spike.** ✅ Effectively shipped as
+  bulletproof plumbing in commit `1359531` (2026-04-20):
+  `ToolOutputDelta` event + frontend reducer (with ordering, cap, and
+  truncation invariants) + runner consumer + idempotent DB append.
+  Coalescer extracted in `d019285`. Pipe is structurally proven via
+  `frontend/src/lib/stores/conversation.svelte.test.ts`. No live
+  emitter wired — that was always Path B's job.
+- **Path B — Bearings-owned Bash tool via SDK custom tool (6–10h).** ←
+  **the remaining real work.** Register an in-process Bash
+  implementation as an MCP tool (`bearings__bash`); run the subprocess
+  locally with `LineBuffer`-backed chunking; push each line as a
+  `ToolOutputDelta` into the runner's emit path; return the final
+  combined output synchronously to satisfy the SDK contract. **Open
+  design questions** to settle before coding:
+  - **Side channel for deltas.** The `@tool`-decorated callable returns
+    its final dict synchronously to the SDK — there's no return-stream.
+    Deltas need a side path. Cleanest: pass a per-session `emit_delta`
+    callback into the tool factory at `build_bearings_mcp_server` time
+    (closure capture, same pattern as `db_getter` already uses); the
+    callback pushes onto an `asyncio.Queue` consumed by `session.stream`
+    and yielded as `ToolOutputDelta` events. Avoids reaching across
+    the runner boundary.
+  - **Replacing built-in `Bash`.** Add `Bash` to `disallowed_tools` and
+    `mcp__bearings__bash` to `allowed_tools`. Risk: the model is
+    trained on the name `Bash` and may keep trying it. A short system-
+    prompt addendum ("for shell commands, use `mcp__bearings__bash`")
+    plus the `disallowed_tools` denial should retrain it within a
+    turn, but verify in a real session before declaring the feature
+    done. Researcher subagent at `agents.researcher.tools` also lists
+    `Bash` (`session.py:570`) — needs the same swap.
+  - **Permission flow.** Built-in `Bash` rides the existing
+    `can_use_tool` gating. The MCP tool needs the same — check the
+    `permission_mode` and `tool_permissions` interaction with custom
+    MCP tools; should "just work" but verify with a plan-mode session.
+  - **Researcher subagent.** Sub-agents inherit options? Or do we have
+    to set their tool list explicitly? Path: `AgentDefinition` at
+    `session.py:560` — currently lists `Bash`. Update there.
+  - **Builtins still used by the model.** `Read`, `Grep`, `Glob`,
+    `Edit`, `Write`, `WebFetch` etc. don't stream — out of scope. The
+    chatty long-runner is `Bash` (and downstream `Task` calls running
+    `Bash`); that's where the user actually waits.
+- **Path A — SDK fork + subprocess stream parsing.** ❌ Dead. See
+  blocking-investigation note above — the CLI does not emit partial
+  tool output on the wire, so a fork has nothing to extract.
 
 ### Files that change (shared across paths)
 
@@ -1297,13 +1335,14 @@ downstream.
 - **Event ordering**: rely on the ring buffer's `_seq`. Reducer drops
   deltas whose target call is already finished.
 
-### Decision
+### Decision (updated 2026-04-24)
 
-Path C first (proves the pipe). Then Path B if SDK supports it. Path A
-only if B is unavailable and the protocol trace justifies it. If
-protocol trace shows the CLI itself buffers, kill the feature with a
-dated note in this TODO explaining why — genuine upstream limit, not a
-Bearings shortcoming.
+Pipe is shipped (Path C plumbing landed 2026-04-20). Path A is dead.
+**Path B is the next step** — implement `bearings__bash` as an
+in-process MCP tool with side-channel delta emission, swap built-in
+`Bash` out via `disallowed_tools`, and verify the model retrains to the
+new tool name within a turn. Reserved as its own work item — see
+checklist follow-up.
 
 ## Ops / service
 
@@ -1459,6 +1498,32 @@ the sketch's per-turn tail mutation would additionally prevent the
 streaming `turns` array from re-allocating per token, but the
 settled-turn cache already handles the dominant cost (MessageTurn
 reflow of every already-settled turn).
+
+**Resolution 2026-04-24 (item 29 / full $state promotion):** the
+remaining-headroom variant landed. `turns`, `audits`, and `timeline`
+are now first-class `$state` arrays on `SessionState`, owned by the
+reducer. Per-event paths (`token`, `thinking`, `tool_call_start`,
+`tool_output_delta`, `tool_progress`, `tool_call_end`,
+`message_complete`) mutate the existing tail Turn in place — no
+`buildSettledTurns` / `buildStreamingTail` / sort fires per WS frame.
+Full rebuilds (`rebuildTurnsFromMessages` + `recomputeTimeline`)
+only run on `load`, `loadOlder`, `refreshMessages`, `applyMessagePatch`,
+and `setAudits` — the points where the underlying arrays change shape
+wholesale. `Conversation.svelte` now reads `conversation.timeline`
+directly and the local `audits = $state(...)` declaration moved
+into the store as `setAudits` + a `$derived` getter so the timeline
+re-merge happens server-side of the view. Test coverage added in
+`stores/conversation.svelte.test.ts` under "in-place tail mutation"
+asserts: tail Turn identity stable across 50 token events, tail
+`toolCalls` array reference stable across 25 deltas, finalize
+preserves Turn identity (only `isStreaming` / `assistant` flip),
+open-user-turn absorption on `message_start`, and timeline array
+reference stability across token events. The Svelte 5 $state proxy
+quirk where pushing the same plain object into two proxied arrays
+yields two distinct proxies was caught by the toolCalls-stability
+test — the reducer now re-reads the post-push proxy from
+`state.toolCalls` before pushing into `tail.toolCalls` so both
+arrays share the reactive identity.
 
 ### 2026-04-21 — Profile event frequencies (wire + DB)
 
