@@ -27,6 +27,7 @@ from .commands import CommandOut, CommandsListOut
 from .fs import FsEntryOut, FsListOut, FsPickOut, UploadOut
 from .messages import Attachment, MessageOut, MessagePatchBody, TokenTotalsOut
 from .paired import PairedChatCreate
+from .preferences import PreferencesOut, PreferencesPatch
 from .prompts import SystemPromptLayerOut, SystemPromptOut
 from .reorg import (
     ReorgAuditOut,
@@ -84,6 +85,8 @@ __all__ = [
     "MessagePatchBody",
     "NewSessionSpec",
     "PairedChatCreate",
+    "PreferencesOut",
+    "PreferencesPatch",
     "ReorderRequest",
     "ReorderResult",
     "ReorgAuditOut",

@@ -65,6 +65,10 @@ from bearings.db._messages import (
     search_messages,
     update_message_flags,
 )
+from bearings.db._preferences import (
+    get_preferences,
+    update_preferences,
+)
 from bearings.db._reorg import (
     MoveResult,
     ReorgOp,
@@ -157,6 +161,7 @@ __all__ = [
     "get_item",
     "get_item_by_chat_session",
     "get_latest_todowrite",
+    "get_preferences",
     "get_session",
     "get_session_token_totals",
     "get_tag",
@@ -207,6 +212,7 @@ __all__ = [
     "update_checklist",
     "update_item",
     "update_message_flags",
+    "update_preferences",
     "update_session",
     "update_tag",
     "upsert_auto_run_state",
