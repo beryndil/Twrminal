@@ -1023,10 +1023,13 @@ async def test_visit_existing_reuses_linked_session_for_leg_one(
         result = await driver.drive()
         assert result.outcome == DriverOutcome.COMPLETED
         assert result.items_completed == 1
-        # Critically: NO spawn_leg call, NO teardown_leg call —
-        # the session was the user's, not ours.
+        # No spawn_leg — the session was the user's. teardown_leg IS
+        # called once on the existing session id: this drops any
+        # cached runner so the next run_turn rebuilds with the freshly
+        # forced bypassPermissions mode (2026-04-25 visit-mode bug 2
+        # fix). The session row itself is left intact.
         assert runtime.spawn_calls == []
-        assert runtime.teardown_calls == []
+        assert runtime.teardown_calls == [existing_chat["id"]]
     finally:
         await conn.close()
 
@@ -1168,9 +1171,129 @@ async def test_visit_existing_handoff_spawns_fresh_for_leg_two(
         assert len(runtime.spawn_calls) == 1
         assert runtime.spawn_calls[0][1] == 2  # leg_number=2
         assert runtime.spawn_calls[0][2] == "state snapshot"  # plug threaded
-        # Only the spawned leg was torn down — the user's existing
-        # session is left alone.
-        assert len(runtime.teardown_calls) == 1
+        # Two teardown calls now: (1) existing-session cache drop in
+        # _existing_open_session so the rebuilt runner picks up the
+        # forced bypassPermissions mode, (2) the spawned leg 2's
+        # teardown after its turn. The session ROWS are both left
+        # intact in the DB; teardown only drops cached runners.
+        spawned_leg_id = next(
+            sid
+            for sid, iid in runtime._session_to_item.items()
+            if iid == item["id"] and sid != existing_chat["id"]
+        )
+        assert runtime.teardown_calls == [existing_chat["id"], spawned_leg_id]
+    finally:
+        await conn.close()
+
+
+# --- visit-existing permission_mode forcing (bug 2 fix) ------------
+
+
+@pytest.mark.asyncio
+async def test_visit_existing_forces_leg_permission_mode_on_session(
+    tmp_path: Path,
+) -> None:
+    """Bug 2 (2026-04-24 unattended-tour permission_prompt halt):
+    visit-existing mode reuses a chat session whose permission_mode
+    is whatever the user left it at (often 'default' from manual
+    interactive use). The driver must FORCE leg_permission_mode
+    onto the row before the leg runs, otherwise the SDK's
+    `can_use_tool` hook parks on every Edit/Bash and the
+    autonomous run hangs waiting for a click that will never come.
+
+    This test verifies the fix: an existing chat session with
+    permission_mode=NULL (default) gets bumped to
+    'bypassPermissions' (the DriverConfig default) by the time
+    the visit happens. Also asserts a teardown_leg call on the
+    existing session id — that's the cache-drop signal that
+    forces a runner rebuild so the new permission_mode actually
+    takes effect this leg.
+    """
+    from bearings.db.store import get_session, set_item_chat_session
+
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        checklist_id = await _fresh_checklist(conn)
+        item = await create_item(conn, checklist_id, label="visit-perms")
+        existing_chat = await create_session(
+            conn,
+            working_dir="/tmp",
+            model="stub-model",
+            kind="chat",
+            checklist_item_id=item["id"],
+        )
+        # Sanity: row starts with permission_mode=None.
+        before = await get_session(conn, existing_chat["id"])
+        assert before is not None
+        assert before["permission_mode"] is None
+
+        await set_item_chat_session(conn, item["id"], existing_chat["id"])
+        runtime = StubRuntime(conn=conn)
+        runtime._session_to_item[existing_chat["id"]] = item["id"]
+        runtime.turns_by_item[item["id"]] = ["CHECKLIST_ITEM_DONE"]
+        config = DriverConfig(visit_existing_sessions=True)
+        driver = Driver(
+            conn=conn,
+            runtime=runtime,
+            checklist_session_id=checklist_id,
+            config=config,
+        )
+        result = await driver.drive()
+        assert result.outcome == DriverOutcome.COMPLETED
+
+        # Permission mode forced onto the persisted row.
+        after = await get_session(conn, existing_chat["id"])
+        assert after is not None
+        assert after["permission_mode"] == "bypassPermissions"
+
+        # Teardown was called on the existing session id — proves the
+        # runner cache was dropped so the rebuilt runner picks up the
+        # new mode. Without this, a cached runner with the OLD mode
+        # would remain in the registry and the SDK's can_use_tool
+        # hook would still park on tool calls.
+        assert existing_chat["id"] in runtime.teardown_calls
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_visit_existing_honors_custom_leg_permission_mode(
+    tmp_path: Path,
+) -> None:
+    """A custom DriverConfig.leg_permission_mode (e.g. 'acceptEdits'
+    for a mid-ground supervised run) is honored on visit-mode
+    sessions just like it is on spawned legs. Symmetry assertion."""
+    from bearings.db.store import get_session, set_item_chat_session
+
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        checklist_id = await _fresh_checklist(conn)
+        item = await create_item(conn, checklist_id, label="custom-mode")
+        existing_chat = await create_session(
+            conn,
+            working_dir="/tmp",
+            model="stub-model",
+            kind="chat",
+            checklist_item_id=item["id"],
+        )
+        await set_item_chat_session(conn, item["id"], existing_chat["id"])
+        runtime = StubRuntime(conn=conn)
+        runtime._session_to_item[existing_chat["id"]] = item["id"]
+        runtime.turns_by_item[item["id"]] = ["CHECKLIST_ITEM_DONE"]
+        config = DriverConfig(
+            visit_existing_sessions=True,
+            leg_permission_mode="acceptEdits",
+        )
+        driver = Driver(
+            conn=conn,
+            runtime=runtime,
+            checklist_session_id=checklist_id,
+            config=config,
+        )
+        await driver.drive()
+        after = await get_session(conn, existing_chat["id"])
+        assert after is not None
+        assert after["permission_mode"] == "acceptEdits"
     finally:
         await conn.close()
 

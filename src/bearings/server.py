@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -39,6 +40,8 @@ from bearings.api import (
 from bearings.config import Settings, load_settings
 from bearings.db.store import init_db
 from bearings.menus import load_menu_config
+
+log = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent / "web" / "dist"
 
@@ -117,13 +120,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.runners.start_reaper()
     # AutoDriverRegistry owns running autonomous-checklist drivers.
     # Each POST /sessions/{id}/checklist/run lands an entry; DELETE
-    # or app shutdown drains them. Empty on fresh boot — drivers are
-    # in-memory only, so a server restart cancels any mid-run driver
-    # (the item's current leg stays in the DB for audit but no fresh
-    # leg spawns until the user re-POSTs).
+    # or app shutdown drains them. After migration 0031 the per-run
+    # bookkeeping is durable — the rehydrate scan below re-creates
+    # asyncio.Tasks for any run that was alive at the last lifespan
+    # teardown so a systemd restart no longer evaporates an autonomous
+    # tour mid-walk. The driver's outer loop picks up at the next
+    # unchecked item; an in-flight leg from the prior life is dropped.
     from bearings.agent.auto_driver_runtime import AutoDriverRegistry
 
     app.state.auto_drivers = AutoDriverRegistry()
+    try:
+        rehydrated = await app.state.auto_drivers.rehydrate(app)
+        if rehydrated:
+            log.info(
+                "auto-driver: rehydrated %d running run(s) from auto_run_state: %s",
+                len(rehydrated),
+                rehydrated,
+            )
+    except Exception:
+        # Rehydrate failures are non-fatal: the user can re-POST any
+        # run they care about, but the rest of the app must still
+        # come up. Log loudly so the failure is visible.
+        log.exception("auto-driver: rehydrate scan failed at startup")
     try:
         yield
     finally:

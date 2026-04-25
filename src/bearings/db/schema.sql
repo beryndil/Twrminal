@@ -241,3 +241,29 @@ CREATE TABLE IF NOT EXISTS session_templates (
 
 CREATE INDEX IF NOT EXISTS idx_session_templates_created
     ON session_templates(created_at);
+
+-- Autonomous-driver run state (migration 0031). Snapshot of the
+-- AutoDriverRegistry's per-checklist run so a lifespan teardown
+-- (systemd restart, crash) doesn't evaporate the run. `state='running'`
+-- rows are scanned at startup and rehydrated as fresh Driver tasks;
+-- `finished` / `errored` are kept for the audit trail and ignored at
+-- rehydrate. See migration file for the full lifecycle contract.
+CREATE TABLE IF NOT EXISTS auto_run_state (
+    checklist_session_id TEXT PRIMARY KEY
+        REFERENCES sessions(id) ON DELETE CASCADE,
+    state TEXT NOT NULL
+        CHECK (state IN ('running', 'finished', 'errored')),
+    items_completed INTEGER NOT NULL DEFAULT 0,
+    items_failed INTEGER NOT NULL DEFAULT 0,
+    items_skipped INTEGER NOT NULL DEFAULT 0,
+    legs_spawned INTEGER NOT NULL DEFAULT 0,
+    failed_item_id INTEGER,
+    failure_reason TEXT,
+    config_json TEXT NOT NULL,
+    attempted_failed_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_auto_run_state_state
+    ON auto_run_state(state);

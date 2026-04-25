@@ -42,8 +42,9 @@ driver exits cleanly without stranding a mid-turn leg.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import StrEnum
 from typing import Any, Protocol
 
@@ -233,6 +234,7 @@ class Driver:
         runtime: DriverRuntime,
         checklist_session_id: str,
         config: DriverConfig | None = None,
+        restore: dict[str, Any] | None = None,
     ) -> None:
         self._conn = conn
         self._runtime = runtime
@@ -252,6 +254,14 @@ class Driver:
         # the same uncompleted item. Excluded from
         # `next_unchecked_top_level_item` lookups.
         self._attempted_failed: set[int] = set()
+        # Rehydrate primer. When the registry rebuilds a driver from a
+        # persisted `auto_run_state` row it passes the snapshot dict
+        # here; `drive()` seeds counters + `_attempted_failed` from it
+        # before entering the main loop. The DB-backed `checked_at`
+        # column is the source of truth for which items finished —
+        # we DON'T try to resume a leg mid-turn — so resume = restored
+        # bookkeeping + outer loop picks up at the next unchecked item.
+        self._restore: dict[str, Any] | None = restore
 
     # --- external control --------------------------------------------
 
@@ -270,7 +280,36 @@ class Driver:
         `failure_policy="skip"`, the failure is recorded on the item
         but the outer loop advances — useful for tour-style runs
         where you want the driver to do everything it can and leave
-        hard items for human review."""
+        hard items for human review.
+
+        Persistence: writes a `state='running'` row into `auto_run_state`
+        on entry and re-snapshots after every per-item outcome so a
+        lifespan teardown leaves the rehydrate path enough to rebuild.
+        On terminal return the row is flipped to `state='finished'`;
+        on an unexpected exception it's flipped to `state='errored'`.
+        `asyncio.CancelledError` does NOT flip the state — a cancel is
+        almost always a shutdown, and we want the next boot to
+        rehydrate. See migration 0031 for the table contract.
+        """
+        if self._restore is not None:
+            self._apply_restore()
+        await self._save_snapshot("running")
+        try:
+            result = await self._drive_loop()
+        except asyncio.CancelledError:
+            # Shutdown path. Leave the row at 'running' so the next
+            # boot rehydrates this driver.
+            raise
+        except BaseException:
+            await self._save_snapshot("errored")
+            raise
+        await self._save_snapshot("finished")
+        return result
+
+    async def _drive_loop(self) -> DriverResult:
+        """Inner loop, separate from `drive()` so the outer wrapper can
+        own the persistence finalize step without three return paths
+        each duplicating the snapshot call."""
         items_seen = 0
         skip_failures = self._config.failure_policy == "skip"
         while True:
@@ -313,6 +352,12 @@ class Driver:
                 # failure_policy) but the item still needs exclusion
                 # to avoid re-pick.
                 self._attempted_failed.add(int(item["id"]))
+            # Snapshot once per outer iteration — captures every
+            # counter mutation that just happened (item completion,
+            # skip, failure record, attempted_failed add). Cheap on
+            # SQLite WAL; keeps the rehydrate primer current to
+            # within one item.
+            await self._save_snapshot("running")
 
     # --- per-item state machine --------------------------------------
 
@@ -597,6 +642,77 @@ class Driver:
                 item_id,
             )
 
+    def _apply_restore(self) -> None:
+        """Seed in-memory state from a persisted `auto_run_state` row.
+
+        Called once from `drive()` before the main loop when the
+        registry rebuilt the driver from a rehydrate scan. The DB-
+        backed `checked_at` column is the source of truth for which
+        items are done, so we DON'T re-mark anything; we just restore
+        the bookkeeping the outer loop needs to behave the same way it
+        would have if the original driver had kept running:
+        counters (so the status endpoint shows the running totals),
+        failure detail (so a halt-failure run that crashed mid-write
+        doesn't lose its reason), and `_attempted_failed` (so
+        skip-mode runs don't loop on items already failed in the
+        prior life of this run).
+        """
+        snap = self._restore
+        if snap is None:
+            return
+        self._items_completed = int(snap.get("items_completed") or 0)
+        self._items_failed = int(snap.get("items_failed") or 0)
+        self._items_skipped = int(snap.get("items_skipped") or 0)
+        self._legs_spawned = int(snap.get("legs_spawned") or 0)
+        failed_id = snap.get("failed_item_id")
+        self._failed_item_id = int(failed_id) if failed_id is not None else None
+        self._failure_reason = snap.get("failure_reason")
+        attempted_raw = snap.get("attempted_failed_json") or "[]"
+        try:
+            attempted = json.loads(attempted_raw)
+            if isinstance(attempted, list):
+                self._attempted_failed = {int(x) for x in attempted}
+        except (ValueError, TypeError):
+            log.warning(
+                "autonomous driver: malformed attempted_failed_json on restore "
+                "for checklist %s — discarding exclusion set",
+                self._checklist_id,
+            )
+            self._attempted_failed = set()
+
+    async def _save_snapshot(self, state: str) -> None:
+        """Persist the current in-memory bookkeeping into
+        `auto_run_state`. Best-effort — exceptions are logged and
+        swallowed so a write failure (locked DB, disk full, schema
+        drift) never crashes the running driver. The in-memory state
+        stays authoritative for the live status endpoint; this row
+        exists strictly so a fresh-boot lifespan can rehydrate.
+
+        See migration 0031 for the table contract; `state` must be
+        one of 'running', 'finished', 'errored'.
+        """
+        try:
+            await store.upsert_auto_run_state(
+                self._conn,
+                checklist_session_id=self._checklist_id,
+                state=state,
+                items_completed=self._items_completed,
+                items_failed=self._items_failed,
+                items_skipped=self._items_skipped,
+                legs_spawned=self._legs_spawned,
+                failed_item_id=self._failed_item_id,
+                failure_reason=self._failure_reason,
+                config_json=json.dumps(asdict(self._config)),
+                attempted_failed_json=json.dumps(sorted(self._attempted_failed)),
+            )
+        except Exception:
+            log.exception(
+                "autonomous driver: failed to persist run-state snapshot "
+                "for checklist %s (state=%s)",
+                self._checklist_id,
+                state,
+            )
+
     async def _existing_open_session(self, item: dict[str, Any]) -> str | None:
         """Return the open chat session linked to `item`, or None.
 
@@ -611,6 +727,18 @@ class Driver:
         Returns the session id when there's an open chat session
         linked to this item; None when no link, the link is stale
         (session deleted), or the linked session is closed.
+
+        Side effect (2026-04-25 fix for unattended-run permission gap):
+        before returning the session id, force its `permission_mode`
+        to the driver's `leg_permission_mode` (default
+        `bypassPermissions`) and drop any cached runner so the next
+        `run_turn` rebuilds with the new mode. Without this the
+        existing session's pre-set permission_mode (often `default`
+        from manual interactive use) would carry into the autonomous
+        run and the SDK's `can_use_tool` hook would park on every
+        Edit/Bash, hanging the leg forever. Spawned legs get the same
+        mode set in `AgentRunnerDriverRuntime.spawn_leg`; this branch
+        is the visit-existing equivalent.
         """
         existing_id = item.get("chat_session_id")
         if not existing_id:
@@ -620,7 +748,29 @@ class Driver:
             return None
         if row.get("closed_at") is not None:
             return None
-        return str(existing_id)
+        session_id = str(existing_id)
+        # Force permission_mode on the row. Idempotent — if the row
+        # already carries the same value the UPDATE is a no-op write.
+        try:
+            await store.set_session_permission_mode(
+                self._conn, session_id, self._config.leg_permission_mode
+            )
+        except Exception:
+            # A bad permission_mode value is a programming error
+            # (DriverConfig validates at construction conceptually);
+            # log + continue rather than halt the visit.
+            log.exception(
+                "autonomous driver: failed to force permission_mode on visit-existing session %s",
+                session_id,
+            )
+        # Drop any cached runner for this session id. Required because
+        # `RunnerRegistry.get_or_create` returns the cached runner if
+        # one exists — and the cached runner was built with the OLD
+        # permission_mode, so the freshly-persisted bypassPermissions
+        # value wouldn't take effect this leg. teardown_leg is
+        # idempotent, so a no-op when nothing is cached.
+        await self._runtime.teardown_leg(session_id)
+        return session_id
 
     async def _request_handoff_nudge(self, leg_session_id: str) -> str:
         """Submit one extra turn on the current leg asking the agent

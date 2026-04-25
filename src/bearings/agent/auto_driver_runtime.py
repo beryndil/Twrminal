@@ -22,8 +22,9 @@ This module wires it to the real world:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from typing import TYPE_CHECKING, Any
 
 from bearings import metrics
@@ -378,6 +379,85 @@ class AutoDriverRegistry:
                     # Logged inside the driver; nothing to re-raise
                     # on shutdown path.
                     log.exception("auto-driver task raised during shutdown")
+
+    async def rehydrate(self, app: FastAPI) -> list[str]:
+        """Scan the `auto_run_state` table for `state='running'` rows
+        and re-spawn a `Driver` task for each. Idempotent — a row whose
+        checklist id already has a live entry is skipped so a duplicate
+        rehydrate call (test, double-startup) doesn't double-spawn.
+
+        Returns the list of checklist session ids that were rehydrated
+        so the caller can log a single startup line. The driver's own
+        outer-loop `next_unchecked_top_level_item` lookup is what
+        actually picks up the next item — this method only re-creates
+        the task that calls it. We DON'T try to resume a leg mid-turn:
+        the in-flight leg from the prior life of the run is dropped,
+        and the outer loop spawns a fresh leg for whichever item is
+        next unchecked.
+        """
+        rehydrated: list[str] = []
+        rows = await store.list_running_auto_runs(app.state.db)
+        for row in rows:
+            sid = str(row["checklist_session_id"])
+            async with self._lock:
+                existing = self._entries.get(sid)
+                if existing is not None and not existing[1].done():
+                    # Already running in this process — duplicate
+                    # rehydrate call. Skip.
+                    continue
+                config = self._restore_config(row)
+                runtime = AgentRunnerDriverRuntime(app=app, config=config)
+                driver = Driver(
+                    conn=app.state.db,
+                    runtime=runtime,
+                    checklist_session_id=sid,
+                    config=config,
+                    restore=row,
+                )
+                task: asyncio.Task[DriverResult] = asyncio.create_task(
+                    driver.drive(),
+                    name=f"auto-driver:{sid}",
+                )
+                self._entries[sid] = (driver, task)
+                rehydrated.append(sid)
+        return rehydrated
+
+    @staticmethod
+    def _restore_config(row: dict[str, Any]) -> DriverConfig:
+        """Rebuild a `DriverConfig` from the persisted `config_json`.
+
+        Tolerant of forward-compat drift: keys not present on the
+        current `DriverConfig` definition are dropped, so a snapshot
+        from a build that defined more fields rehydrates with the
+        ones we still know about and the rest fall back to the
+        current dataclass defaults. The reverse case (snapshot
+        missing newer fields) is handled by the dataclass defaults
+        themselves. Bad JSON falls back to a default config with a
+        warning rather than crashing the rehydrate scan.
+        """
+        raw = row.get("config_json") or "{}"
+        try:
+            parsed = json.loads(raw)
+        except (ValueError, TypeError):
+            log.warning(
+                "auto-driver registry: malformed config_json for checklist "
+                "%s on rehydrate — falling back to DriverConfig defaults",
+                row.get("checklist_session_id"),
+            )
+            return DriverConfig()
+        if not isinstance(parsed, dict):
+            return DriverConfig()
+        known = {f.name for f in fields(DriverConfig)}
+        kwargs = {k: v for k, v in parsed.items() if k in known}
+        try:
+            return DriverConfig(**kwargs)
+        except TypeError:
+            log.warning(
+                "auto-driver registry: incompatible config_json for checklist "
+                "%s on rehydrate — falling back to defaults",
+                row.get("checklist_session_id"),
+            )
+            return DriverConfig()
 
     def forget(self, checklist_session_id: str) -> None:
         """Drop a finished driver's entry so a later run can start

@@ -17,6 +17,12 @@ from bearings.db._artifacts import (
     get_artifact,
     list_artifacts,
 )
+from bearings.db._auto_run import (
+    delete_auto_run_state,
+    get_auto_run_state,
+    list_running_auto_runs,
+    upsert_auto_run_state,
+)
 from bearings.db._checklists import (
     create_checklist,
     create_item,
@@ -130,6 +136,7 @@ __all__ = [
     "create_tag",
     "create_template",
     "delete_artifact",
+    "delete_auto_run_state",
     "delete_checkpoint",
     "delete_item",
     "delete_session",
@@ -143,6 +150,7 @@ __all__ = [
     "find_replayable_prompt",
     "finish_tool_call",
     "get_artifact",
+    "get_auto_run_state",
     "get_checklist",
     "get_checkpoint",
     "get_default_severity_tag_id",
@@ -168,6 +176,7 @@ __all__ = [
     "list_item_sessions",
     "list_messages",
     "list_reorg_audits",
+    "list_running_auto_runs",
     "list_session_ids_for_tag",
     "list_session_tags",
     "list_sessions",
@@ -200,4 +209,5 @@ __all__ = [
     "update_message_flags",
     "update_session",
     "update_tag",
+    "upsert_auto_run_state",
 ]
