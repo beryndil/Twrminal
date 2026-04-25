@@ -2377,3 +2377,57 @@ MIME detection overrides for svg/markdown.
   the message row. Shared GC sweep can then walk the `artifacts`
   table's `created_at` column instead of scanning the upload dir by
   mtime.
+
+## Keyboard shortcuts — research locked, v1 subset picked — 2026-04-25
+
+**Status.** Research complete (see Bearings session
+`f66e25b263ad42cba4e84a676637da8a`). v1 binding subset chosen.
+Implementation tracked as the next checklist item.
+
+**Environmental constraints (verified).**
+
+- Hyprland uses SUPER as its modifier — Ctrl/Alt/Shift are free for app use.
+- Chrome reserves `Ctrl+T`, `Ctrl+W`, `Ctrl+N`, `Ctrl+Tab`, `Ctrl+Shift+T`,
+  `Ctrl+L`, `F5`. Anything else is fair game.
+- `CheatSheet.svelte` and `CommandMenu.svelte` already wire bare-letter
+  shortcuts when input is unfocused; v1 binds extend that pattern.
+
+**v1 ships these bindings.**
+
+- **Create:** `c` (new chat), `Shift+C` (new with options), `t` (new
+  from template).
+- **Navigate:** `j`/`k` (session list down/up), `Alt+1..9` (jump to
+  Nth session), `Alt+[`/`Alt+]` (prev/next session).
+- **Focus:** `Esc` (defocus input / dismiss overlay).
+- **Command palette:** `Ctrl+Shift+P` as a discoverable alias for the
+  existing `Ctrl+K`.
+
+**Deferred (all evaluated, not v1).**
+
+- `i` (focus input) and `/` (focus search) — overlap with established
+  click-to-focus gesture; revisit after v1 has muscle-memory data.
+- `Ctrl+Enter` (submit) — covered by existing Enter behavior; only
+  needed once multi-line input is the default.
+- `a`/`d` (approve/deny) — gated on the permissions dialogue UI
+  settling; rebinding now risks churn.
+- `r` (rename) — needs a stable "what's the rename target under cursor"
+  contract before binding.
+
+**Architecture decision: config-driven registry from day one.**
+
+Bindings live in a typed registry map (`{key, scope, action, label}`),
+not hardcoded in component event handlers. ~30-50 LOC of TypeScript.
+Dave has stated he'll add more shortcuts as he uses the app — config-
+driven now avoids a retrofit later. CheatSheet renders from the same
+registry so it stays in sync automatically.
+
+**Red lines for the executor.**
+
+- Re-verify each binding against Hyprland + Chrome before wiring it.
+- Do NOT touch existing bare-letter shortcuts in CheatSheet/CommandMenu
+  without explicit sign-off — already live, muscle-memory cost.
+- `Esc` must not break overlay/modal dismiss paths that already use it.
+
+**Source of truth for execution:** Bearings session
+`f66e25b263ad42cba4e84a676637da8a` description (this same picked set,
+condensed) and the next checklist item that owns the build.
