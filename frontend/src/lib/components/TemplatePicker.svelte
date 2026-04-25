@@ -21,9 +21,14 @@
   import { agent } from '$lib/agent.svelte';
   import { sessions } from '$lib/stores/sessions.svelte';
   import { templates } from '$lib/stores/templates.svelte';
+  import { uiActions } from '$lib/stores/ui_actions.svelte';
   import BearingsMark from '$lib/components/icons/BearingsMark.svelte';
 
-  let open = $state(false);
+  // Open state lives on the shared `uiActions` store so the keyboard
+  // registry's `t` action and `Esc` cascade can flip the picker
+  // without holding a component ref. Local mirror keeps the rest of
+  // the file readable; `$derived` ties it to the store.
+  const open = $derived(uiActions.templatePickerOpen);
   // Per-row confirm for delete — two-click pattern identical to the
   // session-row ✕ button in SessionList. Prevents accidental wipes of a
   // saved template.
@@ -40,18 +45,31 @@
   }
 
   async function toggle() {
-    open = !open;
-    if (open) {
-      await templates.refresh();
-    } else {
+    if (uiActions.templatePickerOpen) {
+      uiActions.templatePickerOpen = false;
       clearConfirm();
+      return;
     }
+    uiActions.openTemplatePicker();
+    await templates.refresh();
   }
+
+  // Auto-refresh when the picker opens via the keyboard registry
+  // (uiActions.openTemplatePicker doesn't await templates.refresh
+  // because it's called from a synchronous keydown handler). The
+  // effect re-runs only on transitions, not on every store tick.
+  let lastSeenOpen = false;
+  $effect(() => {
+    const now = uiActions.templatePickerOpen;
+    if (now && !lastSeenOpen) void templates.refresh();
+    if (!now && lastSeenOpen) clearConfirm();
+    lastSeenOpen = now;
+  });
 
   async function onPick(id: string) {
     const created = await templates.instantiate(id);
     if (!created) return;
-    open = false;
+    uiActions.templatePickerOpen = false;
     sessions.select(created.id);
     await agent.connect(created.id);
   }

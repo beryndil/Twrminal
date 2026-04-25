@@ -5,6 +5,79 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-04-25
+
+Keyboard Shortcuts v1 — config-driven binding registry plus the picked
+subset of bare-letter and modifier chords from the 2026-04-25 sign-off
+in session `f66e25b2`. CheatSheet now renders directly from the
+registry so docs cannot drift from the wiring.
+
+### Added
+
+- **`frontend/src/lib/keyboard/bindings.ts`** — typed `BindingDef`
+  registry, chord parser, dispatcher, and `groupedBindings` /
+  `chordSegments` helpers for the cheat sheet renderer. Letters and
+  digits compare against `e.code` so non-US layouts and AltGr remaps
+  still match the chord users see; named keys (`Esc`, `[`, `]`)
+  compare against `e.key`. Module-load duplicate-chord guard fails
+  fast on collisions.
+- **v1 binding subset** wired through the registry:
+  - **Create** — `c` (toggle new chat), `Shift+C` (new chat skipping
+    auto-seed-from-tag-filter), `t` (toggle template picker).
+  - **Navigate** — `j` / `k` (next/prev open session), `Alt+1..9`
+    (jump to Nth open session), `Alt+[` / `Alt+]` (modifier-variant
+    prev/next that fire even with focus in an input).
+  - **Focus** — `Esc` (cascade: dismiss palette → dismiss any
+    `uiActions` overlay → blur focused input).
+  - **Help** — `?` (toggle cheat sheet, ignored when an input has
+    focus so typing `?` into the composer still works).
+  - **Command palette** — `Ctrl+Shift+P` (toggle palette) plus
+    `Ctrl+K` documented in the cheat sheet (the actual handler stays
+    in `SidebarSearch.svelte` next to the input ref).
+- **`frontend/src/lib/stores/ui_actions.svelte.ts`** — tiny shared
+  store for cross-component UI flags (`cheatSheetOpen`,
+  `newSessionOpen`, `newSessionFresh`, `templatePickerOpen`) so the
+  registry can flip overlays without prop-drilling component refs.
+- **Hyprland / Chrome conflict re-verification** — every binding
+  re-checked against Hyprland defaults (SUPER-only) and Chrome
+  reserved chords (`Ctrl+T/W/N/Tab/Shift+T`, `Ctrl+L`, `F5`,
+  `Ctrl+1..8`). `Alt+1..9` is free in Chrome on Linux (Chrome's
+  tab-jumping shortcut is `Ctrl+1..8`, not `Alt`).
+
+### Changed
+
+- **`CheatSheet.svelte`** rewritten to render from
+  `groupedBindings()`. Mouse-only and composer-only chords (right-
+  click, drag, double-click rename, `/plan`) stay hand-listed below
+  the registry-driven groups. `open` state moved off the bindable
+  prop onto `uiActions.cheatSheetOpen` so the dispatcher can flip
+  it without a prop-drill round trip.
+- **`+page.svelte`** — replaced the hand-rolled `?` / `Esc` /
+  `Ctrl+Shift+P` keydown handler with a single `dispatchShortcut(e)`
+  call routed through the registry.
+- **`SessionList.svelte`** — `showNewForm` lifted to
+  `uiActions.newSessionOpen`; the `+ New` button toggles via
+  `uiActions.toggleNewSession()`.
+- **`NewSessionForm.svelte`** — seed effect honours
+  `uiActions.newSessionFresh`. When `true`, opens onto a blank slate
+  (no tag pre-attach, no working-dir/model from selected tags) and
+  consumes the flag so a subsequent `c` re-runs the normal seeded
+  path.
+- **`TemplatePicker.svelte`** — `open` derived from
+  `uiActions.templatePickerOpen`; auto-refreshes templates on every
+  open transition (covers both the click toggle and the keyboard
+  `t` action).
+
+### Tests
+
+- **`bindings.test.ts`** — 24 cases covering chord parsing, code-vs-
+  key matching, modifier handling, registry composition, and
+  dispatcher behaviour (no-match, bare-letter input gating,
+  global-fires-in-input, Esc cascade, Esc blur).
+- **`CheatSheet.test.ts`** — updated to exercise the new
+  store-backed `open` state and assert the registry-driven entries
+  render (`New chat`, `Next session in sidebar`, etc.).
+
 ## [0.14.0] - 2026-04-25
 
 Themes & skins v1 — Settings picker, no-flash boot, third bundled

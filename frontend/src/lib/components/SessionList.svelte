@@ -3,6 +3,7 @@
   import { sessions } from '$lib/stores/sessions.svelte';
   import { sessionSelection } from '$lib/stores/session_selection.svelte';
   import { tags } from '$lib/stores/tags.svelte';
+  import { uiActions } from '$lib/stores/ui_actions.svelte';
   import { agent } from '$lib/agent.svelte';
   import * as api from '$lib/api';
   import { contextmenu } from '$lib/actions/contextmenu';
@@ -17,7 +18,6 @@
 
   const CONFIRM_TIMEOUT_MS = 3_000;
 
-  let showNewForm = $state(false);
   let showSettings = $state(false);
 
   let importInput: HTMLInputElement | undefined = $state();
@@ -411,10 +411,10 @@
       <button
         type="button"
         class="text-[11px] rounded bg-slate-800 hover:bg-slate-700 px-1.5 py-0.5"
-        onclick={() => (showNewForm = !showNewForm)}
+        onclick={() => uiActions.toggleNewSession()}
         aria-label="Toggle new session form"
       >
-        {showNewForm ? 'Cancel' : '+ New'}
+        {uiActions.newSessionOpen ? 'Cancel' : '+ New'}
       </button>
     </div>
   </div>
@@ -430,7 +430,7 @@
 
   <SidebarSearch bind:query={searchQuery} />
 
-  <NewSessionForm bind:open={showNewForm} />
+  <NewSessionForm bind:open={uiActions.newSessionOpen} />
 
   {#if sessions.error}
     <p class="text-xs text-rose-400">{sessions.error}</p>

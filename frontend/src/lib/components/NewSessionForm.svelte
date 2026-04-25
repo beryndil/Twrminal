@@ -2,6 +2,7 @@
   import { sessions } from '$lib/stores/sessions.svelte';
   import { tags } from '$lib/stores/tags.svelte';
   import { preferences } from '$lib/stores/preferences.svelte';
+  import { uiActions } from '$lib/stores/ui_actions.svelte';
   import { agent } from '$lib/agent.svelte';
   import * as api from '$lib/api';
   import { contextmenu } from '$lib/actions/contextmenu';
@@ -58,6 +59,10 @@
 
   // Seed form state when the modal opens. Keyed on the open transition
   // so store refreshes while the form is visible don't clobber edits.
+  // The `fresh` mode (set by `Shift+C` via uiActions.openNewSession)
+  // skips the auto-seed-from-active-tag-filter so the user opens onto
+  // a blank slate; the flag clears after consumption so plain `c` next
+  // time gets the normal seeded path back.
   let seededFor = $state(false);
   $effect(() => {
     if (!open) {
@@ -66,6 +71,18 @@
     }
     if (seededFor) return;
     seededFor = true;
+    const fresh = uiActions.newSessionFresh;
+    if (fresh) {
+      tagIds = [];
+      tagDraft = '';
+      tagError = null;
+      workingDir = preferences.defaultWorkingDir || workingDir;
+      model = preferences.defaultModel || model;
+      // Consume the one-shot flag so a subsequent plain `c` re-opens
+      // with the normal seed-from-filter behaviour.
+      uiActions.newSessionFresh = false;
+      return;
+    }
     tagIds = [...tags.selected];
     tagDraft = '';
     tagError = null;

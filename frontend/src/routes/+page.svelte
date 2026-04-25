@@ -9,10 +9,10 @@
   import ContextMenu from '$lib/components/context-menu/ContextMenu.svelte';
   import StubToastHost from '$lib/components/context-menu/StubToastHost.svelte';
   import UndoToastHost from '$lib/components/context-menu/UndoToastHost.svelte';
-  import { palette } from '$lib/context-menu/palette.svelte';
   import Conversation from '$lib/components/Conversation.svelte';
   import Inspector from '$lib/components/Inspector.svelte';
   import SessionList from '$lib/components/SessionList.svelte';
+  import { dispatchShortcut } from '$lib/keyboard/bindings';
   import { agent } from '$lib/agent.svelte';
   import { auth } from '$lib/stores/auth.svelte';
   import { billing } from '$lib/stores/billing.svelte';
@@ -20,10 +20,10 @@
   import { sessions } from '$lib/stores/sessions.svelte';
   import { sessionsWs } from '$lib/stores/ws_sessions.svelte';
   import { tags } from '$lib/stores/tags.svelte';
+  import { uiActions } from '$lib/stores/ui_actions.svelte';
   import { versionWatcher } from '$lib/stores/version_watcher.svelte';
 
   let booted = $state(false);
-  let showCheatSheet = $state(false);
 
   async function boot() {
     if (booted) return;
@@ -116,35 +116,17 @@
     return () => document.removeEventListener('visibilitychange', onVisibility);
   });
 
-  // `?` toggles the cheat-sheet, but only when focus isn't in a form
-  // field (so typing a literal "?" in the prompt still works). Esc
-  // closes whether or not focus is in a field. Ctrl+Shift+P toggles
-  // the command palette — a power-user chord, so it fires from
-  // anywhere including textareas (unlike `?`, which would conflict
-  // with typing a literal `?` into the composer).
+  // Global keyboard shortcuts route through the central registry in
+  // `$lib/keyboard/bindings`. The registry owns chord parsing,
+  // input-focus gating, and the action handlers; this component only
+  // installs/removes the listener so the lifecycle stays tied to the
+  // page mount. CheatSheet, palette, NewSessionForm, and
+  // TemplatePicker are toggled via `uiActions` flags the registry
+  // flips — see `ui_actions.svelte.ts` for the cross-component
+  // surface.
   $effect(() => {
     function onKey(e: KeyboardEvent) {
-      // Ctrl+Shift+P / Cmd+Shift+P — global, works in any field.
-      // `code === 'KeyP'` (not `key === 'P'`) because some keyboards
-      // surface shifted-P as a different `key` value; the `code`
-      // reflects the physical key the user pressed.
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyP') {
-        e.preventDefault();
-        palette.toggle();
-        return;
-      }
-      const active = document.activeElement;
-      const inField =
-        active?.tagName === 'TEXTAREA' || active?.tagName === 'INPUT';
-      if (e.key === '?' && !inField) {
-        e.preventDefault();
-        showCheatSheet = !showCheatSheet;
-        return;
-      }
-      if (e.key === 'Escape' && showCheatSheet) {
-        e.preventDefault();
-        showCheatSheet = false;
-      }
+      dispatchShortcut(e);
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -295,7 +277,7 @@
 </script>
 
 <AuthGate />
-<CheatSheet bind:open={showCheatSheet} />
+<CheatSheet />
 <ContextMenu />
 <CommandPalette />
 <ConfirmDialog />

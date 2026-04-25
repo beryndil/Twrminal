@@ -1,49 +1,57 @@
 <script lang="ts">
   import { collectMenuShortcuts } from '$lib/context-menu/shortcuts';
+  import {
+    chordSegments,
+    groupedBindings,
+    type BindingDef
+  } from '$lib/keyboard/bindings';
+  import { uiActions } from '$lib/stores/ui_actions.svelte';
 
-  let { open = $bindable(false) }: { open?: boolean } = $props();
+  /**
+   * Cheat-sheet rendered from the central keyboard registry
+   * (`$lib/keyboard/bindings`). The registry is the single source of
+   * truth — any binding added there shows up here, any binding removed
+   * disappears here, and the chord text the user sees matches the
+   * chord the dispatcher actually compares against. The legacy
+   * "Conversation" / "Sessions" / "Context menu" sections that aren't
+   * in the registry yet stay below the registry-driven groups; they
+   * document mouse + composer-only chords that don't go through the
+   * dispatcher.
+   *
+   * `open` state lives on the shared `uiActions` store so the
+   * keyboard registry's `?` and `Esc` actions can flip it without a
+   * prop-drill round trip through the page layout. `bind:` doesn't
+   * accept class-field accessors cleanly under Svelte 5 runes, so
+   * the component reads and writes the store directly.
+   */
 
-  type Shortcut = { keys: string[]; description: string };
+  type StaticShortcut = { keys: string[]; description: string };
+  type StaticGroup = { group: string; items: StaticShortcut[] };
 
-  const shortcuts: { group: string; items: Shortcut[] }[] = [
-    {
-      group: 'Navigation',
-      items: [
-        { keys: ['⌘/Ctrl', 'K'], description: 'Focus the sidebar search' },
-        {
-          keys: ['⌘/Ctrl', 'Shift', 'P'],
-          description: 'Command palette — run any registry action'
-        },
-        { keys: ['Esc'], description: 'Clear search / close the search' },
-        { keys: ['?'], description: 'Show this cheat sheet' }
-      ]
-    },
+  // Mouse + composer-only chords stay hand-listed because they don't
+  // route through the keyboard registry (no document-level keydown
+  // dispatch covers them). When/if a click handler graduates to a
+  // registry binding, move the row up to the registry-driven section.
+  const staticGroups: StaticGroup[] = [
     {
       group: 'Context menu',
       items: [
-        { keys: ['Right-click'], description: 'Open the target\u2019s menu' },
+        { keys: ['Right-click'], description: 'Open the target’s menu' },
         {
           keys: ['Shift', 'Right-click'],
           description: 'Open with advanced actions revealed'
         },
         {
           keys: ['Ctrl', 'Shift', 'Right-click'],
-          description: 'Passthrough to the browser\u2019s native menu'
+          description: 'Passthrough to the browser’s native menu'
         },
         {
           keys: ['Long-press'],
           description: '500ms touch-hold on coarse pointers'
         },
-        {
-          keys: ['↑', '↓'],
-          description: 'Move focus between menu items'
-        },
-        {
-          keys: ['→', '←'],
-          description: 'Open / close submenus'
-        },
-        { keys: ['Enter'], description: 'Activate the focused item' },
-        { keys: ['Esc'], description: 'Close the menu' }
+        { keys: ['↑', '↓'], description: 'Move focus between menu items' },
+        { keys: ['→', '←'], description: 'Open / close submenus' },
+        { keys: ['Enter'], description: 'Activate the focused item' }
       ]
     },
     {
@@ -51,12 +59,11 @@
       items: [
         { keys: ['Enter'], description: 'Send the prompt' },
         { keys: ['Shift', 'Enter'], description: 'Newline inside the prompt' },
-        { keys: ['Esc'], description: 'Clear an active search highlight' },
         { keys: ['/plan'], description: 'Toggle plan mode (append "off" to exit)' }
       ]
     },
     {
-      group: 'Sessions',
+      group: 'Sessions (mouse)',
       items: [
         { keys: ['Double-click', 'title'], description: 'Rename a session' },
         { keys: ['✎'], description: 'Edit title or budget in the header' },
@@ -66,16 +73,14 @@
     }
   ];
 
-  // User-bound chords from `menus.toml`. Read via `$derived.by` so the
-  // cheat sheet refreshes after `menuConfig.hydrate` (e.g. after the
-  // boot-time `/ui-config` fetch lands). Renders nothing when empty —
-  // avoids a dead "Your shortcuts" header for users who haven't
-  // touched the TOML.
+  const registryGroups = $derived.by(() => groupedBindings());
+
+  // User-bound chords from `menus.toml` (Phase 13 of the context-menu
+  // plan). Renders nothing when empty so users who haven't touched the
+  // TOML don't see a dead "Your shortcuts" header.
   const userShortcuts = $derived.by(() => collectMenuShortcuts());
 
-  /** Split a chord like "ctrl+shift+d" into display segments so the
-   * renderer can put one `<kbd>` around each modifier + key. */
-  function splitChord(chord: string): string[] {
+  function legacySplitChord(chord: string): string[] {
     return chord
       .split('+')
       .map((p) => p.trim())
@@ -83,16 +88,25 @@
       .map((p) => (p === 'ctrl' ? '⌘/Ctrl' : p.charAt(0).toUpperCase() + p.slice(1)));
   }
 
+  function bindingKeys(b: BindingDef): string[] {
+    // Normalise `Ctrl` to `⌘/Ctrl` for the renderer so Mac visitors
+    // recognise the binding works under Cmd as well. The dispatcher
+    // already accepts both modifiers; this is purely cosmetic.
+    return chordSegments(b.chord).map((seg) =>
+      seg === 'Ctrl' ? '⌘/Ctrl' : seg
+    );
+  }
+
   function onCancel() {
-    open = false;
+    uiActions.cheatSheetOpen = false;
   }
 </script>
 
-{#if open}
+{#if uiActions.cheatSheetOpen}
   <div class="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/80 p-4">
     <div
       class="w-full max-w-md rounded-lg border border-slate-800 bg-slate-900 p-6 shadow-2xl
-        flex flex-col gap-4"
+        flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
     >
       <header class="flex items-start justify-between">
         <div>
@@ -112,7 +126,27 @@
       </header>
 
       <div class="flex flex-col gap-4 text-sm">
-        {#each shortcuts as group (group.group)}
+        {#each registryGroups as group (group.group)}
+          <section>
+            <h3 class="text-[10px] uppercase tracking-wider text-slate-500 mb-2">
+              {group.group}
+            </h3>
+            <ul class="flex flex-col gap-1">
+              {#each group.items as b (b.id)}
+                <li class="flex items-baseline justify-between gap-3">
+                  <span class="text-slate-300">{b.label}</span>
+                  <span class="flex gap-1 shrink-0">
+                    {#each bindingKeys(b) as k}
+                      <kbd class="kbd">{k}</kbd>
+                    {/each}
+                  </span>
+                </li>
+              {/each}
+            </ul>
+          </section>
+        {/each}
+
+        {#each staticGroups as group (group.group)}
           <section>
             <h3 class="text-[10px] uppercase tracking-wider text-slate-500 mb-2">
               {group.group}
@@ -145,7 +179,7 @@
                     <span class="text-slate-500 text-xs">· {entry.target}</span>
                   </span>
                   <span class="flex gap-1 shrink-0">
-                    {#each splitChord(entry.chord) as seg}
+                    {#each legacySplitChord(entry.chord) as seg}
                       <kbd class="kbd">{seg}</kbd>
                     {/each}
                   </span>
