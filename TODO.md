@@ -2378,11 +2378,15 @@ MIME detection overrides for svg/markdown.
   table's `created_at` column instead of scanning the upload dir by
   mtime.
 
-## Keyboard shortcuts — research locked, v1 subset picked — 2026-04-25
+## Keyboard shortcuts — v1 SHIPPED — 2026-04-25
 
-**Status.** Research complete (see Bearings session
-`f66e25b263ad42cba4e84a676637da8a`). v1 binding subset chosen.
-Implementation tracked as the next checklist item.
+**Status.** v1 shipped on 2026-04-25 in commit `033d88a` (frontend
+0.10.0 / package 0.15.0). Registry lives at
+`frontend/src/lib/keyboard/bindings.ts`; cheat sheet renders from
+`groupedBindings()`. Cross-component overlay flags live on the new
+`uiActions` store at `frontend/src/lib/stores/ui_actions.svelte.ts`.
+Tests at `frontend/src/lib/keyboard/bindings.test.ts` (24 cases).
+Original research below for archival.
 
 **Environmental constraints (verified).**
 
