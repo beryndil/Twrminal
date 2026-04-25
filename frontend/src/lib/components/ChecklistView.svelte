@@ -132,33 +132,23 @@
   }
 
   async function handleToggle(itemId: number, checked: boolean) {
-    // v0.5.1: checking an item with an open paired chat closes the
-    // chat automatically. No prompt — the coupling is intentional
-    // and an extra click would just be noise. The close_session
-    // cascade on the backend flips the item + cascades up through
-    // parents + auto-closes the parent checklist session when every
-    // root-level item becomes checked. We still call `checklists.
-    // toggle` afterward so the optimistic UI lands regardless of
-    // pairing; the server write is idempotent on an already-checked
-    // item (COALESCE preserves the original check timestamp).
+    // 2026-04-25: backend `toggle_item` now owns the close cascade.
+    // When an item becomes checked, the storage layer closes EVERY
+    // paired chat for that item (forward + handoff legs + nested
+    // children) and auto-closes the parent checklist session if the
+    // whole list completes. The frontend used to handle just the
+    // forward-pointer chat here, missing handoff legs; that path is
+    // gone — backend is now the single source of truth.
     //
-    // Unchecking is left untouched — reopening a closed chat is a
-    // user decision that belongs in the sidebar, not this affordance.
-    if (checked) {
-      const item = checklists.current?.items.find((i) => i.id === itemId);
-      const pairedId = item?.chat_session_id ?? null;
-      if (pairedId) {
-        const pairedSession = sessions.list.find((s) => s.id === pairedId);
-        if (pairedSession && !pairedSession.closed_at) {
-          await sessions.close(pairedId);
-        }
-      }
-    }
+    // Unchecking stays as a pure flag flip: reopening a closed chat
+    // is a user decision that belongs in the sidebar, not this
+    // affordance.
     await checklists.toggle(itemId, checked);
-    // The close_session cascade may have stamped `closed_at` on the
-    // parent checklist session when the last item landed checked.
-    // Refresh sessions so the sidebar moves it into Closed promptly;
-    // the ChecklistView itself stays mounted for the now-closed list.
+    // Refresh the sessions list so any sidebar entry that just
+    // closed (the item's legs, or the whole checklist when this
+    // toggle completed it) moves into the Closed group on the
+    // next tick. The ChecklistView stays mounted — selected.id
+    // still matches the (possibly now-closed) checklist row.
     if (checked) {
       await sessions.refresh();
     }

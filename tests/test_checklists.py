@@ -196,6 +196,199 @@ async def test_toggle_item_round_trip(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_toggle_item_closes_all_paired_sessions(tmp_path: Path) -> None:
+    """When an item with multiple paired chat legs becomes checked,
+    EVERY paired session moves to closed — not just the
+    forward-pointer (`chat_session_id`). The reverse pointer
+    (`sessions.checklist_item_id`) enumerates all legs spawned for
+    the item, including handoff successors and the original leg.
+
+    Regression for the 2026-04-25 fae8f1a8 cleanup gap: the manual UI
+    toggle path used to close only the forward pointer, leaving any
+    handoff legs orphaned in the Open group. Backend ownership of the
+    cascade closes that gap once for all callers."""
+    from bearings.db.store import (
+        get_session,
+        list_item_sessions,
+        set_item_chat_session,
+    )
+
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        parent = await create_session(
+            conn, working_dir="/tmp", model="claude-sonnet-4-6", kind="checklist"
+        )
+        await create_checklist(conn, parent["id"])
+        item = await create_item(conn, parent["id"], label="multi-leg")
+        assert item is not None
+        # Three legs paired to this item via the reverse pointer.
+        legs = []
+        for _ in range(3):
+            leg = await create_session(
+                conn,
+                working_dir="/tmp",
+                model="claude-sonnet-4-6",
+                kind="chat",
+                checklist_item_id=int(item["id"]),
+            )
+            legs.append(leg)
+        # Forward pointer points at leg 3 (latest). Used to be the
+        # only one the UI toggle path closed.
+        await set_item_chat_session(conn, int(item["id"]), legs[-1]["id"])
+        # Sanity: all three legs report on the reverse pointer.
+        listed = await list_item_sessions(conn, int(item["id"]))
+        assert {row["id"] for row in listed} == {leg["id"] for leg in legs}
+
+        # Toggle. Backend must close all three.
+        await toggle_item(conn, int(item["id"]), checked=True)
+
+        for leg in legs:
+            row = await get_session(conn, leg["id"])
+            assert row is not None
+            assert row["closed_at"] is not None, f"leg {leg['id']} should be closed"
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_toggle_item_cascade_check_only_for_rollup_parents(
+    tmp_path: Path,
+) -> None:
+    """Cascade-check (parent auto-checked when all children checked)
+    applies ONLY to rollup-only parents — those without their own
+    paired chat. A parent with `chat_session_id` set has work of its
+    own; its children are preconditions (driver-created blockers),
+    not the totality of the parent's task. Auto-checking that parent
+    would defeat the fix-and-return contract.
+
+    Two-part assertion: a rollup parent (no chat) DOES cascade-check;
+    a work-having parent (chat set) does NOT."""
+    from bearings.db.store import (
+        get_item,
+        get_session,
+        set_item_chat_session,
+    )
+
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        cl = await create_session(
+            conn, working_dir="/tmp", model="claude-sonnet-4-6", kind="checklist"
+        )
+        await create_checklist(conn, cl["id"])
+        # Rollup parent (no chat) — cascade-checks normally.
+        rollup = await create_item(conn, cl["id"], label="rollup-parent")
+        assert rollup is not None
+        rollup_child = await create_item(
+            conn, cl["id"], label="r-child", parent_item_id=int(rollup["id"])
+        )
+        assert rollup_child is not None
+        # Work-having parent (chat set) — does NOT cascade-check.
+        work = await create_item(conn, cl["id"], label="work-parent")
+        assert work is not None
+        work_child = await create_item(
+            conn, cl["id"], label="w-child", parent_item_id=int(work["id"])
+        )
+        assert work_child is not None
+        work_chat = await create_session(
+            conn,
+            working_dir="/tmp",
+            model="claude-sonnet-4-6",
+            kind="chat",
+            checklist_item_id=int(work["id"]),
+        )
+        await set_item_chat_session(conn, int(work["id"]), work_chat["id"])
+
+        # Toggle each child.
+        await toggle_item(conn, int(rollup_child["id"]), checked=True)
+        await toggle_item(conn, int(work_child["id"]), checked=True)
+
+        # Rollup parent cascade-checked.
+        rollup_refreshed = await get_item(conn, int(rollup["id"]))
+        assert rollup_refreshed is not None
+        assert rollup_refreshed["checked_at"] is not None, "rollup-only parent should cascade-check"
+
+        # Work-having parent did NOT cascade-check.
+        work_refreshed = await get_item(conn, int(work["id"]))
+        assert work_refreshed is not None
+        assert work_refreshed["checked_at"] is None, (
+            "work-having parent (with chat_session_id) should NOT cascade-check; "
+            "agent must explicitly emit CHECKLIST_ITEM_DONE after fixing the blocker"
+        )
+        # And its work chat stays open.
+        work_chat_row = await get_session(conn, work_chat["id"])
+        assert work_chat_row is not None
+        assert work_chat_row["closed_at"] is None
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_toggle_last_item_auto_closes_parent_checklist(tmp_path: Path) -> None:
+    """Completing the last unchecked item auto-closes the parent
+    checklist session. Used to live in the close_session cascade
+    (only fired when at least one paired chat existed); now lives in
+    toggle_item so an items-without-legs list also closes cleanly."""
+    from bearings.db.store import get_session
+
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        cl = await create_session(
+            conn, working_dir="/tmp", model="claude-sonnet-4-6", kind="checklist"
+        )
+        await create_checklist(conn, cl["id"])
+        a = await create_item(conn, cl["id"], label="a", sort_order=0)
+        b = await create_item(conn, cl["id"], label="b", sort_order=1)
+        assert a and b
+        # No legs paired to either item — pure flag-flip toggles.
+        await toggle_item(conn, int(a["id"]), checked=True)
+        # Checklist still has b unchecked → not yet closed.
+        cl_row = await get_session(conn, cl["id"])
+        assert cl_row is not None
+        assert cl_row["closed_at"] is None
+
+        await toggle_item(conn, int(b["id"]), checked=True)
+        # Now complete; checklist auto-closes.
+        cl_row = await get_session(conn, cl["id"])
+        assert cl_row is not None
+        assert cl_row["closed_at"] is not None
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_toggle_unchecked_item_does_not_close_anything(
+    tmp_path: Path,
+) -> None:
+    """Unchecking is a pure flag flip — no session-close side
+    effects. Reopening a closed chat is a deliberate user action
+    that lives in the sidebar, not the checkbox."""
+    from bearings.db.store import get_session
+
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        cl = await create_session(
+            conn, working_dir="/tmp", model="claude-sonnet-4-6", kind="checklist"
+        )
+        await create_checklist(conn, cl["id"])
+        item = await create_item(conn, cl["id"], label="x")
+        assert item is not None
+        leg = await create_session(
+            conn,
+            working_dir="/tmp",
+            model="claude-sonnet-4-6",
+            kind="chat",
+            checklist_item_id=int(item["id"]),
+        )
+        # Toggle off (was never on) — nothing to close anyway.
+        await toggle_item(conn, int(item["id"]), checked=False)
+        leg_row = await get_session(conn, leg["id"])
+        assert leg_row is not None
+        assert leg_row["closed_at"] is None
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
 async def test_update_item_fields(tmp_path: Path) -> None:
     conn = await init_db(tmp_path / "db.sqlite")
     try:

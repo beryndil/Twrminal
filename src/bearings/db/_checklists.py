@@ -208,7 +208,23 @@ async def toggle_item(
     parent's checkbox so parents are always derived — no manual
     override. Cascade runs inside the same transaction as the leaf
     write, so a concurrent reader never observes a partially-updated
-    ancestor chain."""
+    ancestor chain.
+
+    Session-close cascade (added 2026-04-25). When `checked=True`,
+    every item whose `checked_at` flips from NULL to a timestamp in
+    this call — leaf + any newly-checked ancestor — has its paired
+    chat sessions closed. The checklist itself stays open as the
+    navigation index back into the closed chats; only the per-item
+    legs are auto-closed. Lives here (vs the manual UI handler) so
+    every caller of `toggle_item` (autonomous driver, manual UI
+    toggle, future API paths) gets the cascade for free.
+
+    Re-entry: closing a paired session calls back into `toggle_item`
+    via the `_sessions.close_session` cascade. The skip-closed filter
+    on `list_item_sessions` ensures each leg is closed exactly once
+    even under recursive entry — close_session is idempotent on the
+    closed_at column anyway, but the filter avoids unnecessary
+    recursion through the cascade-up walk."""
     now = _now()
     checked_at = now if checked else None
     cursor = await conn.execute(
@@ -223,8 +239,35 @@ async def toggle_item(
         await conn.commit()
         return None
     checklist_id = leaf["checklist_id"]
+    # Track every item that became newly-checked in this call so the
+    # close cascade below knows which paired sessions to sweep. The
+    # leaf is in the set whenever `checked=True`; ancestors are added
+    # as the walk discovers them. Using a list to preserve leaf-first
+    # order so the close cascade processes the deepest item first
+    # (matches user intuition — the actual-work session closes before
+    # any rollup-only ancestor session).
+    newly_checked_ids: list[int] = [int(item_id)] if checked else []
     parent_id: int | None = leaf["parent_item_id"]
     while parent_id is not None:
+        # Cascade-check applies ONLY to rollup-only parents (no paired
+        # chat of their own). A parent with `chat_session_id` set has
+        # its own work — its children are preconditions (CHECKLIST_BLOCKED
+        # fix-it items the driver created) rather than the totality of
+        # the parent's task. Auto-checking the parent there would close
+        # its work session prematurely and break the fix-and-return
+        # contract: the parent must be free to resume after the blocker
+        # is fixed and explicitly emit CHECKLIST_ITEM_DONE. Walk stops
+        # at a work-having parent — its grandparent doesn't get cascade-
+        # checked either, since the work-having parent isn't done.
+        async with conn.execute(
+            "SELECT chat_session_id, checked_at FROM checklist_items WHERE id = ?",
+            (parent_id,),
+        ) as cursor_chat:
+            parent_row = await cursor_chat.fetchone()
+        if parent_row is None:
+            break
+        if parent_row["chat_session_id"] is not None:
+            break
         async with conn.execute(
             "SELECT COUNT(*) AS total, "
             "SUM(CASE WHEN checked_at IS NULL THEN 1 ELSE 0 END) AS unchecked "
@@ -238,6 +281,12 @@ async def toggle_item(
         total = stats["total"] if stats is not None else 0
         unchecked = (stats["unchecked"] or 0) if stats is not None else 1
         ancestor_checked_at = now if total > 0 and unchecked == 0 else None
+        # Track the ancestor for the close cascade ONLY when this
+        # call is what flipped it to checked. An ancestor that was
+        # already checked before this call (UI bug, race, idempotent
+        # re-toggle) doesn't get its sessions re-closed.
+        if ancestor_checked_at is not None and parent_row["checked_at"] is None:
+            newly_checked_ids.append(int(parent_id))
         await conn.execute(
             "UPDATE checklist_items SET checked_at = ?, updated_at = ? WHERE id = ?",
             (ancestor_checked_at, now, parent_id),
@@ -253,6 +302,33 @@ async def toggle_item(
         (now, checklist_id),
     )
     await conn.commit()
+    # Auto-close paired sessions for every newly-checked item. Local
+    # import to avoid a static cycle with `_sessions` (which already
+    # imports from this module on its own close cascade). Each item's
+    # `list_item_sessions` enumerates legs via the reverse pointer
+    # `sessions.checklist_item_id`; we filter to open sessions to
+    # bound the recursion when close_session re-enters this function.
+    if newly_checked_ids:
+        from bearings.db._sessions import close_session, get_session
+
+        for nci in newly_checked_ids:
+            legs = await list_item_sessions(conn, nci)
+            for leg in legs:
+                if leg.get("closed_at") is None:
+                    await close_session(conn, leg["id"])
+        # When the whole checklist becomes complete, close the parent
+        # checklist session too. Manual toggles of an items-without-
+        # legs list wouldn't otherwise close the parent — only the
+        # `close_session` cascade fires that close, and that cascade
+        # only runs when there's at least one paired chat to close.
+        # Putting the auto-close here means every code path (manual
+        # toggle, autonomous driver, future API) lands the same end-
+        # state. Idempotent: closing an already-closed checklist is a
+        # no-op write at the storage layer.
+        if checked and await is_checklist_complete(conn, checklist_id):
+            parent = await get_session(conn, checklist_id)
+            if parent is not None and parent.get("closed_at") is None:
+                await close_session(conn, checklist_id)
     return await get_item(conn, item_id)
 
 

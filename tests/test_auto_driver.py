@@ -1298,6 +1298,220 @@ async def test_visit_existing_honors_custom_leg_permission_mode(
         await conn.close()
 
 
+# --- fix-and-return: visit-existing parent re-enters same session ---
+
+
+@pytest.mark.asyncio
+async def test_visit_existing_parent_reenters_same_session_after_blocker(
+    tmp_path: Path,
+) -> None:
+    """Fix-and-return contract (2026-04-25): in visit-existing mode,
+    when a parent leg emits a blocking followup and the child
+    resolves, the parent's NEXT leg reuses the SAME existing session
+    (not a fresh spawn). The agent's in-context memory of what it was
+    trying carries forward — that's the whole point of the pattern.
+
+    Reproduction:
+      - Item P (parent) has a linked existing chat.
+      - Leg 1 (visit) emits a blocking followup C and no done.
+      - Driver creates child C, drives it to completion.
+      - Leg 2 of P should run against the SAME session id as leg 1,
+        not a freshly-spawned one.
+    """
+    from bearings.db.store import set_item_chat_session
+
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        checklist_id = await _fresh_checklist(conn)
+        parent = await create_item(conn, checklist_id, label="parent")
+        existing_chat = await create_session(
+            conn,
+            working_dir="/tmp",
+            model="stub-model",
+            kind="chat",
+            checklist_item_id=parent["id"],
+        )
+        await set_item_chat_session(conn, parent["id"], existing_chat["id"])
+        # The blocking followup gets the next available item id under
+        # autoincrement. Pre-seed the stub script for that child id.
+        child_id = parent["id"] + 1
+        runtime = StubRuntime(conn=conn)
+        runtime._session_to_item[existing_chat["id"]] = parent["id"]
+        runtime.turns_by_item[parent["id"]] = [
+            # Leg 1: emit a blocking followup, no done, no handoff.
+            "CHECKLIST_FOLLOWUP block=yes\nfix the prereq\nCHECKLIST_FOLLOWUP_END",
+            # Leg 2 (re-entry): done.
+            "CHECKLIST_ITEM_DONE",
+        ]
+        runtime.turns_by_item[child_id] = ["CHECKLIST_ITEM_DONE"]
+        config = DriverConfig(visit_existing_sessions=True)
+        driver = Driver(
+            conn=conn,
+            runtime=runtime,
+            checklist_session_id=checklist_id,
+            config=config,
+        )
+        result = await driver.drive()
+        assert result.outcome == DriverOutcome.COMPLETED
+        # Both legs ran against the SAME existing session id. spawn_calls
+        # only fires for the child (its own paired chat is fresh).
+        parent_turn_session_ids = [
+            sid for sid, iid, _prompt in runtime.turn_calls if iid == parent["id"]
+        ]
+        assert parent_turn_session_ids == [existing_chat["id"], existing_chat["id"]], (
+            f"Parent should re-use existing session both legs; got {parent_turn_session_ids}"
+        )
+        # spawn_leg fired ONLY for the child (parent never spawned).
+        assert [c[0] for c in runtime.spawn_calls] == [child_id]
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_visit_existing_reentry_uses_continuation_prompt(
+    tmp_path: Path,
+) -> None:
+    """The leg-2 re-entry prompt is a continuation (names the
+    resolved blocker), not the kickoff. Tests prove the agent gets
+    "the blocker is fixed, continue" rather than a fresh "Work on
+    item N" — preserving in-context memory of what it was trying."""
+    from bearings.db.store import set_item_chat_session
+
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        checklist_id = await _fresh_checklist(conn)
+        parent = await create_item(conn, checklist_id, label="resume-me")
+        existing_chat = await create_session(
+            conn,
+            working_dir="/tmp",
+            model="stub-model",
+            kind="chat",
+            checklist_item_id=parent["id"],
+        )
+        await set_item_chat_session(conn, parent["id"], existing_chat["id"])
+        child_id = parent["id"] + 1
+        runtime = StubRuntime(conn=conn)
+        runtime._session_to_item[existing_chat["id"]] = parent["id"]
+        runtime.turns_by_item[parent["id"]] = [
+            "CHECKLIST_BLOCKED\nrestart the cache\nCHECKLIST_BLOCKED_END",
+            "CHECKLIST_ITEM_DONE",
+        ]
+        runtime.turns_by_item[child_id] = ["CHECKLIST_ITEM_DONE"]
+        config = DriverConfig(visit_existing_sessions=True)
+        driver = Driver(
+            conn=conn,
+            runtime=runtime,
+            checklist_session_id=checklist_id,
+            config=config,
+        )
+        await driver.drive()
+        # Find the parent's leg-2 prompt — second turn for the parent.
+        parent_prompts = [prompt for _sid, iid, prompt in runtime.turn_calls if iid == parent["id"]]
+        assert len(parent_prompts) == 2
+        leg2_prompt = parent_prompts[1]
+        # Continuation shape — NOT the kickoff "Work on checklist item".
+        assert "Work on checklist item" not in leg2_prompt
+        assert "Returning to checklist item" in leg2_prompt
+        assert "blocker" in leg2_prompt.lower()
+        assert "restart the cache" in leg2_prompt
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_spawn_fresh_mode_still_spawns_new_leg_after_blocker(
+    tmp_path: Path,
+) -> None:
+    """Spawn-fresh mode (visit_existing_sessions=False, the default)
+    is unchanged by the fix-and-return slice: blocking-followup
+    re-entry STILL spawns a new leg, since there's no original
+    session to re-enter. Regression guard."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        checklist_id = await _fresh_checklist(conn)
+        parent = await create_item(conn, checklist_id, label="parent-spawn")
+        child_id = parent["id"] + 1
+        runtime = StubRuntime(
+            conn=conn,
+            turns_by_item={
+                parent["id"]: [
+                    "CHECKLIST_BLOCKED\nthe thing\nCHECKLIST_BLOCKED_END",
+                    "CHECKLIST_ITEM_DONE",
+                ],
+                child_id: ["CHECKLIST_ITEM_DONE"],
+            },
+        )
+        # Default config — visit_existing_sessions=False.
+        driver = Driver(conn=conn, runtime=runtime, checklist_session_id=checklist_id)
+        result = await driver.drive()
+        assert result.outcome == DriverOutcome.COMPLETED
+        # Spawn-fresh mode: parent leg 1 spawns, child leg 1 spawns,
+        # parent leg 2 spawns. Three spawn_leg calls total.
+        spawn_item_ids = [c[0] for c in runtime.spawn_calls]
+        assert spawn_item_ids == [parent["id"], child_id, parent["id"]]
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_visit_existing_falls_back_to_spawn_when_session_closed(
+    tmp_path: Path,
+) -> None:
+    """If the visit-existing original session got closed mid-blocker
+    (rare race), parent re-entry falls back to spawn-fresh rather
+    than trying to drive a closed session. Defensive."""
+    from bearings.db.store import close_session, set_item_chat_session
+
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        checklist_id = await _fresh_checklist(conn)
+        parent = await create_item(conn, checklist_id, label="parent-race")
+        existing_chat = await create_session(
+            conn,
+            working_dir="/tmp",
+            model="stub-model",
+            kind="chat",
+            checklist_item_id=parent["id"],
+        )
+        await set_item_chat_session(conn, parent["id"], existing_chat["id"])
+        child_id = parent["id"] + 1
+
+        # Custom runtime that closes the parent's session as a side
+        # effect of driving the child — simulates a sibling close
+        # cascade racing with the blocker resolution.
+        class ClosingRuntime(StubRuntime):
+            async def run_turn(self, *, session_id: str, prompt: str) -> str:
+                # On the child's turn, close the parent's existing
+                # session so the parent re-entry has nowhere to land.
+                if self._session_to_item.get(session_id) == child_id:
+                    await close_session(conn, existing_chat["id"])
+                return await super().run_turn(session_id=session_id, prompt=prompt)
+
+        runtime = ClosingRuntime(conn=conn)
+        runtime._session_to_item[existing_chat["id"]] = parent["id"]
+        runtime.turns_by_item[parent["id"]] = [
+            "CHECKLIST_BLOCKED\nthe blocker\nCHECKLIST_BLOCKED_END",
+            "CHECKLIST_ITEM_DONE",
+        ]
+        runtime.turns_by_item[child_id] = ["CHECKLIST_ITEM_DONE"]
+        config = DriverConfig(visit_existing_sessions=True)
+        driver = Driver(
+            conn=conn,
+            runtime=runtime,
+            checklist_session_id=checklist_id,
+            config=config,
+        )
+        result = await driver.drive()
+        assert result.outcome == DriverOutcome.COMPLETED
+        # Parent leg 2 spawned fresh (existing session was closed).
+        spawn_item_ids = [c[0] for c in runtime.spawn_calls]
+        assert parent["id"] in spawn_item_ids, (
+            "Parent should fall back to spawn-fresh when existing session closed"
+        )
+    finally:
+        await conn.close()
+
+
 # --- skip-on-failure mode ------------------------------------------
 
 

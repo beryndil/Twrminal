@@ -398,32 +398,77 @@ class Driver:
         if self._config.visit_existing_sessions:
             existing_for_leg_one = await self._existing_open_session(item)
             if existing_for_leg_one is None:
-                # No usable existing session — skip the item, leave it
-                # unchecked, advance.
-                self._items_skipped += 1
-                log.info(
-                    "autonomous driver: skipping item %s — no open chat "
-                    "session linked (visit_existing_sessions=True)",
-                    item["id"],
-                )
-                return _ItemOutcome.SKIPPED
+                # No usable existing session. The skip-when-unlinked
+                # rule applies only to TOP-LEVEL user-curated items
+                # (the visit-existing contract is "walk a curated set
+                # of pre-paired chats"). A nested child item — created
+                # by the driver itself when a parent emitted
+                # CHECKLIST_BLOCKED / CHECKLIST_FOLLOWUP block=yes —
+                # has no pre-existing chat by construction; it's a
+                # fresh fix-it session the driver needs to spawn. Fall
+                # through to the spawn path for those (the leg loop
+                # below will spawn_leg since existing_for_leg_one is
+                # still None). Top-level unlinked items still skip.
+                if item.get("parent_item_id") is None:
+                    self._items_skipped += 1
+                    log.info(
+                        "autonomous driver: skipping item %s — no open chat "
+                        "session linked (visit_existing_sessions=True)",
+                        item["id"],
+                    )
+                    return _ItemOutcome.SKIPPED
 
         plug: str | None = None
+        # Labels of blocking children resolved in the most recent
+        # iteration. Non-empty means "we just finished a fix-and-return
+        # blocker cycle; this leg is the parent resuming." Drives the
+        # continuation-prompt path below and the visit-existing
+        # reentry decision (reuse the original session so the agent's
+        # in-context memory of what it was trying isn't thrown away).
+        resolved_blocker_labels: list[str] = []
         for leg in range(1, self._config.max_legs_per_item + 1):
             if self._stop.is_set():
                 return _ItemOutcome.FAILED
-            # Leg 1 in visit mode reuses the linked session (no spawn,
-            # no teardown). All other legs (visit-mode handoffs OR any
-            # leg in spawn mode) spawn fresh and will be torn down.
+            # Three scenarios for which session this leg runs against:
+            #
+            # 1. Visit-existing leg 1 — reuse the session linked via
+            #    `chat_session_id`. Already established above.
+            # 2. Visit-existing parent reentry after blocker fixes —
+            #    REUSE the same existing session id so the agent
+            #    picks up where it left off with full memory of what
+            #    it was trying. The fix-and-return contract ("go back
+            #    to the first session"). Requires the existing
+            #    session is still open; if it closed mid-blocker
+            #    (rare — close cascade on an unrelated path), fall
+            #    through to spawn-fresh.
+            # 3. Anything else (spawn-fresh mode, visit-existing
+            #    handoff legs, blocker reentry when the original
+            #    session is gone) — spawn a fresh leg.
             leg_was_spawned = True
+            visit_reentry = False
             if leg == 1 and existing_for_leg_one is not None:
                 leg_session_id = existing_for_leg_one
                 leg_was_spawned = False
+            elif (
+                resolved_blocker_labels
+                and existing_for_leg_one is not None
+                and await self._existing_session_still_open(existing_for_leg_one)
+            ):
+                leg_session_id = existing_for_leg_one
+                leg_was_spawned = False
+                visit_reentry = True
             else:
                 leg_session_id = await self._runtime.spawn_leg(item=item, leg_number=leg, plug=plug)
             self._legs_spawned += 1
             try:
-                prompt = self._kickoff_prompt(item, leg, plug)
+                if visit_reentry:
+                    prompt = self._continuation_prompt(item, resolved_blocker_labels)
+                else:
+                    prompt = self._kickoff_prompt(item, leg, plug)
+                # Consume the resolved-labels carry so a subsequent
+                # iteration that doesn't follow a blocker cycle uses
+                # the kickoff prompt path.
+                resolved_blocker_labels = []
                 assistant_text = await self._runtime.run_turn(
                     session_id=leg_session_id, prompt=prompt
                 )
@@ -464,9 +509,17 @@ class Driver:
 
             if created_blocking:
                 # Agent chose to block the item on newly-filed children
-                # without marking done or handing off. Drive children,
-                # then re-enter the parent (fresh context, no plug —
-                # the blocking children's completion is the plug).
+                # without marking done or handing off. Drive the
+                # children, then re-enter the parent.
+                #
+                # Capture the just-filed blocker labels BEFORE driving
+                # so the next iteration can use them in the
+                # continuation prompt ("the blocker(s) you raised
+                # have been resolved: ..."). In visit-existing mode
+                # the next iteration also reuses the same existing
+                # session id so the agent's prior context (what it
+                # was trying, what it had ruled out) carries forward.
+                resolved_blocker_labels = [fu.label for fu in sentinels.followups if fu.blocking]
                 if not await self._drive_blocking_children(item, depth=depth):
                     return _ItemOutcome.FAILED
                 plug = None
@@ -571,28 +624,15 @@ class Driver:
         return created_blocking
 
     async def _mark_done(self, item_id: int) -> None:
-        """Mark the item checked AND tidy the related sessions.
-
-        Tidy = close every leg session paired to the item so the
-        sidebar moves them into the Closed group instead of
-        accumulating one open chat per checked item. Already-closed
-        legs are skipped (re-closing a closed session is harmless,
-        but the no-op keeps the audit log clean).
-
-        After the per-item close, if the toggle just completed the
-        whole checklist (every top-level item checked), close the
-        parent checklist session too — matches the auto-close
-        behavior of the manual `toggle_item` HTTP handler so the
-        autonomous and manual paths land identical end-states."""
-        # Snapshot legs BEFORE toggling so a future schema change
-        # that wipes pointers on toggle doesn't lose us the IDs.
-        legs = await store.list_item_sessions(self._conn, item_id)
+        """Mark the item checked. The session-close cascade lives in
+        `store.toggle_item` (since 2026-04-25) so both the autonomous
+        driver and the manual UI toggle land the same end-state:
+        every paired leg auto-closes when an item becomes checked,
+        and the parent checklist session auto-closes when the whole
+        list completes. This method stays as a one-liner so the
+        driver's call sites read intent (`_mark_done`) rather than
+        the storage primitive."""
         await store.toggle_item(self._conn, item_id, checked=True)
-        for leg in legs:
-            if leg.get("closed_at") is None:
-                await store.close_session(self._conn, leg["id"])
-        if await store.is_checklist_complete(self._conn, self._checklist_id):
-            await store.close_session(self._conn, self._checklist_id)
 
     async def _record_failure(self, item_id: int, reason: str) -> None:
         self._items_failed += 1
@@ -772,6 +812,21 @@ class Driver:
         await self._runtime.teardown_leg(session_id)
         return session_id
 
+    async def _existing_session_still_open(self, session_id: str) -> bool:
+        """True when the visit-existing original session is still
+        valid for parent re-entry after a blocker resolution. Closed
+        sessions, deleted rows, or anything else that would make a
+        run_turn call useless return False so the caller falls back
+        to spawning a fresh leg. Defensive: the parent's session
+        normally stays open while children resolve (children's
+        toggle-cascade close only touches the children's own legs,
+        not the parent's), but a sibling-toggle race or manual close
+        could land here."""
+        row = await store.get_session(self._conn, session_id)
+        if row is None:
+            return False
+        return row.get("closed_at") is None
+
     async def _request_handoff_nudge(self, leg_session_id: str) -> str:
         """Submit one extra turn on the current leg asking the agent
         to emit a handoff plug. Used when the leg's context watchdog
@@ -822,7 +877,14 @@ class Driver:
             "CHECKLIST_HANDOFF\n"
             "<your handoff plug>\n"
             "CHECKLIST_HANDOFF_END\n"
-            "For followups: CHECKLIST_FOLLOWUP block=yes|no / "
+            "If you cannot proceed because a precondition is broken "
+            "and needs to be fixed first, emit\n"
+            "CHECKLIST_BLOCKED\n"
+            "<what's broken and what needs fixing>\n"
+            "CHECKLIST_BLOCKED_END\n"
+            "A blocker spawns a fix-it session; once that completes, "
+            "you are resumed in this same chat to finish the work.\n"
+            "For other followups: CHECKLIST_FOLLOWUP block=yes|no / "
             "CHECKLIST_FOLLOWUP_END. block=yes makes it a child that "
             "must complete before this item. block=no appends to the "
             "end of the checklist."
@@ -839,6 +901,35 @@ class Driver:
                 f"{sentinel_doc}"
             )
         return f"Work on checklist item {item['id']}: {item['label']}\n\n{sentinel_doc}"
+
+    def _continuation_prompt(
+        self,
+        item: dict[str, Any],
+        resolved_blocker_labels: list[str],
+    ) -> str:
+        """Re-entry prompt for visit-existing parent resume after a
+        blocker fix. Keeps the message short — the agent already has
+        the full sentinel doc from the kickoff and full memory of
+        what it was trying — and names the resolved blockers so the
+        agent knows the fixes landed and can verify before continuing.
+
+        Used only after `CHECKLIST_BLOCKED` (or
+        `CHECKLIST_FOLLOWUP block=yes`) resolves. Spawn-fresh mode
+        doesn't reach this branch — fresh legs use the kickoff
+        prompt with `plug=None`."""
+        if len(resolved_blocker_labels) == 1:
+            blocker_summary = (
+                f"the blocker you raised has been resolved:\n  - {resolved_blocker_labels[0]}"
+            )
+        else:
+            bullets = "\n".join(f"  - {label}" for label in resolved_blocker_labels)
+            blocker_summary = f"the blockers you raised have been resolved:\n{bullets}"
+        return (
+            f"Returning to checklist item {item['id']}: {item['label']}.\n\n"
+            f"While you were paused, {blocker_summary}\n\n"
+            "Verify the fix(es) landed as expected, then continue the "
+            "original work. When done, emit CHECKLIST_ITEM_DONE."
+        )
 
     # --- result assembly ---------------------------------------------
 

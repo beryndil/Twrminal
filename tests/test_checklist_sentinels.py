@@ -233,3 +233,61 @@ def test_parse_crlf_line_endings() -> None:
     body = "CHECKLIST_ITEM_DONE\r\n"
     result = parse(body)
     assert result.item_done is True
+
+
+# --- CHECKLIST_BLOCKED (sugar over block=yes followup) -------------
+
+
+def test_parse_checklist_blocked_creates_blocking_followup() -> None:
+    """CHECKLIST_BLOCKED is sugar for CHECKLIST_FOLLOWUP block=yes —
+    same downstream effect (driver creates a blocking child item,
+    recurses), but the keyword carries the intent unambiguously."""
+    body = (
+        "I cannot proceed.\n"
+        "CHECKLIST_BLOCKED\n"
+        "Permission profile is misconfigured\n"
+        "CHECKLIST_BLOCKED_END"
+    )
+    result = parse(body)
+    assert len(result.followups) == 1
+    assert result.followups[0] == Followup(
+        label="Permission profile is misconfigured", blocking=True
+    )
+    assert result.item_done is False
+    assert result.handoff_plug is None
+
+
+def test_parse_checklist_blocked_multiline_label() -> None:
+    """Multi-line blocker descriptions join with newlines, same as
+    multi-line followup labels. The label IS the agent's description
+    of what's broken — keep it intact."""
+    body = (
+        "CHECKLIST_BLOCKED\n"
+        "Database migration 0027 hasn't run.\n"
+        "Need to ship that before this work can continue.\n"
+        "CHECKLIST_BLOCKED_END"
+    )
+    result = parse(body)
+    assert len(result.followups) == 1
+    label = result.followups[0].label
+    assert "migration 0027" in label
+    assert "before this work can continue" in label
+
+
+def test_parse_unterminated_blocked_block_is_discarded() -> None:
+    """Same rule as unterminated handoff/followup: if the agent didn't
+    close the block, treat it as accidental and don't act on it."""
+    body = "CHECKLIST_BLOCKED\nstuff that needs fixing"
+    result = parse(body)
+    assert result.followups == []
+
+
+def test_parse_blocked_and_done_coexist_blocking_first() -> None:
+    """Agent emits CHECKLIST_BLOCKED + CHECKLIST_ITEM_DONE in the same
+    turn. The followup survives (driver will drive it before honoring
+    the done signal — same blocking-first rule as block=yes)."""
+    body = "CHECKLIST_BLOCKED\nNeed this fixed first\nCHECKLIST_BLOCKED_END\nCHECKLIST_ITEM_DONE"
+    result = parse(body)
+    assert result.item_done is True
+    assert len(result.followups) == 1
+    assert result.followups[0].blocking is True

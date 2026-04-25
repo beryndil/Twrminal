@@ -95,6 +95,14 @@ HANDOFF_START = "CHECKLIST_HANDOFF"
 HANDOFF_END = "CHECKLIST_HANDOFF_END"
 FOLLOWUP_START_PREFIX = "CHECKLIST_FOLLOWUP"
 FOLLOWUP_END = "CHECKLIST_FOLLOWUP_END"
+# Sugar over CHECKLIST_FOLLOWUP block=yes for the "I cannot proceed
+# until X is fixed" case. Functionally identical — parses to a
+# blocking Followup. Distinct keyword so the agent's intent is
+# unambiguous in the message and the kickoff prompt can call it out
+# as the right move under "stuck on a precondition." Added 2026-04-25
+# for the fix-and-return slice.
+BLOCKED_START = "CHECKLIST_BLOCKED"
+BLOCKED_END = "CHECKLIST_BLOCKED_END"
 
 
 @dataclass(frozen=True)
@@ -162,6 +170,17 @@ def parse(text: str) -> ParsedSentinels:
                 mode = "handoff"
                 buffer = []
                 continue
+            if stripped == BLOCKED_START:
+                # CHECKLIST_BLOCKED is sugar for CHECKLIST_FOLLOWUP
+                # block=yes — same downstream effect (driver creates
+                # a blocking child item, recurses), with a name the
+                # agent reaches for when stuck. The body lines until
+                # CHECKLIST_BLOCKED_END become the child label, the
+                # same way the followup body becomes the followup
+                # label.
+                mode = "blocked"
+                buffer = []
+                continue
             if stripped.startswith(FOLLOWUP_START_PREFIX):
                 # The start line looks like
                 # `CHECKLIST_FOLLOWUP block=yes` — the attribute is
@@ -196,6 +215,19 @@ def parse(text: str) -> ParsedSentinels:
                 label = "\n".join(buffer).strip()
                 if label:
                     result.followups.append(Followup(label=label, blocking=pending_blocking))
+                mode = "normal"
+                buffer = []
+                continue
+            buffer.append(line)
+            continue
+        if mode == "blocked":
+            if stripped == BLOCKED_END:
+                label = "\n".join(buffer).strip()
+                if label:
+                    # Always blocking — that's the whole point of the
+                    # CHECKLIST_BLOCKED sentinel. No `block=` attribute
+                    # to parse since the keyword carries the semantics.
+                    result.followups.append(Followup(label=label, blocking=True))
                 mode = "normal"
                 buffer = []
                 continue
