@@ -145,3 +145,54 @@ def test_collect_scope_project_skips_user_and_plugins(tmp_path: Path) -> None:
     entries = commands_scan.collect(home=home, project_cwd=project, scope="project")
     slugs = {e.slug for e in entries}
     assert slugs == {"proj-cmd"}
+
+
+def test_collect_skips_symlinked_command_files(tmp_path: Path) -> None:
+    """A symlink pointing at /etc/passwd from `~/.claude/commands` must
+    NOT be slurped by the scanner — `Path.rglob` would happily follow
+    it and the description parser would try to read the target
+    (security audit 2026-04-21 §5)."""
+    home = tmp_path / "home"
+    real_target = tmp_path / "outside" / "secret.md"
+    _write(real_target, "---\ndescription: leaked\n---\nbody")
+    cmds_dir = home / ".claude" / "commands"
+    cmds_dir.mkdir(parents=True)
+    _write(cmds_dir / "real.md", "body")
+    (cmds_dir / "leak.md").symlink_to(real_target)
+
+    entries = commands_scan.collect(home=home, project_cwd=None)
+    slugs = {e.slug for e in entries}
+    assert slugs == {"real"}, "symlinked command must be skipped"
+
+
+def test_collect_skips_symlinked_command_subdirs(tmp_path: Path) -> None:
+    """A symlinked directory under `.claude/commands` must not be
+    descended into — otherwise `proj/.claude/commands/escape ->
+    ~/Desktop` exposes every `*.md` on the desktop as a command."""
+    home = tmp_path / "home"
+    outside_dir = tmp_path / "outside-tree"
+    _write(outside_dir / "external.md", "body")
+    cmds_dir = home / ".claude" / "commands"
+    cmds_dir.mkdir(parents=True)
+    _write(cmds_dir / "real.md", "body")
+    (cmds_dir / "escape").symlink_to(outside_dir, target_is_directory=True)
+
+    entries = commands_scan.collect(home=home, project_cwd=None)
+    slugs = {e.slug for e in entries}
+    assert slugs == {"real"}, "symlinked directory must not be descended"
+
+
+def test_collect_skips_symlinked_skill_dirs(tmp_path: Path) -> None:
+    """The skills walker must reject symlinked skill directories with
+    the same logic as the commands walker."""
+    home = tmp_path / "home"
+    outside_skill = tmp_path / "outside-skills" / "evil"
+    _write(outside_skill / "SKILL.md", "---\ndescription: leaked skill\n---\nbody")
+    skills_dir = home / ".claude" / "skills"
+    skills_dir.mkdir(parents=True)
+    _write(skills_dir / "real" / "SKILL.md", "body")
+    (skills_dir / "linked").symlink_to(outside_skill, target_is_directory=True)
+
+    entries = commands_scan.collect(home=home, project_cwd=None)
+    slugs = {e.slug for e in entries}
+    assert slugs == {"real"}

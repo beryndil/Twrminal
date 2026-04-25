@@ -32,7 +32,7 @@ from bearings.agent.events import (
     ToolCallStart,
 )
 from bearings.agent.registry import RunnerRegistry
-from bearings.agent.runner import RING_MAX, SessionRunner
+from bearings.agent.runner import RING_MAX, SUBSCRIBER_QUEUE_MAX, SessionRunner
 from bearings.agent.session import AgentSession
 from bearings.db import store
 from bearings.db._common import init_db
@@ -201,6 +201,47 @@ async def test_unsubscribe_stops_delivery(db: aiosqlite.Connection) -> None:
     # After unsubscribe the queue is inert — a short wait must time out.
     with pytest.raises(asyncio.TimeoutError):
         await asyncio.wait_for(queue.get(), timeout=0.05)
+
+
+@pytest.mark.asyncio
+async def test_stalled_subscriber_evicted_when_queue_fills(
+    db: aiosqlite.Connection,
+) -> None:
+    """A subscriber that never drains its queue gets evicted once the
+    queue hits `SUBSCRIBER_QUEUE_MAX` — the runner must not block fan-
+    out for a slow client (security audit 2026-04-21 §3). A second,
+    healthy subscriber that drains continues to receive events past
+    the eviction."""
+    sid = await _session_id(db)
+    runner = SessionRunner(sid, ScriptedAgent(sid, scripts=[]), db)
+    stalled, _ = await runner.subscribe(0)
+    healthy, _ = await runner.subscribe(0)
+
+    # Drain `healthy` in the background so it never fills; `stalled`
+    # is left untouched and must hit the cap.
+    drained: list[Any] = []
+
+    async def drain() -> None:
+        while True:
+            env = await healthy.get()
+            drained.append(env)
+
+    drainer = asyncio.create_task(drain())
+    try:
+        for i in range(SUBSCRIBER_QUEUE_MAX + 1):
+            await runner._emit_event(Token(session_id=sid, text=str(i)))
+            # Yield so the drainer task can run.
+            await asyncio.sleep(0)
+    finally:
+        drainer.cancel()
+        try:
+            await drainer
+        except asyncio.CancelledError:
+            pass
+
+    assert stalled not in runner._subscribers, "stalled subscriber should be evicted"
+    assert healthy in runner._subscribers, "healthy subscriber must be retained"
+    assert len(drained) == SUBSCRIBER_QUEUE_MAX + 1, "healthy subscriber got every event"
 
 
 @pytest.mark.asyncio

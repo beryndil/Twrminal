@@ -58,16 +58,43 @@ def _read_description(path: Path) -> str:
     return _parse_description(head)
 
 
+def _iter_no_symlinks(root: Path) -> list[Path]:
+    """Manual recursive walk of `root` for `*.md` files that does NOT
+    descend into symlinked directories and does NOT follow symlinked
+    files. `Path.rglob` would follow both — a symlink in a user's
+    `.claude/commands` could point at `/etc` or anywhere else on disk
+    and the scanner would happily read it (security audit 2026-04-21
+    §5)."""
+    out: list[Path] = []
+    stack: list[Path] = [root]
+    while stack:
+        current = stack.pop()
+        try:
+            entries = list(current.iterdir())
+        except (PermissionError, OSError):
+            continue
+        for entry in sorted(entries):
+            # `is_symlink` does not call stat() on the target, so it
+            # also costs nothing for the dangling-symlink case.
+            if entry.is_symlink():
+                continue
+            if entry.is_dir():
+                stack.append(entry)
+            elif entry.is_file() and entry.suffix == ".md":
+                out.append(entry)
+    return out
+
+
 def _walk_commands(root: Path) -> list[tuple[str, Path]]:
     """Return (slug, path) for every `*.md` under `root`. Nested
-    directories become `:` separators — `fad/ship.md` → `fad:ship`."""
-    if not root.is_dir():
+    directories become `:` separators — `fad/ship.md` → `fad:ship`.
+    Symlinked files and directories are skipped — see
+    `_iter_no_symlinks`."""
+    if not root.is_dir() or root.is_symlink():
         return []
     out: list[tuple[str, Path]] = []
     try:
-        for path in sorted(root.rglob("*.md")):
-            if not path.is_file():
-                continue
+        for path in _iter_no_symlinks(root):
             rel = path.relative_to(root).with_suffix("")
             slug = ":".join(rel.parts)
             if not slug:
@@ -81,17 +108,19 @@ def _walk_commands(root: Path) -> list[tuple[str, Path]]:
 def _walk_skills(root: Path) -> list[tuple[str, Path]]:
     """Return (slug, path) for every `<skill-dir>/SKILL.md` directly
     under `root`. Skills are single-level — the skill name is the
-    directory name."""
-    if not root.is_dir():
+    directory name. Symlinked skill dirs and SKILL.md files are
+    skipped — see `_iter_no_symlinks` for the rationale."""
+    if not root.is_dir() or root.is_symlink():
         return []
     out: list[tuple[str, Path]] = []
     try:
         for entry in sorted(root.iterdir()):
-            if not entry.is_dir():
+            if entry.is_symlink() or not entry.is_dir():
                 continue
             skill_file = entry / "SKILL.md"
-            if skill_file.is_file():
-                out.append((entry.name, skill_file))
+            if skill_file.is_symlink() or not skill_file.is_file():
+                continue
+            out.append((entry.name, skill_file))
     except (PermissionError, OSError):
         return out
     return out
@@ -122,19 +151,24 @@ def _entries_from(
 def _plugin_roots(home: Path) -> list[Path]:
     """Every `plugins/<plugin>` dir under every installed marketplace.
     Shape: `~/.claude/plugins/marketplaces/<marketplace>/plugins/<plugin>`.
-    Returns [] when the plugins dir doesn't exist."""
+    Returns [] when the plugins dir doesn't exist. Symlinked
+    marketplaces and symlinked plugin dirs are skipped — see
+    `_iter_no_symlinks` for the rationale."""
     base = home / ".claude" / "plugins" / "marketplaces"
-    if not base.is_dir():
+    if not base.is_dir() or base.is_symlink():
         return []
     out: list[Path] = []
     try:
         for marketplace in sorted(base.iterdir()):
+            if marketplace.is_symlink() or not marketplace.is_dir():
+                continue
             plugins_dir = marketplace / "plugins"
-            if not plugins_dir.is_dir():
+            if plugins_dir.is_symlink() or not plugins_dir.is_dir():
                 continue
             for plugin in sorted(plugins_dir.iterdir()):
-                if plugin.is_dir():
-                    out.append(plugin)
+                if plugin.is_symlink() or not plugin.is_dir():
+                    continue
+                out.append(plugin)
     except (PermissionError, OSError):
         return out
     return out

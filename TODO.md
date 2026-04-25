@@ -1973,19 +1973,37 @@ ruff + mypy clean.
 
 ### Cleanup (low priority)
 
-- [ ] `LIKE` query unescaped wildcard DOS. `src/bearings/db/_messages.py:281-298`.
-  Use `LIKE ? ESCAPE '\\'` and escape `%` `_` `\` in input.
-- [ ] `permission_mode` column has no `CHECK` constraint at SQL level.
-  `src/bearings/db/schema.sql:18`.
-- [ ] WS subscriber queues unbounded. `src/bearings/agent/runner.py:308-321`.
-- [ ] `import_session` accepts arbitrary client-supplied JSON with no
-  schema validation, no size cap, bypasses the "every session has ≥1 tag"
-  invariant. `src/bearings/api/routes_sessions.py:223-232`.
-- [ ] `commands_scan` follows symlinks during `rglob`.
-  `src/bearings/api/commands_scan.py:60-77`.
-- [ ] Multiple silent `except Exception` swallows in `agent/session.py`,
-  `agent/runner.py`, `api/routes_tags.py`. Narrow the catches; surface
-  a wire `error` event when a failure persists.
+All six items shipped 2026-04-24 in the audit-cleanup pass:
+
+- [x] `LIKE` query unescaped wildcard DOS — `search_messages` now
+  escapes `%`, `_`, `\` and uses `LIKE ? ESCAPE '\\'`. Test:
+  `test_search_escapes_like_wildcards`.
+- [x] `permission_mode` SQL CHECK — schema.sql gets the inline CHECK,
+  migration 0030 adds equivalent BEFORE INSERT/UPDATE triggers for
+  already-migrated DBs (SQLite can't ALTER an existing column to add
+  CHECK). Test: `test_permission_mode_check_constraint_blocks_invalid_writes`.
+- [x] WS subscriber queues bounded — `SUBSCRIBER_QUEUE_MAX = RING_MAX`
+  caps each subscriber's queue. A stalled subscriber is evicted on
+  overflow; healthy subscribers keep flowing. Test:
+  `test_stalled_subscriber_evicted_when_queue_fills`.
+- [x] `import_session` validation — 16 MB raw-body cap (413), shape
+  validation on `session`/`messages`/`tool_calls`, per-list size caps,
+  and the existing `ensure_default_severity` call preserves the
+  "every session has ≥1 tag" invariant. Tests:
+  `test_import_rejects_non_object_root`, `…_non_list_messages`,
+  `…_non_object_message_entries`, `…_oversized_body`.
+- [x] `commands_scan` symlink follow — rewritten to a manual stack walk
+  that skips symlinked files and dirs; the skills walker and the
+  marketplaces walker do the same. Tests:
+  `test_collect_skips_symlinked_command_files`,
+  `…_command_subdirs`, `…_skill_dirs`.
+- [x] Silent `except Exception` swallows — narrowed in `agent/session.py`
+  (`ClaudeSDKError` / `OSError` / `AttributeError` for SDK calls,
+  `aiosqlite.Error` for DB reads, `(TypeError, ValueError)` for
+  parsing), `agent/runner.py` (`ClaudeSDKError` for SDK interrupts,
+  `aiosqlite.Error` for DB writes), and `api/routes_tags.py`
+  (`sqlite3.IntegrityError` / `aiosqlite.IntegrityError` for the
+  UNIQUE-name handler).
 
 ### v0.3+ — OS-level sandbox (DEFERRED, do not surface in "what's next")
 

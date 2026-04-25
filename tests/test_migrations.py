@@ -249,3 +249,36 @@ async def test_init_db_clamps_db_and_sidecars_to_0600(tmp_path: Path) -> None:
             continue
         mode = stat.S_IMODE(p.stat().st_mode)
         assert mode == 0o600, f"{name} is {oct(mode)}, expected 0o600"
+
+
+@pytest.mark.asyncio
+async def test_permission_mode_check_constraint_blocks_invalid_writes(
+    tmp_path: Path,
+) -> None:
+    """Migration 0030 wires triggers that ABORT any INSERT or UPDATE
+    landing a non-NULL `permission_mode` outside the four
+    PermissionMode literals. The Python-side `set_session_permission_mode`
+    helper rejects bad values too, but the trigger is the safety net for
+    any path that bypasses it (security audit 2026-04-21 §2)."""
+    from bearings.db.store import create_session, init_db
+
+    conn = await init_db(tmp_path / "pm.sqlite")
+    try:
+        sess = await create_session(conn, working_dir="/tmp", model="m")
+        # Direct UPDATE bypassing the helper — the trigger must reject.
+        with pytest.raises(aiosqlite.IntegrityError):
+            await conn.execute(
+                "UPDATE sessions SET permission_mode = ? WHERE id = ?",
+                ("definitely-not-a-mode", sess["id"]),
+            )
+            await conn.commit()
+        # NULL stays valid (== "default" semantics) and the four
+        # documented modes round-trip cleanly.
+        for mode in ("default", "plan", "acceptEdits", "bypassPermissions", None):
+            await conn.execute(
+                "UPDATE sessions SET permission_mode = ? WHERE id = ?",
+                (mode, sess["id"]),
+            )
+            await conn.commit()
+    finally:
+        await conn.close()

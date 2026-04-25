@@ -1129,13 +1129,19 @@ async def test_stream_skips_context_usage_when_sdk_call_fails(
     """If `get_context_usage()` raises (older SDK, transport hiccup, CLI
     crash-on-exit), the turn still completes cleanly — no ContextUsage
     event, no propagated error. The meter is advisory; losing it must
-    never take down a successful turn."""
+    never take down a successful turn.
+
+    Per the 2026-04-21 audit cleanup, `_capture_context_usage` narrows
+    its catch to `(ClaudeSDKError, OSError, AttributeError)` rather
+    than bare `Exception`, so the simulated failure here uses
+    `ClaudeSDKError` — the type the live SDK actually raises."""
+    from claude_agent_sdk import ClaudeSDKError
 
     def factory(options: Any = None) -> _CtxClient:
         return _CtxClient(
             [_assistant(TextBlock("hi")), _result()],
             options,
-            usage=RuntimeError("SDK refused the query"),
+            usage=ClaudeSDKError("SDK refused the query"),
         )
 
     monkeypatch.setattr("bearings.agent.session.ClaudeSDKClient", factory)

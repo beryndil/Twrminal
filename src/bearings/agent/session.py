@@ -12,6 +12,7 @@ from claude_agent_sdk import (
     CanUseTool,
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    ClaudeSDKError,
     HookMatcher,
     PermissionMode,
     ResultMessage,
@@ -350,14 +351,21 @@ class AgentSession:
         underlying CLI subprocess is still live — calling after
         `async with` exit would hit a closed connection.
 
-        Best-effort: any SDK or parsing failure returns None and the
-        turn continues. The context meter is purely advisory — losing
-        an update must not take down a successful turn. Swallowing
-        errors here is the one place in this module where we accept a
-        silent miss; everywhere else errors surface as `ErrorEvent`."""
+        Best-effort: SDK call failure or response-shape mismatch
+        returns None and the turn continues. The context meter is
+        purely advisory — losing an update must not take down a
+        successful turn. Swallowing errors here is the one place in
+        this module where we accept a silent miss; everywhere else
+        errors surface as `ErrorEvent`.
+
+        `AttributeError` covers the older-SDK case where the method
+        isn't on the client at all (also matches test fixtures that
+        skip stubbing it); `ClaudeSDKError` / `OSError` cover the
+        active-call failure modes (CLI subprocess crash, transport
+        hiccup)."""
         try:
             resp = await client.get_context_usage()
-        except Exception:
+        except (ClaudeSDKError, OSError, AttributeError):
             return None
 
         def _opt_int(value: object) -> int | None:
@@ -375,7 +383,7 @@ class AgentSession:
                 is_auto_compact_enabled=bool(resp.get("isAutoCompactEnabled", False)),
                 auto_compact_threshold=_opt_int(resp.get("autoCompactThreshold")),
             )
-        except Exception:
+        except (TypeError, ValueError, AttributeError):
             return None
 
     async def _build_context_pressure_block(self) -> str | None:
@@ -399,7 +407,7 @@ class AgentSession:
                 (self.session_id,),
             ) as cursor:
                 row = await cursor.fetchone()
-        except Exception:
+        except aiosqlite.Error:
             return None
         if row is None or row["last_context_pct"] is None:
             return None
@@ -451,7 +459,7 @@ class AgentSession:
                 body = response
             try:
                 length = await tool_output_char_len(body)
-            except Exception:
+            except (TypeError, ValueError):
                 length = 0
             if length <= cap:
                 return {}
@@ -686,7 +694,7 @@ class AgentSession:
         probe("session.interrupt", self.session_id)
         try:
             await client.interrupt()
-        except Exception:
+        except (ClaudeSDKError, OSError):
             # The SDK may refuse a second interrupt or fail if the
             # subprocess is already winding down. Swallow — the outer
             # WS handler breaks out of the stream loop regardless.

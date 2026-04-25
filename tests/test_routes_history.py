@@ -123,3 +123,26 @@ def test_search_empty_when_no_match(client: TestClient) -> None:
     _create(client)
     hits = client.get("/api/history/search?q=absolutely-not-there").json()
     assert hits == []
+
+
+def test_search_escapes_like_wildcards(client: TestClient, mock_agent_stream: None) -> None:
+    """A literal `%` in the query must NOT match every row. Without the
+    LIKE-ESCAPE wrap the unescaped `%` would expand the pattern to
+    `%%%` and return every message in the DB regardless of content
+    (security audit 2026-04-21 §1)."""
+    sid = _create(client, "wildcard-search")
+    with client.websocket_connect(f"/ws/sessions/{sid}") as ws:
+        ws.send_json({"type": "prompt", "content": "ordinary text without metachars"})
+        for _ in range(4):
+            ws.receive_text()
+
+    pct = client.get("/api/history/search?q=%25").json()
+    assert pct == [], "literal % must not match plain text"
+    underscore = client.get("/api/history/search?q=_").json()
+    assert underscore == [], "literal _ must not match a single character"
+    backslash = client.get("/api/history/search?q=%5C").json()
+    assert backslash == [], "literal backslash must not match escape sequences"
+    # Sanity check that a real substring still matches with the escape
+    # in place — escaping must not break the happy path.
+    real = client.get("/api/history/search?q=ordinary").json()
+    assert any("ordinary" in h["snippet"] for h in real)

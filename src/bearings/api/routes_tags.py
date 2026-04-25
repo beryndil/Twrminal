@@ -1,10 +1,21 @@
 from __future__ import annotations
 
+import sqlite3
+
+import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from bearings.api.auth import require_auth
 from bearings.api.models import TagCreate, TagMemoryOut, TagMemoryPut, TagOut, TagUpdate
 from bearings.db import store
+
+# aiosqlite re-raises sqlite3 exceptions; both base classes appear in
+# practice depending on the codepath. Catching the tuple lets the
+# UNIQUE-name handler narrow without relying on bare `Exception`.
+_SQLITE_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
+    sqlite3.IntegrityError,
+    aiosqlite.IntegrityError,
+)
 
 
 def _parse_scope_csv(raw: str | None) -> list[int] | None:
@@ -93,7 +104,7 @@ async def create_tag(body: TagCreate, request: Request) -> TagOut:
             default_model=body.default_model,
             tag_group=body.tag_group,
         )
-    except Exception as exc:  # aiosqlite raises IntegrityError on UNIQUE
+    except _SQLITE_INTEGRITY_ERRORS as exc:
         if "UNIQUE" in str(exc):
             raise HTTPException(status_code=409, detail="tag name already exists") from exc
         raise
@@ -115,7 +126,7 @@ async def update_tag(tag_id: int, body: TagUpdate, request: Request) -> TagOut:
     fields = {k: getattr(body, k) for k in body.model_fields_set}
     try:
         row = await store.update_tag(request.app.state.db, tag_id, fields=fields)
-    except Exception as exc:
+    except _SQLITE_INTEGRITY_ERRORS as exc:
         if "UNIQUE" in str(exc):
             raise HTTPException(status_code=409, detail="tag name already exists") from exc
         raise

@@ -352,6 +352,47 @@ def test_import_rejects_missing_session_key(client: TestClient) -> None:
     assert resp.status_code == 400
 
 
+def test_import_rejects_non_object_root(client: TestClient) -> None:
+    """Top-level must be a JSON object — a list / string / number is
+    rejected before the store layer sees it (security audit
+    2026-04-21 §4)."""
+    resp = client.post("/api/sessions/import", json=["not", "an", "object"])
+    assert resp.status_code == 400
+
+
+def test_import_rejects_non_list_messages(client: TestClient) -> None:
+    """`messages` must be a list when present. A dict / string would
+    crash the store-layer iteration silently in the legacy path; here
+    it returns a clean 400."""
+    resp = client.post(
+        "/api/sessions/import",
+        json={"session": {}, "messages": {"not": "a list"}},
+    )
+    assert resp.status_code == 400
+
+
+def test_import_rejects_non_object_message_entries(client: TestClient) -> None:
+    """Every entry inside `messages` must be a JSON object — a string
+    entry would crash `m.get(...)` inside the store helper."""
+    resp = client.post(
+        "/api/sessions/import",
+        json={"session": {}, "messages": ["plain string"]},
+    )
+    assert resp.status_code == 400
+
+
+def test_import_rejects_oversized_body(client: TestClient) -> None:
+    """Bodies above the 16 MB cap are refused with 413 BEFORE JSON
+    parsing, so a hostile multi-GB upload can't balloon the process."""
+    blob = "A" * (16 * 1024 * 1024 + 1024)
+    resp = client.post(
+        "/api/sessions/import",
+        content=blob,
+        headers={"Content-Type": "application/json"},
+    )
+    assert resp.status_code == 413
+
+
 def test_export_includes_messages_and_tool_calls(
     client: TestClient, mock_agent_tool_stream: None
 ) -> None:

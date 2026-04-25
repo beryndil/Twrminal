@@ -36,6 +36,7 @@ from uuid import uuid4
 
 import aiosqlite
 import orjson
+from claude_agent_sdk import ClaudeSDKError
 
 from bearings import metrics
 from bearings.agent._attachments import prune_and_serialize, substitute_tokens
@@ -73,6 +74,16 @@ log = logging.getLogger(__name__)
 # still catches the final `message_complete` (and the completed
 # assistant message is in the DB either way).
 RING_MAX = 5000
+
+# Per-subscriber WS queue cap. A live WebSocket sender drains this in
+# real time, so the queue normally sits at 0-1 events. The cap exists
+# to keep memory bounded if a subscriber stalls (network back-pressure,
+# malicious slow-loris client). At 5000 entries × ~2 KB/event the
+# worst-case per-subscriber footprint is ~10 MB — large enough that
+# the steady state is invisible, small enough that a stalled tab can't
+# OOM the process. On overflow the subscriber is evicted and its
+# WebSocket handler will notice the closure on the next send.
+SUBSCRIBER_QUEUE_MAX = RING_MAX
 
 # Cadence for `ToolProgress` keepalive events emitted while a tool call
 # is still running. Covers the "SDK surfaces nothing for tens of
@@ -265,7 +276,7 @@ class SessionRunner:
         await self._approval.deny_all("runner shutting down", interrupt=True)
         try:
             await self.agent.interrupt()
-        except Exception:
+        except (ClaudeSDKError, OSError):
             # Best-effort — the worker's own exception handling will
             # log if the stream dies unexpectedly.
             pass
@@ -398,7 +409,7 @@ class SessionRunner:
         await self._approval.deny_all("stopped by user", interrupt=True)
         try:
             await self.agent.interrupt()
-        except Exception:
+        except (ClaudeSDKError, OSError):
             pass
 
     # ---- tool-use approval ----------------------------------------
@@ -466,8 +477,11 @@ class SessionRunner:
     ) -> tuple[asyncio.Queue[_Envelope], list[_Envelope]]:
         """Register a subscriber queue and return buffered events with
         seq > since_seq for replay. Reconnecting clients pass the last
-        seq they saw; fresh clients pass 0 to replay the whole window."""
-        queue: asyncio.Queue[_Envelope] = asyncio.Queue()
+        seq they saw; fresh clients pass 0 to replay the whole window.
+
+        Queue is bounded by `SUBSCRIBER_QUEUE_MAX` — see `_emit_event`
+        for the back-pressure / eviction policy."""
+        queue: asyncio.Queue[_Envelope] = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_MAX)
         self._subscribers.add(queue)
         # A WS is attached — not quiet anymore. Clearing unconditionally
         # is simpler than checking prior state; the idle→running path
@@ -525,7 +539,7 @@ class SessionRunner:
         """
         try:
             orphan = await store.find_replayable_prompt(self.db, self.session_id)
-        except Exception:
+        except aiosqlite.Error:
             log.exception(
                 "runner %s: replay scan failed; continuing without replay",
                 self.session_id,
@@ -535,7 +549,7 @@ class SessionRunner:
             return
         try:
             marked = await store.mark_replay_attempted(self.db, orphan["id"])
-        except Exception:
+        except aiosqlite.Error:
             log.exception(
                 "runner %s: replay mark failed; skipping replay to avoid loop",
                 self.session_id,
@@ -610,7 +624,7 @@ class SessionRunner:
             # hiccup here must not abort the turn — swallow.
             try:
                 await store.touch_session(self.db, self.session_id)
-            except Exception:
+            except aiosqlite.Error:
                 log.exception(
                     "runner %s: touch_session on turn-start failed",
                     self.session_id,
@@ -639,7 +653,7 @@ class SessionRunner:
                 # the current (non-existent) state but not a data loss.
                 try:
                     await store.set_session_error_pending(self.db, self.session_id, pending=True)
-                except Exception:
+                except aiosqlite.Error:
                     log.exception(
                         "runner %s: failed to latch error_pending",
                         self.session_id,
@@ -662,7 +676,7 @@ class SessionRunner:
                         await store.set_session_error_pending(
                             self.db, self.session_id, pending=False
                         )
-                    except Exception:
+                    except aiosqlite.Error:
                         log.exception(
                             "runner %s: failed to clear error_pending",
                             self.session_id,
@@ -802,7 +816,7 @@ class SessionRunner:
                             tokens=event.total_tokens,
                             max_tokens=event.max_tokens,
                         )
-                    except Exception:
+                    except aiosqlite.Error:
                         log.exception(
                             "runner %s: failed to persist context usage",
                             self.session_id,
@@ -832,7 +846,7 @@ class SessionRunner:
                     stopped = True
                     try:
                         await self.agent.interrupt()
-                    except Exception:
+                    except (ClaudeSDKError, OSError):
                         pass
                     break
         finally:
@@ -970,10 +984,12 @@ class SessionRunner:
 
     async def _emit_event(self, event: AgentEvent) -> None:
         """Fan an event out to every subscriber and append to the ring
-        buffer. Subscriber queues are unbounded — if a subscriber isn't
-        keeping up, the event is still delivered; only OS memory and
-        the overall replay window bound this. Broken queues from dead
-        subscribers are swept on the next emit."""
+        buffer. Subscriber queues are bounded by `SUBSCRIBER_QUEUE_MAX`
+        — a stalled subscriber that fills its queue is evicted (its WS
+        handler notices the dead queue on its next send and tears down
+        the socket). The reconnecting client replays from the runner's
+        ring buffer using its last `seq`. Broken queues from dead
+        subscribers are also swept on the next emit."""
         payload = event.model_dump()
         env = _Envelope(self._next_seq, payload)
         self._next_seq += 1
@@ -982,11 +998,23 @@ class SessionRunner:
         for queue in list(self._subscribers):
             try:
                 queue.put_nowait(env)
+            except asyncio.QueueFull:
+                # Subscriber's WS sender has fallen behind by
+                # SUBSCRIBER_QUEUE_MAX events. Evict rather than
+                # block the runner; the client will reconnect and
+                # replay from `seq` against the ring buffer.
+                log.warning(
+                    "runner %s: evicting subscriber — queue full at %d events",
+                    self.session_id,
+                    SUBSCRIBER_QUEUE_MAX,
+                )
+                self._subscribers.discard(queue)
             except Exception:
-                # Unbounded queue shouldn't raise, but if a subscriber
-                # somehow misbehaves we drop it rather than block the
-                # runner. The WS handler will notice its queue is dead
-                # and clean up.
+                # Defensive: any other queue misbehavior also evicts.
+                log.exception(
+                    "runner %s: subscriber put_nowait failed; evicting",
+                    self.session_id,
+                )
                 self._subscribers.discard(queue)
 
     async def _emit_ephemeral(self, event: AgentEvent) -> None:
@@ -1009,7 +1037,17 @@ class SessionRunner:
         for queue in list(self._subscribers):
             try:
                 queue.put_nowait(env)
+            except asyncio.QueueFull:
+                log.warning(
+                    "runner %s: evicting subscriber on ephemeral — queue full",
+                    self.session_id,
+                )
+                self._subscribers.discard(queue)
             except Exception:
+                log.exception(
+                    "runner %s: subscriber put_nowait (ephemeral) failed; evicting",
+                    self.session_id,
+                )
                 self._subscribers.discard(queue)
 
 

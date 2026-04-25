@@ -14,8 +14,12 @@ CREATE TABLE IF NOT EXISTS sessions (
     sdk_session_id TEXT,
     -- Persisted PermissionMode ('default' | 'plan' | 'acceptEdits' |
     -- 'bypassPermissions'). NULL treated as 'default' by the runner.
-    -- See migration 0012.
-    permission_mode TEXT,
+    -- See migration 0012; CHECK constraint enforced via triggers in
+    -- migration 0030 (SQLite can't ALTER an existing column to add
+    -- CHECK, so the trigger is the rebuild-free equivalent).
+    permission_mode TEXT
+        CHECK (permission_mode IS NULL OR permission_mode IN
+            ('default', 'plan', 'acceptEdits', 'bypassPermissions')),
     -- Nullable ISO timestamp. NULL = open (default). Non-null = the
     -- user marked the session closed and the sidebar renders it inside
     -- the collapsed "Closed" group. Reorg ops touching a closed session

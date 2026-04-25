@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -415,13 +416,79 @@ async def get_session_todos(session_id: str, request: Request) -> TodosOut:
     return TodosOut(todos=items)
 
 
+# Size cap on the raw import body. The export shape carries every
+# message + tool_call for a single session — ~16 MB covers a 5000-event
+# turn at ~3 KB/event with headroom for an unusually long thread, while
+# slamming the door on accidental or hostile multi-GB uploads that
+# would otherwise be parsed entirely into memory before any validation
+# could fire. (Security audit 2026-04-21 §4.)
+_IMPORT_MAX_BYTES = 16 * 1024 * 1024
+# Per-list caps on the parsed payload. The exporter writes one row per
+# message and one per tool call; these caps bound the per-import work
+# the store layer will do without changing the realistic export size.
+_IMPORT_MAX_MESSAGES = 100_000
+_IMPORT_MAX_TOOL_CALLS = 200_000
+
+
+def _validate_import_payload(payload: Any) -> dict[str, Any]:
+    """Shape-check the import body. Raises `HTTPException(400)` on any
+    malformed input — top-level must be a JSON object containing a
+    `session` object, optional `messages` list, optional `tool_calls`
+    list, each within the per-list caps. Returns the validated dict so
+    the caller can hand it straight to `store.import_session`."""
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="import body must be a JSON object")
+    session = payload.get("session")
+    if not isinstance(session, dict):
+        raise HTTPException(status_code=400, detail="missing or malformed `session` object")
+    messages = payload.get("messages", [])
+    if not isinstance(messages, list):
+        raise HTTPException(status_code=400, detail="`messages` must be a list")
+    if len(messages) > _IMPORT_MAX_MESSAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"too many messages (max {_IMPORT_MAX_MESSAGES})",
+        )
+    if not all(isinstance(m, dict) for m in messages):
+        raise HTTPException(status_code=400, detail="every `messages` entry must be an object")
+    tool_calls = payload.get("tool_calls", [])
+    if not isinstance(tool_calls, list):
+        raise HTTPException(status_code=400, detail="`tool_calls` must be a list")
+    if len(tool_calls) > _IMPORT_MAX_TOOL_CALLS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"too many tool_calls (max {_IMPORT_MAX_TOOL_CALLS})",
+        )
+    if not all(isinstance(t, dict) for t in tool_calls):
+        raise HTTPException(status_code=400, detail="every `tool_calls` entry must be an object")
+    return payload
+
+
 @router.post("/import", response_model=SessionOut)
-async def import_session(payload: dict[str, Any], request: Request) -> SessionOut:
+async def import_session(request: Request) -> SessionOut:
     """Restore a session from the v0.1.30 export shape. Generates new
     ids so the import can land next to an existing session with the
-    same original id. Sibling of the per-session /export endpoint."""
-    if not isinstance(payload.get("session"), dict):
-        raise HTTPException(status_code=400, detail="missing or malformed `session` object")
+    same original id. Sibling of the per-session /export endpoint.
+
+    Reads the body manually (rather than letting FastAPI bind a
+    `dict[str, Any]` parameter) so we can enforce a hard size cap
+    BEFORE the JSON is parsed into Python objects. Without the cap a
+    multi-GB upload would balloon the process before any validator
+    could reject it. Then `_validate_import_payload` shape-checks the
+    parsed dict and `ensure_default_severity` preserves the
+    every-session-has-a-severity-tag invariant
+    (security audit 2026-04-21 §4)."""
+    body = await request.body()
+    if len(body) > _IMPORT_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"import body exceeds {_IMPORT_MAX_BYTES} bytes",
+        )
+    try:
+        payload = json.loads(body) if body else {}
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"invalid JSON: {exc.msg}") from exc
+    payload = _validate_import_payload(payload)
     row = await store.import_session(request.app.state.db, payload)
     # Imports predate migration 0021 by definition — backfill the
     # default severity so the imported session has a shield in the
