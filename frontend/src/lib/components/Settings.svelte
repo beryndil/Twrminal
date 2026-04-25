@@ -19,6 +19,13 @@
   let model = $state(preferences.defaultModel);
   let workdir = $state(preferences.defaultWorkingDir);
   let notifyOnComplete = $state(preferences.notifyOnComplete);
+  // Theme picker (Themes & skins v1, design §4 Track A). The select
+  // binds directly to `theme`; on Save we PATCH the server, which then
+  // writes the localStorage cache that the no-flash boot script in
+  // app.html reads on next reload. The store's applyTheme() runs as
+  // part of update() too, so the data-theme attribute flips
+  // immediately on Save without waiting for a page refresh.
+  let theme = $state(preferences.theme ?? 'midnight-glass');
   // Auth token is intentionally still client-side: the server can't
   // authorize itself on its own stored token, so this stays in
   // localStorage via the `prefs` store.
@@ -47,6 +54,7 @@
       model = preferences.defaultModel;
       workdir = preferences.defaultWorkingDir;
       notifyOnComplete = preferences.notifyOnComplete;
+      theme = preferences.theme ?? 'midnight-glass';
       token = prefs.authToken;
       permission = notifyPermission();
       saveError = null;
@@ -79,6 +87,7 @@
       // here.
       await preferences.update({
         display_name: displayName.trim() === '' ? null : displayName,
+        theme,
         default_model: model.trim() === '' ? null : model,
         default_working_dir: workdir.trim() === '' ? null : workdir,
         notify_on_complete: notifyOnComplete
@@ -141,6 +150,22 @@
           placeholder="Replaces 'user' on your message bubbles"
           bind:value={displayName}
         />
+      </label>
+
+      <label class="flex flex-col gap-1 text-xs">
+        <span class="text-slate-400">Theme</span>
+        <select
+          class="rounded bg-slate-950 border border-slate-800 px-2 py-2 text-sm
+            focus:outline-none focus:border-slate-600"
+          bind:value={theme}
+        >
+          <option value="midnight-glass">Midnight Glass (warm-navy, glass panels)</option>
+          <option value="default">Default (Tailwind classic dark)</option>
+          <option value="paper-light">Paper Light (cream, flat)</option>
+        </select>
+        <span class="text-slate-500">
+          Saved to the server; applies on Save and persists across reloads.
+        </span>
       </label>
 
       <label class="flex flex-col gap-1 text-xs">

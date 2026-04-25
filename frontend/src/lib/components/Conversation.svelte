@@ -1945,9 +1945,15 @@
 </section>
 
 <style>
+  /* Search-mark uses the `--color-mark-*` semantic aliases so the
+     highlight contrast tracks the active theme. The aliases resolve
+     to channel triples (no commas) so `rgb(... / alpha)` opacity
+     modulation still works. paper-light overrides --color-mark-text
+     to a dark amber so the text stays readable on the lighter
+     transparent fill. */
   :global(mark.search-mark) {
-    background-color: rgb(234 179 8 / 0.35);
-    color: rgb(253 224 71);
+    background-color: rgb(var(--color-mark-bg) / 0.35);
+    color: rgb(var(--color-mark-text));
     border-radius: 0.125rem;
     padding: 0 0.125rem;
   }

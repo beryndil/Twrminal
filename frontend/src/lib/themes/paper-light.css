@@ -1,0 +1,221 @@
+/*
+ * Paper Light — light, flat, accessible
+ * -------------------------------------
+ * v1's only light-mode bundled theme. Authored alongside the picker
+ * (session 197df8d8…) per `docs/themes-design.md` §3.
+ *
+ * The trick that makes this work without rewriting any component:
+ * the `--bearings-slate-*` channel triples are INVERTED relative to
+ * Tailwind convention. In paper-light, `slate-950` is the lightest
+ * cream and `slate-50` is the darkest near-black. Components that
+ * write `class="bg-slate-950 text-slate-100"` (the body root, for
+ * one) therefore render light-cream-on-dark-text without any
+ * component code changes — Tailwind's color scale resolves through
+ * the channel variables, the variables flip per theme, and the page
+ * inverts.
+ *
+ * Why invert instead of remapping aliases. Most Bearings components
+ * use raw shade utilities (`bg-slate-900`, `text-slate-100`, etc.)
+ * not the new semantic aliases. If we kept the slate axis pointing
+ * dark→dark and only re-pointed `--color-bg-root` to a light shade,
+ * those raw utilities would still render dark — breaking every
+ * surface. Inverting the channel triples is the only zero-rewrite
+ * path to a real light theme.
+ *
+ * Accent colors (sky/emerald/amber/rose/red/orange/teal/indigo)
+ * use Tailwind's stock RGB triples. Their semantic direction
+ * doesn't invert — `bg-emerald-600` still means "primary action"
+ * regardless of theme, and Tailwind's defaults pass AA against
+ * both dark and light surfaces with the contrast pairings used
+ * across the codebase (white text on -600 buttons, etc.).
+ *
+ * The treatment block at the bottom holds the few overrides that
+ * paper-light needs beyond the inverted palette: a flat body
+ * gradient, dropped focus-ring intensity (the violet was tuned for
+ * dark surfaces), and a darker mark-text alias so search highlights
+ * stay readable on the cream surface.
+ */
+
+[data-theme='paper-light'] {
+  /* ----- Slate (inverted) — paper-cream ↔ near-black text -----
+   * 950 is the page background (warm cream, slightly off-white so
+   * it doesn't glare under bright office lighting). 50 is body
+   * text — picked dark enough for AA contrast against every surface
+   * in the inverted scale (≥ 4.5:1 on slate-900 surface). */
+  --bearings-slate-50: 17 24 39;       /* near-black, primary text */
+  --bearings-slate-100: 30 41 59;      /* dark text on light surfaces */
+  --bearings-slate-200: 51 65 85;      /* secondary text */
+  --bearings-slate-300: 71 85 105;     /* muted text */
+  --bearings-slate-400: 100 116 139;   /* placeholder / dim text */
+  --bearings-slate-500: 148 163 184;   /* mid border / inactive */
+  --bearings-slate-600: 203 213 225;   /* subtle border */
+  --bearings-slate-700: 226 232 240;   /* elevated edge / separator */
+  --bearings-slate-800: 241 245 249;   /* elevated surface */
+  --bearings-slate-900: 248 250 252;   /* primary surface (paper white) */
+  --bearings-slate-950: 250 247 240;   /* root bg (warm cream) */
+
+  /* ----- Sky — primary interactive accent.
+   * Tuned slightly DARKER than Tailwind defaults so focus rings and
+   * link colors hold contrast against the light surface. The dark
+   * themes lift their sky scale toward violet; paper-light keeps a
+   * traditional cyan-blue for the "this is a hyperlink" affordance
+   * users expect on a paper-styled page. */
+  --bearings-sky-200: 186 230 253;
+  --bearings-sky-300: 125 211 252;
+  --bearings-sky-400: 56 189 248;
+  --bearings-sky-500: 14 116 200;      /* darker than default-500 for AA */
+  --bearings-sky-600: 7 89 133;
+  --bearings-sky-800: 12 74 110;
+  --bearings-sky-900: 8 47 73;
+
+  /* ----- Emerald — success / confirm.
+   * -600 stays Tailwind default (it's a button bg, paired with white
+   * text; default already passes AA). Lighter shades darkened for use
+   * as text/border accents on light surfaces. */
+  --bearings-emerald-200: 167 243 208;
+  --bearings-emerald-300: 110 231 183;
+  --bearings-emerald-400: 16 185 129;
+  --bearings-emerald-500: 5 150 105;   /* darker for text on light bg */
+  --bearings-emerald-600: 4 120 87;
+  --bearings-emerald-700: 6 95 70;
+  --bearings-emerald-900: 6 78 59;
+
+  /* ----- Amber — warning.
+   * Yellow-on-white is famously bad. Pulled the whole scale toward
+   * the dark end so amber backgrounds stay legible and amber text
+   * doesn't disappear into the cream. */
+  --bearings-amber-100: 254 243 199;
+  --bearings-amber-200: 253 230 138;
+  --bearings-amber-300: 217 119 6;     /* dark amber for text-on-light */
+  --bearings-amber-400: 180 83 9;
+  --bearings-amber-500: 146 64 14;
+  --bearings-amber-800: 120 53 15;
+  --bearings-amber-900: 69 26 3;
+  --bearings-amber-950: 41 16 2;
+
+  /* ----- Rose — error / destructive.
+   * Tailwind defaults work on light surfaces; -300/-400 nudged darker
+   * for text contrast. */
+  --bearings-rose-200: 254 205 211;
+  --bearings-rose-300: 225 29 72;
+  --bearings-rose-400: 190 18 60;
+  --bearings-rose-500: 159 18 57;
+  --bearings-rose-600: 136 19 55;
+  --bearings-rose-700: 113 17 52;
+  --bearings-rose-800: 90 14 45;
+  --bearings-rose-900: 76 5 25;
+  --bearings-rose-950: 50 2 15;
+
+  /* ----- Red — ContextMeter pulse band.
+   * The flash-red keyframe pulls --bearings-red-500/-600. Tuned dark
+   * enough that the pulse reads as urgent against a paper background
+   * without becoming washed-out pink. */
+  --bearings-red-100: 254 226 226;
+  --bearings-red-500: 220 38 38;
+  --bearings-red-600: 185 28 28;
+  --bearings-red-900: 127 29 29;
+
+  /* ----- Orange — intermediate context-pressure band. */
+  --bearings-orange-100: 255 237 213;
+  --bearings-orange-600: 194 65 12;
+  --bearings-orange-900: 124 45 18;
+
+  /* ----- Teal — tag_memory layer badge. */
+  --bearings-teal-300: 13 148 136;
+  --bearings-teal-900: 19 78 74;
+
+  /* ----- Indigo — session_description badge. */
+  --bearings-indigo-300: 79 70 229;
+  --bearings-indigo-500: 67 56 202;
+  --bearings-indigo-900: 49 46 129;
+
+  /* ----- Semantic alias overrides ---------------------------------
+   * Most aliases re-resolve correctly via the inverted shades above.
+   * Two explicit overrides for paper-light:
+   *
+   * --color-mark-text: search-highlight text on the amber/0.35 fill
+   *   needs to be a DARK amber so it reads on a light surface (the
+   *   default points to amber-100 which is itself near-cream and
+   *   would vanish into the page).
+   *
+   * --color-scrollbar-thumb*: the dark themes lighten their thumbs
+   *   above the surface; paper-light needs to darken them below it
+   *   for visibility. */
+  --color-mark-text: var(--bearings-amber-900);
+  --color-scrollbar-thumb: var(--bearings-slate-500);
+  --color-scrollbar-thumb-hover: var(--bearings-slate-300);
+
+  /* ----- Shiki tokens (Track E2) — light-theme tuning.
+   * Keywords stay sky-blue (paper-light's sky is now darker, so this
+   * reads); strings shift to a forest emerald; comments stay slate
+   * but pick the dimmer mid-grey end of the inverted scale so they
+   * don't look like primary text. */
+  --shiki-foreground: rgb(var(--bearings-slate-100));
+  --shiki-background: transparent;
+  --shiki-token-comment: rgb(var(--bearings-slate-400));
+  --shiki-token-keyword: rgb(var(--bearings-sky-500));
+  --shiki-token-string: rgb(var(--bearings-emerald-600));
+  --shiki-token-string-expression: rgb(var(--bearings-emerald-600));
+  --shiki-token-constant: rgb(var(--bearings-amber-500));
+  --shiki-token-function: rgb(var(--bearings-indigo-500));
+  --shiki-token-parameter: rgb(var(--bearings-slate-200));
+  --shiki-token-punctuation: rgb(var(--bearings-slate-300));
+  --shiki-token-link: rgb(var(--bearings-sky-500));
+}
+
+/* ----- Treatment overrides ----------------------------------------
+ * Midnight Glass's treatment file scopes every effect under
+ * `[data-theme='midnight-glass']`, so paper-light gets a flat look
+ * for free — no aurora, no backdrop-filter, no glass panels. The
+ * rules below clean up the few spots where Tailwind utilities or
+ * inherited browser defaults need a paper-specific touch.
+ */
+
+/* Body: subtle paper texture without going maximalist. A warm cream
+ * vertical gradient (top slightly cooler, bottom slightly warmer)
+ * gives the page some softness so it doesn't feel like a fluorescent
+ * panel; no radial blobs, no auroras — keep it flat. */
+[data-theme='paper-light'] body {
+  background-image: linear-gradient(
+    180deg,
+    rgb(var(--bearings-slate-900)) 0%,
+    rgb(var(--bearings-slate-950)) 100%
+  );
+  background-attachment: fixed;
+}
+
+/* Asides + main section: subtle hairline so the paper surfaces stay
+ * distinguishable. Without this they merge into the body cream
+ * because every surface is light. */
+[data-theme='paper-light'] aside {
+  border-right: 1px solid rgb(var(--bearings-slate-700));
+}
+[data-theme='paper-light'] aside + section + aside,
+[data-theme='paper-light'] aside:last-of-type {
+  border-right: none;
+  border-left: 1px solid rgb(var(--bearings-slate-700));
+}
+
+/* Selected sidebar row: violet washes from midnight-glass don't
+ * apply (selector is theme-scoped); we instead add a flat sky-tinted
+ * surface so the active row reads on the paper background. */
+[data-theme='paper-light'] aside li[class*='bg-slate-800'] {
+  background-color: rgb(var(--bearings-sky-200) / 0.6) !important;
+  border-left: 2px solid rgb(var(--bearings-sky-500));
+}
+
+/* Code blocks: light cream surface with a faint border so the block
+ * reads as a discrete region. The midnight-glass inner-glow rule is
+ * theme-scoped so it doesn't apply here. */
+[data-theme='paper-light'] div[data-bearings-code-block],
+[data-theme='paper-light'] pre {
+  background-color: rgb(var(--bearings-slate-800));
+  border: 1px solid rgb(var(--bearings-slate-700));
+}
+
+/* Focus ring: paper-light's sky is darker, so a flat outline reads
+ * better than a translucent glow. */
+[data-theme='paper-light'] :focus-visible {
+  outline: 2px solid rgb(var(--bearings-sky-500));
+  outline-offset: 1px;
+}

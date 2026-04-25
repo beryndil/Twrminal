@@ -115,6 +115,60 @@
   --bearings-indigo-300: 160 170 245;
   --bearings-indigo-500: 95 100 215;
   --bearings-indigo-900: 40 40 115;
+
+  /* ----- Semantic aliases (intent-keyed, derive from shades above) -----
+   * New themes only need to override the channel triples above; the
+   * aliases re-resolve automatically. A handful of aliases (notably the
+   * bg/text/border mapping for `paper-light`) get re-pointed inside the
+   * light theme's block because dark→light inverts the slate axis.
+   *
+   * Consumers that target the aliases directly (Track D: scrollbar,
+   * search-mark; Track E2: shiki tokens) get single-point control across
+   * every bundled palette. Components still using raw shade utilities
+   * (`bg-slate-900`, `text-emerald-400/80`) keep working unchanged. */
+  --color-bg-root: var(--bearings-slate-950);
+  --color-bg-surface: var(--bearings-slate-900);
+  --color-bg-elevated: var(--bearings-slate-800);
+  --color-bg-selected: var(--bearings-slate-700);
+  --color-border-default: var(--bearings-slate-700);
+  --color-border-strong: var(--bearings-slate-600);
+  --color-border-accent: var(--bearings-sky-500);
+  --color-text-primary: var(--bearings-slate-100);
+  --color-text-secondary: var(--bearings-slate-300);
+  --color-text-muted: var(--bearings-slate-400);
+  --color-text-inverse: var(--bearings-slate-950);
+  --color-accent-success: var(--bearings-emerald-500);
+  --color-accent-warn: var(--bearings-amber-500);
+  --color-accent-danger: var(--bearings-rose-500);
+  --color-accent-info: var(--bearings-sky-500);
+  --color-mark-bg: var(--bearings-amber-500);
+  --color-mark-text: var(--bearings-amber-100);
+  --color-scrollbar-thumb: var(--bearings-slate-700);
+  --color-scrollbar-thumb-hover: var(--bearings-slate-500);
+  --color-focus-ring: var(--bearings-sky-500);
+
+  /* ----- Shiki token palette (Track E2) -----
+   * Driven by `createCssVariablesTheme()` in `render.ts`. Shiki emits
+   * `var(--shiki-token-*)` placeholders in highlighted output; these
+   * declarations supply the per-theme values. Coarse vocabulary (one
+   * triple per token role) on purpose — granular TextMate-scope mapping
+   * is overkill for agent chat; rich-enough categories give a usable
+   * highlight on every bundled theme without per-language tuning.
+   *
+   * Midnight Glass mood: violet/teal accent on warm-navy base, matching
+   * the rest of the theme. Comments lean dim periwinkle so they recede
+   * against the glass panels. */
+  --shiki-foreground: rgb(var(--bearings-slate-100));
+  --shiki-background: transparent;
+  --shiki-token-comment: rgb(var(--bearings-slate-500));
+  --shiki-token-keyword: rgb(var(--bearings-sky-300));
+  --shiki-token-string: rgb(var(--bearings-emerald-300));
+  --shiki-token-string-expression: rgb(var(--bearings-emerald-300));
+  --shiki-token-constant: rgb(var(--bearings-amber-300));
+  --shiki-token-function: rgb(var(--bearings-sky-400));
+  --shiki-token-parameter: rgb(var(--bearings-slate-200));
+  --shiki-token-punctuation: rgb(var(--bearings-slate-400));
+  --shiki-token-link: rgb(var(--bearings-sky-300));
 }
 
 /* ----- Saved: pre-Midnight-Glass palette -----
@@ -185,4 +239,18 @@
   --bearings-indigo-300: 165 180 252;
   --bearings-indigo-500: 99 102 241;
   --bearings-indigo-900: 49 46 129;
+
+  /* Shiki tokens — classic Tailwind palette mood: cool cyan keywords,
+   * mint strings. Same role-keyed slots as midnight-glass; only the
+   * shade pointers change. The other semantic aliases re-resolve via
+   * the shade variables above without restating them here. */
+  --shiki-token-comment: rgb(var(--bearings-slate-500));
+  --shiki-token-keyword: rgb(var(--bearings-sky-300));
+  --shiki-token-string: rgb(var(--bearings-emerald-300));
+  --shiki-token-string-expression: rgb(var(--bearings-emerald-300));
+  --shiki-token-constant: rgb(var(--bearings-amber-300));
+  --shiki-token-function: rgb(var(--bearings-sky-400));
+  --shiki-token-parameter: rgb(var(--bearings-slate-200));
+  --shiki-token-punctuation: rgb(var(--bearings-slate-400));
+  --shiki-token-link: rgb(var(--bearings-sky-300));
 }

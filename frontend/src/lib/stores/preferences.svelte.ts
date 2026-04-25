@@ -27,6 +27,16 @@
 import * as api from '$lib/api';
 
 const CACHE_KEY = 'bearings:preferences-cache';
+
+/** Mobile browser chrome color per bundled theme. Mirrors the table
+ * in `app.html`'s no-flash boot script so `<meta name="theme-color">`
+ * stays in sync across (a) initial paint, (b) picker save, and
+ * (c) reload. Keep both in sync if a new theme lands. */
+const THEME_COLORS: Record<string, string> = {
+  'midnight-glass': '#0A0E1C',
+  'default': '#020617',
+  'paper-light': '#FAF7F0'
+};
 const LEGACY_MODEL_KEY = 'bearings:defaultModel';
 const LEGACY_WORKDIR_KEY = 'bearings:defaultWorkingDir';
 const LEGACY_NOTIFY_KEY = 'bearings:notifyOnComplete';
@@ -166,15 +176,22 @@ class PreferencesStore {
     this.applyTheme();
   }
 
-  /** Reflect the active theme on `<html data-theme="...">`. The themes
-   * commit (`8b21a8e`) ships `data-theme="midnight-glass"` hardcoded
-   * on `<html>`; once a user lands a theme preference, the store flips
-   * the attribute to honour it. NULL preference leaves the hardcoded
-   * default in place, which is the desired "I haven't picked one" UX. */
+  /** Reflect the active theme on `<html data-theme="...">` and update
+   * `<meta name="theme-color">` so mobile browser chrome tracks the
+   * picked theme without waiting for a reload. The no-flash boot
+   * script in `app.html` also writes `data-theme` and `theme-color`
+   * synchronously before first paint based on the cached row; this
+   * runtime path covers the in-session picker change. NULL preference
+   * leaves whatever the boot script resolved in place — the desired
+   * "I haven't picked one" UX. */
   private applyTheme(): void {
     if (typeof document === 'undefined') return;
-    if (this.row.theme) {
-      document.documentElement.dataset.theme = this.row.theme;
+    if (!this.row.theme) return;
+    document.documentElement.dataset.theme = this.row.theme;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      const color = THEME_COLORS[this.row.theme];
+      if (color) meta.setAttribute('content', color);
     }
   }
 

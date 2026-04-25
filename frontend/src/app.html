@@ -1,25 +1,83 @@
 <!doctype html>
 <!--
-  `data-theme` selects the active Bearings theme. Two themes ship in
-  v0.x: `midnight-glass` (default) and `default` (saved snapshot of the
-  pre-Midnight-Glass palette — see `src/lib/themes/tokens.css`). A
-  future theme switcher only needs to toggle this attribute at runtime;
-  no component rewrite required, because Tailwind color classes resolve
-  through CSS variables.
+  `data-theme` is set synchronously by the no-flash boot script below,
+  before %sveltekit.head% and before first paint. v1 ships three
+  bundled themes: `midnight-glass` (default dark), `default` (saved
+  Tailwind palette), and `paper-light`. The `data-theme` attribute is
+  the only switching surface — Tailwind color classes resolve through
+  CSS variables, so flipping this attribute restyles the entire app
+  with no component re-render.
 -->
 <html lang="en" class="h-full" data-theme="midnight-glass">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Bearings — Claude Code agent web UI" />
-    <!-- Mobile browser chrome color; tracks the Midnight Glass base
-         (#0A0E1C warm-navy). Update alongside a future theme switcher. -->
+    <!-- Mobile browser chrome color. Initial value matches the
+         midnight-glass base; the no-flash script below replaces it
+         to match the resolved theme before first paint. -->
     <meta name="theme-color" content="#0A0E1C" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>Bearings</title>
+    <!--
+      Track B — no-flash theme boot (Themes & skins v1, design §4 Track B).
+      Runs synchronously before %sveltekit.head% and before any stylesheet
+      paints. Reads the cached preferences row (the same key
+      `bearings:preferences-cache` that preferences.svelte.ts writes after
+      every PATCH) so a reload in any theme paints the saved theme on the
+      first frame instead of flashing midnight-glass and then re-applying.
+
+      First-visit fallback (Track F): if no cache exists or the cached
+      `theme` is null, read the OS color-scheme preference once and pick
+      `paper-light` for light, `midnight-glass` otherwise. Once the user
+      saves any theme via the picker, the cached value wins forever — we
+      do NOT keep tracking the OS setting.
+
+      Defensive: every read is try/catch'd. A broken localStorage entry,
+      a private-mode browser, or a missing matchMedia leaves the default
+      `data-theme="midnight-glass"` in place — same as today.
+    -->
+    <script>
+      (function () {
+        try {
+          var THEME_COLORS = {
+            'midnight-glass': '#0A0E1C',
+            'default': '#020617',
+            'paper-light': '#FAF7F0'
+          };
+          var theme = null;
+          try {
+            var raw = localStorage.getItem('bearings:preferences-cache');
+            if (raw) {
+              var parsed = JSON.parse(raw);
+              if (parsed && typeof parsed.theme === 'string') {
+                theme = parsed.theme;
+              }
+            }
+          } catch (_) {
+            /* parse error / quota / private mode — fall through to
+               the OS-preference branch below. */
+          }
+          if (!theme) {
+            var prefersLight =
+              typeof window.matchMedia === 'function' &&
+              window.matchMedia('(prefers-color-scheme: light)').matches;
+            theme = prefersLight ? 'paper-light' : 'midnight-glass';
+          }
+          if (THEME_COLORS[theme]) {
+            document.documentElement.dataset.theme = theme;
+            var meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute('content', THEME_COLORS[theme]);
+          }
+        } catch (_) {
+          /* swallowed: a broken boot script must never break the app.
+             Default `data-theme` from the html tag stays in place. */
+        }
+      })();
+    </script>
     %sveltekit.head%
     <!--
       Browser-side theme-diagnostic reporter. Snapshots what the live

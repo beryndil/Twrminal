@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-04-25
+
+Themes & skins v1 — Settings picker, no-flash boot, third bundled
+theme (`paper-light`), and a variable-driven shiki strategy. Locks
+in the design recorded in `docs/themes-design.md` (§7 sequencing,
+§6.1 sign-off). Frontend bumps to 0.9.0; package bumps to 0.14.0.
+
+### Added
+
+- **Theme picker in Settings** (`Settings.svelte`). Bound to
+  `preferences.theme` and saves through the existing
+  `PATCH /api/preferences` flow. Three options: Midnight Glass
+  (default dark, warm-navy + violet, glass panels), Default
+  (saved Tailwind palette), Paper Light (cream, flat).
+- **`paper-light` theme** (`frontend/src/lib/themes/paper-light.css`).
+  Light-mode palette using an INVERTED slate scale so existing
+  components rendering `bg-slate-900`/`text-slate-100` flip to
+  light-on-dark with no rewrites. Tuned accent shades for AA
+  contrast on light surfaces; flat treatment block (no aurora,
+  hairline borders, sky-tinted active row).
+- **No-flash boot script** in `app.html`. Reads
+  `bearings:preferences-cache` from localStorage and sets
+  `<html data-theme>` + `<meta name="theme-color">` synchronously
+  before first paint. First-visit fallback respects
+  `prefers-color-scheme` once and pins the user's first explicit
+  pick forever.
+- **Semantic alias layer** in `tokens.css` (`--color-bg-root`,
+  `--color-text-primary`, `--color-mark-bg`, etc.). Components
+  using raw shade utilities keep working unchanged; new wiring
+  (scrollbar, search-mark) targets the aliases for single-point
+  per-theme control.
+- **Variable-driven shiki theme** (`render.ts`). Switched to
+  `createCssVariablesTheme()` so highlighted code reflows on
+  theme change via pure CSS — no re-render, no retained source
+  on every code block. Per-theme shiki token colors live in
+  `tokens.css` and `paper-light.css`.
+
+### Changed
+
+- Scrollbar (`app.css`) and search-mark (`Conversation.svelte`)
+  colors now resolve through the semantic alias layer instead of
+  hardcoded hex/rgb literals, so they track the active theme.
+- `<meta name="theme-color">` updates live when the picker saves,
+  not only on reload via the boot script.
+- `applyTheme()` in `preferences.svelte.ts` now also updates the
+  theme-color meta tag from a small per-theme color table that
+  mirrors the table in the no-flash boot script.
+
+### Deferred
+
+- `solar-flare` alt-dark theme (per design §3 / §6.1 — three
+  palettes is enough to validate the picker UX and exercise the
+  alias layer).
+- Removal of the `/api/diag/theme` reporter in `app.html`. Stays
+  in place until the picker is verified across all three themes
+  in real use; tracked as a separate cleanup follow-up.
+- High-contrast theme, user-authored themes, density themes,
+  per-theme branding (favicon/logo) — out of v1 scope per §5.
+
 ## [0.13.0] - 2026-04-25
 
 `bearings todo` CLI subcommand — first of three layers in the TODO.md

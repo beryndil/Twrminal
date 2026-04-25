@@ -16,6 +16,7 @@
  * time. */
 @import './lib/themes/tokens.css';
 @import './lib/themes/midnight-glass.css';
+@import './lib/themes/paper-light.css';
 
 @tailwind base;
 @tailwind components;
@@ -23,14 +24,16 @@
 
 html, body, #app { height: 100%; }
 
-/* Thin, dark scrollbars across the whole app. Firefox uses the
+/* Thin scrollbars across the whole app, theme-driven. Firefox uses the
    `scrollbar-*` properties; Chromium/WebKit gets the `::-webkit-*`
    pseudo-elements. Track is transparent so it blends into whichever
-   slate-900 surface the scroller sits on; thumb uses slate-700 with a
-   slate-500 hover so it stays visible without dominating. */
+   surface the scroller sits on; thumb pulls through the
+   `--color-scrollbar-thumb` semantic alias so each bundled theme can
+   pick its own contrast (paper-light needs darker thumbs against a
+   light surface; the dark themes lighten them against deep slate). */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #334155 transparent;
+  scrollbar-color: rgb(var(--color-scrollbar-thumb)) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -43,14 +46,14 @@ html, body, #app { height: 100%; }
 }
 
 *::-webkit-scrollbar-thumb {
-  background-color: #334155; /* slate-700 */
+  background-color: rgb(var(--color-scrollbar-thumb));
   border-radius: 9999px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background-color: #64748b; /* slate-500 */
+  background-color: rgb(var(--color-scrollbar-thumb-hover));
 }
 
 *::-webkit-scrollbar-corner {

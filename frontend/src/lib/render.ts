@@ -1,8 +1,27 @@
 import DOMPurify from 'isomorphic-dompurify';
 import { marked } from 'marked';
 import { createHighlighter, type Highlighter } from 'shiki';
+import { createCssVariablesTheme } from 'shiki/core';
 
-const THEME = 'github-dark';
+/* Track E2 (Themes & skins v1, design doc §4): drive shiki token
+ * colors from CSS variables instead of bundling per-theme highlighter
+ * builds. `createCssVariablesTheme` emits `var(--shiki-token-*)`
+ * placeholders in the rendered output; `tokens.css` (and each
+ * theme's block) supplies the per-theme values. Theme switching is
+ * a pure CSS attribute change — no re-render of highlighted code,
+ * no need to retain raw source on every code block.
+ *
+ * The default placeholders shiki picks (no `variableDefaults`) keep
+ * highlight working even before any theme variable is declared, and
+ * the prefix is `--shiki-` so there's no naming collision with the
+ * Bearings palette tokens (`--bearings-*`) or semantic aliases
+ * (`--color-*`). */
+const SHIKI_THEME_NAME = 'bearings-css-vars';
+const cssVarsTheme = createCssVariablesTheme({
+  name: SHIKI_THEME_NAME,
+  variablePrefix: '--shiki-',
+  fontStyle: true
+});
 
 // Preloaded at highlighter init: the langs that dominate agent chat / tool
 // output. Keep this list tight — every entry compiles a TextMate grammar at
@@ -39,7 +58,7 @@ const langLoads = new Map<string, Promise<void>>();
 function ensureHighlighter(): Promise<void> {
   if (highlighterPromise) return highlighterPromise;
   highlighterPromise = createHighlighter({
-    themes: [THEME],
+    themes: [cssVarsTheme],
     langs: [...PRELOAD_LANGS]
   }).then((h) => {
     highlighter = h;
@@ -87,7 +106,7 @@ marked.use({
       if (highlighter && lang && ALL_LANGS.includes(lang)) {
         if (highlighter.getLoadedLanguages().includes(lang)) {
           try {
-            const html = highlighter.codeToHtml(text, { lang, theme: THEME });
+            const html = highlighter.codeToHtml(text, { lang, theme: SHIKI_THEME_NAME });
             return wrapCodeBlock(html, wrapperLang);
           } catch {
             // Unknown lang edge case — fall through to plain <pre><code>.
