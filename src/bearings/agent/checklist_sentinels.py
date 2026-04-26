@@ -45,6 +45,24 @@ CHECKLIST_FOLLOWUP block=yes
 CHECKLIST_FOLLOWUP_END
 ```
 
+Item-blocked (block — flag this item as outside the agent's reach):
+```
+CHECKLIST_ITEM_BLOCKED category=physical_action
+<short reason text>
+TRIED:
+- <attempt 1 and why it could not succeed without Dave>
+- <attempt 2 ...>
+CHECKLIST_ITEM_BLOCKED_END
+```
+
+`category=` is REQUIRED and must be one of `physical_action`,
+`payment`, `external_credential`, `identity_or_2fa`, `human_judgment`.
+The `TRIED:` block is REQUIRED and must list at least one attempt.
+Anything else — missing category, unknown category, missing
+TRIED:, empty TRIED: — rejects the sentinel and the run continues
+asking the agent to attempt the work. This is the mechanical
+guardrail against premature blocked-flagging.
+
 `block=yes` means the parent item cannot complete until this child
 item completes (driver recurses before finishing the parent).
 `block=no` means append-to-end (parent can complete now; driver picks
@@ -65,6 +83,10 @@ wrong).
 - `CHECKLIST_ITEM_DONE` + `CHECKLIST_HANDOFF` both present → item_done
   wins. Handoff is for "I need more context window," which is
   contradicted by "I am done."
+- `CHECKLIST_ITEM_DONE` + `CHECKLIST_ITEM_BLOCKED` both present →
+  item_done wins, same rationale. Done is the most committal claim;
+  if the agent is sure the item is finished, treat blocked as a
+  retracted draft.
 - Nested or overlapping blocks → we do not attempt to parse nested
   sentinels. The outer block wins and the inner tokens become part of
   the outer block's body. Agents should not nest these; if they do,
@@ -103,6 +125,45 @@ FOLLOWUP_END = "CHECKLIST_FOLLOWUP_END"
 # for the fix-and-return slice.
 BLOCKED_START = "CHECKLIST_BLOCKED"
 BLOCKED_END = "CHECKLIST_BLOCKED_END"
+# CHECKLIST_ITEM_BLOCKED — distinct from CHECKLIST_BLOCKED above.
+# CHECKLIST_BLOCKED is sugar for "create a blocking child followup
+# I need to do first." CHECKLIST_ITEM_BLOCKED means "this item is
+# genuinely outside my reach and Dave must act" (pay a bill, plug in
+# hardware, supply a 2FA code). Driver stamps blocked_at on the item,
+# leaves the paired session open, and advances regardless of
+# failure_policy. See ~/.claude/plans/crimson-flagging-checklist.md.
+ITEM_BLOCKED_START_PREFIX = "CHECKLIST_ITEM_BLOCKED"
+ITEM_BLOCKED_END = "CHECKLIST_ITEM_BLOCKED_END"
+ITEM_BLOCKED_TRIED_MARKER = "TRIED:"
+ITEM_BLOCKED_CATEGORIES = frozenset({
+    "physical_action",
+    "payment",
+    "external_credential",
+    "identity_or_2fa",
+    "human_judgment",
+})
+
+
+@dataclass(frozen=True)
+class ItemBlocked:
+    """Structured payload from a `CHECKLIST_ITEM_BLOCKED` sentinel.
+
+    `category` is one of the five whitelisted enum values
+    (`ITEM_BLOCKED_CATEGORIES`). `reason` is the agent's short prose
+    explanation. `tried` is the list of attempts the agent made
+    before flagging blocked — REQUIRED to be non-empty. The driver
+    treats an empty `tried` as a malformed sentinel and the run
+    continues attempting the work.
+
+    Mechanical guardrail against premature blocked-flagging: the
+    parser rejects the sentinel when category isn't in the
+    whitelist, when the `TRIED:` marker is missing, or when no
+    bullet lines follow it. Callers see `result.item_blocked is None`
+    in those cases and proceed as if the sentinel wasn't there."""
+
+    category: str
+    reason: str
+    tried: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -134,6 +195,14 @@ class ParsedSentinels:
     item_done: bool = False
     handoff_plug: str | None = None
     followups: list[Followup] = field(default_factory=list)
+    # Set when a well-formed `CHECKLIST_ITEM_BLOCKED` block is parsed.
+    # Mutually exclusive with `item_done` at the parser level: a
+    # message claiming both is resolved in favor of `item_done`
+    # (matching the existing `done` > `handoff` rule). Coexists
+    # freely with handoff/followups — though a leg flagging blocked
+    # is normally the leg's terminal action, the parser doesn't
+    # impose that.
+    item_blocked: ItemBlocked | None = None
 
 
 def parse(text: str) -> ParsedSentinels:
@@ -159,6 +228,7 @@ def parse(text: str) -> ParsedSentinels:
     mode: str = "normal"
     buffer: list[str] = []
     pending_blocking: bool = False
+    pending_item_blocked_category: str | None = None
 
     for line in lines:
         stripped = line.strip()
@@ -169,6 +239,31 @@ def parse(text: str) -> ParsedSentinels:
             if stripped == HANDOFF_START:
                 mode = "handoff"
                 buffer = []
+                continue
+            if stripped.startswith(ITEM_BLOCKED_START_PREFIX) and (
+                stripped == ITEM_BLOCKED_START_PREFIX
+                or stripped[len(ITEM_BLOCKED_START_PREFIX)] in (" ", "\t")
+            ):
+                # The start line looks like
+                # `CHECKLIST_ITEM_BLOCKED category=physical_action`.
+                # The `category=` attribute is required and must be
+                # one of the five whitelisted enum values. Anything
+                # else is malformed and the block is skipped — the
+                # driver then keeps the agent working rather than
+                # accept a blocked-flag we can't classify.
+                #
+                # Guard the prefix check so `CHECKLIST_ITEM_BLOCKED_END`
+                # (a future stray line in normal mode) doesn't match
+                # the start prefix and open a new block. The character
+                # immediately after the prefix must be whitespace or
+                # end-of-line; `_END` would put `_` there and we'd
+                # correctly fall through.
+                category = _parse_item_blocked_start(stripped)
+                if category is None:
+                    continue
+                mode = "item_blocked"
+                buffer = []
+                pending_item_blocked_category = category
                 continue
             if stripped == BLOCKED_START:
                 # CHECKLIST_BLOCKED is sugar for CHECKLIST_FOLLOWUP
@@ -233,12 +328,102 @@ def parse(text: str) -> ParsedSentinels:
                 continue
             buffer.append(line)
             continue
+        if mode == "item_blocked":
+            if stripped == ITEM_BLOCKED_END:
+                parsed = _finalize_item_blocked(buffer, pending_item_blocked_category)
+                if parsed is not None:
+                    result.item_blocked = parsed
+                mode = "normal"
+                buffer = []
+                pending_item_blocked_category = None
+                continue
+            buffer.append(line)
+            continue
 
     # Unterminated block → discard. Resolve item_done vs handoff_plug
-    # conflict in favor of done (see module docstring).
+    # and item_done vs item_blocked in favor of done (matches the
+    # existing `done` > `handoff` rule — done wins because it's the
+    # most committal claim).
     if result.item_done and result.handoff_plug is not None:
         result.handoff_plug = None
+    if result.item_done and result.item_blocked is not None:
+        result.item_blocked = None
     return result
+
+
+def _parse_item_blocked_start(line: str) -> str | None:
+    """Parse `CHECKLIST_ITEM_BLOCKED category=<enum>` → category string.
+
+    Returns None when `category=` is missing or the value isn't in
+    the whitelist. The driver and parser treat None as "skip this
+    block" — a malformed flag falls through to the agent continuing
+    to work rather than accepting an unclassified blocked claim.
+
+    Trailing attributes are tolerated for forward compatibility,
+    matching the followup-start permissiveness."""
+    rest = line[len(ITEM_BLOCKED_START_PREFIX) :].strip()
+    if not rest:
+        return None
+    for token in rest.split():
+        if token.startswith("category="):
+            value = token[len("category=") :].strip().lower()
+            if value in ITEM_BLOCKED_CATEGORIES:
+                return value
+            return None
+    return None
+
+
+def _finalize_item_blocked(buffer: list[str], category: str | None) -> ItemBlocked | None:
+    """Turn the accumulated body lines into an `ItemBlocked` payload,
+    or return None when the body is malformed.
+
+    Body shape:
+        <one or more reason lines>
+        TRIED:
+        - <attempt 1>
+        - <attempt 2>
+        ...
+
+    The reason is everything before the `TRIED:` marker (joined with
+    newlines, trimmed). The `tried` list is the lines after the
+    marker; bullet markers (`- `, `* `, `• `) are stripped, blank
+    lines are dropped. An empty reason or empty `tried` list rejects
+    the sentinel — the guardrail against premature blocked-flagging
+    requires real evidence the agent attempted the work."""
+    if category is None:
+        return None
+    # Find the TRIED: marker. Tolerated leading whitespace because the
+    # agent might indent it for readability; case-sensitive on the
+    # marker itself to keep parsing tight.
+    tried_index: int | None = None
+    for i, raw in enumerate(buffer):
+        if raw.strip() == ITEM_BLOCKED_TRIED_MARKER:
+            tried_index = i
+            break
+    if tried_index is None:
+        return None
+    reason_lines = buffer[:tried_index]
+    tried_lines = buffer[tried_index + 1 :]
+    reason = "\n".join(reason_lines).strip()
+    if not reason:
+        return None
+    tried: list[str] = []
+    for raw in tried_lines:
+        s = raw.strip()
+        if not s:
+            continue
+        # Strip a leading bullet marker so callers see clean attempt
+        # text. Multiple common bullets supported because agents
+        # aren't picky about which one they use.
+        for prefix in ("- ", "* ", "• ", "-\t", "*\t"):
+            if s.startswith(prefix):
+                s = s[len(prefix) :].strip()
+                break
+        if s:
+            tried.append(s)
+    if not tried:
+        return None
+    return ItemBlocked(category=category, reason=reason, tried=tuple(tried))
 
 
 def _parse_followup_start(line: str) -> bool | None:

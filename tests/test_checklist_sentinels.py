@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from bearings.agent.checklist_sentinels import (
     Followup,
+    ItemBlocked,
     parse,
 )
 
@@ -291,3 +292,199 @@ def test_parse_blocked_and_done_coexist_blocking_first() -> None:
     assert result.item_done is True
     assert len(result.followups) == 1
     assert result.followups[0].blocking is True
+
+
+# --- item_blocked --------------------------------------------------
+#
+# `CHECKLIST_ITEM_BLOCKED` is distinct from the `CHECKLIST_BLOCKED`
+# sugar above. It means "this item is genuinely outside the agent's
+# reach and Dave must act" — pay a bill, plug in hardware, supply a
+# 2FA code. The driver stamps `blocked_at`, leaves the paired
+# session open, and advances regardless of `failure_policy`. The
+# parser is the mechanical guardrail: malformed sentinels are
+# rejected so the run keeps the agent working rather than accept an
+# unclassified blocked claim.
+
+
+def test_parse_item_blocked_well_formed() -> None:
+    body = (
+        "I cannot complete this without your action.\n"
+        "CHECKLIST_ITEM_BLOCKED category=physical_action\n"
+        "The server needs to be physically plugged into the new switch.\n"
+        "TRIED:\n"
+        "- ssh'd into the host but no remote port-toggle exists for this hardware\n"
+        "- checked the BMC — it can power-cycle but not reroute the cable\n"
+        "CHECKLIST_ITEM_BLOCKED_END"
+    )
+    result = parse(body)
+    assert result.item_blocked is not None
+    assert result.item_blocked.category == "physical_action"
+    assert "physically plugged" in result.item_blocked.reason
+    assert len(result.item_blocked.tried) == 2
+    assert "ssh'd into the host" in result.item_blocked.tried[0]
+    assert "BMC" in result.item_blocked.tried[1]
+
+
+def test_parse_item_blocked_all_five_categories() -> None:
+    """Each of the five whitelisted categories parses cleanly. Anything
+    outside the whitelist is rejected — see the malformed test below."""
+    for category in (
+        "physical_action",
+        "payment",
+        "external_credential",
+        "identity_or_2fa",
+        "human_judgment",
+    ):
+        body = (
+            f"CHECKLIST_ITEM_BLOCKED category={category}\n"
+            "specific reason text\n"
+            "TRIED:\n"
+            "- attempted X and it requires Y\n"
+            "CHECKLIST_ITEM_BLOCKED_END"
+        )
+        result = parse(body)
+        assert result.item_blocked is not None, f"category={category} should parse"
+        assert result.item_blocked.category == category
+
+
+def test_parse_item_blocked_unknown_category_rejected() -> None:
+    body = (
+        "CHECKLIST_ITEM_BLOCKED category=im_lazy\n"
+        "I'd rather not.\n"
+        "TRIED:\n"
+        "- nothing really\n"
+        "CHECKLIST_ITEM_BLOCKED_END"
+    )
+    result = parse(body)
+    assert result.item_blocked is None
+
+
+def test_parse_item_blocked_missing_category_rejected() -> None:
+    body = (
+        "CHECKLIST_ITEM_BLOCKED\n"
+        "blocked\n"
+        "TRIED:\n"
+        "- something\n"
+        "CHECKLIST_ITEM_BLOCKED_END"
+    )
+    result = parse(body)
+    assert result.item_blocked is None
+
+
+def test_parse_item_blocked_missing_tried_marker_rejected() -> None:
+    """No TRIED: marker → no evidence the agent attempted the work.
+    Reject so the run doesn't accept a give-up disguised as blocked."""
+    body = (
+        "CHECKLIST_ITEM_BLOCKED category=payment\n"
+        "Need your card on file to pay this invoice.\n"
+        "CHECKLIST_ITEM_BLOCKED_END"
+    )
+    result = parse(body)
+    assert result.item_blocked is None
+
+
+def test_parse_item_blocked_empty_tried_rejected() -> None:
+    """TRIED: present but no bullets follow it. Same rejection — the
+    guardrail wants real attempt evidence, not just the marker."""
+    body = (
+        "CHECKLIST_ITEM_BLOCKED category=identity_or_2fa\n"
+        "Need the 2FA code from your phone.\n"
+        "TRIED:\n"
+        "CHECKLIST_ITEM_BLOCKED_END"
+    )
+    result = parse(body)
+    assert result.item_blocked is None
+
+
+def test_parse_item_blocked_empty_reason_rejected() -> None:
+    """No reason text before TRIED: → reject. The reason is what
+    surfaces to Dave in the UI; an empty one is useless."""
+    body = (
+        "CHECKLIST_ITEM_BLOCKED category=human_judgment\n"
+        "TRIED:\n"
+        "- thought about it for a while\n"
+        "CHECKLIST_ITEM_BLOCKED_END"
+    )
+    result = parse(body)
+    assert result.item_blocked is None
+
+
+def test_parse_item_blocked_unterminated_block_discarded() -> None:
+    """Same rule as unterminated handoff/followup: agent didn't close
+    the block, treat as accidental."""
+    body = (
+        "CHECKLIST_ITEM_BLOCKED category=physical_action\n"
+        "Need to plug in the cable\n"
+        "TRIED:\n"
+        "- tried scripting it but no remote toggle exists\n"
+    )
+    result = parse(body)
+    assert result.item_blocked is None
+
+
+def test_parse_item_blocked_supports_multiple_bullet_styles() -> None:
+    body = (
+        "CHECKLIST_ITEM_BLOCKED category=external_credential\n"
+        "Need access to the GitHub org admin panel.\n"
+        "TRIED:\n"
+        "- logged in as the bot account, no admin rights\n"
+        "* requested an invite via the REST API, returned 403\n"
+        "• checked existing keyring, no admin token present\n"
+        "CHECKLIST_ITEM_BLOCKED_END"
+    )
+    result = parse(body)
+    assert result.item_blocked is not None
+    assert len(result.item_blocked.tried) == 3
+
+
+def test_parse_item_blocked_done_wins_when_both_present() -> None:
+    """Same conflict-resolution rule as done > handoff. If the agent
+    claims both done and blocked, treat blocked as a retracted draft."""
+    body = (
+        "CHECKLIST_ITEM_BLOCKED category=payment\n"
+        "Need your card\n"
+        "TRIED:\n"
+        "- looked for stored payment method\n"
+        "CHECKLIST_ITEM_BLOCKED_END\n"
+        "CHECKLIST_ITEM_DONE"
+    )
+    result = parse(body)
+    assert result.item_done is True
+    assert result.item_blocked is None
+
+
+def test_parse_item_blocked_returns_typed_payload() -> None:
+    """Caller gets back an `ItemBlocked` dataclass, not a raw tuple,
+    so future field additions don't silently change the shape at
+    every call site."""
+    body = (
+        "CHECKLIST_ITEM_BLOCKED category=identity_or_2fa\n"
+        "Need 2FA from your phone.\n"
+        "TRIED:\n"
+        "- read the auth flow docs, requires user device\n"
+        "CHECKLIST_ITEM_BLOCKED_END"
+    )
+    result = parse(body)
+    assert isinstance(result.item_blocked, ItemBlocked)
+    assert result.item_blocked.category == "identity_or_2fa"
+
+
+def test_parse_item_blocked_does_not_collide_with_blocked_sugar() -> None:
+    """Both sentinels in the same message: each parses to its own
+    independent shape. CHECKLIST_BLOCKED → blocking followup;
+    CHECKLIST_ITEM_BLOCKED → ItemBlocked payload."""
+    body = (
+        "CHECKLIST_BLOCKED\n"
+        "Need migration 0033 first\n"
+        "CHECKLIST_BLOCKED_END\n"
+        "CHECKLIST_ITEM_BLOCKED category=physical_action\n"
+        "Then somebody has to plug in the cable.\n"
+        "TRIED:\n"
+        "- no remote toggle for this hardware\n"
+        "CHECKLIST_ITEM_BLOCKED_END"
+    )
+    result = parse(body)
+    assert len(result.followups) == 1
+    assert result.followups[0].blocking is True
+    assert result.item_blocked is not None
+    assert result.item_blocked.category == "physical_action"
