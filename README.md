@@ -494,6 +494,18 @@ this section.
   permission-profile system mitigates the easy-mode attacks; it
   does not turn the agent surface into a safe playground.
 
+## Privacy / Telemetry
+
+Bearings collects **nothing**. No analytics, no crash reporting, no
+remote logging, no usage pings. Every session, message, tool output,
+cost, tag, attachment, and counter stays on the machine running the
+server (under `~/.local/share/bearings/`). The optional Prometheus
+`/metrics` endpoint exposes **local** counters for a scraper you run
+yourself; it makes no outbound calls. Full posture, the
+versioned-acknowledgment commitment for any future opt-in surface,
+and the bug-reporting redaction note live in
+[`TELEMETRY.md`](TELEMETRY.md).
+
 ## Upgrading from v0.1
 
 v0.2 migrations (`0006_tag_primitives.sql` through
