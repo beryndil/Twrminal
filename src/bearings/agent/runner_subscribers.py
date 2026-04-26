@@ -16,11 +16,14 @@ from __future__ import annotations
 
 import asyncio
 import time
+from itertools import islice
 from typing import TYPE_CHECKING
 
 from bearings.agent.runner_types import SUBSCRIBER_QUEUE_MAX, _Envelope
 
 if TYPE_CHECKING:
+    from collections import deque
+
     from bearings.agent.runner import SessionRunner
 
 
@@ -39,8 +42,42 @@ async def subscribe(
     # simpler than checking prior state; the idle→running path also
     # clears it from the worker side.
     runner._quiet_since = None
-    replay = [env for env in runner._event_log if env.seq > since_seq]
+    replay = _replay_window(runner._event_log, since_seq)
     return queue, replay
+
+
+def _replay_window(event_log: deque[_Envelope], since_seq: int) -> list[_Envelope]:
+    """Return envelopes with seq > since_seq in O(K), where K is the
+    number of envelopes replayed.
+
+    The ring buffer is sorted by `seq` because emits monotonically
+    advance `_next_seq` and the deque appends right / evicts left. We
+    therefore compute K directly from the seq window — last_seq -
+    since_seq, clamped to buffer length — and take the last K items via
+    reverse iteration (CPython's `deque` reverse iterator walks blocks
+    in O(1) per step). The previous implementation walked the entire
+    5000-slot buffer per reconnect, which got expensive under the
+    reconnect-storm shape (every tab on the same session reconnecting
+    after a network blip walked the full buffer once per tab).
+    """
+    n = len(event_log)
+    if n == 0:
+        return []
+    last_seq = event_log[-1].seq
+    if since_seq >= last_seq:
+        return []
+    # K = number of envs with seq > since_seq. Buffer holds at most n
+    # items; if since_seq sits below the front of the buffer (or is the
+    # canonical 0 for a fresh client), we replay the whole thing.
+    k = min(n, last_seq - since_seq)
+    if k >= n:
+        return list(event_log)
+    # `islice(reversed(...), k)` is the cheap way to grab the tail of a
+    # deque without indexing into the middle (deque random access is
+    # O(n/2) by docs). Reverse iteration is O(k) for k items.
+    tail = list(islice(reversed(event_log), k))
+    tail.reverse()
+    return tail
 
 
 def unsubscribe(runner: SessionRunner, queue: asyncio.Queue[_Envelope]) -> None:

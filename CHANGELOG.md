@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.4] - 2026-04-25
+
+Subscribe replay window is now O(K) on the number of events to replay
+(master punch list L3.3). The reconnect path previously did a full
+list-comprehension walk of the 5000-slot ring buffer in
+`runner_subscribers.subscribe`, regardless of how many events the
+client actually needed. With many tabs reconnecting after a network
+blip on the same session, that walk happened once per tab; the
+work scaled with `RING_MAX × tabs` rather than with the actual gap
+each tab needed. Fix exploits the fact that emits monotonically
+advance `_next_seq` and the deque is therefore sorted by `seq`: K is
+computed directly from `last_seq - since_seq` (clamped to buffer
+length), and the tail is taken via `islice(reversed(deque), K)` which
+walks deque blocks in O(K) per CPython's reverse iterator.
+
+### Changed
+
+- **`src/bearings/agent/runner_subscribers.py`** — extracted
+  `_replay_window(event_log, since_seq)` helper. `subscribe()`
+  delegates to it instead of running an inline list comprehension
+  over the whole deque. Short-circuits on empty buffer and on
+  caught-up clients (`since_seq >= last_seq`) so a no-op reconnect
+  costs O(1).
+
+### Tests
+
+- **`tests/test_runner.py`** — added
+  `test_subscribe_caught_up_returns_empty_replay` (cursor at or past
+  `last_seq` returns `[]`, not a duplicate flush) and
+  `test_subscribe_replay_skips_partial_after_evictions` (when the
+  client's `since_seq` predates the front of the rolled buffer,
+  replay returns the full window in ascending seq order). Existing
+  `test_subscribe_replays_events_after_since_seq`,
+  `test_subscribe_from_zero_replays_whole_buffer`, and
+  `test_ring_buffer_rolls_off_oldest` cover the partial-window,
+  full-window, and post-eviction cases against the new helper without
+  changes.
+
+### Notes
+
+- Behaviorally identical to the pre-fix path for every callsite: same
+  return shape (ascending seq order), same envelope identity. The
+  speedup is invisible in normal single-tab use; it shows up on
+  reconnect storms (multi-tab session refresh, suspend/resume on a
+  laptop, mobile network flip) where the prior O(N) per-subscriber
+  walk could pile up.
+
 ## [0.17.3] - 2026-04-25
 
 Bound runner subscriber queues to 500 (master punch list L3.2).

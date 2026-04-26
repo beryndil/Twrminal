@@ -165,6 +165,53 @@ async def test_subscribe_from_zero_replays_whole_buffer(
 
 
 @pytest.mark.asyncio
+async def test_subscribe_caught_up_returns_empty_replay(
+    db: aiosqlite.Connection,
+) -> None:
+    """A reconnecting client whose `since_seq` is already at (or past)
+    the runner's last seq must get an empty replay — not a duplicate
+    flush of the latest events. Edge case introduced when the O(K)
+    replay window short-circuits on `since_seq >= last_seq` rather
+    than scanning the buffer."""
+    sid = await _session_id(db)
+    runner = SessionRunner(sid, ScriptedAgent(sid, scripts=[]), db)
+    for i in range(4):
+        await runner._emit_event(Token(session_id=sid, text=f"t{i}"))
+
+    # Caller cursor sits exactly at the last seq → nothing newer exists.
+    _q1, r1 = await runner.subscribe(since_seq=4)
+    assert r1 == []
+
+    # Caller cursor sits past the last seq (e.g. they kept counting
+    # against ephemeral seqs that the buffer didn't store) → also empty.
+    _q2, r2 = await runner.subscribe(since_seq=99)
+    assert r2 == []
+
+
+@pytest.mark.asyncio
+async def test_subscribe_replay_skips_partial_after_evictions(
+    db: aiosqlite.Connection,
+) -> None:
+    """When the ring has rolled past the client's `since_seq`, replay
+    returns the full buffer (not just envelopes whose seq exceeds the
+    requested gap), and seq order stays ascending. Pins behavior on
+    the path that takes `list(event_log)` rather than the reversed-
+    iter slice."""
+    sid = await _session_id(db)
+    runner = SessionRunner(sid, ScriptedAgent(sid, scripts=[]), db)
+    for i in range(RING_MAX + 5):
+        await runner._emit_event(Token(session_id=sid, text=str(i)))
+
+    # since_seq < first buffered seq (which is 6 after 5 evictions).
+    _queue, replay = await runner.subscribe(since_seq=1)
+    assert len(replay) == RING_MAX
+    seqs = [env.seq for env in replay]
+    assert seqs[0] == 6
+    assert seqs[-1] == RING_MAX + 5
+    assert seqs == sorted(seqs)
+
+
+@pytest.mark.asyncio
 async def test_multiple_subscribers_each_receive_live_events(
     db: aiosqlite.Connection,
 ) -> None:
