@@ -25,6 +25,28 @@ function writeStoredId(id: string | null): void {
 
 const RUNNING_POLL_MS = 3_000;
 
+/** Structural equality for two `Session` rows. Used by `softRefresh`
+ * to decide whether the server's poll response carries any change
+ * relative to the local copy — when it doesn't, we keep the local
+ * reference to preserve per-row identity across polls.
+ *
+ * Sessions are flat objects: the only nested values are `tag_ids`
+ * (array of numbers, server-sorted) and `working_dir` /
+ * `description` (strings). `JSON.stringify` is sufficient — same
+ * shape from the API guarantees stable key ordering, and any field
+ * the server may add later that isn't serialization-stable will
+ * conservatively report unequal, which is the safe direction (we
+ * fall through to the server copy and over-update rather than
+ * stale).
+ *
+ * If profiling ever shows this hot, the lazy upgrade is to inline a
+ * field-by-field check; for typical sidebar sizes (<100 rows) the
+ * stringify is unmeasurable. */
+function sessionsEqual(a: api.Session, b: api.Session): boolean {
+  if (a === b) return true;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 class SessionStore {
   list = $state<api.Session[]>([]);
   selectedId = $state<string | null>(null);
@@ -309,13 +331,45 @@ class SessionStore {
       // above.
       if (local.closed_at !== server.closed_at) return server;
       if (local.updated_at > server.updated_at) return local;
+      // Quiescent path: the server's row is structurally identical to
+      // the local copy. Reuse the local reference so consumers that
+      // key on per-row identity don't re-fire on every poll tick —
+      // notably `sessions.selected = $derived(this.list.find(...))`,
+      // which feeds form-seed effects in SessionEdit, the autofocus
+      // effect in ChecklistView, and the paired-crumb resolver in
+      // ConversationHeader. Without this, every 3 s heartbeat
+      // replaced every row with a structurally-identical-but-new
+      // object, which clobbered modal form state, stole input focus,
+      // and hammered `getChecklist()` against every checklist
+      // candidate.
+      //
+      // Comparing on `updated_at` alone isn't sufficient: drift fields
+      // like `total_cost_usd` change without bumping `updated_at`, so
+      // a naive timestamp-equal short-circuit would silently drop
+      // server-side cost updates. Full structural equality is the
+      // safe gate — any difference at all and we fall through to the
+      // server copy.
+      if (sessionsEqual(local, server)) return local;
       return server;
     });
     merged.sort((a, b) => {
       if (a.updated_at !== b.updated_at) return a.updated_at < b.updated_at ? 1 : -1;
       return a.id < b.id ? 1 : -1;
     });
-    this.list = merged;
+    // Skip the assignment entirely when the merged array is row-by-row
+    // identical to what we already had (same length, same references in
+    // the same order). Svelte 5 `$state` arrays trigger reactivity on
+    // assignment regardless of contents, and `$derived(this.list...)`
+    // computations re-run on every dependency tick — but downstream
+    // `$effect`s only re-fire when the derived's *value* changes. By
+    // not reassigning when nothing changed, we keep `sessions.list`
+    // itself identity-stable across quiescent polls.
+    const sameOrder =
+      merged.length === this.list.length &&
+      merged.every((row, i) => row === this.list[i]);
+    if (!sameOrder) {
+      this.list = merged;
+    }
     if (this.selectedId && !merged.some((s) => s.id === this.selectedId)) {
       this.select(null);
     }

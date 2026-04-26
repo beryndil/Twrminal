@@ -358,6 +358,46 @@ describe('sessions.softRefresh', () => {
     expect(sessions.list.map((s) => s.id)).toEqual(['other']);
   });
 
+  it('preserves per-row object identity when the server reports no change', async () => {
+    // Per-row identity has to survive a no-op poll. `sessions.selected`
+    // is `$derived(this.list.find(...))`, and the form-seed effect in
+    // SessionEdit, the autofocus effect in ChecklistView, and the
+    // paired-crumb resolver in ConversationHeader all depend on
+    // `selected` not changing identity unless something real changed.
+    // If softRefresh ever returns a structurally-identical-but-new
+    // object for an unchanged row, those effects re-fire on every 3 s
+    // poll tick and clobber user input / steal focus / hammer
+    // /checklist endpoints.
+    const seed = sess({
+      id: 'stable',
+      updated_at: '2026-04-22T09:00:00+00:00',
+      total_cost_usd: 0.5
+    });
+    sessions.list = [seed];
+    // Capture the post-assignment proxy reference, not the raw seed —
+    // Svelte 5 wraps `$state` array elements in fine-grained reactive
+    // proxies, so the in-list reference is what consumers actually
+    // observe via `sessions.list[0]` / `find(...)`.
+    const stableRef = sessions.list[0];
+    queueResponses([{ ok: true, body: [{ ...seed }] }]);
+    await sessions.softRefresh();
+    expect(sessions.list[0]).toBe(stableRef);
+  });
+
+  it('does not reassign sessions.list when every row is unchanged', async () => {
+    // Companion to the per-row-identity test: even with all references
+    // preserved, reassigning the array itself would still trip Svelte's
+    // array-level reactivity for any consumer that reads
+    // `sessions.list` directly. Skip the assignment when nothing moved.
+    const a = sess({ id: 'a', updated_at: '2026-04-22T09:00:00+00:00' });
+    const b = sess({ id: 'b', updated_at: '2026-04-22T08:00:00+00:00' });
+    sessions.list = [a, b];
+    const beforeArray = sessions.list;
+    queueResponses([{ ok: true, body: [{ ...a }, { ...b }] }]);
+    await sessions.softRefresh();
+    expect(sessions.list).toBe(beforeArray);
+  });
+
   it('keeps the running set intact — softRefresh is not responsible for badges', async () => {
     sessions.list = [sess({ id: 'a' })];
     sessions.running = new Set(['a']);
