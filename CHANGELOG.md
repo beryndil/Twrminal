@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.3] - 2026-04-25
+
+Bound runner subscriber queues to 500 (master punch list L3.2).
+Closes the per-subscriber memory-balloon angle of the 2026-04-21
+security audit follow-ups: the eviction path in
+`event_fanout._deliver` was already correct, but the per-subscriber
+queue cap sat at `RING_MAX = 5000` (~10 MB worst-case per stalled WS
+subscriber). Dropped the cap to match
+`SessionsBroker.SUBSCRIBER_QUEUE_MAX = 500` so a slow-loris client
+(or a real network back-pressure stall) tops out at ~1 MB before the
+runner evicts it.
+
+### Changed
+
+- **`SUBSCRIBER_QUEUE_MAX` lowered from `RING_MAX` to `500`** in
+  `src/bearings/agent/runner_types.py`. Evicted subscribers reconnect
+  with `since_seq` and replay from the runner's ring buffer; `RING_MAX`
+  stays at 5000 so the replay window still covers a long tool-heavy
+  turn even when a stalled client gets dropped. Comment updated with
+  the new memory math and the explicit cap-vs-replay-buffer distinction.
+
+### Notes
+
+- No test changes required. `test_stalled_subscriber_evicted_when_queue_fills`
+  iterates `SUBSCRIBER_QUEUE_MAX + 1` times to force the eviction path —
+  same predicate, just 501 events now instead of 5001. `RING_MAX`
+  coverage in `test_ring_buffer_rolls_off_oldest` is unaffected.
+
 ## [0.16.2] - 2026-04-25
 
 Tool-output linkifier — closes audit follow-up v2 item 188 ("Clickable

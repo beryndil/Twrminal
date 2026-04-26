@@ -1763,12 +1763,15 @@ headline. Additional issues found, in priority order:
   or use `bisect` over a sorted `deque` for O(log n) replay start.
   Low-priority unless reconnect storms show up in practice.
 
-- [ ] **Unbounded subscriber queues.** `src/bearings/agent/runner.py:341-348`.
-  Already flagged in the 2026-04-21 security audit cleanup section;
-  noting the performance angle here too. A slow WS client can make
-  runner memory balloon; bound the queue (match
-  `SessionsBroker.SUBSCRIBER_QUEUE_MAX = 500`) and drop slow
-  subscribers — they reconnect with `since_seq`.
+- [x] **Unbounded subscriber queues.** *(shipped 2026-04-25, L3.2)*
+  `src/bearings/agent/runner_types.py`. The eviction path was already
+  in place (`event_fanout._deliver` evicts on `QueueFull`); the gap
+  was the cap itself sitting at `RING_MAX = 5000` (~10 MB worst-case
+  per stalled subscriber). Dropped to `SUBSCRIBER_QUEUE_MAX = 500` to
+  match `SessionsBroker.SUBSCRIBER_QUEUE_MAX` (~1 MB worst-case).
+  Evicted subscribers reconnect with `since_seq` and replay from the
+  ring buffer — `RING_MAX` stays at 5000 so the replay window still
+  covers a long tool-heavy turn even if a slow client gets dropped.
 
 **Recommended fix order** (by "ratio of impact to diff size"):
 1. Reducer in-place mutation. *(shipped 2026-04-23, `90a1bb7`)*

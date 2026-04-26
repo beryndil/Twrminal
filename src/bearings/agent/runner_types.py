@@ -27,12 +27,15 @@ RING_MAX = 5000
 # Per-subscriber WS queue cap. A live WebSocket sender drains this in
 # real time, so the queue normally sits at 0-1 events. The cap exists
 # to keep memory bounded if a subscriber stalls (network back-pressure,
-# malicious slow-loris client). At 5000 entries x ~2 KB/event the
-# worst-case per-subscriber footprint is ~10 MB — large enough that
-# the steady state is invisible, small enough that a stalled tab can't
-# OOM the process. On overflow the subscriber is evicted and its
-# WebSocket handler will notice the closure on the next send.
-SUBSCRIBER_QUEUE_MAX = RING_MAX
+# malicious slow-loris client). 500 matches `SessionsBroker
+# .SUBSCRIBER_QUEUE_MAX`; at ~2 KB/event the worst-case per-subscriber
+# footprint is ~1 MB — small enough that a stalled tab (or a hostile
+# slow-loris) can't balloon runner memory. On overflow the subscriber
+# is evicted and its WebSocket handler will notice the closure on the
+# next send; the client reconnects with `since_seq` and replays the
+# missed window from the runner's `RING_MAX` ring buffer (which is
+# 10x larger so reconnect-replay still covers a long tool-heavy turn).
+SUBSCRIBER_QUEUE_MAX = 500
 
 # Cadence for `ToolProgress` keepalive events emitted while a tool call
 # is still running. Covers the "SDK surfaces nothing for tens of
