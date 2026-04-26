@@ -5,6 +5,93 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.6] - 2026-04-26
+
+Settings dialog rewritten for Spyglass parity. The previous
+single-column modal (six flat fields, explicit Save/Cancel) is
+replaced by a sectioned dialog with a left nav rail over a section
+registry, every row autosaving on change, an a11y floor every
+modal in this app should hit, and an About section that pulls
+live from `/api/version`. Plan source of truth:
+`~/.claude/plans/crisp-aligning-spyglass.md`.
+
+### Added
+
+- **`frontend/src/lib/components/settings/`** — primitive library:
+  `SettingsCard` (surface/border/padding container), `SettingsDivider`,
+  `SettingsSectionHeader` (uppercase + leading icon + trailing rule),
+  `SettingsRow` (canonical title/description/control layout with
+  per-row saving/saved/error pill), `SettingsToggle` (real switch
+  widget over a hidden checkbox so keyboard + form semantics stay
+  native; rolls back the local flip when `onChange` throws — the
+  notify-permission carve-out depends on this), `SettingsTextField`
+  (debounced 400ms autosave, optional maxlength counter at ≥80%,
+  `monospace`, `password`, sync `validate(value)` predicate),
+  `SettingsSelect` (immediate save, no debounce), `SettingsLink`
+  (href external + onClick action + trailing-only value-display
+  modes), `SettingsDangerButton` (routes through the existing
+  `confirmStore`). Plus `icons/IconX.svelte` — hand-rolled X glyph.
+  All themed via the existing slate/sky/emerald/rose tokens, so they
+  re-tint with `data-theme` automatically.
+- **`frontend/src/lib/components/settings/SettingsShell.svelte`** —
+  two-column layout: left nav rail (`role=tablist`,
+  `aria-orientation=vertical`, roving tabindex, ↑/↓/Home/End
+  keyboard nav) + content pane (`role=tabpanel`). Plain `<div>`s
+  rather than `<nav>`/`<section>` because the tab roles override
+  the landmark semantics and the a11y linter rightly refuses the
+  conflict.
+- **`frontend/src/lib/components/settings/sections.ts`** — static
+  section registry. Six entries (profile / appearance / defaults /
+  notifications / auth / about) sorted by `weight`; appending an
+  entry adds a section without shell edits.
+- **`frontend/src/lib/components/settings/sections/`** — six section
+  panes: Profile (display name), Appearance (theme picker),
+  Defaults (default model + working dir), Notifications
+  (notify-on-complete with the request-browser-permission-before-
+  PATCH carve-out — throws on deny so the toggle visibly reverts),
+  Authentication (auth token, client-only via `prefs` store, never
+  PATCHes `/api/preferences`), About (version + build date from
+  `/api/version`, repo link, prominent "Buy Me a Cup of Coffee"
+  CTA mirroring Spyglass-Android's `about/AboutScreen.kt`
+  treatment).
+- **`frontend/src/lib/themes/meta-theme-colors.ts`** — single
+  canonical source for the `<meta name="theme-color">` table per
+  theme. `preferences.svelte.ts` imports `THEME_META_COLORS`; the
+  no-flash boot script in `app.html` keeps an inline literal
+  (constraint: pre-module synchronous execution) but the comment
+  now points at the canonical module and `checkBootDrift()` runs
+  on init to `console.warn` if the two ever diverge.
+- **A11y floor on `Settings.svelte`:** Esc closes (window-level
+  keydown), backdrop click closes (currentTarget check), Tab is
+  trapped inside the dialog with first/last wrap, focus is
+  captured before open and restored on close, focus moves to the
+  close button on open, real `<IconX/>` glyph replaces the "✕"
+  character, `role=dialog` + `aria-modal=true` + `aria-labelledby`
+  on the inner card, focus rings on every interactive element.
+- **Test coverage:** 38 new tests (10 `Settings.test.ts` for the
+  full dialog + 23 across primitive/shell/registry specs +
+  integration tests for autosave, navigation, error-path
+  fallbacks, and the About section's `/api/version` wiring). Full
+  suite: 816/816 passing.
+
+### Changed
+
+- **`frontend/src/lib/components/Settings.svelte`** — rewritten as
+  a sectioned modal hosting `SettingsShell`. Drops the explicit
+  Save/Cancel footer (autosave eliminates the model). Footer now
+  carries a cross-row save-status line driven by
+  `preferences.lastSaveStatus`: "Saving…" / "All changes saved" /
+  "Failed to save: …" / "Ready." `max-w-md` → `max-w-3xl` to fit
+  the rail + pane geometry. Subtitle clarifies "Changes save
+  automatically. Auth token stays on this device."
+- **`frontend/src/lib/stores/preferences.svelte.ts`** — adds
+  `PreferencesSaveStatus` type and `lastSaveStatus` `$state`;
+  `update()` wraps in saving/saved/error transitions and rethrows
+  on error so per-row primitives also surface their own pill. The
+  "saved" state fades to "idle" after 2s; concurrent saves cancel
+  the fade timer so the indicator stays sticky across overlapping
+  writes.
+
 ## [0.20.5] - 2026-04-26
 
 `bearings.service` systemd hardening (L5.10). Closes the

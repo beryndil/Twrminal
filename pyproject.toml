@@ -1,6 +1,6 @@
 [project]
 name = "bearings"
-version = "0.20.5"
+version = "0.20.6"
 description = "Localhost web UI for Claude Code agent sessions."
 readme = "README.md"
 license = { text = "MIT" }
