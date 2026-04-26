@@ -28,6 +28,15 @@
      * Dave can edit or Esc-cancel before pressing Enter. */
     onMoreInfo?: (msg: Message) => void;
     isLatestAssistant?: boolean;
+    /** L4.3.1 — `＋ SPAWN` button. Renders on every finished assistant
+     * reply (not just latest), since spawning a child thread is
+     * useful retroactively on older replies too. Click fires the
+     * handler with the assistant message; the parent's
+     * `Conversation.svelte` calls `sessions.spawnFromReply` which
+     * creates a fresh chat session seeded with this reply and selects
+     * it. v0 hard-codes single-chat shape — Wave 3 will swap in an
+     * LLM classifier that may pick checklist / N-chats instead. */
+    onSpawn?: (msg: Message) => void;
     /** Slice 4: bulk-select mode. When `bulkMode` is true the header
      * renders a checkbox in place of the ordinary role tag and the
      * context-menu action is still wired — right-click while in bulk
@@ -69,6 +78,7 @@
     onCopyMessage,
     onMoreInfo,
     isLatestAssistant = false,
+    onSpawn,
     bulkMode = false,
     selectedIds,
     onToggleSelect,
@@ -408,6 +418,24 @@
             onclick={() => onMoreInfo(assistant!)}
           >
             ℹ more
+          </button>
+        {/if}
+        {#if !isStreaming && onSpawn}
+          <!-- L4.3.1 / Wave 2 lane 1. Renders on every finished
+               assistant reply (not gated on isLatestAssistant) —
+               spawning a child thread off an older reply is a
+               legitimate workflow. v0 always creates one chat-kind
+               session seeded with this reply; Wave 3 will swap in an
+               LLM classifier that may pick checklist / N-chat shapes. -->
+          <button
+            type="button"
+            class="text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-300"
+            aria-label="Spawn a new session from this reply"
+            title="Create a new chat session seeded with this reply"
+            data-testid="spawn-button"
+            onclick={() => onSpawn(assistant!)}
+          >
+            ＋ spawn
           </button>
         {/if}
         <button

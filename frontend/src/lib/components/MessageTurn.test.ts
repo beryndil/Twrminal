@@ -171,6 +171,55 @@ describe('MessageTurn (more-info button)', () => {
   });
 });
 
+describe('MessageTurn (spawn button)', () => {
+  // L4.3.1 / Wave 2 lane 1. The `＋ SPAWN` button renders on every
+  // finished assistant reply (not gated on `isLatestAssistant`, unlike
+  // `ℹ MORE`) so older replies remain spawnable. Hidden during streaming
+  // and when no `onSpawn` handler is wired.
+  it('renders ＋ SPAWN on a finished assistant reply when onSpawn is wired', () => {
+    const { queryByTestId } = render(
+      MessageTurn,
+      baseProps({ onSpawn: vi.fn() })
+    );
+    const btn = queryByTestId('spawn-button');
+    expect(btn).not.toBeNull();
+    expect(btn!.textContent).toContain('＋');
+    expect(btn!.textContent!.toLowerCase()).toContain('spawn');
+  });
+
+  it('renders ＋ SPAWN even on non-latest turns', () => {
+    // Distinct from ℹ MORE which is latest-only; spawning off a
+    // historical reply is a legitimate workflow.
+    const { queryByTestId } = render(
+      MessageTurn,
+      baseProps({ onSpawn: vi.fn(), isLatestAssistant: false })
+    );
+    expect(queryByTestId('spawn-button')).not.toBeNull();
+  });
+
+  it('hides ＋ SPAWN while the turn is still streaming', () => {
+    const { queryByTestId } = render(
+      MessageTurn,
+      baseProps({ onSpawn: vi.fn(), isStreaming: true })
+    );
+    expect(queryByTestId('spawn-button')).toBeNull();
+  });
+
+  it('hides ＋ SPAWN when no onSpawn handler is provided', () => {
+    const { queryByTestId } = render(MessageTurn, baseProps());
+    expect(queryByTestId('spawn-button')).toBeNull();
+  });
+
+  it('clicking ＋ SPAWN fires onSpawn with the assistant message', async () => {
+    const onSpawn = vi.fn();
+    const { getByTestId } = render(MessageTurn, baseProps({ onSpawn }));
+    await fireEvent.click(getByTestId('spawn-button'));
+    expect(onSpawn).toHaveBeenCalledTimes(1);
+    expect(onSpawn.mock.calls[0][0].id).toBe('a-1');
+    expect(onSpawn.mock.calls[0][0].role).toBe('assistant');
+  });
+});
+
 describe('MessageTurn (tool-call rows)', () => {
   function call(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
     return {

@@ -633,3 +633,24 @@ export function regenerateFromMessage(
     { method: 'POST' }
   );
 }
+
+/** L4.3.1 — `＋ SPAWN` button. Create a fresh `chat`-kind session
+ * seeded with the assistant reply at `messageId`. The new session
+ * inherits the parent's `working_dir`, `model`, `max_budget_usd`, and
+ * tag set; its title is the first ~60 chars of the reply (or
+ * `Spawn from <parent title>`); its `description` carries the full
+ * reply text plus a provenance footer (`Spawned from session …`). v0
+ * always creates one chat — Wave 3 will swap in an LLM classifier that
+ * may pick a checklist / N-chat shape instead. The parent session is
+ * untouched. Server returns the freshly-minted `Session` row. */
+export function spawnFromReply(
+  parentSessionId: string,
+  messageId: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<Session> {
+  return jsonFetch<Session>(
+    fetchImpl,
+    `/api/sessions/${parentSessionId}/spawn_from_reply/${messageId}`,
+    { method: 'POST' }
+  );
+}

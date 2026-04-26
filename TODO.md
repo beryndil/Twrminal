@@ -933,7 +933,32 @@ it then. Do not exercise the historical checklists as-is.
 
 - [ ] **Research: assistant-reply action row — "Spawn sessions from
   this reply" button + brainstorm of other one-click actions
-  (2026-04-22).** Dave's primary ask: alongside Copy (existing) and
+  (2026-04-22).**
+  **Wave 2 lane 1 (L4.3.1 / `＋ SPAWN`) shipped 2026-04-26 — v0.19.0
+  / frontend 0.12.0.** Backend route
+  `POST /api/sessions/{id}/spawn_from_reply/{message_id}` lives in
+  `src/bearings/api/routes_spawn_from_reply.py` (mirrors
+  `routes_regenerate.py` shape). v0 hard-codes single-chat shape:
+  inherits parent `working_dir` + `model` + `max_budget_usd` + tag
+  set, title = first ~60 chars of the reply (markdown noise stripped,
+  truncated with `…`) or `Spawn from <parent title>` when the reply
+  is blank, description = full reply text + `— Spawned from session
+  <id>, message <id>` provenance footer. Frontend wiring:
+  `spawnFromReply` in `frontend/src/lib/api/sessions.ts`,
+  `sessions.spawnFromReply` store method that unshifts + selects the
+  new row, `＋ SPAWN` button in `MessageTurn.svelte` between `ℹ MORE`
+  and `⎘ COPY` (gated `!isStreaming && assistant !== null && onSpawn`,
+  rendered on every finished assistant reply — not latest-only,
+  unlike `ℹ MORE`). Coverage: 11 backend tests in
+  `tests/test_spawn_from_reply.py` (happy path, tag inheritance,
+  title synthesis + truncation + fallback, provenance footer, 400 on
+  user role, 400 on cross-session message, 404 on unknown ids,
+  source untouched) + 5 frontend tests in
+  `MessageTurn.test.ts:describe('MessageTurn (spawn button)')`.
+  Lanes 2 (`✂ TLDR` + sub-agent infra) and 3 (`⚔ CRIT`) still
+  pending — keep this research entry open until Wave 2 fully lands.
+
+  Dave's primary ask: alongside Copy (existing) and
   More Info (logged above), add a button that takes the *output of
   the current assistant turn only* (not the whole session) and
   asks an LLM to decide the best container shape for whatever the

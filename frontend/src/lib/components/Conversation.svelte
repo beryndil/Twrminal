@@ -103,6 +103,19 @@
     );
   }
 
+  /** L4.3.1 — `＋ SPAWN` action. Forwards to the store, which POSTs
+   * `/api/sessions/{parent}/spawn_from_reply/{message_id}`, unshifts
+   * the returned row, and selects it. The conversation pane swaps to
+   * the new session via the existing `sessions.selected` reactive
+   * chain. We deliberately don't await — the user wants immediate
+   * feedback and the store handles error surfacing through
+   * `sessions.error`. */
+  function onSpawn(msg: api.Message): void {
+    const sid = msg.session_id;
+    if (!sid) return;
+    void sessions.spawnFromReply(sid, msg.id);
+  }
+
   // Persistent reorg-audit dividers (Slice 5). Fetched on session
   // switch + on `updated_at` bumps so a move from the other end also
   // invalidates the list on refocus.
@@ -346,6 +359,7 @@
             {copiedMsgId}
             {onCopyMessage}
             {onMoreInfo}
+            {onSpawn}
             isLatestAssistant={item.turn.key === latestAssistantTurnKey}
             bulkMode={bulk.active}
             selectedIds={bulk.selectedIds}

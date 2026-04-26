@@ -108,6 +108,32 @@ class SessionStore {
     }
   }
 
+  /** L4.3.1 — `＋ SPAWN` action on a finished assistant reply. Creates
+   * a fresh chat session seeded with the reply (server-side: title
+   * derived from the reply's first line, description = full reply +
+   * provenance footer, parent's tags + working_dir + model inherited).
+   * On success, the row is unshifted into the list and selected so the
+   * conversation pane swaps to it without waiting on the WS upsert
+   * broadcast. Errors land on `this.error` and return `null`, matching
+   * `create`. */
+  async spawnFromReply(
+    parentSessionId: string,
+    messageId: string
+  ): Promise<api.Session | null> {
+    this.error = null;
+    try {
+      const spawned = await api.spawnFromReply(parentSessionId, messageId);
+      // Mirror `create`: drop any duplicate (the WS upsert broadcast
+      // races us) and unshift the canonical row, then select.
+      this.list = [spawned, ...this.list.filter((s) => s.id !== spawned.id)];
+      this.select(spawned.id);
+      return spawned;
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
+      return null;
+    }
+  }
+
   async remove(id: string): Promise<void> {
     this.error = null;
     try {
