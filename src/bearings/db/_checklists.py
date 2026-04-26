@@ -20,9 +20,15 @@ import aiosqlite
 from bearings.db._common import _now
 
 CHECKLIST_COLS = "session_id, notes, created_at, updated_at"
+# `blocked_at` + reason fields land in migration 0033; included here so
+# every read path surfaces the new tri-state. Existing rows read as
+# (NULL, NULL, NULL) which serializes identically to pre-migration
+# behavior. Driver-side stamping arrives in the auto_driver wiring
+# commit; this commit is read-only on the new columns.
 ITEM_COLS = (
     "id, checklist_id, parent_item_id, label, notes, checked_at, sort_order, "
-    "created_at, updated_at, chat_session_id"
+    "created_at, updated_at, chat_session_id, "
+    "blocked_at, blocked_reason_category, blocked_reason_text"
 )
 # Top-level items ordered by sort_order then id; nested children
 # follow the same rule under their parent (resolved client-side for

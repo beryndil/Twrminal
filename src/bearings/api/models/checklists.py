@@ -67,6 +67,22 @@ class ItemOut(BaseModel):
     # uses this field to toggle the per-item button state between
     # "Work on this" (spawn) and "Continue working" (navigate).
     chat_session_id: str | None = None
+    # Tri-state surface (migration 0033). An item is open
+    # (`checked_at IS NULL` and `blocked_at IS NULL`), done
+    # (`checked_at IS NOT NULL`), or blocked
+    # (`blocked_at IS NOT NULL` and `checked_at IS NULL`) — mutually
+    # exclusive at the application layer. The autonomous driver stamps
+    # these via the `CHECKLIST_ITEM_BLOCKED` sentinel for items
+    # genuinely outside the agent's reach (pay a bill, plug in
+    # hardware, supply a 2FA code). The paired chat session stays open
+    # for Dave to act on, while the run advances regardless of
+    # `failure_policy`. Resolution path = Dave types into the still-
+    # open session, agent re-engages and closes the item; closing
+    # clears `blocked_at` in the same transaction. Driver wiring lands
+    # in a follow-up commit; this one only surfaces the columns.
+    blocked_at: str | None = None
+    blocked_reason_category: str | None = None
+    blocked_reason_text: str | None = None
 
 
 class ChecklistOut(BaseModel):
