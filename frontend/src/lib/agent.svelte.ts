@@ -16,13 +16,12 @@ const CODE_UNAUTHORIZED = 4401;
 const CODE_SESSION_NOT_FOUND = 4404;
 /** Grace period between a Stop-button click and the actual WS stop
  * frame leaving the browser. Long enough to react to an accidental
- * click (the running interrupt-probe bug — a stray mouse click on the
- * red header button kills an in-flight turn), short enough that a
- * deliberate stop still feels responsive. Every Stop click pushes a
- * visible undo toast for this window; if the user clicks Undo inside
- * it, the frame never leaves the browser and the agent keeps
- * streaming. See TODO.md "TEMP probe — session-switch interrupt
- * diagnostic" for the underlying investigation. */
+ * click (a stray mouse click on the red header button used to kill
+ * an in-flight turn), short enough that a deliberate stop still
+ * feels responsive. Every Stop click swaps the button for an inline
+ * "Stopping Xs · Undo" pill (`StopUndoInline.svelte`) for this
+ * window; if the user clicks Undo inside it, the frame never leaves
+ * the browser and the agent keeps streaming. */
 const STOP_DELAY_MS = 3_000;
 
 /** Resolve on the next animation frame. Used in `connect()` to yield
@@ -134,46 +133,16 @@ export class AgentConnection {
   stop(): boolean {
     if (!this.socket || this.state !== 'open') return false;
     // Don't stack stops. If one is already queued behind its grace
-    // window, the toast is visible and the user can either wait it
-    // out or Undo — a second click is a no-op rather than shortening
-    // the window.
+    // window, the inline countdown pill is visible and the user can
+    // either wait it out or Undo — a second click is a no-op rather
+    // than shortening the window.
     if (this.pendingStopTimer !== null) return false;
-    // TEMP 2026-04-23: session-switch interrupt probe — tag the frame
-    // so the server can identify what triggered the stop. `_trace`
-    // captures the JS call stack; `_isTrusted` reflects whether a real
-    // user-originated event is on the call stack (false = synthetic
-    // dispatch, null = no current event). See
-    // bearings.agent._interrupt_probe docstring.
-    //
-    // Capture event+stack NOW, while the click handler is still on
-    // the stack — by the time the STOP_DELAY_MS timer fires, window
-    // .event has moved on. The frame is built eagerly and closed
-    // over; only the actual WS send is deferred.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const evt = typeof window !== 'undefined' ? (window as any).event : undefined;
-    const frame: Record<string, unknown> = {
-      type: 'stop',
-      _trace: new Error('stop-probe').stack ?? null,
-      _isTrusted: evt instanceof Event ? evt.isTrusted : null,
-      _eventType: evt instanceof Event ? evt.type : null,
-      // TEMP 2026-04-24: click-epoch (ms). Server subtracts from its
-      // receive time to prove whether the STOP_DELAY_MS setTimeout is
-      // actually deferring the send. If the gap is ~3s the defer path
-      // is live; if ~0ms the code fell back to immediate send.
-      _clickedAt: Date.now(),
-      // TEMP 2026-04-24: echo whether undoStore.push ran for this
-      // frame. If `undo_pushed=false` the toast wiring is short-
-      // circuited before render; if `true` but Dave sees nothing the
-      // host isn't painting the items.
-      _undoPushed: false
-    };
     const socket = this.socket;
     // Flip the reactive "stop is pending" flag BEFORE scheduling the
     // timer so the Conversation / ChecklistChat headers swap their
     // Stop button for the inline countdown in the same tick. Paired
     // with the clear inside the timer below and in cancelPendingStop.
     this.stopPendingStartedAt = Date.now();
-    frame._undoPushed = true;
     this.pendingStopTimer = setTimeout(() => {
       this.pendingStopTimer = null;
       this.stopPendingStartedAt = null;
@@ -183,7 +152,7 @@ export class AgentConnection {
       // current one, since the user clicked Stop on a specific
       // session's stream. If that socket is gone, the stop is moot.
       if (this.socket === socket && this.state === 'open') {
-        socket.send(JSON.stringify(frame));
+        socket.send(JSON.stringify({ type: 'stop' }));
       }
     }, STOP_DELAY_MS);
     return true;

@@ -236,16 +236,6 @@ class SessionRunner:
         shutdown and on session deletion. If a turn is in flight, the
         SDK client is interrupted first so the subprocess winds down."""
         self._stop_requested = True
-        # TEMP 2026-04-23: session-switch interrupt probe — see
-        # bearings.agent._interrupt_probe docstring.
-        from bearings.agent._interrupt_probe import probe
-
-        probe(
-            "runner.shutdown",
-            self.session_id,
-            status=self._status,
-            subscribers=len(self._subscribers),
-        )
         # Deny any pending approvals with `interrupt=True` so the SDK
         # stops waiting for a user decision that will never come and
         # the stream loop can reach its shutdown path.
@@ -370,16 +360,6 @@ class SessionRunner:
         loop and calls `agent.interrupt()` so the SDK aborts any
         in-flight tool call. Safe to call when idle (no-op)."""
         self._stop_requested = True
-        # TEMP 2026-04-23: session-switch interrupt probe — see
-        # bearings.agent._interrupt_probe docstring.
-        from bearings.agent._interrupt_probe import probe
-
-        probe(
-            "runner.request_stop",
-            self.session_id,
-            status=self._status,
-            subscribers=len(self._subscribers),
-        )
         # If the turn is parked on a pending approval, the stream won't
         # make any progress toward the stop flag until the Future is
         # resolved. Deny them all with `interrupt=True` so the SDK

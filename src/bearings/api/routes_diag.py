@@ -59,33 +59,3 @@ async def log_theme_diag(request: Request) -> dict[str, str]:
     with LOG_PATH.open("a", encoding="utf-8") as fh:
         fh.write(line + "\n")
     return {"status": "ok", "path": str(LOG_PATH)}
-
-
-@router.post("/diag/undo")
-async def log_undo_diag(request: Request) -> dict[str, str]:
-    """Browser-side sink for the session-switch interrupt diagnostic.
-
-    TEMP 2026-04-24. The frontend's UndoToastHost and agent.stop() post
-    here each time they see a reactive tick; the server writes to the
-    same interrupt-probe.log the rest of the probe uses so there's one
-    file to tail. Remove with the rest of the probe once the toast-
-    render bug closes.
-    """
-    raw = await request.body()
-    if len(raw) > MAX_BYTES:
-        raise HTTPException(status_code=413, detail="diag payload too large")
-    try:
-        payload: Any = json.loads(raw)
-    except json.JSONDecodeError as err:
-        raise HTTPException(status_code=400, detail=f"not json: {err}") from err
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="payload must be a JSON object")
-
-    # Route through the same _interrupt_probe logger the rest of the
-    # diagnostic uses. Caller supplies `site` + arbitrary extras.
-    from bearings.agent._interrupt_probe import probe as _probe
-
-    site = str(payload.pop("site", "ws_agent.undo_diag"))
-    session_id = str(payload.pop("session_id", "browser"))
-    _probe(site, session_id, **payload)
-    return {"status": "ok"}

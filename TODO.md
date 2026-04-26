@@ -211,8 +211,6 @@ nesting, and handoff legs are first-class primitives, not afterthoughts.
 - Do not invent a within-session context-clearing mechanism. Legs-via-
   new-session is the handoff primitive; that's how Dave works manually
   and it's what the schema/session model already supports.
-- Do not touch `agent/_interrupt_probe.py` or its call sites — those are
-  scheduled for removal once the session-switch interrupt bug closes.
 - Do not wedge the driver into the WS handler. It's a standalone async
   task owned by a new module (e.g. `src/bearings/agent/auto_driver.py`),
   registered alongside the runner but independent.
@@ -304,60 +302,30 @@ adding a teardown or scoping a fixture) or mark it with
 
 ---
 
-## TEMP probe — session-switch interrupt diagnostic — 2026-04-23
+## TEMP probe — session-switch interrupt diagnostic — closed 2026-04-25
 
-**Active, remove after diagnosis.** Dave reported an intermittent bug:
-switching sessions in the UI sometimes interrupts the running Claude
-instance. Code audit shows no session-switch path that should call
-`agent.interrupt()` — WS disconnect explicitly keeps the runner alive,
-and the reaper won't touch a `running` runner. To pin down which of
-the three real interrupt sites (`runner.shutdown` / `runner.request_stop`
-/ `_execute_turn` stop-check) is actually firing, I added a dedicated
-probe at:
+**Closed.** Diagnosis concluded; instrumentation retired in L1.2.
 
-- `src/bearings/agent/_interrupt_probe.py` — new module, writes to
-  `~/.local/share/bearings/interrupt-probe.log`.
-- `src/bearings/agent/session.py:AgentSession.interrupt` — catches
-  every actual SDK interrupt with the full caller chain.
-- `src/bearings/agent/runner.py:SessionRunner.shutdown` — logs who
-  triggered the shutdown path.
-- `src/bearings/agent/runner.py:SessionRunner.request_stop` — logs
-  who triggered the user-stop path.
-- `src/bearings/api/ws_agent.py` finally block — logs WS disconnect
-  timing + runner state for correlation.
+What was investigated. Dave reported an intermittent bug where
+switching sessions in the UI sometimes interrupted the running
+Claude instance. Code audit found no session-switch path that
+should call `agent.interrupt()` — WS disconnect explicitly keeps
+the runner alive and the reaper won't touch a `running` runner.
+To narrow down which of the three real interrupt sites was firing
+we added a dedicated probe (`_interrupt_probe.py`) plus call sites
+in `session.interrupt`, `runner.shutdown`, `runner.request_stop`,
+and the `ws_agent.py` disconnect block. The defensive 3s undo
+window on Stop was added 2026-04-24 while the root cause was
+still open: `ba98d70` shipped the first pass via the shared
+`undoStore` + bottom-right toast (wrong location per Dave —
+"it should popup by the stop button"); `08ab470` replaced it
+with `StopUndoInline.svelte`, an inline pill that morphs the
+Stop button in place using reactive `stopPendingStartedAt` /
+`stopPendingWindowMs` state.
 
-**Removal checklist when bug is pinned down:** delete
-`_interrupt_probe.py`, remove the four call sites (each marked with
-`# TEMP 2026-04-23`), and delete this TODO entry. Don't ship this to
-a tagged release — the FileHandler is cheap but unconditional.
+What was kept. The defensive layer is now a normal feature:
 
-**Defensive layer added 2026-04-24 while root cause still open.**
-`agent.stop()` no longer sends the WS frame synchronously — it queues
-the frame behind a 3s countdown and surfaces an inline "Stopping Xs
-· Undo" pill in place of the Stop button. Clicking the pill's Undo
-button cancels the pending send. This serves two purposes:
-
-1. Every Stop click is now **visible** — the pill appears whether
-   Dave meant to click or not. Accidental stops become observable
-   instead of mysterious.
-2. Accidental stops are **recoverable** during the 3s window.
-
-Shipped in two commits:
-- `ba98d70` — first pass via the shared `undoStore` + bottom-right
-  toast. Dave flagged the position as wrong ("it should popup by
-  the stop button") because hunting for a bottom-right toast eats
-  the 3-second window.
-- `08ab470` — replaced the bottom-right toast with an inline pill
-  that morphs the Stop button in place. New component
-  `frontend/src/lib/components/StopUndoInline.svelte` reads the
-  reactive `agent.stopPendingStartedAt` (`number | null`) and
-  `stopPendingWindowMs` to render the countdown. `undoStore`
-  import dropped from `agent.svelte.ts`; wiring is pure reactive
-  state. `Conversation.svelte` + `ChecklistChat.svelte` both swap
-  Stop→pill based on the flag.
-
-Relevant code (current state):
-- `frontend/src/lib/agent.svelte.ts` — `STOP_DELAY_MS` const,
+- `frontend/src/lib/agent.svelte.ts` — `STOP_DELAY_MS = 3000`,
   `stopPendingStartedAt` / `stopPendingWindowMs` `$state` fields,
   `pendingStopTimer` private timer, `cancelPendingStop()` (also
   called from `close()` so a session switch drops the queued
@@ -366,27 +334,24 @@ Relevant code (current state):
   inline pill.
 - `frontend/src/lib/agent.svelte.test.ts` — 4 tests cover
   deferral, undo-cancel, no-stack guard, and session-switch
-  cancel. 608/608 frontend suite green.
+  cancel.
 
-Browser→server diagnostics (also TEMP 2026-04-24, remove with the
-probe):
-- `src/bearings/api/routes_diag.py:log_undo_diag` — `/api/diag/undo`
-  endpoint that writes to the same `interrupt-probe.log`.
-- Stop frame carries `_clickedAt`, `_undoPushed`, plus the earlier
-  `_trace` / `_isTrusted` / `_eventType`. Server-side probe in
-  `ws_agent.py` stop branch echoes `fe_clickToRecv_ms` so I can
-  confirm the 3s defer actually runs in Dave's browser.
-- Rule `~/.claude/rules/no-devtools-dave.md` — Dave doesn't open
-  browser devtools; all diagnostics MUST come back via the server
-  (probe log, Playwright, instrumented frames).
+What was removed in L1.2 (2026-04-25):
 
-**Disposition when bug closes:** the inline pill is worth keeping
-as a feature — three-second undo on Stop is a generally nice
-affordance. But re-evaluate the window length (3s was chosen for
-diagnostic visibility; 1.5s might feel snappier once the bug is
-gone) and strip the probe instrumentation from the frame (`_trace`
-/ `_isTrusted` / `_eventType` / `_clickedAt` / `_undoPushed`
-fields) + delete `/api/diag/undo` at the same time.
+- `src/bearings/agent/_interrupt_probe.py` — module deleted.
+- Probe call sites in `agent/session.py`, `agent/runner.py`
+  (shutdown + request_stop), `api/ws_agent.py` (stop branch +
+  disconnect block).
+- `/api/diag/undo` endpoint in `api/routes_diag.py`.
+- TEMP probe fields on the WS stop frame (`_trace`, `_isTrusted`,
+  `_eventType`, `_clickedAt`, `_undoPushed`); the frame is now a
+  bare `{type: 'stop'}` again.
+- `frontend/vite.config.ts` sourcemap flag (added solely to
+  decode `_trace`).
+
+Window length was retained at 3s — Dave never asked to shorten
+it and 3s reads fine in practice. Re-evaluate if it ever feels
+sluggish.
 
 ---
 

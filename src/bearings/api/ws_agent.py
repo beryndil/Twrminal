@@ -349,41 +349,6 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:
                             )
                 await runner.submit_prompt(prompt, attachments=attachments or None)
             elif msg_type == "stop":
-                # TEMP 2026-04-23: session-switch interrupt probe — log
-                # the WS client's identifying headers and any frame-level
-                # annotations the frontend may have attached, so we can
-                # tell apart stops from Dave's browser vs. from an
-                # automated client (playwright, curl, another agent).
-                from bearings.agent._interrupt_probe import probe as _probe
-
-                headers = websocket.headers
-                client = websocket.client
-                # TEMP 2026-04-24: compute the click-to-receive gap from
-                # the frontend's `_clickedAt` stamp. ~3000ms ⇒ the
-                # STOP_DELAY_MS deferred setTimeout ran; ~0ms ⇒ it
-                # didn't and we sent instantly. Helps disambiguate
-                # "toast never rendered" from "defer path never
-                # executed" when diagnosing why the undo toast doesn't
-                # show up for Dave.
-                clicked_at = payload.get("_clickedAt")
-                gap_ms: int | None = None
-                if isinstance(clicked_at, (int, float)):
-                    import time
-
-                    gap_ms = int(time.time() * 1000 - clicked_at)
-                _probe(
-                    "ws_agent.stop_frame",
-                    session_id,
-                    user_agent=headers.get("user-agent", "?"),
-                    origin=headers.get("origin", "?"),
-                    client_host=client.host if client else "?",
-                    client_port=client.port if client else "?",
-                    fe_isTrusted=payload.get("_isTrusted"),
-                    fe_eventType=payload.get("_eventType"),
-                    fe_undoPushed=payload.get("_undoPushed"),
-                    fe_clickToRecv_ms=gap_ms,
-                    fe_trace_head=(payload.get("_trace") or "").split("\n", 4)[0:4],
-                )
                 await runner.request_stop()
             elif msg_type == "set_permission_mode":
                 mode = payload.get("mode")
@@ -442,17 +407,6 @@ async def agent_ws(websocket: WebSocket, session_id: str) -> None:
     except Exception:
         log.exception("ws %s: unexpected error in receive loop", session_id)
     finally:
-        # TEMP 2026-04-23: session-switch interrupt probe — capture WS
-        # disconnect timing so it can be correlated with any interrupt
-        # that fires around it. See bearings.agent._interrupt_probe.
-        from bearings.agent._interrupt_probe import probe
-
-        probe(
-            "ws_agent.disconnect",
-            session_id,
-            running=runner.is_running,
-            status=runner.status,
-        )
         forwarder.cancel()
         try:
             await forwarder

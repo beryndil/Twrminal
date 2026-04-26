@@ -871,12 +871,6 @@ class AgentSession:
         client = self._client
         if client is None:
             return
-        # TEMP 2026-04-23: session-switch interrupt probe — see
-        # bearings.agent._interrupt_probe docstring. Remove with the
-        # other three probe call sites once the bug is pinned down.
-        from bearings.agent._interrupt_probe import probe
-
-        probe("session.interrupt", self.session_id)
         try:
             await client.interrupt()
         except (ClaudeSDKError, OSError):
