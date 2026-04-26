@@ -384,10 +384,11 @@ export function getSessionTokens(
 
 /** Reply shape for `GET /sessions/{id}/todos`. `todos` is `null` when
  * the session has never invoked TodoWrite; an empty array means the
- * agent explicitly cleared its list. The LiveTodos widget uses the
- * distinction to render "no active todo session" vs. "todo session
- * active but currently empty." Live updates after first paint come
- * via the `todo_write_update` WS event. */
+ * agent explicitly cleared its list. The data-layer distinction is
+ * preserved (matters to the reducer / WS replay), but as of L5.7 the
+ * `LiveTodos` widget hides itself for both states — empty card with
+ * a "no active todos" footer was visual noise. Live updates after
+ * first paint come via the `todo_write_update` WS event. */
 export type SessionTodos = {
   todos: TodoItem[] | null;
 };

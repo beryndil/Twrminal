@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import type { TodoItem } from '$lib/api';
 
   /**
@@ -28,22 +29,39 @@
    * panel. Multiple `in_progress` entries are uncommon in practice
    * (the tool prompt nudges the model toward single-active) but
    * supported — we show the first one's active form.
+   *
+   * Visibility (v2, L5.7): the card renders only when the latest
+   * TodoWrite carries at least one item. `null` (never invoked) and
+   * `[]` (explicitly cleared) both hide the widget. The data layer
+   * still distinguishes the two — see `conversation.todos` and
+   * `SessionTodos.todos` — but the user-visible card treats them the
+   * same: nothing in flight, nothing to show. The previous behaviour
+   * of rendering an empty "no active todos" footer was visual noise
+   * that paid no information dividend.
+   *
+   * Auto-collapse (v2, L5.7): when every item in the latest list is
+   * `completed` and the user hasn't already collapsed, a 30s timer
+   * shrinks the card to header-only. Fires on the *edge* into
+   * all-completed, not on every update — a fresh add to an already
+   * all-done list doesn't restart the countdown, and a manual toggle
+   * cancels any pending timer so the user always wins.
    */
 
   type Props = {
     /** Null = session has never invoked TodoWrite; render nothing.
-     * Empty array = agent explicitly cleared the list; render the
-     * card with a "no active todos" footer so the user can see the
-     * session is still in a TodoWrite-aware state. */
+     * Empty array = agent explicitly cleared the list; also render
+     * nothing. The data layer keeps the distinction (matters for
+     * the reducer / WS replay) but the widget treats both as "no
+     * card." */
     todos: TodoItem[] | null;
   };
 
   const { todos }: Props = $props();
 
   // Collapse toggle — when the list grows tall it crowds the scroll
-  // area. The button in the bottom-right hides the list (and "no
-  // active todos" footer) while keeping the header row visible so the
-  // completed/total counter and active-form line stay glanceable.
+  // area. The button in the bottom-right hides the list while keeping
+  // the header row visible so the completed/total counter and the
+  // active-form line stay glanceable.
   //
   // Persisted to localStorage so the preference survives page
   // refreshes. Mirrors the pattern in `stores/tags.svelte.ts` for the
@@ -71,7 +89,25 @@
 
   let collapsed = $state(readCollapsed());
 
+  // Auto-collapse 30s after the latest update lands all-completed.
+  // Constants out of magic-number land per project rules (functions
+  // ≤40 lines, no magic numbers). 30s is the shipped default agreed
+  // in the L5.7 design; tune here if a real session shows it's wrong.
+  const AUTO_COLLAPSE_MS = 30_000;
+  let autoCollapseTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearAutoCollapseTimer(): void {
+    if (autoCollapseTimer !== null) {
+      clearTimeout(autoCollapseTimer);
+      autoCollapseTimer = null;
+    }
+  }
+
   function toggleCollapsed(): void {
+    // Manual toggle wins. If a pending auto-collapse was about to
+    // fire, kill it — the user just told us what they want, don't
+    // fight them 4s later by snapping the card shut again.
+    clearAutoCollapseTimer();
     collapsed = !collapsed;
     writeCollapsed(collapsed);
   }
@@ -97,9 +133,43 @@
         return { mark: '○', cls: 'text-slate-500' };
     }
   }
+
+  // Edge-triggered auto-collapse. We only schedule on the *transition*
+  // from "not all completed" → "all completed" so a fresh add to an
+  // already-done list (rare but legal) doesn't restart the countdown.
+  // `prevAllCompleted` is a plain `let`, not `$state`, so mutating it
+  // inside the effect doesn't loop the effect back on itself.
+  let prevAllCompleted = false;
+  $effect(() => {
+    const isAllCompleted = total > 0 && completed === total;
+    if (isAllCompleted && !prevAllCompleted) {
+      // Edge into all-completed → schedule auto-collapse. Replace any
+      // stale timer just in case (defensive; clearAutoCollapseTimer is
+      // a no-op when nothing's pending).
+      clearAutoCollapseTimer();
+      autoCollapseTimer = setTimeout(() => {
+        autoCollapseTimer = null;
+        if (collapsed) return; // user beat us to it via the chevron
+        collapsed = true;
+        writeCollapsed(true);
+      }, AUTO_COLLAPSE_MS);
+    } else if (!isAllCompleted) {
+      // Left all-completed (new pending/in_progress item arrived) →
+      // cancel the pending shrink. Don't auto-expand; if the user had
+      // collapsed manually they probably still want it collapsed.
+      clearAutoCollapseTimer();
+    }
+    prevAllCompleted = isAllCompleted;
+  });
+
+  // Component unmount (session switch / pane teardown). Without this
+  // the timer keeps a closure alive on the destroyed component and
+  // fires harmlessly-but-pointlessly. Effect cleanup would also run
+  // on every dependency change which would defeat the schedule.
+  onDestroy(clearAutoCollapseTimer);
 </script>
 
-{#if todos !== null}
+{#if todos !== null && todos.length > 0}
   <section
     class="border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs"
     aria-label="Agent todo list"
@@ -133,25 +203,21 @@
       </div>
     </header>
     {#if !collapsed}
-      {#if total === 0}
-        <p class="mt-1 text-slate-500 italic">no active todos</p>
-      {:else}
-        <ul class="mt-1 space-y-0.5">
-          {#each todos ?? [] as todo, i (i)}
-            {@const g = glyph(todo.status)}
-            <li class="flex items-start gap-2">
-              <span class={`mt-[1px] ${g.cls}`} aria-hidden="true">{g.mark}</span>
-              <span
-                class={todo.status === 'completed'
-                  ? 'text-slate-500 line-through'
-                  : 'text-slate-200'}
-              >
-                {todo.content}
-              </span>
-            </li>
-          {/each}
-        </ul>
-      {/if}
+      <ul class="mt-1 space-y-0.5">
+        {#each todos ?? [] as todo, i (i)}
+          {@const g = glyph(todo.status)}
+          <li class="flex items-start gap-2">
+            <span class={`mt-[1px] ${g.cls}`} aria-hidden="true">{g.mark}</span>
+            <span
+              class={todo.status === 'completed'
+                ? 'text-slate-500 line-through'
+                : 'text-slate-200'}
+            >
+              {todo.content}
+            </span>
+          </li>
+        {/each}
+      </ul>
       <div class="flex justify-end mt-1">
         <button
           type="button"

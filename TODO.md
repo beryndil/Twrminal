@@ -543,28 +543,19 @@ at the `article` rule for the full diagnosis.
 
 ---
 
-## Theme switcher UI — 2026-04-23
+## Theme switcher UI — RESOLVED 2026-04-26
 
-**Context:** Midnight Glass theme landed as the active default; the
-pre-Midnight-Glass palette is preserved under `[data-theme='default']`
-in `frontend/src/lib/themes/tokens.css`. Switching is a one-attribute
-flip on `<html>` (`data-theme`) — the Tailwind color scale resolves
-through CSS variables, so no component rewrite is needed.
-
-**Deferred:** Dave plans to build the selector UI later. Likely shape:
-a Settings toggle (or header control) that writes the choice to
-`localStorage` and updates `document.documentElement.dataset.theme`,
-with a matching server-side preference so reload/other-tab stays in
-sync. A no-flash path (inline script in `app.html` before paint that
-reads storage and sets the attribute) is worth doing at the same
-time — otherwise the first paint always shows the default.
-
-**Files involved:**
-- `frontend/src/lib/themes/tokens.css` — add new themes here
-- `frontend/src/lib/themes/midnight-glass.css` — treatment layer;
-  future themes get their own `<name>.css` with scoped selectors
-- `frontend/src/app.html` — current hardcoded `data-theme="midnight-glass"`
-- `frontend/src/app.css` — `@import`s both theme files today
+**Resolution.** Punch-list item L5.5. Shipped as "Themes & skins v1"
+in v0.14. Three bundled themes (`midnight-glass`, `default`,
+`paper-light`) scoped via `[data-theme="..."]` in
+`frontend/src/lib/themes/tokens.css`; treatment layers in
+`midnight-glass.css` + `paper-light.css`. `Settings.svelte` exposes a
+dropdown picker bound to `theme`, persists via
+`PATCH /api/preferences`, and `preferences.svelte.ts:applyTheme()`
+flips `<html data-theme>` + `<meta name="theme-color">` on Save
+without page reload. `app.html` runs a synchronous no-flash boot
+script that reads the cached preferences row before first paint, with
+an OS `prefers-color-scheme` fallback for fresh visits.
 
 ---
 
@@ -2470,16 +2461,19 @@ for first-paint. Derived from the latest `tool_calls` row where
 
 **Follow-ups left on the table:**
 
-- [ ] **Auto-collapse policy.** Current widget always shows when the
-  session has any todos. Candidate rule: collapse ~30s after the
-  latest update lands and every item is `completed`. Flicker risk if
-  the agent emits a fresh "pending" item immediately after; build and
-  tune against a real multi-turn session before committing.
+- [x] **Auto-collapse policy** — shipped 2026-04-26 in L5.7.
+  `LiveTodos.svelte` schedules a 30s shrink to header-only on the
+  *edge* into "all completed" (not on every update, so a fresh add
+  to an already-done list doesn't restart the countdown). Manual
+  toggle cancels the pending timer; leaving "all completed" cancels
+  it; component unmount cancels it via `onDestroy`. Constant
+  `AUTO_COLLAPSE_MS = 30_000` for tunability.
 - [ ] **Historical navigation.** Every TodoWrite payload is still in
   `tool_calls` (not just the latest). A "step back through todo
   states" affordance would let Dave see the progression. Not v1 — no
   evidence the audit trail is useful in-band; the Inspector's raw
-  tool-call list already covers debug cases.
+  tool-call list already covers debug cases. Re-evaluated 2026-04-26
+  in L5.7 — still no signal it's needed; left deferred.
 - [ ] **Push unchecked items to working-dir TODO.md on session close.**
   Dave greenlit this 2026-04-22 ("yes") — promoted from deferred to
   an active follow-up, though still blocked on resolving the "Nearest
@@ -2489,14 +2483,21 @@ for first-paint. Derived from the latest `tool_calls` row where
   action-row nearest-TODO.md picker lands, reuse the same resolver
   here and add a "Push N unchecked to {path}" affordance on the
   LiveTodos card header (visible only when at least one pending or
-  in_progress item is present).
+  in_progress item is present). Verified blocked 2026-04-26 in L5.7
+  — the action-row nearest-TODO.md picker isn't built yet.
 - [ ] **Widget placement interaction with ContextMeter/TokenMeter.**
   First-pass lives above the turn stream; if the conversation header
   gets more sticky elements, a dedicated "status strip" region should
-  be refactored out. Defer until a second sticky row shows up.
-- [ ] **Hide widget when `todos` is an empty list.** Spike treats empty
-  array as "render with 0 items" for simplicity; v2 should treat it
-  as "no active todo session, hide the card entirely."
+  be refactored out. Defer until a second sticky row shows up. Still
+  one-and-only-one sticky element above the turn stream as of
+  2026-04-26; no refactor pressure.
+- [x] **Hide widget when `todos` is an empty list** — shipped
+  2026-04-26 in L5.7. Render conditional flipped to
+  `{#if todos !== null && todos.length > 0}`. The data-layer
+  null-vs-empty distinction is preserved (the reducer/WS replay
+  contract still distinguishes "never invoked" from "explicitly
+  cleared"); the user-visible card just treats both as "no card."
+  The previous "no active todos" footer was visual noise.
 - [x] **Dave's adoption question — ANSWERED 2026-04-22: yes, adopt.**
   Dave greenlit using TodoWrite as part of his workflow going forward
   once the widget shipped in v0.8.0 and eyeballed clean against the

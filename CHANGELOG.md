@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.2] - 2026-04-26
+
+`LiveTodos` widget polish (L5.7 follow-ups). Two of the five v2 items
+on the table ship; three stay deferred with explicit rationale (see
+TODO.md "Live TodoWrite widget" section).
+
+### Changed
+
+- **`frontend/src/lib/components/LiveTodos.svelte`** — hide the card
+  entirely when the latest TodoWrite carries zero items. The render
+  conditional moved from `{#if todos !== null}` to
+  `{#if todos !== null && todos.length > 0}`, and the
+  `{#if total === 0}` empty-footer branch was removed. The data
+  layer still distinguishes `null` (never invoked) from `[]`
+  (explicitly cleared) — the reducer/WS replay tests cover that
+  contract — but the widget treats both as "no card." The previous
+  empty-state footer ("no active todos") was visual noise that paid
+  no information dividend.
+- **`frontend/src/lib/components/LiveTodos.svelte`** — auto-collapse
+  to header-only 30s after the latest TodoWrite lands all-completed.
+  The shrink fires on the *edge* into all-completed (not on every
+  update) so a fresh add to an already-done list doesn't restart the
+  countdown. Manual toggle of the chevron cancels any pending timer
+  (the user always wins). Leaving "all completed" — i.e. a fresh
+  pending or in_progress item lands — also cancels the timer; we
+  don't auto-expand because the user may have collapsed manually
+  before the new item arrived. Component unmount cleans up the
+  pending timer via `onDestroy` so a session switch doesn't leave a
+  closure alive on the destroyed component.
+- **`frontend/src/lib/api/sessions.ts`** — `SessionTodos` docstring
+  updated to note that as of L5.7 the widget treats `null` and `[]`
+  identically (hidden), even though the data layer keeps them
+  distinct.
+
 ## [0.20.1] - 2026-04-26
 
 Directory Context System v0.6.3 polish (L5.4): the `checks/on_open.sh`
