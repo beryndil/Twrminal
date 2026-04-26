@@ -21,6 +21,8 @@ import aiosqlite
 import pytest
 
 from bearings.db._common import (
+    _RETIRED_COLUMNS,
+    _RETIRED_MIGRATIONS,
     MIGRATIONS_DIR,
     MigrationDriftError,
     _apply_migrations,
@@ -249,6 +251,133 @@ async def test_init_db_clamps_db_and_sidecars_to_0600(tmp_path: Path) -> None:
             continue
         mode = stat.S_IMODE(p.stat().st_mode)
         assert mode == 0o600, f"{name} is {oct(mode)}, expected 0o600"
+
+
+@pytest.mark.asyncio
+async def test_retired_migration_orphan_self_heals(tmp_path: Path) -> None:
+    """A `schema_migrations` row whose name is in `_RETIRED_MIGRATIONS`
+    must not raise — the drift pass deletes it and continues. This is
+    the recovery path for forward-only-revert orphans (TODO.md "Drift
+    detector lacks forward-only-revert tombstones"). The v1 case is
+    `0011_sdk_reported_cost.sql`, retired by 0032."""
+    assert "0011_sdk_reported_cost.sql" in _RETIRED_MIGRATIONS, (
+        "tombstone presence is the contract this test guards"
+    )
+    db_path = tmp_path / "retired.sqlite"
+    conn = await init_db(db_path)
+    try:
+        # Plant the orphan row exactly as a v0.3.6-affected DB would
+        # carry it. Checksum value doesn't matter — drift pass keys on
+        # name-not-in-known.
+        await conn.execute(
+            "INSERT INTO schema_migrations (name, applied_at, checksum) "
+            "VALUES (?, datetime('now'), ?)",
+            ("0011_sdk_reported_cost.sql", "deadbeef" * 8),
+        )
+        await conn.commit()
+    finally:
+        await conn.close()
+
+    # Boot the affected DB. Must not raise.
+    conn2 = await init_db(db_path)
+    try:
+        async with conn2.execute(
+            "SELECT name FROM schema_migrations WHERE name = ?",
+            ("0011_sdk_reported_cost.sql",),
+        ) as cur:
+            row = await cur.fetchone()
+        assert row is None, "tombstone'd orphan row should be deleted on startup"
+    finally:
+        await conn2.close()
+
+
+@pytest.mark.asyncio
+async def test_retired_migration_orphan_idempotent(tmp_path: Path) -> None:
+    """Two consecutive boots with the orphan present (re-planted between
+    boots) must both succeed and clean the row. Guards against a future
+    drift-pass refactor that accidentally caches `applied` and stops
+    cleaning on second pass."""
+    db_path = tmp_path / "retired_idem.sqlite"
+    for _ in range(2):
+        conn = await init_db(db_path)
+        try:
+            await conn.execute(
+                "INSERT OR IGNORE INTO schema_migrations (name, applied_at, checksum) "
+                "VALUES (?, datetime('now'), ?)",
+                ("0011_sdk_reported_cost.sql", "deadbeef" * 8),
+            )
+            await conn.commit()
+        finally:
+            await conn.close()
+
+    conn3 = await init_db(db_path)
+    try:
+        async with conn3.execute(
+            "SELECT name FROM schema_migrations WHERE name = ?",
+            ("0011_sdk_reported_cost.sql",),
+        ) as cur:
+            row = await cur.fetchone()
+        assert row is None
+    finally:
+        await conn3.close()
+
+
+@pytest.mark.asyncio
+async def test_retired_column_dropped_when_present(tmp_path: Path) -> None:
+    """A DB carrying a column from a retired migration must have it
+    dropped on next boot. Simulated by manually adding
+    `sessions.sdk_reported_cost_usd` after a normal init, then
+    re-initing and asserting the column is gone."""
+    assert ("sessions", "sdk_reported_cost_usd") in _RETIRED_COLUMNS
+    db_path = tmp_path / "deadcol.sqlite"
+    conn = await init_db(db_path)
+    try:
+        # Simulate the v0.3.6 column add. Must run via raw ALTER since
+        # the canonical schema has no longer has it.
+        await conn.execute(
+            "ALTER TABLE sessions ADD COLUMN sdk_reported_cost_usd REAL NOT NULL DEFAULT 0"
+        )
+        await conn.commit()
+        async with conn.execute("SELECT name FROM pragma_table_info('sessions')") as cur:
+            cols_before = {row[0] async for row in cur}
+        assert "sdk_reported_cost_usd" in cols_before
+    finally:
+        await conn.close()
+
+    conn2 = await init_db(db_path)
+    try:
+        async with conn2.execute("SELECT name FROM pragma_table_info('sessions')") as cur:
+            cols_after = {row[0] async for row in cur}
+        assert "sdk_reported_cost_usd" not in cols_after, (
+            "retired column should have been dropped on init"
+        )
+    finally:
+        await conn2.close()
+
+
+@pytest.mark.asyncio
+async def test_retired_column_drop_no_op_when_absent(tmp_path: Path) -> None:
+    """Fresh DBs (the common case) never had the retired column.
+    `_drop_retired_columns` must be a clean no-op — no log spam, no
+    error, no spurious schema change. Two back-to-back inits assert
+    nothing perturbs the column set."""
+    db_path = tmp_path / "fresh_nocol.sqlite"
+    conn1 = await init_db(db_path)
+    try:
+        async with conn1.execute("SELECT name FROM pragma_table_info('sessions')") as cur:
+            cols_first = {row[0] async for row in cur}
+    finally:
+        await conn1.close()
+
+    conn2 = await init_db(db_path)
+    try:
+        async with conn2.execute("SELECT name FROM pragma_table_info('sessions')") as cur:
+            cols_second = {row[0] async for row in cur}
+    finally:
+        await conn2.close()
+
+    assert cols_first == cols_second
+    assert "sdk_reported_cost_usd" not in cols_first
 
 
 @pytest.mark.asyncio

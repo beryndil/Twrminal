@@ -1,0 +1,42 @@
+-- Forward-only retirement of migration 0011_sdk_reported_cost.sql.
+--
+-- Background. The original 0011_sdk_reported_cost.sql shipped in v0.3.6
+-- as a "fix" for a cost-inflation bug, adding `sessions.sdk_reported_cost_usd`
+-- (NOT NULL DEFAULT 0). Commit 7a957e3 (2026-04-20, "undo 0.3.6 cost-
+-- inflation fix — premise was wrong") deleted the file from disk and
+-- declared the schema forward-only. The drift detector landed
+-- 2026-04-23 (security audit §4) and treats applied rows without a
+-- matching file as fatal drift, so any DB that ran v0.3.6 and then
+-- updated past the detector commit refused to start with
+-- `MigrationDriftError: schema_migrations has applied row
+-- '0011_sdk_reported_cost.sql' but no such file`. Dave hit this on
+-- 2026-04-23 and worked around it manually.
+--
+-- The recovery is two-part and lives in db/_common.py:
+--   1. `_RETIRED_MIGRATIONS` lists '0011_sdk_reported_cost.sql' so the
+--      drift pass deletes the orphan row instead of raising.
+--   2. `_RETIRED_COLUMNS` lists ('sessions','sdk_reported_cost_usd') so
+--      the dead column is dropped on next boot from any DB that has it.
+--      Idempotent via pragma_table_info — DBs that never had the column
+--      skip the ALTER cleanly.
+--
+-- This file exists to record the retirement decision forward-only in
+-- schema_migrations and to lock the audit content via checksum. The
+-- DDL above is driven by Python because SQLite has no idempotent
+-- `DROP COLUMN IF EXISTS` and a non-idempotent ALTER would crashloop
+-- on fresh DBs that never ran the retired column-add.
+--
+-- Belt-and-braces: the DELETE below is redundant with the drift-pass
+-- tombstone in _common.py for normal startup, but ensures a migration-
+-- only replay (rebuild from migrations/) still cleans the row even if
+-- someone deletes the tombstone code without removing this file. SQLite
+-- accepts the DELETE as a no-op when no matching row exists.
+--
+-- DO NOT DELETE THIS FILE. Removing it without also removing
+-- '0011_sdk_reported_cost.sql' from `_RETIRED_MIGRATIONS` would lose
+-- the forward-only audit trail. If the retirement mechanism itself is
+-- ever reworked, retire this file the same way: leave it on disk,
+-- add its name to `_RETIRED_MIGRATIONS`, and ship a new retire-of-
+-- retire migration documenting why.
+
+DELETE FROM schema_migrations WHERE name = '0011_sdk_reported_cost.sql';

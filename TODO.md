@@ -537,39 +537,30 @@ time — otherwise the first paint always shows the default.
 
 ---
 
-## Drift detector lacks forward-only-revert tombstones — 2026-04-23
+## Drift detector forward-only-revert tombstones — RESOLVED 2026-04-25
 
-**Symptom:** `bearings.service` crashlooped with
-`MigrationDriftError: schema_migrations has applied row
-'0011_sdk_reported_cost.sql' but no such file`. Fixed in-place on Dave's
-DB by stopping the unit, backing up to
-`db.sqlite.bak-pre-0011-orphan-fix-20260423-175258`, and running
-`DELETE FROM schema_migrations WHERE name='0011_sdk_reported_cost.sql'`.
-Unit healthy at 17:53:06 CDT, `127.0.0.1:8787`.
+**Resolution.** Punch-list item L1.3. Shipped both option 1 (tombstone
+list) and option 2 (recovery migration) — they're complementary, not
+alternatives:
 
-**Root cause:** revert commit `7a957e3` (Apr 20, "undo 0.3.6 cost-inflation
-fix — premise was wrong") deleted `src/bearings/db/migrations/0011_sdk_reported_cost.sql`
-and declared "schema is forward-only" — but `_common.py:_apply_migrations`
-(drift-detection pass added 2026-04-23, see comment at `_common.py:72`)
-treats any applied row without a matching file as drift and refuses to
-start. Anyone who ran v0.3.6 before the revert and then updated past the
-drift-detector commit will hit this. Dead column `sdk_reported_cost_usd`
-(NOT NULL DEFAULT 0) survives in `sessions` and is unreferenced in current
-source — harmless but untidy.
+- `db/_common.py` now carries `_RETIRED_MIGRATIONS` (frozenset of orphan
+  names the drift pass deletes silently) and `_RETIRED_COLUMNS` (list of
+  `(table, column)` pairs `_drop_retired_columns` idempotently strips on
+  every `init_db`). Both are gated on `pragma_table_info`, so DBs that
+  never had the artifacts skip the work cleanly.
+- `db/migrations/0032_retire_sdk_reported_cost.sql` records the
+  retirement forward-only and runs a belt-and-braces
+  `DELETE FROM schema_migrations WHERE name='0011_sdk_reported_cost.sql'`
+  for migration-only replays.
 
-**Fix options to consider:**
-1. **Tombstone list** — add a module-level set of intentionally-retired
-   migration names; drift detector skips those. Cheapest, leaves dead
-   column in user DBs.
-2. **Recovery migration** — ship `0026_retire_sdk_reported_cost.sql` that
-   deletes the orphan row (and optionally drops the column). Fixes every
-   affected user DB on next startup; follows the forward-only discipline.
-3. **`--repair-drift` CLI flag** — one-shot op that deletes orphan rows
-   with explicit user confirmation. Good escape hatch but doesn't
-   auto-heal unattended installs.
+Self-healing on next boot for every affected DB. Tests in
+`tests/test_migrations.py::test_retired_migration_orphan_*` and
+`tests/test_migrations.py::test_retired_column_*`.
 
-Recommendation: option 2. Self-healing, no code complexity, keeps schema
-history honest. Option 1 only if we expect more forward-only reverts.
+The drift pass still raises `MigrationDriftError` for un-tombstoned
+orphans — the existing fatal-on-drift contract is preserved. Future
+forward-only reverts: add the deleted name to `_RETIRED_MIGRATIONS`,
+add any column adds to `_RETIRED_COLUMNS`, ship a `00NN_retire_*.sql`.
 
 ---
 

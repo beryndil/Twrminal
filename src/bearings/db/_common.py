@@ -6,17 +6,50 @@ package; must not itself import from them.
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 import aiosqlite
 
+log = logging.getLogger(__name__)
+
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 # SQLite tuning — safe under WAL. Negative cache_size is KB, positive is pages.
 _CACHE_SIZE_KB = -64000  # 64 MB page cache
 _MMAP_SIZE_BYTES = 128 * 1024 * 1024  # 128 MB memory-mapped reads
+
+# Migration names that have been intentionally retired forward-only —
+# the file no longer exists on disk, but historical DBs still carry
+# the applied row. The drift pass deletes these rows on startup
+# rather than refusing to start; the corresponding `00NN_retire_*.sql`
+# file documents the retirement and locks the decision via checksum.
+#
+# Adding a name here is a deliberate ratchet: it permits a row to
+# exist in the DB that has no corresponding file. Only add a name
+# after confirming the original migration's effects have been undone
+# (or are intentionally kept) and the file is safely deletable.
+# See TODO.md "Drift detector lacks forward-only-revert tombstones"
+# for the v1 case (0011_sdk_reported_cost.sql, retired by 0032).
+_RETIRED_MIGRATIONS: frozenset[str] = frozenset(
+    {
+        "0011_sdk_reported_cost.sql",
+    }
+)
+
+# Columns added by retired migrations whose effects still linger in
+# affected DBs and need cleanup. Each entry is `(table, column)`.
+# Idempotent on every boot: pragma_table_info gates the ALTER, so DBs
+# that never had the column or already had it dropped are a no-op.
+# Pure SQL would have to be migration-driven, but SQLite has no
+# `DROP COLUMN IF EXISTS` and a non-idempotent ALTER would crashloop
+# on every fresh DB. Doing it Python-side from `init_db` keeps the
+# migration files honest and the cleanup harmless.
+_RETIRED_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("sessions", "sdk_reported_cost_usd"),  # from retired 0011_sdk_reported_cost.sql
+)
 
 
 class MigrationDriftError(RuntimeError):
@@ -49,6 +82,7 @@ async def init_db(path: Path) -> aiosqlite.Connection:
     await conn.execute(f"PRAGMA mmap_size = {_MMAP_SIZE_BYTES}")
     await conn.execute("PRAGMA foreign_keys = ON")
     await _apply_migrations(conn)
+    await _drop_retired_columns(conn)
     await conn.commit()
     # Tighten permissions to owner-only *after* WAL has materialized so
     # the sidecar files (`-wal`, `-shm`) exist and can be chmod'd too.
@@ -118,6 +152,19 @@ async def _apply_migrations(conn: aiosqlite.Connection) -> None:
     # reflects that file's content.
     for name, stored in applied.items():
         if name not in known:
+            if name in _RETIRED_MIGRATIONS:
+                # Forward-only retirement: drop the orphan row and
+                # carry on. The retiring migration (e.g. 0032) has
+                # been written under the assumption that any column
+                # adds from the original migration are handled by
+                # `_drop_retired_columns`, so the row deletion is
+                # safe to do unattended.
+                await conn.execute("DELETE FROM schema_migrations WHERE name = ?", (name,))
+                log.info(
+                    "schema_migrations: retired orphan row %r dropped (tombstone)",
+                    name,
+                )
+                continue
             raise MigrationDriftError(
                 f"schema_migrations has applied row {name!r} but no such file "
                 f"in {MIGRATIONS_DIR}. Downgrade or deletion? Refusing to start."
@@ -153,6 +200,49 @@ async def _apply_migrations(conn: aiosqlite.Connection) -> None:
             "VALUES (?, datetime('now'), ?)",
             (name, digest),
         )
+
+
+async def _drop_retired_columns(conn: aiosqlite.Connection) -> None:
+    """Idempotently drop columns left behind by retired migrations.
+
+    Each `(table, column)` pair in `_RETIRED_COLUMNS` is gated on the
+    column actually being present — `pragma_table_info` is the source
+    of truth, so DBs that never ran the retired migration (or that
+    already had the column dropped on a prior boot) skip the ALTER.
+
+    This is in Python rather than SQL because SQLite has no
+    `ALTER TABLE ... DROP COLUMN IF EXISTS` and a non-idempotent
+    column drop in a numbered migration file would crashloop on
+    every fresh DB that never had the column to begin with.
+
+    Failures are logged but never fatal: a leftover dead column is
+    harmless (the canonical schema has already been cleaned of any
+    references) and the next boot retries.
+    """
+    for table, column in _RETIRED_COLUMNS:
+        # Table names are constants from `_RETIRED_COLUMNS`, never
+        # user input — safe to interpolate. PRAGMA table_info doesn't
+        # accept bound parameters in every SQLite build, so the
+        # f-string is the portable form.
+        async with conn.execute(f"SELECT name FROM pragma_table_info('{table}')") as cur:
+            cols = {row[0] async for row in cur}
+        if column not in cols:
+            continue
+        try:
+            await conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+            log.info("retired column dropped: %s.%s", table, column)
+        except aiosqlite.OperationalError as exc:
+            # SQLite refuses DROP COLUMN if the column is referenced
+            # by an index, view, trigger, or CHECK constraint. The
+            # canonical schema has none of those for retired columns
+            # by construction, but log + carry on rather than crash
+            # on an unexpected dependency.
+            log.warning(
+                "retired column drop deferred: %s.%s — %s (harmless; will retry next boot)",
+                table,
+                column,
+                exc,
+            )
 
 
 def _now() -> str:
