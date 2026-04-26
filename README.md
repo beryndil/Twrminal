@@ -585,6 +585,14 @@ keys you need.
 | `shell`    | `terminal_command`           | *(unset)*                        | Command dispatched by `/api/shell/open` terminal verb |
 | `shell`    | `file_explorer_command`      | *(unset)*                        | Command for `attachment.open_in.file_explorer`       |
 
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for prerequisites, setup,
+the six quality-gate commands, commit conventions, the PR process,
+and code-style rules. Project-specific overlays (function/file size
+caps, `mypy` strict, the brownfield discipline) live in
+[`CLAUDE.md`](CLAUDE.md).
+
 ## License
 
 MIT. See `LICENSE`.
