@@ -10,14 +10,18 @@ RestartSec=5
 
 # --- Sandbox hardening (2026-04-21 security audit §4) -----------------
 # User unit: most of these cost nothing because the app never needs
-# kernel tunables, alternate personalities, or SUID binaries. Tuned to
-# leave `$HOME` writable (Bearings reads ~/.claude and writes
-# ~/.local/share/bearings + ~/.config/bearings) and to allow the
-# `claude` CLI subprocess to spawn normally.
+# kernel tunables, alternate personalities, or SUID binaries. `$HOME`
+# is mounted read-only (`ProtectHome=read-only`) with a per-path
+# write whitelist below — limits the blast radius of a Bearings RCE
+# (no tampering with ~/.bashrc, ~/.config/autostart, dotfile
+# persistence, etc.) while still letting Bearings, the spawned
+# `claude` CLI, and code-edit work in whitelisted project trees
+# function normally.
 NoNewPrivileges=yes
 PrivateTmp=yes
 PrivateDevices=yes
 ProtectSystem=strict
+ProtectHome=read-only
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes
@@ -32,6 +36,21 @@ LockPersonality=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
 SystemCallArchitectures=native
+# Write whitelist for ProtectHome=read-only. The `-` prefix tolerates
+# a missing path at unit-start so a fresh install or a host without
+# a given project tree boots cleanly. To grant write access to a
+# project tree outside this set, drop a unit override:
+#   ~/.config/systemd/user/bearings.service.d/override.conf
+#   [Service]
+#   ReadWritePaths=%h/path/to/your/project
+ReadWritePaths=-%h/.local/share/bearings
+ReadWritePaths=-%h/.config/bearings
+ReadWritePaths=-%h/.claude
+ReadWritePaths=-%h/.local/share/claude
+ReadWritePaths=-%h/.cache
+ReadWritePaths=-%h/Projects
+ReadWritePaths=-%h/Desktop/dashboard
+ReadWritePaths=-%h/usb_backup
 # Soft caps — generous for chat + ring buffers, tight enough that a
 # runaway loop doesn't eat the desktop. Tune in config.toml via
 # systemd drop-in if your workflow genuinely needs more.

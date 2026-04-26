@@ -1602,12 +1602,13 @@ checklist follow-up.
         no throttling).
   - **Backups:** original pre-Apr-21 unit at `bearings.service.bak`;
     pre-forensic-hook unit at `bearings.service.pre-forensic.bak`.
-  - **Not done (deferred to Security-audit § Systemd hardening):**
-    `ProtectHome` / `PrivateTmp` / `NoNewPrivileges`. `ProtectHome`
-    cannot be `yes` or `read-only` — the SQLite DB lives in
-    `~/.local/share/bearings/`. `PrivateTmp=yes` and
-    `NoNewPrivileges=yes` are safe additions and should ride with
-    the Security-audit pass.
+  - **Done (Security-audit § Systemd hardening):** `PrivateTmp`,
+    `NoNewPrivileges` shipped 2026-04-23 in the same pass as the
+    other Protect* directives. `ProtectHome=read-only` shipped
+    2026-04-26 in v0.20.5 — the original "cannot be read-only"
+    note was wrong; `ReadWritePaths=` whitelisting the SQLite/data
+    dir + `~/.claude` + project trees gives the same operational
+    surface with the blast-radius reduction the audit asked for.
 
 ### 2026-04-21 — slice 5 frontend shipping a request the backend doesn't serve — resolved
 
@@ -2241,10 +2242,15 @@ ruff + mypy clean.
   `RestrictNamespaces`, `LockPersonality`, empty
   `CapabilityBoundingSet` + `AmbientCapabilities`,
   `SystemCallArchitectures=native`, `MemoryMax=2G`, `TasksMax=256`.
-  `ProtectHome` intentionally omitted — Bearings reads `~/.claude`
-  and writes `~/.local/share/bearings` + `~/.config/bearings`, so
-  locking home would require per-path `ReadWritePaths` overrides
-  that break the `%h/.local/bin/bearings` ExecStart.
+  `ProtectHome` finished 2026-04-26 (v0.20.5, L5.10) by adding
+  `ProtectHome=read-only` plus the `ReadWritePaths=` whitelist:
+  `%h/.local/share/bearings`, `%h/.config/bearings`, `%h/.claude`,
+  `%h/.local/share/claude`, `%h/.cache`, `%h/Projects`,
+  `%h/Desktop/dashboard`, `%h/usb_backup` (each `-`-prefixed so a
+  missing path is tolerated). The original concern about `%h/.local/
+  bin/bearings` being blocked was wrong — that's an exec read, not
+  a write. Project trees outside the whitelist need a unit drop-in
+  (example in the unit's comment block).
 - [x] **Skill/command scanner walks `~/.claude/plugins`.**
   `src/bearings/api/commands_scan.py`. Fixed 2026-04-23:
   - New `CommandsScope = Literal["all", "user", "project"]` +

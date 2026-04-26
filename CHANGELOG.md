@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.5] - 2026-04-26
+
+`bearings.service` systemd hardening (L5.10). Closes the
+`ProtectHome` gap deliberately deferred from the 2026-04-23
+hardening pass.
+
+### Changed
+
+- **`config/bearings.service`** — added `ProtectHome=read-only` plus
+  a per-path `ReadWritePaths=` whitelist. `$HOME` is now a read-only
+  bind mount with explicit write windows for Bearings' own state
+  (`~/.local/share/bearings`, `~/.config/bearings`), the spawned
+  `claude` CLI's state (`~/.claude`, `~/.local/share/claude`,
+  `~/.cache`), and the operational code-edit roots (`~/Projects`,
+  `~/Desktop/dashboard`, `~/usb_backup`). Each whitelist entry is
+  prefixed `-` so a missing path on a fresh install or a host
+  without that tree no longer blocks unit start. Working dirs
+  outside this set need a `~/.config/systemd/user/bearings.service.d/
+  override.conf` drop-in adding more `ReadWritePaths=` lines —
+  example included in the unit file's comment block. `PrivateTmp`
+  was already on (`=yes`) from the 2026-04-23 pass; the punch-list
+  ask for `PrivateTmp=true` is the same directive in systemd's
+  boolean parser, no change. Closes the `ProtectHome` line in
+  `TODO.md` § "Systemd unit hardening" deferred-items list.
+
 ## [0.20.4] - 2026-04-26
 
 DnD upload follow-ups (L5.9). Three of the five sub-items ship as
