@@ -82,13 +82,35 @@ PROMPT_TEMPLATES: dict[str, str] = {
         "preserving file paths and code identifiers verbatim. "
         "Do not add commentary."
     ),
+    # L4.3.3 — `⚔ CRIT` button. Adversarial-but-honest pass over the
+    # reply, scoped to the four failure modes Dave cares about most:
+    # unverified factual claims, missed edge cases, silent-failure
+    # risks, and code that reads plausible but wouldn't actually
+    # compile/run. The "if sound, say so plainly" clause is load-
+    # bearing — the failure mode it heads off is sub-agents inventing
+    # problems to look useful (a known regression in adversarial-
+    # critique prompts). Quoting the line being critiqued keeps the
+    # output actionable; vague critiques ("this might be brittle")
+    # are useless against a wall of text.
+    "critique": (
+        "You are reviewing the following assistant reply for a "
+        "Beryndil project. Identify: (a) factual claims that should "
+        "be verified against the codebase, (b) edge cases not "
+        "addressed, (c) silent-failure risks, (d) any code that "
+        "won't actually compile or run as written. Be specific — "
+        "quote the line you're critiquing. If the reply is sound, "
+        "say so plainly and don't invent problems."
+    ),
 }
 
 # Human-readable labels shown in the preview modal header. Mirrors
 # `PROMPT_TEMPLATES` keys; serves as the public action-name catalog the
-# frontend can hydrate without re-parsing the templates dict.
+# frontend can hydrate without re-parsing the templates dict. Glyphs
+# in the label flow into the modal badge so the user gets the same
+# visual cue they clicked (⚔ on the button → ⚔ in the modal header).
 ACTION_LABELS: dict[str, str] = {
     "summarize": "TL;DR",
+    "critique": "⚔ Critique",
 }
 
 

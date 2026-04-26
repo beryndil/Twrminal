@@ -50,17 +50,39 @@ from bearings.agent.sub_invoke import (
 
 
 def test_summarize_action_is_registered() -> None:
-    """v0 ships exactly the `summarize` action. L4.3.3 will add
-    `critique`. This keeps the action-enum contract honest — if we
-    ever rename `summarize` we want the test to scream."""
+    """Wave 2 ships `summarize` (lane 2, L4.3.2) and `critique`
+    (lane 3, L4.3.3). Pinning both labels here keeps the action-enum
+    contract honest — if we ever rename either we want the test to
+    scream. The catalog endpoint test below mirrors the same set
+    over HTTP."""
     assert "summarize" in PROMPT_TEMPLATES
     assert "summarize" in ACTION_LABELS
     assert ACTION_LABELS["summarize"] == "TL;DR"
+    assert "critique" in PROMPT_TEMPLATES
+    assert "critique" in ACTION_LABELS
+    assert ACTION_LABELS["critique"] == "⚔ Critique"
+
+
+def test_critique_prompt_covers_all_four_failure_modes() -> None:
+    """The L4.3.3 brief specifies the critique prompt asks the sub-
+    agent for four specific things: (a) factual claims, (b) edge
+    cases, (c) silent-failure risks, (d) code that won't compile/
+    run. Locking each substring here so a future "tighten the
+    prompt" pass doesn't accidentally drop a category."""
+    template = PROMPT_TEMPLATES["critique"]
+    assert "factual claims" in template
+    assert "edge cases" in template
+    assert "silent-failure" in template
+    assert "compile or run" in template
+    # The "if sound, say so plainly" clause heads off invented-
+    # problems failure mode — also load-bearing per the brief.
+    assert "don't invent problems" in template
 
 
 def test_is_known_action_gates_unknown_names() -> None:
     assert is_known_action("summarize") is True
-    assert is_known_action("critique") is False  # L4.3.3 adds this
+    assert is_known_action("critique") is True
+    assert is_known_action("transmogrify") is False
     assert is_known_action("") is False
     assert is_known_action("SUMMARIZE") is False  # case-sensitive enum
 
@@ -340,12 +362,42 @@ def test_reply_actions_catalog_lists_registered_actions(
 ) -> None:
     """The catalog endpoint mirrors the in-process `ACTION_LABELS`
     dict so the frontend can render labels without hardcoding the
-    enum. Adding `critique` in L4.3.3 should make this test fail
-    until we update both the dict and the assertion — by design."""
+    enum. Both Wave 2 actions must round-trip; the frontend's modal
+    badge is what gives the user visual confirmation of which sub-
+    agent ran."""
     resp = client.get("/api/sessions/reply_actions/catalog")
     assert resp.status_code == 200
     catalog = resp.json()
     assert catalog["summarize"]["label"] == "TL;DR"
+    assert catalog["critique"]["label"] == "⚔ Critique"
+
+
+def test_invoke_reply_action_critique_is_a_valid_action(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """L4.3.3 — `critique` reaches the route's action validator and
+    is forwarded to `run_reply_action` with the right kwargs. Unlike
+    `summarize`, this asserts the *route* accepts the new enum value
+    (the sub_invoke layer is covered by the gating tests above)."""
+    parent = _seed(client)
+    assistant = _assistant_msg(parent["_messages"])
+    captured: dict[str, Any] = {}
+    _patch_run(
+        monkeypatch,
+        [
+            TextChunk(text="(a) the claim about X is unverified."),
+            Complete(cost_usd=0.01, full_text="(a) the claim about X is unverified."),
+        ],
+        captured=captured,
+    )
+
+    resp = client.post(
+        f"/api/sessions/{parent['id']}/invoke_reply_action/{assistant['id']}",
+        json={"action": "critique"},
+    )
+    assert resp.status_code == 200
+    assert captured["action"] == "critique"
+    assert captured["source_text"] == "the assistant said hello"
 
 
 # --- sub_invoke generator unit test ------------------------------------

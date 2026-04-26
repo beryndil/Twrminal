@@ -491,3 +491,55 @@ describe('MessageTurn (tool-call rows)', () => {
     vi.useRealTimers();
   });
 });
+
+describe('MessageTurn (critique button)', () => {
+  // L4.3.3 / Wave 2 lane 3. The `⚔ CRIT` button mirrors `✂ TLDR`'s
+  // visibility contract: every finished assistant reply, every turn
+  // (latest or historical), hidden during streaming and when no
+  // `onCritique` handler is wired. The visual differentiation from
+  // TL;DR comes from the modal's catalog-driven label badge — the
+  // button itself uses the same compact action-row styling.
+  it('renders ⚔ CRIT on a finished assistant reply when onCritique is wired', () => {
+    const { queryByTestId } = render(
+      MessageTurn,
+      baseProps({ onCritique: vi.fn() })
+    );
+    const btn = queryByTestId('critique-button');
+    expect(btn).not.toBeNull();
+    expect(btn!.textContent).toContain('⚔');
+    expect(btn!.textContent!.toLowerCase()).toContain('crit');
+  });
+
+  it('renders ⚔ CRIT even on non-latest turns', () => {
+    // Critiquing an older reply is a legitimate workflow — same
+    // rationale as ＋ SPAWN and ✂ TLDR, distinct from latest-only
+    // ℹ MORE.
+    const { queryByTestId } = render(
+      MessageTurn,
+      baseProps({ onCritique: vi.fn(), isLatestAssistant: false })
+    );
+    expect(queryByTestId('critique-button')).not.toBeNull();
+  });
+
+  it('hides ⚔ CRIT while the turn is still streaming', () => {
+    const { queryByTestId } = render(
+      MessageTurn,
+      baseProps({ onCritique: vi.fn(), isStreaming: true })
+    );
+    expect(queryByTestId('critique-button')).toBeNull();
+  });
+
+  it('hides ⚔ CRIT when no onCritique handler is provided', () => {
+    const { queryByTestId } = render(MessageTurn, baseProps());
+    expect(queryByTestId('critique-button')).toBeNull();
+  });
+
+  it('clicking ⚔ CRIT fires onCritique with the assistant message', async () => {
+    const onCritique = vi.fn();
+    const { getByTestId } = render(MessageTurn, baseProps({ onCritique }));
+    await fireEvent.click(getByTestId('critique-button'));
+    expect(onCritique).toHaveBeenCalledTimes(1);
+    expect(onCritique.mock.calls[0][0].id).toBe('a-1');
+    expect(onCritique.mock.calls[0][0].role).toBe('assistant');
+  });
+});

@@ -987,10 +987,25 @@ it then. Do not exercise the historical checklists as-is.
   `frontend/src/lib/components/ReplyActionPreview.test.ts` (modal
   visibility, label, streaming caret, cost label, error message,
   Copy, Send-to-composer event, disabled-while-streaming, Close
-  button, ESC). Lane 3 (`⚔ CRIT`, L4.3.3) still pending — adds a
-  `critique` entry to `PROMPT_TEMPLATES` + `ACTION_LABELS` and a
-  sibling button; modal is generic and needs no change. Keep this
-  research entry open until lane 3 lands.
+  button, ESC). **Lane 3 (`⚔ CRIT`, L4.3.3) shipped 2026-04-26**
+  — `critique` entry added to `PROMPT_TEMPLATES` + `ACTION_LABELS`
+  in `sub_invoke.py` (label `⚔ Critique` so the modal badge carries
+  the same glyph the user clicked), `⚔ CRIT` button wired in
+  `MessageTurn.svelte` between `✂ TLDR` and `⎘ COPY` with sibling
+  `onCritique` handler in `Conversation.svelte` that calls
+  `replyActions.start('critique', msg)`. Modal needed no change —
+  the catalog-driven label badge is the visual differentiator from
+  TL;DR. Coverage bumped to 16 backend tests
+  (`test_critique_prompt_covers_all_four_failure_modes` pins each
+  of the four failure-mode strings + the "don't invent problems"
+  clause; `test_invoke_reply_action_critique_is_a_valid_action`
+  exercises the route with the new enum value) + 5 new frontend
+  tests in `MessageTurn.test.ts:describe('MessageTurn (critique
+  button)')` mirroring the spawn-button visibility/click contract.
+  After this lands the assistant-reply action row reads
+  `[ℹ MORE] [＋ SPAWN] [✂ TLDR] [⚔ CRIT] [⎘ COPY]` and Wave 2 is
+  done. Wave 3 (LLM-classifier-driven shape decision) tracked
+  separately under the research entry below.
 
   Dave's primary ask: alongside Copy (existing) and
   More Info (logged above), add a button that takes the *output of

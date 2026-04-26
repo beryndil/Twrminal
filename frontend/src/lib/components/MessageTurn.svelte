@@ -45,6 +45,13 @@
      * underlying invocation infrastructure also serves L4.3.3's
      * `⚔ CRIT` button by passing a different action name. */
     onTldr?: (msg: Message) => void;
+    /** L4.3.3 — `⚔ CRIT` button. Second consumer of L4.3.2's sub-
+     * agent invocation infra. Renders on every finished assistant
+     * reply alongside `✂ TLDR`. Click streams an adversarial-but-
+     * honest critique into the same shared modal (the modal swaps
+     * its label badge based on the action's catalog entry; no modal
+     * code change needed). */
+    onCritique?: (msg: Message) => void;
     /** Slice 4: bulk-select mode. When `bulkMode` is true the header
      * renders a checkbox in place of the ordinary role tag and the
      * context-menu action is still wired — right-click while in bulk
@@ -88,6 +95,7 @@
     isLatestAssistant = false,
     onSpawn,
     onTldr,
+    onCritique,
     bulkMode = false,
     selectedIds,
     onToggleSelect,
@@ -450,9 +458,8 @@
         {#if !isStreaming && onTldr}
           <!-- L4.3.2 / Wave 2 lane 2. Opens the shared sub-agent
                preview modal and streams a TL;DR of this reply.
-               Modal is generic — L4.3.3 will reuse it for `⚔ CRIT`
-               by adding a backend prompt template and a sibling
-               button here. -->
+               Modal is generic — L4.3.3 reuses it for `⚔ CRIT`
+               below by passing a different action name. -->
           <button
             type="button"
             class="text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-300"
@@ -462,6 +469,24 @@
             onclick={() => onTldr(assistant!)}
           >
             ✂ tldr
+          </button>
+        {/if}
+        {#if !isStreaming && onCritique}
+          <!-- L4.3.3 / Wave 2 lane 3. Same shared modal as TL;DR;
+               the catalog-driven label badge is what differentiates
+               the two visually (✂ TL;DR vs ⚔ Critique). Critique
+               prompt asks the sub-agent for an adversarial-but-
+               honest pass scoped to factual claims, missed edges,
+               silent-failure risk, and code that won't run. -->
+          <button
+            type="button"
+            class="text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-300"
+            aria-label="Critique this reply"
+            title="Stream a critique sub-agent against this reply"
+            data-testid="critique-button"
+            onclick={() => onCritique(assistant!)}
+          >
+            ⚔ crit
           </button>
         {/if}
         <button

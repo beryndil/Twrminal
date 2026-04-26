@@ -133,6 +133,19 @@
     replyActions.start('summarize', msg);
   }
 
+  /** L4.3.3 — `⚔ CRIT` action. Same plumbing as `onTldr`; only the
+   * action name changes. The shared `ReplyActionPreview` modal swaps
+   * its label badge based on the catalog, so users get visual
+   * confirmation of which sub-agent ran without us reaching into the
+   * modal's internals. */
+  function onCritique(msg: api.Message): void {
+    if (!msg.session_id) return;
+    if (Object.keys(replyActions.catalog).length === 0) {
+      void replyActions.refreshCatalog();
+    }
+    replyActions.start('critique', msg);
+  }
+
   // Persistent reorg-audit dividers (Slice 5). Fetched on session
   // switch + on `updated_at` bumps so a move from the other end also
   // invalidates the list on refocus.
@@ -384,6 +397,7 @@
             {onMoreInfo}
             {onSpawn}
             {onTldr}
+            {onCritique}
             isLatestAssistant={item.turn.key === latestAssistantTurnKey}
             bulkMode={bulk.active}
             selectedIds={bulk.selectedIds}
