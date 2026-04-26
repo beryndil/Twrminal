@@ -81,7 +81,38 @@ message bubbles for regenerate, pending op rows) plus the
 `bearings:composer-prefill` programmatic-focus path that's the most likely
 real-world trigger.
 
-## Autonomous checklist execution — 2026-04-24
+## Autonomous checklist execution — 2026-04-24 → shipped 2026-04-26 (L4.2)
+
+**Status (2026-04-26, L4.2).** Shipped end-to-end. The driver state
+machine lives in `src/bearings/agent/auto_driver.py` (989 lines), bound
+to the agent runner via `auto_driver_runtime.py` (470 lines, includes
+`AgentRunnerDriverRuntime` + `AutoDriverRegistry` with rehydrate-on-
+boot from `auto_run_state` table — migration 0031). The MCP-tool
+completion-signal arm of the design was replaced with a line-prefix
+sentinel grammar in `checklist_sentinels.py` (`CHECKLIST_ITEM_DONE`,
+`CHECKLIST_HANDOFF`/`_END`, `CHECKLIST_FOLLOWUP block=yes|no`/`_END`,
+`CHECKLIST_BLOCKED`/`_END`) — chosen over MCP tools because plain-line
+sentinels have no escape hazard and don't add a per-tool approval
+plumbing surface (rationale documented in the module docstring).
+HTTP surface: `POST/GET/DELETE /sessions/{id}/checklist/run` with
+`AutoRunStart`/`AutoRunStatus` Pydantic models. UI: "Run autonomously"
+button + status pill + Stop button + tour-mode toggle in
+`ChecklistView.svelte`. Schema deviation from the original design: the
+`checklist_items.chat_session_id` column was retained as a "current
+leg" forward pointer, with prior legs enumerable via the reverse
+`SELECT * FROM sessions WHERE checklist_item_id = ?` query — gives the
+UI a one-FK lookup for the active leg without losing the leg chain.
+Safety rails: `max_items_per_run=50`, `max_legs_per_item=5`,
+`max_followup_depth=3`, `handoff_threshold_percent=60`, halt-on-first-
+fail (default) vs. skip-and-continue, `bypassPermissions` per leg,
+asyncio stop event flushed between iterations. Verification: 112
+targeted tests across `test_auto_driver.py`,
+`test_auto_driver_persistence.py`, `test_routes_checklist_autonomous.py`,
+`test_checklist_sentinels.py`, `test_checklists_autonomous.py`; full
+suite 1141/1141 green; ruff + format + mypy clean. Real-world dogfood:
+this very item closed itself out via the autonomous driver path
+during L4.2 — meta-validation that the loop actually walks a checklist
+to completion.
 
 **Goal.** Point Claude at a `kind='checklist'` session and have him work
 through unchecked items sequentially — one fresh paired chat session per
