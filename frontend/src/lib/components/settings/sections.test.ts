@@ -4,8 +4,11 @@
  *  - SETTINGS_SECTIONS is sorted ascending by `weight` so the rail
  *    renders in the intended order.
  *  - Every entry carries a stable id, label, and component.
- *  - Six core sections ship in v1: profile, appearance, defaults,
- *    notifications, auth, about.
+ *  - The standards-§15 navigation set ships: profile, appearance,
+ *    defaults, notifications, auth, privacy, help, about.
+ *  - The §15 standard explicitly names appearance, notifications,
+ *    privacy, help, about as required — guard those individually so
+ *    a future refactor that drops one trips this test.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -28,17 +31,26 @@ describe('SETTINGS_SECTIONS', () => {
     }
   });
 
-  it('ships the six core v1 sections', () => {
+  it('ships the standards-§15 navigation set', () => {
     const ids = SETTINGS_SECTIONS.map((s) => s.id).sort();
     expect(ids).toEqual([
       'about',
       'appearance',
       'auth',
       'defaults',
+      'help',
       'notifications',
+      'privacy',
       'profile'
     ]);
   });
+
+  it.each(['appearance', 'notifications', 'privacy', 'help', 'about'])(
+    'includes the §15-required %s section',
+    (id) => {
+      expect(SETTINGS_SECTIONS.find((s) => s.id === id)).toBeDefined();
+    }
+  );
 
   it('ids are unique', () => {
     const ids = SETTINGS_SECTIONS.map((s) => s.id);

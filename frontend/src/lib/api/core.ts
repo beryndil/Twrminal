@@ -1,6 +1,13 @@
 export type HealthResponse = {
   auth: string;
   version: string;
+  /** Absolute path to Bearings' resolved XDG data home (e.g.
+   * `~/.local/share/bearings`). Holds the SQLite database, profiles,
+   * workspaces, and audit logs. The Settings → Privacy section reads
+   * this so the operator can see exactly which directory holds their
+   * data and hand it to `/api/shell/open` for the "Open data dir"
+   * action. */
+  data_dir: string;
 };
 
 export type BillingMode = 'payg' | 'subscription';

@@ -23,6 +23,7 @@
    * cross-row indicator from `preferences.lastSaveStatus`. */
   import { tick } from 'svelte';
   import { preferences } from '$lib/stores/preferences.svelte';
+  import { uiActions } from '$lib/stores/ui_actions.svelte';
   import SettingsShell from './settings/SettingsShell.svelte';
   import IconX from './icons/IconX.svelte';
 
@@ -37,6 +38,19 @@
 
   function onClose(): void {
     open = false;
+  }
+
+  /** Strip the `?settings=<id>` deep-link param when the dialog
+   * closes. Leaves other params alone (so a Settings open from a
+   * filtered sidebar URL doesn't clobber the filter). Dialog-open
+   * state is the URL-controlling scope; the shell only writes the
+   * value, the dialog owns the lifecycle. */
+  function clearSettingsParam(): void {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('settings')) return;
+    url.searchParams.delete('settings');
+    window.history.replaceState(window.history.state, '', url);
   }
 
   /** Backdrop click handler. The dialog surface stops propagation,
@@ -86,6 +100,18 @@
     } else if (returnFocusTo) {
       returnFocusTo.focus();
       returnFocusTo = null;
+      clearSettingsParam();
+    }
+  });
+
+  // Mutually-exclusive overlays: when the cheat sheet opens (e.g. from
+  // Help → "Show keyboard shortcuts", or the `?` chord while the
+  // dialog is up), close the Settings dialog so we don't stack two
+  // modals. Same convention `uiActions.openNewSession` / `openTemplatePicker`
+  // enforce for sidebar overlays.
+  $effect(() => {
+    if (uiActions.cheatSheetOpen && open) {
+      open = false;
     }
   });
 </script>

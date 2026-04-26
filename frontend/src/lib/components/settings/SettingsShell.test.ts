@@ -9,12 +9,27 @@
  *    "false") so a screen reader can announce it as the current tab.
  */
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import SettingsShell from './SettingsShell.svelte';
 import { SETTINGS_SECTIONS } from './sections';
 
 afterEach(cleanup);
+
+// SettingsShell now seeds its initial active section from
+// `?settings=<id>` on the URL and writes the active id back as the
+// user navigates. Tests run in a single jsdom window, so a previous
+// test's URL writes leak forward unless we strip them. Without this,
+// the "ArrowDown advances by one" test starts on whatever section the
+// last test landed on, not on SETTINGS_SECTIONS[0].
+beforeEach(() => {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (url.searchParams.has('settings')) {
+    url.searchParams.delete('settings');
+    window.history.replaceState(window.history.state, '', url);
+  }
+});
 
 describe('SettingsShell', () => {
   it('lands on the first section by default', () => {

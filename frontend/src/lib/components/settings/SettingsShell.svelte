@@ -7,8 +7,19 @@
    *
    * Active-section state lives in this component (not in a store):
    * the dialog only has one instance live at a time, and component
-   * state is the smallest scope that does the job. URL-based
-   * routing (?settings=<id>) is a follow-up.
+   * state is the smallest scope that does the job.
+   *
+   * Deep-link via `?settings=<id>`:
+   *   - On mount, if the URL carries a `settings` query param that
+   *     matches a registered section id, land on that pane. Stable
+   *     anchors are §15 of the standards spec.
+   *   - When the user navigates between sections, mirror the active
+   *     id back into the URL via `replaceState` so a copied URL
+   *     reproduces the state (no history pollution per click).
+   *   - The dialog's owner (`Settings.svelte`) is responsible for
+   *     clearing the param on close. Keeping shell-side writes
+   *     active-only avoids a flash where the param disappears mid-
+   *     close transition.
    *
    * The left rail is keyboard-navigable: ↑/↓ moves the active row,
    * Home/End jump to the ends. Each rail item is a `<button>` so
@@ -16,13 +27,32 @@
    */
   import { SETTINGS_SECTIONS } from './sections';
 
-  /** Default to the first section in the registry. URL routing
-   * (`?settings=<id>`) is a follow-up; for now consumers always
-   * land on the first pane. */
-  let activeId = $state(SETTINGS_SECTIONS[0].id);
+  /** Read the `settings` query param at first render and, if it names
+   * a registered section, use it as the initial active id. Falls
+   * through to the lowest-weight section otherwise. Guarded for SSR
+   * (`window` is undefined under static-prerender). */
+  function initialId(): string {
+    if (typeof window === 'undefined') return SETTINGS_SECTIONS[0].id;
+    const param = new URL(window.location.href).searchParams.get('settings');
+    if (param && SETTINGS_SECTIONS.some((s) => s.id === param)) return param;
+    return SETTINGS_SECTIONS[0].id;
+  }
+
+  let activeId = $state(initialId());
   const active = $derived(
     SETTINGS_SECTIONS.find((s) => s.id === activeId) ?? SETTINGS_SECTIONS[0]
   );
+
+  /** Mirror `activeId` into `?settings=<id>` so deep-links round-trip.
+   * `replaceState` keeps the back button useful — flipping rails
+   * inside a dialog shouldn't push N entries onto history. */
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('settings') === activeId) return;
+    url.searchParams.set('settings', activeId);
+    window.history.replaceState(window.history.state, '', url);
+  });
   // Lifted out of the template because Svelte 5 only allows
   // `{@const}` immediately inside a few specific block parents (none
   // of which are a plain `<section>`). `$derived` here gives us the

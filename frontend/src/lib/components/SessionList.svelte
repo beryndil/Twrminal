@@ -22,6 +22,18 @@
 
   let showSettings = $state(false);
 
+  // Deep-link entry: a fresh page load with `?settings=<id>` should
+  // open the Settings dialog and land on the named section. The
+  // shell (SettingsShell.svelte) reads the param itself for the
+  // initial `activeId`; this just flips the dialog's `open` flag so
+  // the URL anchor works as a real shareable deep-link, not just a
+  // mid-session "remember which pane I was on" sticky.
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URL(window.location.href).searchParams;
+    if (params.has('settings')) showSettings = true;
+  });
+
   let importInput: HTMLInputElement | undefined = $state();
   let importError = $state<string | null>(null);
   let importProgress = $state<{ done: number; total: number } | null>(null);

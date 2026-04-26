@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 
 from bearings import __version__
+from bearings.config import DATA_HOME
 
 router = APIRouter(tags=["health"])
 
@@ -12,13 +13,29 @@ router = APIRouter(tags=["health"])
 # but the path is constant.
 _INDEX_HTML = Path(__file__).parent.parent / "web" / "dist" / "index.html"
 
+# Resolved once at import. The XDG data home is process-stable — env
+# vars that drive it are read at module import time in `bearings.config`,
+# and Bearings doesn't re-resolve on the fly. Stringify here so the JSON
+# response is a flat shape the frontend can consume without conversion.
+_DATA_DIR = str(DATA_HOME)
+
 
 @router.get("/health")
 async def health(request: Request) -> dict[str, str]:
+    """Server-state probe used by the Auth gate and the Privacy section.
+
+    `auth` tells the SPA whether a Bearer token is required;
+    `version` is the package release string for the About hero;
+    `data_dir` is the resolved XDG data home (where SQLite, profiles,
+    workspaces, and audit logs live). The Privacy section surfaces it
+    so the operator knows exactly which directory holds their data
+    and can hand it to `xdg-open` via `/api/shell/open` for the
+    "Open data dir" button."""
     enabled = request.app.state.settings.auth.enabled
     return {
         "auth": "required" if enabled else "disabled",
         "version": __version__,
+        "data_dir": _DATA_DIR,
     }
 
 

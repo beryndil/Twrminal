@@ -28,6 +28,8 @@ import AppearanceSection from './sections/AppearanceSection.svelte';
 import DefaultsSection from './sections/DefaultsSection.svelte';
 import NotificationsSection from './sections/NotificationsSection.svelte';
 import AuthSection from './sections/AuthSection.svelte';
+import PrivacySection from './sections/PrivacySection.svelte';
+import HelpSection from './sections/HelpSection.svelte';
 import AboutSection from './sections/AboutSection.svelte';
 
 export interface SettingsSection {
@@ -80,10 +82,24 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     component: AuthSection
   },
   {
+    id: 'privacy',
+    label: 'Privacy',
+    description: 'What Bearings collects, where your data lives.',
+    weight: 60,
+    component: PrivacySection
+  },
+  {
+    id: 'help',
+    label: 'Help',
+    description: 'Keyboard shortcuts, README, and documentation.',
+    weight: 70,
+    component: HelpSection
+  },
+  {
     id: 'about',
     label: 'About',
     description: 'Version and build information.',
-    weight: 60,
+    weight: 80,
     component: AboutSection
   }
 ].sort((a, b) => a.weight - b.weight);

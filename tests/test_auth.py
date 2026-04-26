@@ -47,6 +47,19 @@ def test_health_reports_disabled_when_off(client: TestClient) -> None:
     assert body["auth"] == "disabled"
 
 
+def test_health_includes_data_dir(client: TestClient) -> None:
+    """The Privacy section reads `data_dir` from /api/health to surface
+    the resolved XDG data home. Guard the field so a future refactor
+    that drops it from the response shape trips this test."""
+    body = client.get("/api/health").json()
+    assert "data_dir" in body
+    assert isinstance(body["data_dir"], str)
+    # Path must look absolute — the Privacy section hands it to
+    # `/api/shell/open` for the file-explorer dispatch, which only
+    # accepts absolute paths in practice.
+    assert body["data_dir"].startswith("/")
+
+
 def test_sessions_requires_bearer_when_enabled(auth_client: TestClient) -> None:
     resp = auth_client.get("/api/sessions")
     assert resp.status_code == 401
