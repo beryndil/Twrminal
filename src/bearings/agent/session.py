@@ -580,11 +580,16 @@ class AgentSession:
         # `inherit_mcp_servers` behavior above — whatever the inherit
         # policy, the Bearings server is added on top.
         if self.enable_bearings_mcp and self.db is not None:
+            # `working_dir_getter` is a closure (not a stored value)
+            # so the dir_init tool resolves the current cwd at call
+            # time. Closure form matches `db_getter` and keeps the
+            # MCP server stateless on the session's mutable fields.
             mcp_servers[BEARINGS_MCP_SERVER_NAME] = build_bearings_mcp_server(
                 self.session_id,
                 self._current_db,
                 emit_delta=emit_delta_cb,
                 bash_id_getter=pending_bash_ids.get,
+                working_dir_getter=lambda: self.working_dir,
             )
             options_kwargs["mcp_servers"] = mcp_servers
         hooks_map: dict[str, list[HookMatcher]] = {}

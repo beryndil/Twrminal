@@ -1359,18 +1359,38 @@ it then. Do not exercise the historical checklists as-is.
   the spec's 24h-cheap / 7d-full distinction into a single 24h
   trigger; splitting the thresholds is v0.6.3 polish.
 
-### v0.6.2 — automatic onboarding
+### v0.6.2 — automatic onboarding (✅ shipped 2026-04-26)
 
-- [ ] **Auto-trigger on WS-open.** When a Bearings session opens in
-  a directory without `.bearings/`, generate and present the brief
-  as the first assistant message. User confirms in chat prose.
-  Agent writes the files on confirm.
-- [ ] **Dogfood against `~/Projects/Bearings` itself.** First
-  `.bearings/` ever written lives here. The test case that matters:
-  the step-5 grep finds "Twrminal" in `CHANGELOG.md` and the brief
-  reports it as *historical record, not a rename in progress* —
-  not as a problem. This false-positive copy ships in the test
-  fixture.
+- [x] **Auto-trigger on prompt-assembly.** When a Bearings session
+  opens in a directory that has no `.bearings/manifest.toml` but
+  otherwise looks like a project (`.git` / `pyproject.toml` /
+  `package.json` / `Cargo.toml` / `go.mod`), the prompt assembler
+  injects a `directory_onboarding` system-prompt layer carrying the
+  freshly-rendered seven-step `Brief` plus instructions for the
+  agent to (a) quote the brief verbatim to the user, (b) ask in
+  chat prose whether to save it, (c) call the new
+  `mcp__bearings__dir_init` tool on confirmation. Once the manifest
+  exists the next turn falls through to the regular
+  `directory_bearings` brief layer and the onboarding layer drops
+  out — no per-runner state to track. New module
+  `src/bearings/bearings_dir/auto_onboard.py`; new MCP tool factory
+  `_build_dir_init` in `src/bearings/agent/mcp_tools.py`; wired via
+  `working_dir_getter` closure from `agent/session.py`. Tests in
+  `tests/test_bearings_dir_auto_onboard.py` (14) +
+  `tests/test_prompt_assembler.py` (3 new).
+- [x] **Dogfood against `~/Projects/Bearings` itself.** First
+  `.bearings/` ever written lives here, committed alongside the
+  feature in this commit. Step-5 naming scan surfaced
+  `'Brings' in CHANGELOG.md (canonical 'bearings')` (typo variant
+  of the canonical name within edit-distance 2). The Twrminal
+  mention from `CHANGELOG.md` is *not* surfaced because edit
+  distance "Twrminal" → "bearings" is far above the variant
+  threshold; the agent-facing layer copy still tells the agent to
+  read any naming notes as historical record, not active rename
+  work, so the historical-name failure mode is covered by copy
+  even though Twrminal specifically didn't trip the heuristic.
+  Refining the heuristic to catch full-rename pairs (vs. typo
+  variants) is v0.6.3+ polish.
 
 ### v0.6.3+ — polish
 

@@ -1,0 +1,12 @@
+schema_version = 1
+branch = "main"
+dirty = true
+updated_at = 2026-04-26 16:19:39.973587+00:00
+
+[environment]
+venv_path = "/home/beryndil/Projects/Bearings/.venv"
+lockfile_fresh = true
+notes = [
+    "naming note: 'Brings' in CHANGELOG.md (canonical 'bearings')",
+]
+last_validated = 2026-04-26 16:19:39.973575+00:00

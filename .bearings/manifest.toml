@@ -1,0 +1,7 @@
+schema_version = 1
+name = "Bearings"
+path = "/home/beryndil/Projects/Bearings"
+description = "# Bearings Localhost web UI for Claude Code agent sessions. FastAPI backend streams session events over WebSocket to a SvelteKit frontend; SQLite persists"
+git_remote = "git@github.com:beryndil/Bearings.git"
+language = "python 3.12"
+created_at = 2026-04-26 16:19:39.968996+00:00

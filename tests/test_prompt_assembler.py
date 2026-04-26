@@ -461,6 +461,83 @@ async def test_directory_bearings_layer_injected_when_onboarded(
     assert "DemoProj" in layer.content
 
 
+def _seed_pyproject(workdir: Path, name: str = "demo") -> None:
+    """Drop a minimal `pyproject.toml` so the auto-onboarding gate
+    fires (the gate requires at least one project marker)."""
+    (workdir / "pyproject.toml").write_text(
+        f'[project]\nname = "{name}"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.asyncio
+async def test_directory_onboarding_layer_injected_for_fresh_project(
+    tmp_path: Path,
+) -> None:
+    """A working_dir that looks like a project but has no `.bearings/`
+    yields the v0.6.2 `directory_onboarding` layer. The rendered text
+    must mention the `dir_init` MCP tool so the agent knows what to
+    call on user confirmation."""
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    _seed_pyproject(workdir, name="demo")
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        sess = await create_session(conn, working_dir=str(workdir), model="m", title="t")
+        result = await assemble_prompt(conn, sess["id"])
+    finally:
+        await conn.close()
+    kinds = [layer.kind for layer in result.layers]
+    assert "directory_onboarding" in kinds
+    # The two directory layers are mutually exclusive — at most one
+    # ships per turn, never both.
+    assert "directory_bearings" not in kinds
+    layer = next(layer for layer in result.layers if layer.kind == "directory_onboarding")
+    assert "mcp__bearings__dir_init" in layer.content
+
+
+@pytest.mark.asyncio
+async def test_directory_onboarding_layer_skipped_for_onboarded_dir(
+    tmp_path: Path,
+) -> None:
+    """Once `.bearings/manifest.toml` exists, the regular brief layer
+    takes over and the onboarding layer must not stack on top."""
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    _seed_pyproject(workdir)
+    _seed_bearings_dir(workdir, name="DemoProj")
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        sess = await create_session(conn, working_dir=str(workdir), model="m", title="t")
+        result = await assemble_prompt(conn, sess["id"])
+    finally:
+        await conn.close()
+    kinds = [layer.kind for layer in result.layers]
+    assert "directory_bearings" in kinds
+    assert "directory_onboarding" not in kinds
+
+
+@pytest.mark.asyncio
+async def test_directory_onboarding_layer_skipped_for_non_project_dir(
+    tmp_path: Path,
+) -> None:
+    """A working_dir without project markers (no .git / pyproject /
+    package.json / Cargo.toml / go.mod) must not volunteer a brief —
+    sessions opened in `~/Downloads` shouldn't trigger onboarding."""
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    (workdir / "notes.txt").write_text("hi", encoding="utf-8")
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        sess = await create_session(conn, working_dir=str(workdir), model="m", title="t")
+        result = await assemble_prompt(conn, sess["id"])
+    finally:
+        await conn.close()
+    kinds = [layer.kind for layer in result.layers]
+    assert "directory_onboarding" not in kinds
+    assert "directory_bearings" not in kinds
+
+
 @pytest.mark.asyncio
 async def test_directory_bearings_layer_precedes_session_instructions(
     tmp_path: Path,

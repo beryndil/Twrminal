@@ -23,6 +23,14 @@ Current tool set:
     for the streaming implementation; the side-channel wiring lives
     in ``agent/session.py``.
 
+  - ``bearings__dir_init()`` — write the `.bearings/` files for the
+    session's working directory. Called by the agent on user
+    confirmation when the v0.6.2 auto-onboarding system-prompt layer
+    is in play (see ``bearings_dir/auto_onboard.py``). Registered
+    only when the caller passes a non-None ``working_dir_getter`` so
+    sessions without a known cwd (rare; CLI test harnesses) don't
+    expose a no-op tool to the model.
+
 Closures over ``session_id`` + an injected ``db getter`` keep the
 server stateless on disk. Callers (``AgentSession``) supply a callable
 returning the current ``aiosqlite.Connection`` so a server built at
@@ -46,6 +54,7 @@ from claude_agent_sdk import create_sdk_mcp_server, tool
 from claude_agent_sdk.types import McpSdkServerConfig
 
 from bearings.agent.bash_tool import EmitDelta, ToolUseIdGetter, build_bash_tool
+from bearings.agent.dir_init_tool import WorkingDirGetter, build_dir_init_tool
 from bearings.db import store
 
 log = logging.getLogger(__name__)
@@ -220,6 +229,7 @@ def build_bearings_mcp_server(
     *,
     emit_delta: EmitDelta | None = None,
     bash_id_getter: ToolUseIdGetter | None = None,
+    working_dir_getter: WorkingDirGetter | None = None,
 ) -> McpSdkServerConfig:
     """Construct the Bearings in-process MCP server for one session.
 
@@ -239,10 +249,18 @@ def build_bearings_mcp_server(
     MCP `tools/call` payload doesn't carry it; the session pushes it
     onto a queue when it observes the matching `ToolCallStart`).
     Tests and fallback paths that don't need streaming can omit both
-    and the server will register only `get_tool_output`."""
+    and the server will register only `get_tool_output`.
+
+    ``working_dir_getter`` opts-in the v0.6.2 ``dir_init`` tool. The
+    callable returns the session's current ``working_dir`` (string or
+    None) so the tool resolves at call time and survives a
+    hypothetical mid-session retag. None / not-passed disables the
+    tool — sessions without a working_dir don't expose a no-op."""
     tools: list[Any] = [_build_get_tool_output(session_id, db_getter)]
     if emit_delta is not None and bash_id_getter is not None:
         tools.append(build_bash_tool(emit_delta, bash_id_getter))
+    if working_dir_getter is not None:
+        tools.append(build_dir_init_tool(working_dir_getter))
     return create_sdk_mcp_server(
         name=BEARINGS_MCP_SERVER_NAME,
         version="1.0.0",

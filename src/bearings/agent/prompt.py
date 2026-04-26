@@ -52,6 +52,7 @@ LayerKind = Literal[
     "checklist_context",
     "checklist_overview",
     "directory_bearings",
+    "directory_onboarding",
     "session",
 ]
 
@@ -346,11 +347,29 @@ async def assemble_prompt(conn: aiosqlite.Connection, session_id: str) -> Assemb
     # on every turn; the cadence matches tag memories so an out-of-band
     # `bearings pending add` lands on the next prompt without a runner
     # respawn. Returns None when the directory hasn't been onboarded —
-    # we silently skip the layer rather than emitting an empty section.
+    # in that case v0.6.2 falls back to the auto-onboarding layer below.
     if working_dir:
         brief = _format_directory_brief_safe(working_dir)
         if brief:
             layers.append(Layer(name="brief", kind="directory_bearings", content=brief))
+        else:
+            # Auto-trigger onboarding (v0.6.2). The brief is None when
+            # `.bearings/manifest.toml` is missing; if the directory
+            # otherwise looks like a project, render the onboarding
+            # layer instead so the agent presents the brief and asks
+            # the user whether to persist it. Once the user confirms
+            # and `mcp__bearings__dir_init` writes the manifest, the
+            # next turn falls through to the regular brief path above
+            # and this layer drops out — no per-runner state to track.
+            onboarding = _format_onboarding_layer_safe(working_dir)
+            if onboarding:
+                layers.append(
+                    Layer(
+                        name="onboarding",
+                        kind="directory_onboarding",
+                        content=onboarding,
+                    )
+                )
 
     if session_instructions:
         layers.append(Layer(name="session", kind="session", content=session_instructions))
@@ -372,5 +391,22 @@ def _format_directory_brief_safe(working_dir: str) -> str | None:
 
     try:
         return format_directory_brief(working_dir)
+    except OSError:
+        return None
+
+
+def _format_onboarding_layer_safe(working_dir: str) -> str | None:
+    """Wrap `auto_onboard.format_onboarding_layer` so subprocess/IO
+    failures during the seven-step ritual can never break prompt
+    assembly. The onboarding layer is advisory — when in doubt, skip
+    it and let the user run `bearings here init` manually.
+
+    Local import keeps `bearings_dir.auto_onboard` (which transitively
+    pulls `subprocess`) out of the prompt-assembly hot path on sessions
+    whose `working_dir` is empty or already onboarded."""
+    from bearings.bearings_dir.auto_onboard import format_onboarding_layer
+
+    try:
+        return format_onboarding_layer(working_dir)
     except OSError:
         return None
