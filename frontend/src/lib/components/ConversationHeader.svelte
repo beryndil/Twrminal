@@ -153,15 +153,26 @@
     itemLabel: string;
   };
   let pairedCrumb = $state<PairedChatCrumb | null>(null);
+  // Memoize the last successfully-resolved crumb keyed on
+  // `sid:itemId`. The `sessions.svelte.ts` `softRefresh` poll
+  // replaces `sessions.list` with new object references every 3 s,
+  // which would otherwise re-fire this effect and re-issue
+  // `getChecklist()` against every candidate every tick. We only
+  // need to re-resolve when either the selected session id or its
+  // `checklist_item_id` actually changes.
+  let resolvedFor = $state<string | null>(null);
 
   $effect(() => {
     const current = sessions.selected;
     if (!current || current.checklist_item_id == null) {
       pairedCrumb = null;
+      resolvedFor = null;
       return;
     }
     const sid = current.id;
     const itemId = current.checklist_item_id;
+    const key = `${sid}:${itemId}`;
+    if (resolvedFor === key && pairedCrumb) return;
     // The item's parent checklist id is whichever session ids we
     // already have in the sidebar store — scan for the one whose
     // `kind === 'checklist'` with a matching item. The lookup is
@@ -196,6 +207,7 @@
               itemId: match.id,
               itemLabel: match.label
             };
+            resolvedFor = key;
             return;
           }
         } catch {

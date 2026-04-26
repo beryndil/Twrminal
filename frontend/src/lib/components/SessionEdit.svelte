@@ -40,15 +40,29 @@
     tags.list.find((t) => t.name.toLowerCase() === draftLower) ?? null
   );
 
+  // Seed form state on the open transition only. The 3 s `softRefresh`
+  // poll in `sessions.svelte.ts` replaces `sessions.list` with new
+  // object references on every tick, which means `current` (derived
+  // from `sessions.list.find(...)`) changes identity every 3 s even
+  // when the underlying data is unchanged. Without a guard, the seed
+  // effect re-fires every tick and clobbers whatever the user has
+  // typed into title/description/budget. Mirrors the `seededFor`
+  // pattern already used in `NewSessionForm.svelte`.
+  let seededForSession = $state<string | null>(null);
   $effect(() => {
-    if (open && current) {
-      title = current.title ?? '';
-      description = current.description ?? '';
-      budget = current.max_budget_usd != null ? String(current.max_budget_usd) : '';
-      tagDraft = '';
-      tagError = null;
-      loadTags(current.id);
+    if (!open) {
+      seededForSession = null;
+      return;
     }
+    if (!current) return;
+    if (seededForSession === current.id) return;
+    seededForSession = current.id;
+    title = current.title ?? '';
+    description = current.description ?? '';
+    budget = current.max_budget_usd != null ? String(current.max_budget_usd) : '';
+    tagDraft = '';
+    tagError = null;
+    loadTags(current.id);
   });
 
   async function loadTags(id: string) {

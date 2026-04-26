@@ -89,10 +89,26 @@
 
   // Autofocus the Add-item input when this pane becomes visible or a
   // different checklist session is opened.
+  //
+  // Guard against the 3 s `softRefresh` heartbeat in
+  // `sessions.svelte.ts`: that poll replaces `sessions.list` wholesale
+  // every tick, which makes `selected` re-resolve to a new object
+  // identity even when the id is unchanged. A naive `selected.kind`
+  // dependency re-fires this effect every 3 s and yanks focus to the
+  // Add-item input — which clobbers any inline edit the user is in
+  // the middle of typing. Track the last id we focused for and skip
+  // re-focusing while the same checklist is selected.
+  let focusedForSession = $state<string | null>(null);
   $effect(() => {
-    if (selected?.kind === 'checklist' && addInput) {
-      addInput.focus();
+    const sid = selected?.kind === 'checklist' ? (selected?.id ?? null) : null;
+    if (sid === null) {
+      focusedForSession = null;
+      return;
     }
+    if (focusedForSession === sid) return;
+    if (!addInput) return;
+    focusedForSession = sid;
+    addInput.focus();
   });
 
   onDestroy(() => {
