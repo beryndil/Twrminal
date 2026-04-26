@@ -247,65 +247,43 @@ nesting, and handoff legs are first-class primitives, not afterthoughts.
 
 ---
 
-## AskUserQuestion tool_result arrives empty — 2026-04-24
+## AskUserQuestion tool_result arrives empty — 2026-04-24 → fixed upstream 2026-04-25
 
-**Symptom.** During plan mode, the AI calls the first-party
+**Symptom (resolved).** During plan mode, the AI calls the first-party
 `AskUserQuestion` tool, the picker dialog renders, Dave selects an
-answer. The tool result delivered back to the model is literally
+answer. The tool result delivered back to the model was literally
 `User has answered your questions: .` — trailing period, empty body.
-Reproduced twice in one session for two independent picker
-invocations. Not a one-off dismissal; Dave confirmed he was
-interacting with the pickers.
 
-**Investigation (done 2026-04-24).** Audited the full event path
-through Bearings and confirmed it is a **pure relay** — zero mutation
-of tool_result content anywhere in Bearings:
+**Resolution (2026-04-25, L1.1).** Upstream bug in the bundled Claude
+CLI's `mapToolResultToToolResultBlockParam` for `AskUserQuestion`.
+Bearings was a pure relay; SDK message_parser was correct; the picker
+itself was emitting empty `content` because the CLI's tool-result
+serializer wasn't projecting `answers` into the block's content
+string. Fixed in bundled CLI 2.1.119 (shipped in `claude-agent-sdk`
+0.1.66+), which now emits `User has answered your questions:
+"<question>"="<answer>", …` with optional preview/notes annotations.
 
-- `src/bearings/agent/session.py:349-352` — `ToolResultBlock` is
-  forwarded to `_tool_call_end`, which calls `_stringify` (lines
-  54-57). `_stringify` returns string content verbatim and JSON-dumps
-  list content. No trimming, no summarization.
-- `src/bearings/agent/runner.py:990-1009` — `_emit_event` pydantic-
-  dumps the event and orjson-encodes it. Pure serialization.
-- `src/bearings/api/ws_agent.py:171-205` — `_forward_events` sends
-  pre-encoded wire frames verbatim via `websocket.send_text`. No
-  inspection of payload.
-- `src/bearings/db/_messages.py` — `finish_tool_call` and
-  `append_tool_output` persist `output` untouched.
-- Grep for `AskUserQuestion` / `ask_user_question` across the repo
-  returns zero matches. No custom handling exists.
+**Action taken.**
+- `uv lock --upgrade-package claude-agent-sdk` → 0.1.66 → 0.1.68 in
+  the lockfile (pyproject already pinned `>=0.1.66,<0.2` per
+  e01a037). 0.1.68 bundles CLI 2.1.119 which contains the fix.
+- Confirmed the fix lives in the bundled CLI by extracting strings
+  from `.venv/.../claude_agent_sdk/_bundled/claude` and locating the
+  `AskUserQuestion` `mapToolResultToToolResultBlockParam` body —
+  it now serializes each entry of `answers` into the content
+  string (it was returning the bare prefix before).
+- Quality gate green: `ruff check`, `ruff format --check`, `mypy
+  src` (Success: no issues found in 103 source files), `pytest`
+  (1104/1105; the one failure is the known flake
+  `test_get_tool_calls_filters_by_message_ids` covered by L1.4 —
+  passes in isolation).
 
-**Conclusion: bug is upstream** — either in `claude-agent-sdk`
-(pinned at 0.1.63 per `uv.lock`) or in the bundled Claude CLI that
-renders the picker UI.
-
-**Likely fix.** The claude-agent-sdk 0.1.65 changelog entry for #836
-fixes a message-parser bug where content blocks were *silently
-dropped*, causing messages to arrive with empty content. Adjacent
-enough to the symptom here to be worth trying. 0.1.66 also bumped
-the bundled Claude CLI (where the picker UI lives) to 2.1.119.
-
-**Next actions (in order):**
-1. Bump `claude-agent-sdk` in `pyproject.toml` to `>=0.1.66,<0.2`
-   (or pin `==0.1.66`), `uv lock --upgrade-package claude-agent-sdk`,
-   retest AskUserQuestion in a Bearings plan-mode session.
-2. If still broken after the bump: bare-shell repro — run plain
-   `claude` outside Bearings, trigger plan mode, call
-   AskUserQuestion, confirm the empty-answer bug reproduces
-   upstream. If yes, file upstream against
-   `anthropics/claude-agent-sdk-python` (or `claude-code` if the
-   issue is in the CLI picker rather than the SDK parser) with the
-   exact wire payload.
-3. Do NOT patch around this in Bearings. Red line per the session
-   brief: upstream bugs get filed upstream, not hacked around here.
-
-**Files NOT to touch.** Nothing under `frontend/src/lib/components/`
-(picker is harness-rendered, not Bearings-rendered). Nothing in
-`frontend/src/lib/stores/sessions.svelte.ts` (lifecycle fix in
-979c1ba is orthogonal).
-
-**Not urgent.** Planning sessions are degraded but not broken —
-Dave can re-type answers as plain text for now.
+**Verification deferred to natural exposure.** AskUserQuestion only
+fires when the model decides to call it (typically plan mode), so
+end-to-end retest happens the next time Dave is in a plan session.
+No Playwright harness for it is worth building given the upstream
+fix is already in the bundled CLI binary. If the empty-content
+symptom recurs, re-open this entry and file upstream then.
 
 ---
 
