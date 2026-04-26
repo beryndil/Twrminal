@@ -41,6 +41,13 @@ src/bearings/web/dist/*
 # favicons) live under specific subdirs and stay tracked.
 /*.png
 
+# Bearings Directory Context — per-session ephemera. Identity files
+# (manifest.toml, pending.toml, state.toml) stay tracked; the log
+# files churn on every session start and don't carry portable state.
+.bearings/history.jsonl
+.bearings/last_on_open.json
+.bearings/corrupted-*
+
 # Editors / OS
 .idea/
 .vscode/

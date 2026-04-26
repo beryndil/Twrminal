@@ -58,9 +58,10 @@ def ensure_bearings_dir(directory: Path) -> Path:
     """Create `.bearings/` (and `checks/`) if missing. Idempotent.
 
     Returns the created path so callers can chain. Raises `OSError`
-    on a read-only filesystem — the caller (onboarding) is expected to
-    catch it and fall back to the in-memory-only degrade path planned
-    for v0.6.3.
+    on a read-only filesystem; `init_dir.init_directory_safe` (v0.6.3)
+    catches the read-only-style errnos and degrades gracefully so the
+    onboarding brief still reaches the agent's prompt even when the
+    persistence write is rejected.
     """
     root = bearings_path(directory)
     root.mkdir(parents=True, exist_ok=True)

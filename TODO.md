@@ -1392,17 +1392,28 @@ it then. Do not exercise the historical checklists as-is.
   Refining the heuristic to catch full-rename pairs (vs. typo
   variants) is v0.6.3+ polish.
 
-### v0.6.3+ — polish
+### v0.6.3+ — polish (✅ on_open + read-only degrade shipped 2026-04-26)
 
-- [ ] **`checks/on_open.sh` execution framework.** Spawn with
-  timeout, capture stderr, attach exit code + stderr snippet to
-  the brief. No plugin system; shell script is the API.
+- [x] **`checks/on_open.sh` execution framework.** ✅ Shipped in
+  L5.4. New `bearings_dir/on_open.py` runs the user script with a
+  10s timeout, caps each stream at 1024 bytes, persists the result
+  as `.bearings/last_on_open.json`. Lifecycle hook
+  `lifecycle.maybe_run_on_open` is fire-and-forget at session start
+  (`runner.note_directory_context_start`). Brief renderer attaches
+  the verdict (OK / FAIL exit N / TIMED OUT) and stderr tail on
+  failure. Bearings repo dogfoods its own check (git-repo + uv-lock
+  + unmerged-paths probe).
 - [ ] **`bearings status` / `bearings log` / `bearings pending list`
-  polish.** Color, terminal-aware formatting, `--last N`.
-- [ ] **Read-only filesystem graceful degrade.** If `.bearings/`
-  can't be written, onboarding succeeds and presents the brief but
-  skips the write with a warning. Brief still reaches the session
-  prompt; only persistence is lost.
+  polish.** Color, terminal-aware formatting, `--last N`. (Deferred
+  to a follow-up — not part of L5.4 scope.)
+- [x] **Read-only filesystem graceful degrade.** ✅ Shipped in
+  L5.4. New `init_dir.init_directory_safe` returns an `InitOutcome`
+  carrying the brief plus an optional warning when EROFS / EACCES /
+  EPERM / ENOSPC blocks the write. The MCP `dir_init` tool surfaces
+  the warning back to the agent (no `is_error=True`) so the brief
+  still reaches the user. `on_open.persist_on_open` follows the
+  same pattern: returns False rather than raising on read-only
+  parent.
 
 ### Explicit non-goals (deferred)
 

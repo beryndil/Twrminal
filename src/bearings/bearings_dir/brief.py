@@ -38,6 +38,7 @@ from bearings.bearings_dir.io import (
     read_history,
     read_toml_model,
 )
+from bearings.bearings_dir.on_open import OnOpenResult, read_last_on_open
 from bearings.bearings_dir.schema import (
     HistoryEntry,
     Manifest,
@@ -147,6 +148,37 @@ def _render_pending(ops: list[PendingOperation]) -> str:
     return "\n".join(lines)
 
 
+def _render_on_open(result: OnOpenResult) -> str:
+    """Compact rendering of the most recent `on_open.sh` run. Headline
+    line carries the verdict (OK / FAIL / TIMEOUT) and exit code; a
+    short stderr/stdout tail follows when there's content worth
+    seeing. Empty or all-success runs collapse to one line — the brief
+    is precious real estate."""
+    age = datetime.now(UTC) - result.ran_at
+    age_str = _humanize_age(age)
+    if result.timed_out:
+        verdict = f"TIMED OUT after {result.duration_ms} ms"
+    elif result.exit_code == 0:
+        verdict = f"OK (exit 0, {result.duration_ms} ms)"
+    else:
+        verdict = f"FAIL exit {result.exit_code} ({result.duration_ms} ms)"
+    lines = [f"on_open.sh: {verdict}, ran {age_str} ago"]
+    # Surface stderr first when failing — that's the diagnostic tail
+    # users actually need. Cap each rendered stream tightly here so the
+    # whole brief stays inside the 3200-char budget; persisted snippets
+    # are already capped at 1024 bytes by the runner.
+    if result.exit_code not in (0, None) or result.timed_out:
+        if result.stderr_snippet.strip():
+            lines.append("  stderr:")
+            for snippet_line in result.stderr_snippet.splitlines()[-8:]:
+                lines.append(f"    {snippet_line}")
+        elif result.stdout_snippet.strip():
+            lines.append("  stdout:")
+            for snippet_line in result.stdout_snippet.splitlines()[-8:]:
+                lines.append(f"    {snippet_line}")
+    return "\n".join(lines)
+
+
 def _render_history(entries: list[HistoryEntry]) -> str:
     """Tail of history.jsonl. One line per entry — start markers and
     end markers are shown as separate rows because each carries its
@@ -213,6 +245,16 @@ def format_directory_brief(working_dir: Path | str) -> str | None:
         rendered = _render_pending(ops)
         if rendered:
             sections.append(rendered)
+
+    # `on_open.sh` result (v0.6.3). Sits between pending and history
+    # so the agent reads "what's still in flight" → "what the user's
+    # health probe says about the workspace right now" → "what the
+    # last few sessions did." Sidecar-missing returns None and the
+    # section is silently skipped — most directories won't have a
+    # check installed.
+    on_open_result = read_last_on_open(directory)
+    if on_open_result is not None:
+        sections.append(_render_on_open(on_open_result))
 
     history = read_history(root / HISTORY_FILE, tail=_HISTORY_TAIL)
     rendered_history = _render_history(history)

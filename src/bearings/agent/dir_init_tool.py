@@ -79,7 +79,7 @@ def build_dir_init_tool(working_dir_getter: WorkingDirGetter) -> Any:
             is_onboarded,
             should_offer_onboarding,
         )
-        from bearings.bearings_dir.init_dir import init_directory
+        from bearings.bearings_dir.init_dir import init_directory_safe
         from bearings.bearings_dir.onboard import render_brief
 
         target = Path(working_dir)
@@ -97,17 +97,38 @@ def build_dir_init_tool(working_dir_getter: WorkingDirGetter) -> Any:
                 "go.mod). Refusing to write `.bearings/`."
             )
         try:
-            brief, root = init_directory(target)
+            outcome = init_directory_safe(target)
         except (OSError, FileNotFoundError) as exc:
+            # Non-graceful errors only — `init_directory_safe` already
+            # absorbs EROFS/EACCES/EPERM/ENOSPC and surfaces them via
+            # `outcome.warning`. Anything reaching here is a real bug
+            # (e.g. a missing parent directory or a corrupted git tree)
+            # and the agent should see it, not silently shrug it off.
             log.exception("bearings.dir_init: failed for %s", target)
             return _err(f"bearings: dir_init failed for `{target}`: {type(exc).__name__}: {exc}")
-        rendered = render_brief(brief)
-        body = (
-            f"bearings: wrote `{root}` (manifest, state, empty "
-            "pending). The next turn will see this brief on every "
-            "prompt via the regular directory_bearings layer.\n\n"
-            f"{rendered}"
-        )
+        rendered = render_brief(outcome.brief)
+        if outcome.root is not None:
+            body = (
+                f"bearings: wrote `{outcome.root}` (manifest, state, "
+                "empty pending). The next turn will see this brief on "
+                "every prompt via the regular directory_bearings "
+                f"layer.\n\n{rendered}"
+            )
+        else:
+            # v0.6.3 graceful-degrade path: the FS rejected the write
+            # (read-only mount, exhausted quota, etc.) but onboarding
+            # itself succeeded. Tell the agent to present the brief and
+            # explain the persistence gap to the user, instead of
+            # treating this as a failure that aborts the session.
+            body = (
+                f"bearings: onboarding ran for `{target}` but "
+                "`.bearings/` was NOT written — "
+                f"{outcome.warning}\n\n"
+                "Present this brief to the user and let them know "
+                "future sessions in this directory will re-trigger "
+                "onboarding until the filesystem accepts writes.\n\n"
+                f"{rendered}"
+            )
         return {"content": [{"type": "text", "text": body}]}
 
     return dir_init

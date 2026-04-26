@@ -258,6 +258,15 @@ class SessionRunner:
             asyncio.to_thread(dir_lifecycle.maybe_revalidate, working_dir),
             name=f"dir-revalidate:{self.session_id}",
         )
+        # User-defined `.bearings/checks/on_open.sh` (v0.6.3 polish):
+        # fire-and-forget too. The 10s subprocess budget runs in a
+        # worker thread so a slow check doesn't hold the WS attach.
+        # Result is persisted to `.bearings/last_on_open.json`; the
+        # brief reads it on the next turn.
+        asyncio.create_task(
+            asyncio.to_thread(dir_lifecycle.maybe_run_on_open, working_dir),
+            name=f"dir-on-open:{self.session_id}",
+        )
 
     # ---- public API ------------------------------------------------
 

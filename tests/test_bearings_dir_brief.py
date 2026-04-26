@@ -174,6 +174,61 @@ def test_brief_respects_char_budget(tmp_path: Path) -> None:
     assert len(brief) <= 3300
 
 
+def test_on_open_result_renders_in_brief(tmp_path: Path) -> None:
+    """A persisted `last_on_open.json` must surface in the per-turn
+    brief so the agent sees the user's health-probe verdict. Failing
+    runs include the stderr tail; passing runs collapse to a single
+    headline line."""
+    from datetime import UTC
+    from datetime import datetime as _dt
+
+    from bearings.bearings_dir.on_open import OnOpenResult, persist_on_open
+
+    _seed_manifest(tmp_path)
+    persist_on_open(
+        tmp_path,
+        OnOpenResult(
+            ran_at=_dt.now(UTC),
+            duration_ms=123,
+            exit_code=2,
+            stdout_snippet="",
+            stderr_snippet="lockfile drift detected",
+            timed_out=False,
+        ),
+    )
+    brief = format_directory_brief(tmp_path)
+    assert brief is not None
+    assert "on_open.sh" in brief
+    assert "FAIL exit 2" in brief
+    assert "lockfile drift detected" in brief
+
+
+def test_on_open_passing_collapses_to_headline(tmp_path: Path) -> None:
+    """An `exit 0` run must NOT spill stderr/stdout into the brief —
+    the headline alone tells the agent the probe is happy. Saves the
+    char budget for sections that actually need the bytes."""
+    from datetime import UTC
+    from datetime import datetime as _dt
+
+    from bearings.bearings_dir.on_open import OnOpenResult, persist_on_open
+
+    _seed_manifest(tmp_path)
+    persist_on_open(
+        tmp_path,
+        OnOpenResult(
+            ran_at=_dt.now(UTC),
+            duration_ms=10,
+            exit_code=0,
+            stdout_snippet="(banner that should be omitted)",
+            stderr_snippet="",
+        ),
+    )
+    brief = format_directory_brief(tmp_path)
+    assert brief is not None
+    assert "OK (exit 0" in brief
+    assert "banner that should be omitted" not in brief
+
+
 def test_has_stale_pending_ops_true_when_any_old(tmp_path: Path) -> None:
     _seed_manifest(tmp_path)
     pending = Pending(

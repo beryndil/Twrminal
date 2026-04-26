@@ -5,6 +5,82 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.1] - 2026-04-26
+
+Directory Context System v0.6.3 polish (L5.4): the `checks/on_open.sh`
+runner finally lands, plus a read-only-filesystem graceful-degrade
+path for onboarding. Together they close the bottom of the v0.6
+roadmap — directories with no write permission still get a usable
+brief, and users can install a one-line health probe that the agent
+sees on every turn.
+
+### Added
+
+- **`src/bearings/bearings_dir/on_open.py`** (new) —
+  `OnOpenResult` Pydantic model + `run_on_open` /
+  `persist_on_open` / `read_last_on_open` / `maybe_run_on_open`.
+  The runner shells `bash <.bearings>/checks/on_open.sh` with a
+  10-second timeout, captures stdout+stderr (1024-byte cap per
+  stream), records duration and exit code, and persists the result
+  as `.bearings/last_on_open.json`. Missing scripts return `None`
+  silently; subprocess crashes (no `bash` on PATH, EROFS, etc.) are
+  recorded as a result with the failure surfaced in `stderr_snippet`
+  rather than raising. Spec: TODO.md v0.6.3+ "shell script is the
+  API; no plugin system."
+- **`src/bearings/bearings_dir/init_dir.py`** —
+  `init_directory_safe(directory) -> InitOutcome` and the
+  accompanying `InitOutcome` dataclass. Wraps `init_directory` and
+  catches the read-only-filesystem variants of `OSError` (EROFS /
+  EACCES / EPERM / ENOSPC) so onboarding still produces a brief
+  even when persistence is blocked. Other errnos (EISDIR, EIO, etc.)
+  still propagate so real bugs aren't silently swallowed.
+- **`.bearings/checks/on_open.sh`** — the Bearings repo dogfoods
+  its own probe: git-repo check, `uv sync --locked --dry-run` for
+  lockfile drift, `git ls-files -u` for unmerged-paths detection.
+  Caps under one second on a healthy workspace.
+
+### Changed
+
+- **`src/bearings/bearings_dir/lifecycle.py`** — added
+  `maybe_run_on_open(working_dir)` thin wrapper. Same gating as the
+  other lifecycle hooks (no manifest → no-op). Synchronous; the
+  runner dispatches via `asyncio.to_thread` so the 10s subprocess
+  budget never blocks the event loop.
+- **`src/bearings/agent/runner.py`** —
+  `note_directory_context_start` now fires a second
+  `asyncio.create_task` to run the on_open hook in a worker thread
+  alongside the existing stale-state revalidation. Both are
+  fire-and-forget; results land in the brief on the next turn.
+- **`src/bearings/bearings_dir/brief.py`** — new
+  `_render_on_open` section between pending ops and history. OK
+  runs collapse to a single headline; failing or timed-out runs
+  surface the stderr (or stdout) tail (last 8 lines) so the agent
+  reads the diagnostic without round-tripping to the user.
+- **`src/bearings/agent/dir_init_tool.py`** — the MCP `dir_init`
+  tool now uses `init_directory_safe` and returns success-with-
+  warning text (instead of `is_error=True`) when the FS rejects
+  the write. The agent quotes the brief and explains the
+  persistence gap to the user; the next session in the same dir
+  re-triggers onboarding.
+
+### Tests
+
+- **`tests/test_bearings_dir_on_open.py`** (new) — 11 tests:
+  presence gate, happy / failing exit codes, output truncation,
+  timeout (with `_TIMEOUT_S` monkeypatched to 0.2s for speed),
+  persist+read round-trip, corrupt-JSON resilience, and the
+  read-only-parent persistence-failure case (skipped on Windows
+  and when running as root).
+- **`tests/test_bearings_dir_init_dir.py`** (new) — happy path,
+  read-only-filesystem graceful-degrade (chmod-based), and
+  non-graceful-OSError-propagates regression guard.
+- **`tests/test_bearings_dir_lifecycle.py`** — added three
+  `maybe_run_on_open` tests covering manifest gating, missing-
+  script no-op, and the persist-and-return-True happy path.
+- **`tests/test_bearings_dir_brief.py`** — added two on_open
+  rendering tests: failing run surfaces stderr in the brief; OK run
+  collapses to the headline (no stdout spillover).
+
 ## [0.18.1] - 2026-04-26
 
 Autonomous-driver silent-exit halt: nudge unconditionally before

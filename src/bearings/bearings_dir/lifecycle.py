@@ -237,6 +237,42 @@ def needs_revalidation(working_dir: Path | str) -> bool:
     return (datetime.now(UTC) - last) >= _STALE_STATE_THRESHOLD
 
 
+def maybe_run_on_open(working_dir: Path | str) -> bool:
+    """Run `.bearings/checks/on_open.sh` if installed, persist result.
+
+    Wrapper kept here (not imported directly from `on_open`) so the
+    runner's `note_directory_context_start` only depends on the
+    `lifecycle` module — single import surface for all session-start
+    bearings work. Synchronous; the caller dispatches via
+    `asyncio.to_thread` so the 10s subprocess budget never blocks the
+    event loop.
+
+    Returns True iff the script ran AND persistence succeeded. False
+    on no-script, persist-failed (read-only FS), or any internal
+    fault. Failure is advisory — the brief still works without
+    `last_on_open.json` present."""
+    directory = Path(working_dir)
+    if not (bearings_path(directory) / MANIFEST_FILE).exists():
+        # Same gate as `record_session_start`: no manifest → no
+        # `.bearings/` to write the sidecar into. Skip silently.
+        return False
+    # Local import — `on_open` pulls subprocess machinery; keep it out
+    # of the lifecycle hot path for sessions whose directory has no
+    # `checks/on_open.sh`.
+    from bearings.bearings_dir import on_open
+
+    try:
+        result = on_open.maybe_run_on_open(directory)
+    except OSError as exc:
+        log.warning(
+            "directory_context: on_open run failed for %s: %s",
+            directory,
+            exc,
+        )
+        return False
+    return result is not None
+
+
 def maybe_revalidate(working_dir: Path | str) -> bool:
     """If state is stale, re-run `check.run_check` and return True.
     Returns False on no-op (state fresh, missing manifest, or
@@ -274,6 +310,7 @@ def maybe_revalidate(working_dir: Path | str) -> bool:
 __all__ = [
     "SessionLifecycleHandle",
     "maybe_revalidate",
+    "maybe_run_on_open",
     "needs_revalidation",
     "record_session_end",
     "record_session_start",

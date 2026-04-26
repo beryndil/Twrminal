@@ -118,3 +118,36 @@ def test_maybe_revalidate_noop_when_state_fresh(tmp_path: Path) -> None:
     state = State(environment=EnvironmentBlock(last_validated=datetime.now(UTC)))
     write_toml_model(bearings_path(tmp_path) / STATE_FILE, state)
     assert lifecycle.maybe_revalidate(tmp_path) is False
+
+
+def test_maybe_run_on_open_noop_without_manifest(tmp_path: Path) -> None:
+    """No manifest → no on_open.sh run. Same gating as the rest of
+    the lifecycle hooks; we don't write sidecars into directories
+    that haven't been onboarded."""
+    assert lifecycle.maybe_run_on_open(tmp_path) is False
+
+
+def test_maybe_run_on_open_noop_without_script(tmp_path: Path) -> None:
+    """Manifest present but no `checks/on_open.sh` → returns False
+    silently. The check is opt-in; most projects won't install one."""
+    _seed_manifest(tmp_path)
+    assert lifecycle.maybe_run_on_open(tmp_path) is False
+
+
+def test_maybe_run_on_open_runs_and_persists(tmp_path: Path) -> None:
+    """Happy path: script exists → runner spawns it → result is
+    persisted to `last_on_open.json` and the lifecycle wrapper
+    returns True."""
+    from bearings.bearings_dir.io import CHECKS_DIR, ON_OPEN_SCRIPT
+    from bearings.bearings_dir.on_open import LAST_ON_OPEN_FILE, read_last_on_open
+
+    _seed_manifest(tmp_path)
+    script = bearings_path(tmp_path) / CHECKS_DIR / ON_OPEN_SCRIPT
+    script.write_text("#!/usr/bin/env bash\necho ran\nexit 0\n", encoding="utf-8")
+
+    assert lifecycle.maybe_run_on_open(tmp_path) is True
+    sidecar = bearings_path(tmp_path) / LAST_ON_OPEN_FILE
+    assert sidecar.is_file()
+    persisted = read_last_on_open(tmp_path)
+    assert persisted is not None
+    assert persisted.exit_code == 0

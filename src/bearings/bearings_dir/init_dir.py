@@ -3,13 +3,22 @@ files on confirmation.
 
 v0.6.0 CLI-only: this module assembles the brief and writes the
 three TOML files (`manifest.toml`, `state.toml`, `pending.toml`) on
-the caller's OK. The WS-open auto-onboarding in v0.6.2 will reuse
-the same writers, driven by chat-prose confirmation instead of a TTY
+the caller's OK. The WS-open auto-onboarding in v0.6.2 reuses the
+same writers, driven by chat-prose confirmation instead of a TTY
 prompt.
+
+v0.6.3 polish — read-only graceful degrade: `init_directory_safe`
+catches the read-only-FS variants of OSError (EROFS / EACCES / EPERM
+/ ENOSPC) so the MCP `dir_init` tool can return success-with-warning
+and the agent still has a usable brief for this session, even when
+persistence isn't possible.
 """
 
 from __future__ import annotations
 
+import errno
+import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 from bearings.bearings_dir.io import (
@@ -26,6 +35,26 @@ from bearings.bearings_dir.schema import (
     Pending,
     State,
 )
+
+log = logging.getLogger(__name__)
+
+# OSError errnos that map to "the filesystem won't accept a write,
+# but the directory is otherwise readable" — i.e. graceful-degrade
+# territory. Other errnos (ENOENT, EISDIR, EFAULT, etc.) signal a
+# real bug and bubble up.
+_READ_ONLY_ERRNOS = frozenset({errno.EROFS, errno.EACCES, errno.EPERM, errno.ENOSPC})
+
+
+@dataclass(frozen=True)
+class InitOutcome:
+    """Result of `init_directory_safe`. `root` is `None` when the
+    write was skipped because the FS rejected it; `warning` carries
+    the human-readable reason in that case so the MCP tool can echo
+    it back to the agent."""
+
+    brief: Brief
+    root: Path | None
+    warning: str | None
 
 
 def _manifest_from_brief(brief: Brief) -> Manifest:
@@ -108,6 +137,9 @@ def init_directory(directory: Path) -> tuple[Brief, Path]:
     """End-to-end onboarding: run the ritual, write the files, return
     both the brief (for rendering) and the `.bearings/` path. Caller
     is responsible for any confirm step; this function commits.
+
+    Raises `OSError` on a read-only filesystem. Callers that need to
+    degrade gracefully should use `init_directory_safe` instead.
     """
     directory = directory.resolve()
     brief = run_onboarding(directory)
@@ -115,4 +147,53 @@ def init_directory(directory: Path) -> tuple[Brief, Path]:
     return brief, root
 
 
-__all__ = ["init_directory", "write_bearings"]
+def init_directory_safe(directory: Path) -> InitOutcome:
+    """Like `init_directory`, but degrades gracefully when the target
+    filesystem rejects the write (read-only mount, no-write-perm
+    bind, exhausted quota).
+
+    Behaviour:
+      - happy path: identical to `init_directory`. Returns
+        `InitOutcome(brief, root, warning=None)`.
+      - read-only-style OSError (EROFS / EACCES / EPERM / ENOSPC):
+        the brief is still returned (it's a pure read of the working
+        dir), `root` is `None`, and `warning` carries a human-readable
+        reason. The agent can quote the brief to the user and explain
+        that persistence is unavailable on this mount; nothing else
+        about the session is affected.
+      - any other OSError: re-raised. EISDIR / EFAULT / similar are
+        real bugs and shouldn't be papered over.
+
+    The brief is always built before the write attempt so a write-
+    blocked FS never starves the user of context.
+    """
+    directory = directory.resolve()
+    brief = run_onboarding(directory)
+    try:
+        root = write_bearings(directory, brief)
+    except OSError as exc:
+        if exc.errno in _READ_ONLY_ERRNOS:
+            warning = (
+                f"persist skipped: {exc.strerror or exc} "
+                f"(errno {exc.errno}). The brief is available in this "
+                "session's prompt but `.bearings/` was not written, so "
+                "future sessions in this directory will see the "
+                "onboarding prompt again until the filesystem accepts "
+                "writes."
+            )
+            log.info(
+                "directory_context: init persist skipped for %s (%s)",
+                directory,
+                exc.strerror or exc,
+            )
+            return InitOutcome(brief=brief, root=None, warning=warning)
+        raise
+    return InitOutcome(brief=brief, root=root, warning=None)
+
+
+__all__ = [
+    "InitOutcome",
+    "init_directory",
+    "init_directory_safe",
+    "write_bearings",
+]
