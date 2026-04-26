@@ -233,10 +233,28 @@ async def toggle_item(
     recursion through the cascade-up walk."""
     now = _now()
     checked_at = now if checked else None
-    cursor = await conn.execute(
-        "UPDATE checklist_items SET checked_at = ?, updated_at = ? WHERE id = ?",
-        (checked_at, now, item_id),
-    )
+    # Mutual-exclusion enforcement (migration 0033): when an item is
+    # being checked off, ALSO clear `blocked_at` and the reason fields
+    # in the same write. The resolution flow goes blocked → done in
+    # one step (Dave returns to the still-open session, agent
+    # re-engages and emits CHECKLIST_ITEM_DONE), so done must clear
+    # the blocked stamp the same transaction it sets checked_at.
+    # When unchecking we DON'T re-stamp blocked — uncheck is a
+    # rollback to "open," not a transition to "blocked."
+    if checked:
+        cursor = await conn.execute(
+            "UPDATE checklist_items "
+            "SET checked_at = ?, blocked_at = NULL, "
+            "    blocked_reason_category = NULL, blocked_reason_text = NULL, "
+            "    updated_at = ? "
+            "WHERE id = ?",
+            (checked_at, now, item_id),
+        )
+    else:
+        cursor = await conn.execute(
+            "UPDATE checklist_items SET checked_at = ?, updated_at = ? WHERE id = ?",
+            (checked_at, now, item_id),
+        )
     if cursor.rowcount == 0:
         await conn.commit()
         return None
@@ -276,7 +294,8 @@ async def toggle_item(
             break
         async with conn.execute(
             "SELECT COUNT(*) AS total, "
-            "SUM(CASE WHEN checked_at IS NULL THEN 1 ELSE 0 END) AS unchecked "
+            "SUM(CASE WHEN checked_at IS NULL THEN 1 ELSE 0 END) AS unchecked, "
+            "SUM(CASE WHEN blocked_at IS NOT NULL THEN 1 ELSE 0 END) AS blocked "
             "FROM checklist_items WHERE parent_item_id = ?",
             (parent_id,),
         ) as cursor_stats:
@@ -284,9 +303,18 @@ async def toggle_item(
         # A parent with zero children is theoretically possible if a
         # race deleted every child between the leaf write and the
         # walk — treat as "not checked" (no children → no derivation).
+        # A blocked child also keeps the parent unchecked: a blocked
+        # leaf has `checked_at IS NULL` so `unchecked > 0` already
+        # gates correctly, but tracking blocked separately means the
+        # condition is explicit and any future refactor (e.g. an
+        # `unchecked_only_open` filter that excludes blocked) doesn't
+        # silently lose the carve-out.
         total = stats["total"] if stats is not None else 0
         unchecked = (stats["unchecked"] or 0) if stats is not None else 1
-        ancestor_checked_at = now if total > 0 and unchecked == 0 else None
+        blocked = (stats["blocked"] or 0) if stats is not None else 0
+        ancestor_checked_at = (
+            now if total > 0 and unchecked == 0 and blocked == 0 else None
+        )
         # Track the ancestor for the close cascade ONLY when this
         # call is what flipped it to checked. An ancestor that was
         # already checked before this call (UI bug, race, idempotent
@@ -362,8 +390,19 @@ async def set_item_blocked(
     on the way to advancing past an unchecked item, so the path
     naturally upholds it. The reverse direction (clearing
     `blocked_at` when an item gets checked) lives in `toggle_item`'s
-    cascade — landing in a follow-up commit alongside the cascade
-    carve-out for blocked siblings.
+    cascade — `toggle_item(checked=True)` sets `checked_at` and
+    clears blocked fields in the same write.
+
+    Cascade-up rollback: a previously rolled-up parent (every child
+    was checked → parent.checked_at non-null) must lose that rollup
+    when one of its children flips to blocked. Otherwise: A and B
+    both done → parent rollup → A becomes blocked, parent stays
+    checked despite an unfinished child. The walk here mirrors the
+    one in `toggle_item`'s uncheck path: clear ancestors that no
+    longer satisfy "every child checked AND zero blocked." Stops at
+    a work-having parent (`chat_session_id` set) for the same
+    reason `toggle_item` does — those parents own their own work
+    and don't roll up.
 
     Caller is responsible for validating `category` against
     `bearings.agent.checklist_sentinels.ITEM_BLOCKED_CATEGORIES` —
@@ -382,25 +421,64 @@ async def set_item_blocked(
         await conn.commit()
         return None
     row = await get_item(conn, item_id)
-    if row is not None:
+    if row is None:
+        await conn.commit()
+        return None
+    # Cascade-up rollback. Walk ancestors and unset any rolled-up
+    # checked_at that's now invalid because this child became blocked.
+    parent_id: int | None = row["parent_item_id"]
+    while parent_id is not None:
+        async with conn.execute(
+            "SELECT chat_session_id, checked_at FROM checklist_items WHERE id = ?",
+            (parent_id,),
+        ) as cursor_chat:
+            parent_row = await cursor_chat.fetchone()
+        if parent_row is None:
+            break
+        if parent_row["chat_session_id"] is not None:
+            break
+        if parent_row["checked_at"] is None:
+            # Already not-checked — nothing to roll back, and any
+            # further ancestors can't be checked either (cascade-up
+            # invariant). Stop walking.
+            break
         await conn.execute(
-            "UPDATE checklists SET updated_at = ? WHERE session_id = ?",
-            (now, row["checklist_id"]),
+            "UPDATE checklist_items SET checked_at = NULL, updated_at = ? WHERE id = ?",
+            (now, parent_id),
         )
+        async with conn.execute(
+            "SELECT parent_item_id FROM checklist_items WHERE id = ?",
+            (parent_id,),
+        ) as cursor_up:
+            next_row = await cursor_up.fetchone()
+        parent_id = next_row["parent_item_id"] if next_row is not None else None
+    await conn.execute(
+        "UPDATE checklists SET updated_at = ? WHERE session_id = ?",
+        (now, row["checklist_id"]),
+    )
     await conn.commit()
-    return row
+    return await get_item(conn, item_id)
 
 
 async def is_checklist_complete(conn: aiosqlite.Connection, session_id: str) -> bool:
     """Return True when every root-level item in the given checklist
-    has `checked_at` set AND the checklist has at least one root item.
-    An empty checklist is never "complete" — the auto-close rule
-    would fire on a brand-new session otherwise. Used by the HTTP
-    layer and the close-session cascade to decide whether to close
-    the parent checklist session."""
+    has `checked_at` set AND no root-level item is blocked AND the
+    checklist has at least one root item. An empty checklist is
+    never "complete" — the auto-close rule would fire on a brand-new
+    session otherwise. Used by the HTTP layer and the close-session
+    cascade to decide whether to close the parent checklist session.
+
+    Blocked items count as "not done" — a blocked leaf has
+    `checked_at IS NULL` so `unchecked > 0` already gates correctly,
+    but the explicit `blocked = 0` guard keeps the contract obvious
+    and survives any future refactor that changes how unchecked is
+    counted. A whole checklist with one blocked item must NOT
+    auto-close the parent session — Dave needs the sidebar entry
+    intact to navigate back to the still-open paired chat."""
     async with conn.execute(
         "SELECT COUNT(*) AS total, "
-        "SUM(CASE WHEN checked_at IS NULL THEN 1 ELSE 0 END) AS unchecked "
+        "SUM(CASE WHEN checked_at IS NULL THEN 1 ELSE 0 END) AS unchecked, "
+        "SUM(CASE WHEN blocked_at IS NOT NULL THEN 1 ELSE 0 END) AS blocked "
         "FROM checklist_items "
         "WHERE checklist_id = ? AND parent_item_id IS NULL",
         (session_id,),
@@ -410,7 +488,8 @@ async def is_checklist_complete(conn: aiosqlite.Connection, session_id: str) -> 
         return False
     total = row["total"]
     unchecked = row["unchecked"] or 0
-    return total > 0 and unchecked == 0
+    blocked = row["blocked"] or 0
+    return total > 0 and unchecked == 0 and blocked == 0
 
 
 async def delete_item(conn: aiosqlite.Connection, item_id: int) -> bool:

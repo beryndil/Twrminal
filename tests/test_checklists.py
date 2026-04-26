@@ -21,7 +21,9 @@ from bearings.db.store import (
     get_item,
     get_session,
     init_db,
+    is_checklist_complete,
     reorder_items,
+    set_item_blocked,
     toggle_item,
     update_checklist,
     update_item,
@@ -499,5 +501,157 @@ async def test_delete_session_cascades_to_checklist(tmp_path: Path) -> None:
         assert await get_session(conn, session["id"]) is None
         assert await get_checklist(conn, session["id"]) is None
         assert await get_item(conn, item["id"]) is None
+    finally:
+        await conn.close()
+
+
+# --- blocked-item cascade ----------------------------------------
+#
+# Migration 0033 adds `blocked_at` as a third item state. The cascade
+# rules need to treat blocked siblings as "not done" so a parent never
+# rolls up to checked while one of its children is still blocked-on-Dave.
+# Resolution path (blocked → done) clears `blocked_at` in the same write.
+
+
+@pytest.mark.asyncio
+async def test_blocked_child_keeps_parent_unchecked_on_sibling_check(
+    tmp_path: Path,
+) -> None:
+    """Two children: A blocked, B checked. Parent must stay unchecked.
+    The cascade query that aggregates child state has to count blocked
+    children as not-done, otherwise a partial-completion parent would
+    auto-close prematurely."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        session = await create_session(conn, working_dir="/tmp", model="m", kind="checklist")
+        await create_checklist(conn, session["id"])
+        parent = await create_item(conn, session["id"], label="parent")
+        a = await create_item(
+            conn, session["id"], label="A", parent_item_id=parent["id"]
+        )
+        b = await create_item(
+            conn, session["id"], label="B", parent_item_id=parent["id"]
+        )
+        await set_item_blocked(conn, a["id"], category="payment", reason="need card")
+        await toggle_item(conn, b["id"], checked=True)
+        parent_row = await get_item(conn, parent["id"])
+        assert parent_row is not None
+        assert parent_row["checked_at"] is None, (
+            "parent must not auto-roll-up while a child is blocked"
+        )
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_blocking_a_child_unrolls_a_previously_checked_parent(
+    tmp_path: Path,
+) -> None:
+    """A and B both checked → parent rolled up. A then becomes blocked.
+    Parent must be unrolled (`checked_at` cleared) — otherwise the
+    sidebar would show a stale checked parent over an active blocked
+    leaf."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        session = await create_session(conn, working_dir="/tmp", model="m", kind="checklist")
+        await create_checklist(conn, session["id"])
+        parent = await create_item(conn, session["id"], label="parent")
+        a = await create_item(
+            conn, session["id"], label="A", parent_item_id=parent["id"]
+        )
+        b = await create_item(
+            conn, session["id"], label="B", parent_item_id=parent["id"]
+        )
+        await toggle_item(conn, a["id"], checked=True)
+        await toggle_item(conn, b["id"], checked=True)
+        parent_after_check = await get_item(conn, parent["id"])
+        assert parent_after_check is not None
+        assert parent_after_check["checked_at"] is not None, (
+            "preconditions: both children checked, parent should have rolled up"
+        )
+        # Now block A. Parent must un-roll.
+        await set_item_blocked(conn, a["id"], category="physical_action", reason="plug it in")
+        parent_after_block = await get_item(conn, parent["id"])
+        assert parent_after_block is not None
+        assert parent_after_block["checked_at"] is None, (
+            "blocking a previously-checked child must clear the parent's rollup"
+        )
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_is_checklist_complete_false_with_blocked_root_item(
+    tmp_path: Path,
+) -> None:
+    """A whole-checklist completion check must respect blocked items.
+    Otherwise the auto-close cascade would close the parent checklist
+    session and Dave would lose the navigation entry."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        session = await create_session(conn, working_dir="/tmp", model="m", kind="checklist")
+        await create_checklist(conn, session["id"])
+        a = await create_item(conn, session["id"], label="A", sort_order=0)
+        b = await create_item(conn, session["id"], label="B", sort_order=1)
+        await toggle_item(conn, b["id"], checked=True)
+        await set_item_blocked(
+            conn, a["id"], category="identity_or_2fa", reason="need 2fa"
+        )
+        assert await is_checklist_complete(conn, session["id"]) is False
+        # Resolve the block by checking off A — completion becomes true.
+        await toggle_item(conn, a["id"], checked=True)
+        assert await is_checklist_complete(conn, session["id"]) is True
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_checking_a_blocked_item_clears_blocked_fields(tmp_path: Path) -> None:
+    """Resolution path: Dave acts, agent re-engages and emits
+    CHECKLIST_ITEM_DONE, the close-cascade calls `toggle_item(checked=True)`.
+    That call must clear `blocked_at`/category/reason in the same
+    transaction so the item ends up cleanly done with no stale
+    blocked stamp left over."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        session = await create_session(conn, working_dir="/tmp", model="m", kind="checklist")
+        await create_checklist(conn, session["id"])
+        item = await create_item(conn, session["id"], label="paid")
+        await set_item_blocked(
+            conn, item["id"], category="payment", reason="need card"
+        )
+        before = await get_item(conn, item["id"])
+        assert before is not None
+        assert before["blocked_at"] is not None
+        assert before["checked_at"] is None
+        # Simulate the resolution: agent emits done, toggle fires.
+        await toggle_item(conn, item["id"], checked=True)
+        after = await get_item(conn, item["id"])
+        assert after is not None
+        assert after["checked_at"] is not None
+        assert after["blocked_at"] is None
+        assert after["blocked_reason_category"] is None
+        assert after["blocked_reason_text"] is None
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_unchecking_does_not_re_stamp_blocked(tmp_path: Path) -> None:
+    """Uncheck is a rollback to 'open,' not a transition to 'blocked.'
+    `toggle_item(checked=False)` must leave `blocked_at` NULL.
+    Otherwise a UI uncheck of a normal done item would silently flag
+    it as blocked-on-Dave, which is wrong."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        session = await create_session(conn, working_dir="/tmp", model="m", kind="checklist")
+        await create_checklist(conn, session["id"])
+        item = await create_item(conn, session["id"], label="x")
+        await toggle_item(conn, item["id"], checked=True)
+        await toggle_item(conn, item["id"], checked=False)
+        row = await get_item(conn, item["id"])
+        assert row is not None
+        assert row["checked_at"] is None
+        assert row["blocked_at"] is None
     finally:
         await conn.close()
