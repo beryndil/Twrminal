@@ -111,8 +111,6 @@
         Buy Me a Cup of Coffee
       </span>
     </a>
-
-    <p class="mt-0.5 text-[10px] text-slate-500">Built in Winnfield, Louisiana.</p>
   </div>
 
   <!-- Identity card: build identifier + repo. Useful for bug reports
