@@ -41,6 +41,10 @@ from bearings.api import (
     ws_agent,
     ws_sessions,
 )
+from bearings.api.middleware import (
+    install_global_exception_handler,
+    install_security_headers,
+)
 from bearings.config import Settings, load_settings
 from bearings.db.store import init_db
 from bearings.menus import load_menu_config
@@ -178,6 +182,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # override edits. The frontend reads the parsed shape at boot via
     # `/api/ui-config` and merges it into the in-memory action registry.
     app.state.menus = load_menu_config(cfg.menus_file)
+
+    # Cheap defense-in-depth: stamp baseline security headers on every
+    # HTTP response, and convert otherwise-unhandled exceptions into a
+    # sanitized 500 (no stack content to the client; full traceback in
+    # the log). See `bearings.api.middleware` for rationale, including
+    # why HSTS is deliberately omitted at localhost. Both calls must
+    # happen before the first request — `include_router` does not
+    # trigger middleware build, so order with the route registrations
+    # below is irrelevant in practice, but installing here keeps the
+    # security wiring co-located with app construction.
+    install_security_headers(app)
+    install_global_exception_handler(app)
 
     app.include_router(routes_health.router, prefix="/api")
     app.include_router(routes_config.router, prefix="/api")

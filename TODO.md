@@ -316,6 +316,31 @@ symptom recurs, re-open this entry and file upstream then.
 
 ---
 
+## Flaky test: `test_awaiting_endpoint_includes_blocked_paired_sessions` — 2026-04-26
+
+`tests/test_routes_sessions.py::test_awaiting_endpoint_includes_blocked_paired_sessions`
+fails when the full suite runs with `pytest -x` (passes in isolation
+and passes in `pytest --tb=no -q` because pytest-asyncio's loop
+fixture happens to be initialized by an earlier test in the
+collection order). Confirmed pre-existing on `main` at `df91a14`
+during the §1/§10 audit-fix PR — not introduced by the security-
+headers / global exception handler changes.
+
+Root cause: line 666 calls `asyncio.get_event_loop().run_until_complete(seed())`
+synchronously inside a sync test body. In Python 3.12 `get_event_loop()`
+no longer auto-creates a loop when none is bound to the thread, so
+when pytest-asyncio has already torn down a prior loop the call
+raises `RuntimeError: There is no current event loop in thread
+'MainThread'`. Fix is to convert the test to an `async def` (already
+the dominant pattern in this file) and `await seed()` directly, OR
+explicitly set up `asyncio.new_event_loop()` + `set_event_loop()`
+before the call.
+
+Deferred: not in scope for the audit. File a tracked task once the
+audit punch-list closes.
+
+---
+
 ## Flaky test: `test_get_tool_calls_filters_by_message_ids` — 2026-04-24
 
 Observed once in a full `uv run pytest -q` run:
@@ -2341,30 +2366,42 @@ All six items shipped 2026-04-24 in the audit-cleanup pass:
   (`sqlite3.IntegrityError` / `aiosqlite.IntegrityError` for the
   UNIQUE-name handler).
 
-### v0.3+ — OS-level sandbox (DEFERRED, do not surface in "what's next")
+### v0.3+ — OS-level sandbox (DEFERRED PAST 1.0.0, do not surface in "what's next")
 
-**Do not surface this entry when Dave asks "what's next" until the
-ship-blockers and toggle layer above have shipped.** This is intentionally
-parked for v0.3+ planning, after v0.2 closes.
+**Do not surface this entry when Dave asks "what's next."** Reviewed
+2026-04-26 against the L7.3 punch-list (Layer 7 — Pre-1.0.0 gates) and
+reaffirmed as deferred past 1.0.0. The version gate has long since been
+satisfied (Bearings is at v0.17.x), but the design tradeoff still
+favors deferral.
 
-Once the toggle layer exists, add an opt-in `--sandbox=bwrap` mode that
-wraps each session in bubblewrap with a single bind-mounted project dir
-(the configured `working_dir`), no `$HOME`, no `~/.claude/`, no `~/.ssh`,
+Original ask: add an opt-in `--sandbox=bwrap` mode that wraps each
+session in bubblewrap with a single bind-mounted project dir (the
+configured `working_dir`), no `$HOME`, no `~/.claude/`, no `~/.ssh`,
 no `/run/user/<uid>/keyring`. Flag "experimental" until proven.
 
-Why deferred:
+Why still deferred (2026-04-26):
 
-- `claude-agent-sdk` doesn't expose a clean wrapping point for the CLI
-  subprocess. Path is "swap the executable for a `bwrap`-wrapping shim"
-  or fork the SDK. Both are real engineering, not a config knob.
-- Fights the `power-user` profile by design — Dave wants `$HOME` reach.
-  Means a sandbox toggle on top of the profile system.
+- `claude-agent-sdk` v0.1.68 DOES expose `ClaudeAgentOptions.cli_path`,
+  which is a usable wrapping point: point `cli_path` at a shell script
+  that invokes `bwrap --bind ... -- /usr/bin/claude "$@"`. So the
+  original "no clean wrapping point" objection is partially dissolved.
+  But the implementation work (per-session bind-mount construction,
+  GPU/keyring/locale carve-outs, cleanup on exit) is still
+  non-trivial — closer to a feature than a config knob.
+- Bearings is single-user localhost. Dave is the only realistic
+  operator. The "stranger downloads the app" threat model that
+  motivated this entry is hypothetical in his current usage.
+- Sandboxing fights the `power-user` profile by design — Dave wants
+  `$HOME` reach in his primary mode. Means a sandbox toggle on top of
+  the profile system, plus user education about which paths the
+  agent can no longer reach.
 - Toggle layer + `safe` profile already covers ~80% of the realistic
-  threat model for a stranger downloading the app. Sandbox is the
-  remaining 20% (defense vs. a jailbroken agent actively trying to
-  escape).
+  threat model. Sandbox is the remaining 20% (defense vs. a jailbroken
+  agent actively trying to escape) — legitimate but not a 1.0.0 gate.
 
-When v0.3 planning starts, revisit this entry. Until then: silence.
+Revival trigger: a real adversary scenario emerges (e.g. multi-user
+deployment, untrusted MCP servers, public-internet exposure). Until
+then: silence.
 
 ## Per-session input ergonomics (deferred from 2026-04-22)
 
