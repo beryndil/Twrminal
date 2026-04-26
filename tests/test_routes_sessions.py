@@ -653,13 +653,14 @@ def test_awaiting_endpoint_includes_blocked_paired_sessions(
         await create_checklist(db, checklist_session["id"])
         item = await create_item(db, checklist_session["id"], label="blocked-item")
         chat_session = await create_session(
-            db, working_dir="/tmp", model="m", kind="chat",
+            db,
+            working_dir="/tmp",
+            model="m",
+            kind="chat",
             checklist_item_id=item["id"],
         )
         await set_item_chat_session(db, item["id"], chat_session["id"])
-        await set_item_blocked(
-            db, item["id"], category="payment", reason="need card on file"
-        )
+        await set_item_blocked(db, item["id"], category="payment", reason="need card on file")
         return str(chat_session["id"])
 
     chat_session_id = asyncio.get_event_loop().run_until_complete(seed())

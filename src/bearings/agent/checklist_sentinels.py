@@ -135,13 +135,15 @@ BLOCKED_END = "CHECKLIST_BLOCKED_END"
 ITEM_BLOCKED_START_PREFIX = "CHECKLIST_ITEM_BLOCKED"
 ITEM_BLOCKED_END = "CHECKLIST_ITEM_BLOCKED_END"
 ITEM_BLOCKED_TRIED_MARKER = "TRIED:"
-ITEM_BLOCKED_CATEGORIES = frozenset({
-    "physical_action",
-    "payment",
-    "external_credential",
-    "identity_or_2fa",
-    "human_judgment",
-})
+ITEM_BLOCKED_CATEGORIES = frozenset(
+    {
+        "physical_action",
+        "payment",
+        "external_credential",
+        "identity_or_2fa",
+        "human_judgment",
+    }
+)
 
 
 @dataclass(frozen=True)

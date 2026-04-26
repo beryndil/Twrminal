@@ -312,9 +312,7 @@ async def toggle_item(
         total = stats["total"] if stats is not None else 0
         unchecked = (stats["unchecked"] or 0) if stats is not None else 1
         blocked = (stats["blocked"] or 0) if stats is not None else 0
-        ancestor_checked_at = (
-            now if total > 0 and unchecked == 0 and blocked == 0 else None
-        )
+        ancestor_checked_at = now if total > 0 and unchecked == 0 and blocked == 0 else None
         # Track the ancestor for the close cascade ONLY when this
         # call is what flipped it to checked. An ancestor that was
         # already checked before this call (UI bug, race, idempotent

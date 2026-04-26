@@ -526,12 +526,8 @@ async def test_blocked_child_keeps_parent_unchecked_on_sibling_check(
         session = await create_session(conn, working_dir="/tmp", model="m", kind="checklist")
         await create_checklist(conn, session["id"])
         parent = await create_item(conn, session["id"], label="parent")
-        a = await create_item(
-            conn, session["id"], label="A", parent_item_id=parent["id"]
-        )
-        b = await create_item(
-            conn, session["id"], label="B", parent_item_id=parent["id"]
-        )
+        a = await create_item(conn, session["id"], label="A", parent_item_id=parent["id"])
+        b = await create_item(conn, session["id"], label="B", parent_item_id=parent["id"])
         await set_item_blocked(conn, a["id"], category="payment", reason="need card")
         await toggle_item(conn, b["id"], checked=True)
         parent_row = await get_item(conn, parent["id"])
@@ -556,12 +552,8 @@ async def test_blocking_a_child_unrolls_a_previously_checked_parent(
         session = await create_session(conn, working_dir="/tmp", model="m", kind="checklist")
         await create_checklist(conn, session["id"])
         parent = await create_item(conn, session["id"], label="parent")
-        a = await create_item(
-            conn, session["id"], label="A", parent_item_id=parent["id"]
-        )
-        b = await create_item(
-            conn, session["id"], label="B", parent_item_id=parent["id"]
-        )
+        a = await create_item(conn, session["id"], label="A", parent_item_id=parent["id"])
+        b = await create_item(conn, session["id"], label="B", parent_item_id=parent["id"])
         await toggle_item(conn, a["id"], checked=True)
         await toggle_item(conn, b["id"], checked=True)
         parent_after_check = await get_item(conn, parent["id"])
@@ -594,9 +586,7 @@ async def test_is_checklist_complete_false_with_blocked_root_item(
         a = await create_item(conn, session["id"], label="A", sort_order=0)
         b = await create_item(conn, session["id"], label="B", sort_order=1)
         await toggle_item(conn, b["id"], checked=True)
-        await set_item_blocked(
-            conn, a["id"], category="identity_or_2fa", reason="need 2fa"
-        )
+        await set_item_blocked(conn, a["id"], category="identity_or_2fa", reason="need 2fa")
         assert await is_checklist_complete(conn, session["id"]) is False
         # Resolve the block by checking off A — completion becomes true.
         await toggle_item(conn, a["id"], checked=True)
@@ -617,9 +607,7 @@ async def test_checking_a_blocked_item_clears_blocked_fields(tmp_path: Path) -> 
         session = await create_session(conn, working_dir="/tmp", model="m", kind="checklist")
         await create_checklist(conn, session["id"])
         item = await create_item(conn, session["id"], label="paid")
-        await set_item_blocked(
-            conn, item["id"], category="payment", reason="need card"
-        )
+        await set_item_blocked(conn, item["id"], category="payment", reason="need card")
         before = await get_item(conn, item["id"])
         assert before is not None
         assert before["blocked_at"] is not None

@@ -360,13 +360,7 @@ def test_parse_item_blocked_unknown_category_rejected() -> None:
 
 
 def test_parse_item_blocked_missing_category_rejected() -> None:
-    body = (
-        "CHECKLIST_ITEM_BLOCKED\n"
-        "blocked\n"
-        "TRIED:\n"
-        "- something\n"
-        "CHECKLIST_ITEM_BLOCKED_END"
-    )
+    body = "CHECKLIST_ITEM_BLOCKED\nblocked\nTRIED:\n- something\nCHECKLIST_ITEM_BLOCKED_END"
     result = parse(body)
     assert result.item_blocked is None
 
