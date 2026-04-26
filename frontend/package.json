@@ -1,11 +1,11 @@
 {
   "name": "bearings-frontend",
-  "version": "0.13.1",
+  "version": "0.21.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build && node ../scripts/sync-dist.mjs",
+    "build": "node ../scripts/stamp-frontend-version.mjs && vite build && node ../scripts/sync-dist.mjs",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run"
