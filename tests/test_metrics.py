@@ -26,7 +26,7 @@ def test_sessions_created_counter_increments(client: TestClient) -> None:
     before = metrics.sessions_created._value.get()
     client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "title": None, "tag_ids": [tag_id]},
+        json={"working_dir": "/tmp", "model": "m", "title": "test session", "tag_ids": [tag_id]},
     )
     after = metrics.sessions_created._value.get()
     assert after == before + 1
@@ -36,7 +36,7 @@ def test_ws_counters_update(client: TestClient, mock_agent_stream: None) -> None
     tag_id = _default_tag_id(client)
     resp = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "title": None, "tag_ids": [tag_id]},
+        json={"working_dir": "/tmp", "model": "m", "title": "test session", "tag_ids": [tag_id]},
     )
     sid = resp.json()["id"]
 
@@ -87,7 +87,7 @@ def test_tool_call_counters_label_success(
     tag_id = _default_tag_id(client)
     resp = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "title": None, "tag_ids": [tag_id]},
+        json={"working_dir": "/tmp", "model": "m", "title": "test session", "tag_ids": [tag_id]},
     )
     sid = resp.json()["id"]
 

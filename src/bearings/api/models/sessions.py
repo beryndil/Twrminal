@@ -19,7 +19,15 @@ class SessionCreate(BaseModel):
     # win unconditionally.
     working_dir: str | None = None
     model: str
-    title: str | None = None
+    # v0.20.6: title is required on every externally-created session.
+    # The sidebar new-session form's empty-title path (paired with the
+    # auto-fill behavior on later renames) was producing untitled
+    # sessions Dave didn't intend to create. The field is the user's
+    # short label for the session — there is no good auto-default for
+    # it, and a forced choice at create time prevents the unidentifiable
+    # rows that used to land in the sidebar. The route enforces a
+    # non-whitespace value (Pydantic typing alone allows `""`).
+    title: str
     description: str | None = None
     max_budget_usd: float | None = None
     # v0.2.13: every session must carry ≥1 tag. The POST route

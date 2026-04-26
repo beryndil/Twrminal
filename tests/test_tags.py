@@ -250,11 +250,21 @@ def test_api_list_sessions_filters_by_tag(client: TestClient) -> None:
     t2 = client.post("/api/tags", json={"name": "bug"}).json()
     s1 = client.post(
         "/api/sessions",
-        json={"working_dir": "/a", "model": "claude-sonnet-4-6", "tag_ids": [t1["id"]]},
+        json={
+            "working_dir": "/a",
+            "model": "claude-sonnet-4-6",
+            "title": "test session",
+            "tag_ids": [t1["id"]],
+        },
     ).json()
     s2 = client.post(
         "/api/sessions",
-        json={"working_dir": "/b", "model": "claude-sonnet-4-6", "tag_ids": [t2["id"]]},
+        json={
+            "working_dir": "/b",
+            "model": "claude-sonnet-4-6",
+            "title": "test session",
+            "tag_ids": [t2["id"]],
+        },
     ).json()
 
     # v0.7.4: general-tag filter is OR. Two ids → both sessions.
@@ -271,7 +281,7 @@ def test_api_list_sessions_empty_tag_param_matches_nothing(client: TestClient) -
     t = client.post("/api/tags", json={"name": "infra"}).json()
     client.post(
         "/api/sessions",
-        json={"working_dir": "/a", "model": "m", "tag_ids": [t["id"]]},
+        json={"working_dir": "/a", "model": "m", "title": "test session", "tag_ids": [t["id"]]},
     )
     assert client.get("/api/sessions?tags=").json() == []
     assert len(client.get("/api/sessions").json()) == 1
@@ -347,7 +357,12 @@ def _create_session(client: TestClient, **kwargs: object) -> dict:
         else:
             default_id = client.post("/api/tags", json={"name": "default"}).json()["id"]
         kwargs["tag_ids"] = [default_id]
-    body = {"working_dir": "/tmp", "model": "claude-sonnet-4-6", "title": None, **kwargs}
+    body = {
+        "working_dir": "/tmp",
+        "model": "claude-sonnet-4-6",
+        "title": "test session",  # v0.20.6: required at API boundary
+        **kwargs,
+    }
     resp = client.post("/api/sessions", json=body)
     assert resp.status_code == 200, resp.text
     data: dict[str, object] = resp.json()

@@ -91,7 +91,7 @@ def test_ws_missing_token_closes_4401(auth_client: TestClient) -> None:
         json={
             "working_dir": "/tmp",
             "model": "m",
-            "title": None,
+            "title": "test session",
             "tag_ids": [tag["id"]],
         },
         headers={"Authorization": "Bearer s3cret"},
@@ -114,7 +114,7 @@ def test_ws_bad_token_closes_4401(auth_client: TestClient) -> None:
         json={
             "working_dir": "/tmp",
             "model": "m",
-            "title": None,
+            "title": "test session",
             "tag_ids": [tag["id"]],
         },
         headers={"Authorization": "Bearer s3cret"},
@@ -139,7 +139,7 @@ def test_ws_good_token_accepts_and_streams(
         json={
             "working_dir": "/tmp",
             "model": "m",
-            "title": None,
+            "title": "test session",
             "tag_ids": [tag["id"]],
         },
         headers={"Authorization": "Bearer s3cret"},
@@ -172,7 +172,7 @@ def test_ws_good_token_via_subprotocol(auth_client: TestClient, mock_agent_strea
         json={
             "working_dir": "/tmp",
             "model": "m",
-            "title": None,
+            "title": "test session",
             "tag_ids": [tag["id"]],
         },
         headers={"Authorization": "Bearer s3cret"},
@@ -197,7 +197,7 @@ def test_ws_subprotocol_bad_token_closes_4401(auth_client: TestClient) -> None:
         json={
             "working_dir": "/tmp",
             "model": "m",
-            "title": None,
+            "title": "test session",
             "tag_ids": [tag["id"]],
         },
         headers={"Authorization": "Bearer s3cret"},
@@ -227,7 +227,7 @@ def test_ws_subprotocol_marker_without_bearer_entry_closes_4401(
         json={
             "working_dir": "/tmp",
             "model": "m",
-            "title": None,
+            "title": "test session",
             "tag_ids": [tag["id"]],
         },
         headers={"Authorization": "Bearer s3cret"},

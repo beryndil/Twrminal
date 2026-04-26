@@ -34,7 +34,9 @@ def _create_session(client: TestClient, **kwargs: Any) -> dict[str, Any]:
     body = {
         "working_dir": "/tmp",
         "model": "claude-sonnet-4-6",
-        "title": kwargs.pop("title", None),
+        # v0.20.6: title is required at the API boundary; default to a
+        # placeholder so the bulk of these tests don't have to pick one.
+        "title": kwargs.pop("title", None) or "test session",
         "tag_ids": tag_ids,
         **kwargs,
     }

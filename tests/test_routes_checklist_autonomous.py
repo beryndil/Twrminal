@@ -236,6 +236,7 @@ def test_run_on_chat_session_returns_400(client: TestClient) -> None:
             "working_dir": "/tmp",
             "model": "claude-sonnet-4-6",
             "kind": "chat",
+            "title": "test session",
             "tag_ids": [tag_id],
         },
     )
@@ -317,6 +318,7 @@ def test_link_existing_session_to_item_succeeds(
             "working_dir": "/tmp",
             "model": "claude-sonnet-4-6",
             "kind": "chat",
+            "title": "test session",
             "tag_ids": [tag_id],
         },
     )
@@ -365,6 +367,7 @@ def test_link_rejects_closed_session(client: TestClient) -> None:
             "working_dir": "/tmp",
             "model": "claude-sonnet-4-6",
             "kind": "chat",
+            "title": "test session",
             "tag_ids": [tag_id],
         },
     )
@@ -391,6 +394,7 @@ def test_link_with_null_detaches(client: TestClient, monkeypatch: pytest.MonkeyP
             "working_dir": "/tmp",
             "model": "claude-sonnet-4-6",
             "kind": "chat",
+            "title": "test session",
             "tag_ids": [tag_id],
         },
     )
@@ -470,6 +474,7 @@ def test_run_tour_mode_advances_past_silent_item_via_visit(
             "working_dir": "/tmp",
             "model": "claude-sonnet-4-6",
             "kind": "chat",
+            "title": "test session",
             "tag_ids": [tag_id],
         },
     )

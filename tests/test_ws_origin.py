@@ -58,7 +58,7 @@ def _create_session(c: TestClient, origin: str = "http://allowed.test") -> str:
         json={
             "working_dir": "/tmp",
             "model": "m",
-            "title": None,
+            "title": "test session",
             "tag_ids": [tag["id"]],
         },
         headers=headers,

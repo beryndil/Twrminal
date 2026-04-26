@@ -80,7 +80,11 @@ export type Session = {
 export type SessionCreate = {
   working_dir: string;
   model: string;
-  title?: string | null;
+  /** v0.20.6: title is required at the API boundary. The backend
+   * additionally rejects whitespace-only values (Pydantic typing alone
+   * permits `""`). The new-session form gates submit on a non-empty
+   * title so the UI never reaches that 400. */
+  title: string;
   description?: string | null;
   max_budget_usd?: number | null;
   /** v0.2.13 requires at least one tag on every new session. */

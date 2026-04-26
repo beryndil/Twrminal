@@ -1,37 +1,44 @@
 <script lang="ts">
-  /** About section — version, build identity, project links, dev
-   * credit + coffee CTA.
+  /** About section — mirrors Spyglass-Android's
+   * `about/AboutScreen.kt` hero treatment.
    *
-   * Pulls from /api/version (existing endpoint, also consumed by the
-   * seamless-reload watcher), which returns:
-   *   - `version`: the release string, e.g. "0.20.5", from
-   *     `bearings.__version__` (resolved at install time from
-   *     `pyproject.toml`).
-   *   - `build`: nanosecond mtime of `dist/index.html`, or null when
-   *     the static bundle isn't present (dev workflow). Formatted as
-   *     a localized timestamp; null falls through to "dev build".
+   * Top-of-pane hero (centered column):
+   *   1. App mark (BearingsMark at 64px)
+   *   2. App title — "Bearings"
+   *   3. Release version — "v0.20.6", from /api/version's `version`
+   *   4. Tagline — Bearings' one-line description
+   *   5. "by Beryndil" — clickable, opens
+   *      hardknocks.university/developer.html
+   *   6. Photo of Beryndil — `/about_beryndil.png` (resized from
+   *      Spyglass-Android's drawable to 320×307 / ~85 KB), rendered
+   *      at 160 px square with 16px rounded corners and crop scale,
+   *      same as the Compose treatment.
+   *   7. Coffee CTA card — small "Enjoy Bearings?" eyebrow over a
+   *      larger "Buy Me a Cup of Coffee" line, sky-accent
+   *      background, rounded, click opens the same URL.
    *
-   * The dev-credit + coffee block mirrors Spyglass's About screen
-   * treatment (Spyglass-Android `about/AboutScreen.kt`):
-   *   - "by Beryndil" link → hardknocks.university/developer.html
-   *   - prominent CTA block: small "Enjoy Bearings?" eyebrow over a
-   *     larger "Buy Me a Cup of Coffee" line, primary-accent
-   *     background, rounded, centered, click opens the same URL.
+   * Below the hero, a small SettingsCard with Build (mtime-derived)
+   * and Repository link — operationally useful identity info that
+   * the hero version line doesn't surface. Build also has a graceful
+   * "dev build" fallback when `/api/version` returns `build: null`
+   * (developer running the API without the static bundle built).
    */
   import SettingsCard from '../SettingsCard.svelte';
   import SettingsDivider from '../SettingsDivider.svelte';
   import SettingsLink from '../SettingsLink.svelte';
+  import BearingsMark from '../../icons/BearingsMark.svelte';
   import { fetchVersion, type VersionInfo } from '$lib/api/version';
 
   const COFFEE_URL = 'https://hardknocks.university/developer.html';
+  const TAGLINE = 'Localhost web UI for Claude Code agent sessions.';
 
   let info = $state<VersionInfo | null>(null);
   let error = $state<string | null>(null);
 
-  /** Format the `build` token (nanosecond mtime) as a local timestamp.
-   * `null` (no dist directory — dev) → 'dev build'. Unparseable input
-   * → 'unknown'; the API contract promises a numeric string but we
-   * don't trust silently. */
+  /** Format the `build` token (nanosecond mtime) as a local
+   * timestamp. `null` (no dist directory — dev) → 'dev build'.
+   * Unparseable input → 'unknown'; the API contract promises a
+   * numeric string but we don't trust silently. */
   function formatBuild(build: string | null): string {
     if (build === null) return 'dev build';
     const ns = Number(build);
@@ -52,13 +59,62 @@
 </script>
 
 <div class="flex flex-col gap-4" data-testid="settings-section-about">
-  <SettingsCard>
-    <SettingsLink
-      title="Version"
-      description="Bearings package version, resolved from pyproject.toml at install."
-      trailing={info ? `v${info.version}` : error ? 'unavailable' : '…'}
+  <!-- Hero block: mirrors Spyglass AboutScreen.kt's `app_info` item.
+       Centered column. -->
+  <div class="flex flex-col items-center pt-2 pb-4 gap-2">
+    <BearingsMark size={64} label="Bearings" />
+
+    <h3 class="text-2xl font-semibold text-sky-400 mt-2">Bearings</h3>
+
+    <p class="text-sm text-slate-400">
+      {info ? `v${info.version}` : error ? 'version unavailable' : '…'}
+    </p>
+
+    <p class="text-sm text-slate-400">{TAGLINE}</p>
+
+    <a
+      href={COFFEE_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="text-sm text-sky-400 hover:text-sky-300 hover:underline
+        focus:outline-none focus:underline"
+    >
+      by Beryndil
+    </a>
+
+    <img
+      src="/about_beryndil.png"
+      alt="Beryndil"
+      width="160"
+      height="160"
+      loading="lazy"
+      class="mt-2 h-40 w-40 rounded-2xl object-cover shadow-lg"
     />
-    <SettingsDivider inset />
+
+    <a
+      href={COFFEE_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="mt-3 inline-flex flex-col items-center rounded-lg
+        bg-sky-600 hover:bg-sky-500 transition-colors
+        px-5 py-2.5 text-center
+        focus:outline-none focus:ring-2 focus:ring-sky-300/60
+        focus:ring-offset-2 focus:ring-offset-slate-900"
+      data-testid="settings-coffee-cta"
+    >
+      <span class="text-xs text-sky-100">Enjoy Bearings?</span>
+      <span class="text-base font-semibold text-white">
+        Buy Me a Cup of Coffee
+      </span>
+    </a>
+
+    <p class="mt-1 text-xs text-slate-500">Built in Winnfield, Louisiana.</p>
+  </div>
+
+  <!-- Identity card: build identifier + repo. Useful for bug reports
+       and links the user actually clicks; the hero version is enough
+       at-a-glance, this is the operational detail. -->
+  <SettingsCard>
     <SettingsLink
       title="Build"
       description="Identifies the running frontend bundle. Bumps on every npm run build."
@@ -72,36 +128,6 @@
       trailing="Beryndil/Bearings ↗"
     />
   </SettingsCard>
-
-  <!-- Coffee CTA — mirrors the prominent button block in Spyglass-
-       Android's AboutScreen.kt. Stacked text on a primary-accent
-       background, the whole block is clickable. -->
-  <a
-    href={COFFEE_URL}
-    target="_blank"
-    rel="noopener noreferrer"
-    class="block rounded-lg bg-sky-600 hover:bg-sky-500 transition-colors
-      px-5 py-3 text-center
-      focus:outline-none focus:ring-2 focus:ring-sky-300/60
-      focus:ring-offset-2 focus:ring-offset-slate-900"
-    data-testid="settings-coffee-cta"
-  >
-    <span class="block text-xs text-sky-100">Enjoy Bearings?</span>
-    <span class="block text-base font-semibold text-white">
-      Buy Me a Cup of Coffee
-    </span>
-  </a>
-
-  <p class="text-center text-xs text-slate-500">
-    by
-    <a
-      href={COFFEE_URL}
-      target="_blank"
-      rel="noopener noreferrer"
-      class="text-sky-400 hover:text-sky-300 hover:underline"
-    >Beryndil</a>
-    — Winnfield, Louisiana
-  </p>
 
   {#if error}
     <p class="text-xs text-rose-400" role="alert">

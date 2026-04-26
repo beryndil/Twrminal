@@ -44,6 +44,15 @@ async def create_session(body: SessionCreate, request: Request) -> SessionOut:
             status_code=400,
             detail="at least one tag_id is required (sessions must be tagged)",
         )
+    # v0.20.6: title is required and must be non-whitespace. Pydantic
+    # types `title: str` so `null` and missing-field already 422 at the
+    # boundary; this catches `""` and `"   "` which Pydantic accepts.
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(
+            status_code=400,
+            detail="title is required (whitespace-only is invalid)",
+        )
     conn = request.app.state.db
     # Validate every tag exists before inserting the session — avoids a
     # partial state where the session row is created but some tags fail
@@ -81,7 +90,7 @@ async def create_session(body: SessionCreate, request: Request) -> SessionOut:
         conn,
         working_dir=working_dir,
         model=body.model,
-        title=body.title,
+        title=title,
         description=body.description,
         max_budget_usd=budget,
         kind=body.kind,

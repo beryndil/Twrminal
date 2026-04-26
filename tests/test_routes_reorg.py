@@ -37,7 +37,7 @@ def _create(client: TestClient, **kwargs: Any) -> dict[str, Any]:
     body = {
         "working_dir": "/tmp",
         "model": "claude-sonnet-4-6",
-        "title": None,
+        "title": "test session",  # v0.20.6: required at API boundary
         "tag_ids": tag_ids,
         **kwargs,
     }

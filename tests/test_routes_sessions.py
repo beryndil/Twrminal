@@ -17,11 +17,15 @@ def _default_tag(client: TestClient) -> int:
 
 
 def _create(client: TestClient, **kwargs: object) -> dict:
+    # v0.20.6: title is required at POST /api/sessions. The fixture
+    # ships a generic placeholder so existing tests that don't care
+    # about the title don't have to declare one. Tests that do care
+    # about the title pass it explicitly via **kwargs.
     tag_ids = kwargs.pop("tag_ids", None) or [_default_tag(client)]
     body = {
         "working_dir": "/tmp",
         "model": "claude-sonnet-4-6",
-        "title": None,
+        "title": "test session",
         "tag_ids": tag_ids,
         **kwargs,
     }
@@ -33,7 +37,7 @@ def _create(client: TestClient, **kwargs: object) -> dict:
 def test_post_rejects_session_without_tags(client: TestClient) -> None:
     resp = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "tag_ids": []},
+        json={"working_dir": "/tmp", "model": "m", "title": "x", "tag_ids": []},
     )
     assert resp.status_code == 400
 
@@ -41,9 +45,55 @@ def test_post_rejects_session_without_tags(client: TestClient) -> None:
 def test_post_rejects_nonexistent_tag_id(client: TestClient) -> None:
     resp = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "tag_ids": [9999]},
+        json={"working_dir": "/tmp", "model": "m", "title": "x", "tag_ids": [9999]},
     )
     assert resp.status_code == 400
+
+
+def test_post_rejects_missing_title(client: TestClient) -> None:
+    """v0.20.6: title is required at the API boundary. Missing field
+    fails Pydantic validation (422); explicit `null` likewise fails
+    Pydantic typing. Empty string and whitespace-only land in the
+    route's stripping check and get a 400 with a human-readable detail.
+    The auto-fill bug that motivated this — sessions arriving in the
+    sidebar with surprise titles Dave didn't pick — collapses once the
+    user is forced to choose at create time."""
+    tag_id = _default_tag(client)
+    # Missing field — Pydantic 422.
+    resp = client.post(
+        "/api/sessions",
+        json={"working_dir": "/tmp", "model": "m", "tag_ids": [tag_id]},
+    )
+    assert resp.status_code == 422
+    # Explicit null — Pydantic 422 (title is `str`, not `str | None`).
+    resp = client.post(
+        "/api/sessions",
+        json={"working_dir": "/tmp", "model": "m", "title": None, "tag_ids": [tag_id]},
+    )
+    assert resp.status_code == 422
+    # Empty string — route-level 400 with explanatory detail.
+    resp = client.post(
+        "/api/sessions",
+        json={"working_dir": "/tmp", "model": "m", "title": "", "tag_ids": [tag_id]},
+    )
+    assert resp.status_code == 400
+    assert "title is required" in resp.json()["detail"]
+    # Whitespace-only — same path as empty string.
+    resp = client.post(
+        "/api/sessions",
+        json={"working_dir": "/tmp", "model": "m", "title": "   ", "tag_ids": [tag_id]},
+    )
+    assert resp.status_code == 400
+    assert "title is required" in resp.json()["detail"]
+
+
+def test_post_strips_title_whitespace(client: TestClient) -> None:
+    """The route stores the trimmed title — leading/trailing whitespace
+    is normalized away so tests don't have to think about it and so two
+    sessions titled `'foo'` and `'foo '` don't appear different in the
+    sidebar."""
+    data = _create(client, title="  hello  ")
+    assert data["title"] == "hello"
 
 
 def test_post_create_returns_session(client: TestClient) -> None:
@@ -89,7 +139,7 @@ def test_post_create_applies_global_default_budget_when_unset(tmp_path) -> None:
             json={
                 "working_dir": "/tmp",
                 "model": "m",
-                "title": None,
+                "title": "test session",
                 "tag_ids": [tag_id],
             },
         ).json()
@@ -100,7 +150,7 @@ def test_post_create_applies_global_default_budget_when_unset(tmp_path) -> None:
             json={
                 "working_dir": "/tmp",
                 "model": "m",
-                "title": None,
+                "title": "test session",
                 "tag_ids": [tag_id],
                 "max_budget_usd": 9.0,
             },
@@ -134,7 +184,7 @@ def test_post_create_uses_workspace_root_sandbox_when_no_working_dir(tmp_path) -
         # No `working_dir` in the body — the route must fill it in.
         row = c.post(
             "/api/sessions",
-            json={"model": "m", "title": None, "tag_ids": [tag_id]},
+            json={"model": "m", "title": "test session", "tag_ids": [tag_id]},
         ).json()
         expected_dir = workspace_root / row["id"]
         assert row["working_dir"] == str(expected_dir)
@@ -168,7 +218,7 @@ def test_post_create_honors_explicit_working_dir_under_workspace_root(tmp_path) 
             json={
                 "working_dir": "/explicit/path",
                 "model": "m",
-                "title": None,
+                "title": "test session",
                 "tag_ids": [tag_id],
             },
         ).json()
@@ -638,7 +688,7 @@ def test_running_endpoint_reports_session_with_live_turn(
     )
     sid = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "tag_ids": [tag_id]},
+        json={"working_dir": "/tmp", "model": "m", "title": "test session", "tag_ids": [tag_id]},
     ).json()["id"]
 
     with client.websocket_connect(f"/ws/sessions/{sid}") as ws:

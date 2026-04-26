@@ -159,6 +159,7 @@ def test_patch_session_accepts_session_instructions(client: TestClient) -> None:
         json={
             "working_dir": "/tmp",
             "model": "claude-sonnet-4-6",
+            "title": "test session",
             "tag_ids": [_default_tag_id(client)],
         },
     ).json()
@@ -191,7 +192,7 @@ def test_system_prompt_base_only(client: TestClient) -> None:
     # layer. Base is the only layer emitted.
     sess = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "tag_ids": [_default_tag_id(client)]},
+        json={"working_dir": "/tmp", "model": "m", "title": "test session", "tag_ids": [_default_tag_id(client)]},
     ).json()
     resp = client.get(f"/api/sessions/{sess['id']}/system_prompt")
     assert resp.status_code == 200
@@ -230,17 +231,17 @@ def test_put_tag_memory_drops_runners_for_every_attached_session(
     tag = client.post("/api/tags", json={"name": "infra"}).json()
     sess_a = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "tag_ids": [tag["id"]]},
+        json={"working_dir": "/tmp", "model": "m", "title": "test session", "tag_ids": [tag["id"]]},
     ).json()
     sess_b = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "tag_ids": [tag["id"]]},
+        json={"working_dir": "/tmp", "model": "m", "title": "test session", "tag_ids": [tag["id"]]},
     ).json()
     # Third session carries a different tag and must NOT respawn.
     other_tag = client.post("/api/tags", json={"name": "unrelated"}).json()
     sess_c = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "tag_ids": [other_tag["id"]]},
+        json={"working_dir": "/tmp", "model": "m", "title": "test session", "tag_ids": [other_tag["id"]]},
     ).json()
 
     tracker_a = _plant_runner(client, sess_a["id"])
@@ -264,7 +265,7 @@ def test_delete_tag_memory_drops_runners_for_every_attached_session(
     client.put(f"/api/tags/{tag['id']}/memory", json={"content": "seed"})
     sess = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "tag_ids": [tag["id"]]},
+        json={"working_dir": "/tmp", "model": "m", "title": "test session", "tag_ids": [tag["id"]]},
     ).json()
     tracker = _plant_runner(client, sess["id"])
 
@@ -277,7 +278,7 @@ def test_system_prompt_full_stack(client: TestClient) -> None:
     tag = client.post("/api/tags", json={"name": "infra"}).json()
     sess = client.post(
         "/api/sessions",
-        json={"working_dir": "/tmp", "model": "m", "tag_ids": [tag["id"]]},
+        json={"working_dir": "/tmp", "model": "m", "title": "test session", "tag_ids": [tag["id"]]},
     ).json()
     client.put(f"/api/tags/{tag['id']}/memory", json={"content": "Prefer nftables."})
     client.patch(

@@ -495,6 +495,7 @@ def test_spawn_paired_chat_rejects_chat_parent(client: TestClient) -> None:
         json={
             "working_dir": "/tmp",
             "model": "claude-sonnet-4-6",
+            "title": "test session",
             "tag_ids": [tag_id],
         },
     ).json()

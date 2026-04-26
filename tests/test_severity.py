@@ -293,7 +293,7 @@ def test_api_create_session_attaches_default_severity(client: TestClient) -> Non
     t = client.post("/api/tags", json={"name": "infra"}).json()
     sess = client.post(
         "/api/sessions",
-        json={"working_dir": "/x", "model": "m", "tag_ids": [t["id"]]},
+        json={"working_dir": "/x", "model": "m", "title": "test session", "tag_ids": [t["id"]]},
     ).json()
     tag_rows = client.get(f"/api/sessions/{sess['id']}/tags").json()
     names = [r["name"] for r in tag_rows]
@@ -408,7 +408,7 @@ def test_api_list_tags_scope_tags_query(client: TestClient) -> None:
     infra = client.post("/api/tags", json={"name": "infra"}).json()
     client.post(
         "/api/sessions",
-        json={"working_dir": "/a", "model": "m", "tag_ids": [infra["id"]]},
+        json={"working_dir": "/a", "model": "m", "title": "test session", "tag_ids": [infra["id"]]},
     )
     # Empty scope → severity counts zero.
     rows = client.get("/api/tags?scope_tags=").json()
@@ -434,11 +434,11 @@ def test_api_list_sessions_severity_tags_query(client: TestClient) -> None:
     t = client.post("/api/tags", json={"name": "infra"}).json()
     s1 = client.post(
         "/api/sessions",
-        json={"working_dir": "/a", "model": "m", "tag_ids": [t["id"], sev["Blocker"]]},
+        json={"working_dir": "/a", "model": "m", "title": "test session", "tag_ids": [t["id"], sev["Blocker"]]},
     ).json()
     client.post(
         "/api/sessions",
-        json={"working_dir": "/b", "model": "m", "tag_ids": [t["id"], sev["Low"]]},
+        json={"working_dir": "/b", "model": "m", "title": "test session", "tag_ids": [t["id"], sev["Low"]]},
     ).json()
 
     blockers = client.get(f"/api/sessions?severity_tags={sev['Blocker']}").json()

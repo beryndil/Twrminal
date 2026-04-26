@@ -15,6 +15,7 @@
   let workingDir = $state('');
   let model = $state('claude-opus-4-7');
   let title = $state('');
+  let titleError = $state<string | null>(null);
   let budget = $state('');
   let submitting = $state(false);
   // v0.4.0 session-kind toggle. 'checklist' hides Budget + Model
@@ -133,6 +134,14 @@
   }
 
   async function onSubmit() {
+    // v0.20.6: title is required at the API boundary; validate here so
+    // the user gets an inline error instead of a 400 from the route.
+    const trimmedTitle = title.trim();
+    if (trimmedTitle === '') {
+      titleError = 'Title is required.';
+      return;
+    }
+    titleError = null;
     if (tagIds.length === 0) {
       tagError = 'Attach at least one tag before creating a session.';
       return;
@@ -143,7 +152,7 @@
     const created = await sessions.create({
       working_dir: workingDir.trim() || preferences.defaultWorkingDir || '/tmp',
       model: model.trim() || preferences.defaultModel || 'claude-opus-4-7',
-      title: title.trim() || null,
+      title: trimmedTitle,
       max_budget_usd: parseBudget(budget),
       tag_ids: ids,
       kind: createdKind
@@ -152,6 +161,7 @@
     if (!created) return;
     workingDir = '';
     title = '';
+    titleError = null;
     budget = '';
     tagIds = [];
     kind = 'chat';
@@ -223,12 +233,20 @@
       </div>
     {/if}
     <label class="flex flex-col text-xs gap-1">
-      <span class="text-slate-400">Title <span class="text-slate-600">(optional)</span></span>
+      <span class="text-slate-400">Title <span class="text-rose-400">*</span></span>
       <input
         type="text"
         class="rounded bg-slate-950 px-2 py-1 text-sm"
         bind:value={title}
+        oninput={() => {
+          if (titleError && title.trim() !== '') titleError = null;
+        }}
+        aria-invalid={titleError !== null}
+        aria-describedby={titleError ? 'title-error' : undefined}
       />
+      {#if titleError}
+        <p id="title-error" class="text-rose-400">{titleError}</p>
+      {/if}
     </label>
     {#if kind === 'chat'}
       <label class="flex flex-col text-xs gap-1">
@@ -313,8 +331,12 @@
     <button
       type="submit"
       class="rounded bg-emerald-600 hover:bg-emerald-500 px-2 py-1 text-sm mt-1 disabled:opacity-50"
-      disabled={submitting || tagIds.length === 0}
-      title={tagIds.length === 0 ? 'Attach at least one tag' : ''}
+      disabled={submitting || tagIds.length === 0 || title.trim() === ''}
+      title={title.trim() === ''
+        ? 'Enter a title'
+        : tagIds.length === 0
+          ? 'Attach at least one tag'
+          : ''}
     >
       {submitting ? 'Creating…' : 'Create session'}
     </button>
