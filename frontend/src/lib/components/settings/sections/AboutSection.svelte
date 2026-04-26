@@ -60,23 +60,27 @@
 
 <div class="flex flex-col gap-4" data-testid="settings-section-about">
   <!-- Hero block: mirrors Spyglass AboutScreen.kt's `app_info` item.
-       Centered column. -->
-  <div class="flex flex-col items-center pt-2 pb-4 gap-2">
-    <BearingsMark size={64} label="Bearings" />
+       Centered column. Sized to fit inside the dialog's content
+       pane without scrolling — photo at 96px (was 160), BearingsMark
+       at 40 (was 64), tightened gaps and padding. Treatment is
+       still recognisably the Spyglass hero, just at desktop-modal
+       density rather than mobile-fullscreen density. -->
+  <div class="flex flex-col items-center pt-0 pb-1 gap-1">
+    <BearingsMark size={40} label="Bearings" />
 
-    <h3 class="text-2xl font-semibold text-sky-400 mt-2">Bearings</h3>
+    <h3 class="text-lg font-semibold text-sky-400 mt-1">Bearings</h3>
 
-    <p class="text-sm text-slate-400">
+    <p class="text-xs text-slate-400">
       {info ? `v${info.version}` : error ? 'version unavailable' : '…'}
     </p>
 
-    <p class="text-sm text-slate-400">{TAGLINE}</p>
+    <p class="text-xs text-slate-400">{TAGLINE}</p>
 
     <a
       href={COFFEE_URL}
       target="_blank"
       rel="noopener noreferrer"
-      class="text-sm text-sky-400 hover:text-sky-300 hover:underline
+      class="text-xs text-sky-400 hover:text-sky-300 hover:underline
         focus:outline-none focus:underline"
     >
       by Beryndil
@@ -85,30 +89,30 @@
     <img
       src="/about_beryndil.png"
       alt="Beryndil"
-      width="160"
-      height="160"
+      width="80"
+      height="80"
       loading="lazy"
-      class="mt-2 h-40 w-40 rounded-2xl object-cover shadow-lg"
+      class="mt-1 h-20 w-20 rounded-xl object-cover shadow-lg"
     />
 
     <a
       href={COFFEE_URL}
       target="_blank"
       rel="noopener noreferrer"
-      class="mt-3 inline-flex flex-col items-center rounded-lg
+      class="mt-2 inline-flex flex-col items-center rounded-lg
         bg-sky-600 hover:bg-sky-500 transition-colors
-        px-5 py-2.5 text-center
+        px-4 py-1.5 text-center
         focus:outline-none focus:ring-2 focus:ring-sky-300/60
         focus:ring-offset-2 focus:ring-offset-slate-900"
       data-testid="settings-coffee-cta"
     >
-      <span class="text-xs text-sky-100">Enjoy Bearings?</span>
-      <span class="text-base font-semibold text-white">
+      <span class="text-[10px] text-sky-100 leading-tight">Enjoy Bearings?</span>
+      <span class="text-sm font-semibold text-white leading-tight">
         Buy Me a Cup of Coffee
       </span>
     </a>
 
-    <p class="mt-1 text-xs text-slate-500">Built in Winnfield, Louisiana.</p>
+    <p class="mt-0.5 text-[10px] text-slate-500">Built in Winnfield, Louisiana.</p>
   </div>
 
   <!-- Identity card: build identifier + repo. Useful for bug reports
