@@ -30,6 +30,7 @@
 
 import { agent } from '$lib/agent.svelte';
 import { palette } from '$lib/context-menu/palette.svelte';
+import { contextMenu } from '$lib/context-menu/store.svelte';
 import { pending } from '$lib/stores/pending.svelte';
 import { sessions } from '$lib/stores/sessions.svelte';
 import { uiActions } from '$lib/stores/ui_actions.svelte';
@@ -167,8 +168,20 @@ async function jumpToIndex(n: number): Promise<void> {
 /** Esc cascade: close the highest-priority overlay first, then defocus
  * a focused input, then no-op. Each step is independent so Esc inside
  * a textarea (priority: blur the textarea) doesn't accidentally close
- * the cheatsheet, and Esc with no overlay still blurs. */
+ * the cheatsheet, and Esc with no overlay still blurs.
+ *
+ * Context menu sits at the top because its document-capture-phase
+ * keydown listener swallows alphanumeric keystrokes destined for any
+ * focused field — leaving a stuck-open menu wedges the composer
+ * textarea (TODO 2026-04-26 wedge fix). The menu's own Esc handling
+ * defers to a focused field outside the menu, so without this branch
+ * Esc-from-textarea wouldn't close it. */
 function handleEscape(e: KeyboardEvent): void {
+  if (contextMenu.state.open) {
+    e.preventDefault();
+    contextMenu.close();
+    return;
+  }
   if (palette.open) {
     e.preventDefault();
     palette.hide();

@@ -17,6 +17,70 @@ Scaffold reference (still useful for plans):
 
 ---
 
+## Composer textarea wedge fixed — 2026-04-26 ✅
+
+Bug filed in Bearings session `6e663ec4d4dd4b2c8b726334611b316a` ([Bug] Text
+input dead until hard refresh). Symptom: composer textarea stops accepting
+keystrokes mid-session, only recovery is browser hard-refresh.
+
+**Root cause.** `ContextMenu.svelte` installs a document-capture-phase keydown
+listener while open that calls `preventDefault()` + `stopPropagation()` for
+EVERY alphanumeric keystroke (Mnemonic FSM events). The listener has been there
+since Phase 2 (`4268a33`). When the menu opens and focus subsequently shifts
+to the composer textarea **without** a mousedown — e.g. via the programmatic
+`textareaEl.focus()` calls in `onSelectCommand` (slash-pick), the
+`bearings:composer-prefill` handler (regenerate flow / "More info" button), or
+`attachFileAtCursor` — the menu's outside-mousedown close path never fires.
+The menu stays in `state.open=true` indefinitely, the capture-phase listener
+stays installed, and every alphanumeric keystroke into the textarea is
+swallowed at document level. Hard-refresh resets the in-memory `state.open`
+flag.
+
+Reproduced deterministically in Playwright (verbatim sequence: right-click
+session list item → `textareaEl.focus()` → press 'z' → textarea value stays
+empty, menu still open).
+
+**Fix (3 layers, in `ContextMenu.svelte` + `keyboard/bindings.ts`):**
+
+1. `ContextMenu.svelte` `onKey` early-returns when an editable element OUTSIDE
+   the menu has focus (`isEditableOutsideMenu` helper). Belt: even if the menu
+   is somehow stuck open, alphanumeric typing into a focused field is no
+   longer swallowed.
+
+2. `ContextMenu.svelte` adds a document `focusin` listener (registered in the
+   same `$effect` as the existing keydown/mousedown ones, torn down with them)
+   that calls `contextMenu.close()` when focus shifts to an editable element
+   outside the menu. Suspenders: the wedge state can't persist — focus
+   shifting to the composer auto-dismisses the menu and tears down the
+   capture-phase listener.
+
+3. `bindings.ts` `handleEscape` now closes `contextMenu` ahead of every other
+   overlay (palette, pending card, uiActions). Last-resort dismissal: even
+   when focus is in a textarea (where the menu's own Esc handler now defers
+   per fix 1), Esc still closes the menu.
+
+**Verification.**
+- Vitest 742 passing (740 prior + 2 new regression tests in `bindings.test.ts`
+  for the new Esc cascade priority).
+- svelte-check: 0 errors / 0 warnings.
+- ruff / format / mypy / pytest (1105) clean.
+- Playwright end-to-end: wedge sequence no longer reproduces (focusin closes
+  the menu); ArrowDown nav inside the menu still moves focus to the first
+  item; Esc closes the menu.
+
+Files touched:
+- `frontend/src/lib/components/context-menu/ContextMenu.svelte`
+- `frontend/src/lib/keyboard/bindings.ts`
+- `frontend/src/lib/keyboard/bindings.test.ts`
+
+Coordination note: bug session described `6b5efa5` (Conversation.svelte split)
+and `033d88a` (keyboard shortcuts v1) as prime suspects on recency. The actual
+trigger is older (Phase 2 of context menu, `4268a33`) — but Phases 14-16
+(`86b9b22`) added more `use:contextmenu` attach points (attachment chips,
+message bubbles for regenerate, pending op rows) plus the
+`bearings:composer-prefill` programmatic-focus path that's the most likely
+real-world trigger.
+
 ## Autonomous checklist execution — 2026-04-24
 
 **Goal.** Point Claude at a `kind='checklist'` session and have him work

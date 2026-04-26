@@ -172,9 +172,38 @@
     }
   }
 
+  /** True when the active element is an input/textarea/contentEditable
+   * element OUTSIDE this menu. We use this to keep the menu's keyboard
+   * handler from swallowing keystrokes that the user is clearly aiming
+   * at a text field (the composer textarea after a slash-pick or
+   * regenerate prefill, an open NewSessionForm input, the search box,
+   * etc.). Without this guard, alphanumeric keystrokes hit the menu's
+   * document-capture-phase preventDefault/stopPropagation and never
+   * reach the field — the "text input dead until hard refresh" wedge
+   * reported 2026-04-26. The visible-menu mitigation is paired with
+   * the focusin listener below, which auto-closes the menu when focus
+   * moves into one of these fields so the listener tears down. */
+  function isEditableOutsideMenu(target: EventTarget | null): boolean {
+    const el =
+      (target instanceof HTMLElement ? target : null) ??
+      (typeof document !== 'undefined'
+        ? (document.activeElement as HTMLElement | null)
+        : null);
+    if (!el) return false;
+    if (menuEl && menuEl.contains(el)) return false;
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return true;
+    if (el.isContentEditable) return true;
+    return false;
+  }
+
   $effect(() => {
     if (!contextMenu.state.open) return;
     function onKey(e: KeyboardEvent): void {
+      // Defer to a focused text field outside the menu — see
+      // `isEditableOutsideMenu`. The menu can still be dismissed via
+      // Esc (handled by the keyboard registry's `handleEscape`, which
+      // checks `contextMenu.state.open` first) or mousedown outside.
+      if (isEditableOutsideMenu(e.target)) return;
       const event = toEvent(e);
       if (!event) return;
       e.preventDefault();
@@ -200,11 +229,28 @@
       if (target && menuEl && menuEl.contains(target)) return;
       contextMenu.close();
     }
+    /** Auto-close on focus shift to an editable field outside the
+     * menu. Programmatic `.focus()` calls (slash-command pick,
+     * `bearings:composer-prefill` from the regenerate flow,
+     * `attachFileAtCursor`, etc.) don't fire mousedown, so the
+     * outside-mousedown close path above doesn't catch them. Without
+     * this, the menu would remain open in the background with its
+     * capture-phase keydown listener still installed — even with the
+     * `isEditableOutsideMenu` guard above keeping the keystrokes
+     * alive, leaving an invisible-to-the-user menu open is a UX trap.
+     * Closing here tears down the listener entirely. */
+    function onFocusIn(e: FocusEvent): void {
+      if (isEditableOutsideMenu(e.target)) {
+        contextMenu.close();
+      }
+    }
     document.addEventListener('keydown', onKey, true);
     document.addEventListener('mousedown', onClick);
+    document.addEventListener('focusin', onFocusIn);
     return () => {
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('focusin', onFocusIn);
     };
   });
 

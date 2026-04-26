@@ -9,6 +9,7 @@ import {
 } from './bindings';
 import { uiActions } from '$lib/stores/ui_actions.svelte';
 import { palette } from '$lib/context-menu/palette.svelte';
+import { contextMenu } from '$lib/context-menu/store.svelte';
 
 const { parseChord, matches } = _internal;
 
@@ -186,6 +187,7 @@ describe('dispatchShortcut', () => {
     uiActions.newSessionFresh = false;
     uiActions.templatePickerOpen = false;
     palette.hide();
+    contextMenu.close();
   });
 
   afterEach(() => {
@@ -257,6 +259,46 @@ describe('dispatchShortcut', () => {
     });
     expect(dispatchShortcut(e)).toBe(true);
     expect(palette.open).toBe(true);
+    input.remove();
+  });
+
+  it('Esc closes the context menu before any other overlay', () => {
+    // Wedge fix (2026-04-26): the context menu's document-capture
+    // keydown listener swallows alphanumerics from focused fields,
+    // so its open state must close ahead of every other overlay.
+    contextMenu.open(
+      { type: 'session', id: 'sess-1' },
+      0,
+      0,
+      false
+    );
+    palette.show();
+    uiActions.cheatSheetOpen = true;
+    const e = fakeEvent({ key: 'Escape' });
+    expect(dispatchShortcut(e)).toBe(true);
+    expect(contextMenu.state.open).toBe(false);
+    // Lower-priority overlays untouched on the same Esc.
+    expect(palette.open).toBe(true);
+    expect(uiActions.cheatSheetOpen).toBe(true);
+  });
+
+  it('Esc closes context menu even when an input is focused', () => {
+    // The wedge: a programmatic textarea.focus() leaves the menu open
+    // with focus on the textarea. The menu's own Esc handler defers to
+    // the focused field, so without bindings handleEscape closing the
+    // menu, Esc would never dismiss it.
+    contextMenu.open(
+      { type: 'session', id: 'sess-1' },
+      0,
+      0,
+      false
+    );
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+    const e = fakeEvent({ key: 'Escape', target: input });
+    expect(dispatchShortcut(e)).toBe(true);
+    expect(contextMenu.state.open).toBe(false);
     input.remove();
   });
 
