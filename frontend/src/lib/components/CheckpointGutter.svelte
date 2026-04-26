@@ -18,6 +18,7 @@
 
   import { checkpoints } from '$lib/stores/checkpoints.svelte';
   import { contextmenu } from '$lib/actions/contextmenu';
+  import { scrollBehavior } from '$lib/utils/motion';
   import type { Checkpoint } from '$lib/api';
 
   type Props = {
@@ -45,7 +46,7 @@
       `[data-message-id="${CSS.escape(messageId)}"]`
     );
     if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
     const prev = el.style.outline;
     const prevOffset = el.style.outlineOffset;
     el.style.outline = '2px solid rgb(236, 72, 153)';

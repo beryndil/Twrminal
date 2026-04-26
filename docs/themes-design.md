@@ -351,7 +351,89 @@ points at the same session id; no fresh spawn needed.
 (Track A + B + F together) → browser verification across all three
 themes. ~2 working days, no flag.
 
-## 9. Open follow-ups (deferred backlog)
+## 9. Accessibility
+
+### Reduced motion
+
+Bearings honors the OS-level "Reduce motion" accessibility preference
+(GNOME, KDE, Hyprland-via-portal, Windows, macOS). The guard lives in
+`frontend/src/app.css` and applies to every element on the page:
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+```
+
+Two design notes worth pinning:
+
+- **0.01ms, not 0s.** Some engines skip `transitionend` /
+  `animationend` on a 0-duration value. Code that listens for those
+  events (autoscroll latch, gutter chip pulse) keeps working with a
+  perceptually-instant 0.01ms.
+- **Component-level opt-back-in.** The global rule is intentionally
+  aggressive — a component that needs to keep playing motion in
+  reduced-motion mode supplies its own `@media (prefers-reduced-motion:
+  reduce)` block that swaps the motion for a non-motion equivalent.
+  Reference implementation: `BearingsMark.svelte` swaps its
+  rotating-marker sweep for an opacity pulse so "working…" still reads
+  visually without spinning geometry.
+
+### Imperative scrolls
+
+CSS can't reach `Element.scrollTo({ behavior: 'smooth' })` /
+`Element.scrollIntoView({ behavior: 'smooth' })` — those API calls read
+the `behavior` argument directly. The shared helper at
+`frontend/src/lib/utils/motion.ts` exports `scrollBehavior()`, which
+returns `'auto'` under reduced-motion and `'smooth'` otherwise. Every
+imperative smooth-scroll call site routes through it (sidebar
+session-bump, checkpoint-gutter jump, tool-call jump-to,
+search-mark-into-view, context-menu jump-to-turn).
+
+### Motion duration band (150-300ms)
+
+Three CSS custom properties on `:root` in `tokens.css` codify the
+allowed transition-duration band:
+
+- `--motion-duration-fast` (150ms) — micro-interactions, button hover,
+  focus crossfade. Default; matches Tailwind's `transition-*` floor.
+- `--motion-duration-base` (200ms) — generic transitions where 150ms
+  feels too snappy.
+- `--motion-duration-slow` (300ms) — panel reveals, list reflows.
+  Slowest motion in the band.
+
+Component CSS should reference these tokens rather than hard-coding
+millisecond values. Anything slower than 300ms is out of band —
+escalate the design before introducing it. Theme treatments and
+button-baseline transitions consume the tokens directly so a future
+"calm UI" preference (e.g. uniformly stretching the band) lands in one
+file.
+
+### Verification
+
+In a browser with "Reduce motion" enabled (or via Playwright launched
+with `--reduce-motion=reduce`):
+
+- Hover a button: no transform / box-shadow lift, base color flips
+  instantly.
+- Click a checkpoint chip: anchor message snaps to center without
+  smooth scroll.
+- Run a sidebar search: the first match snaps into view.
+- Trigger a session-list bump (incoming WS event): the sidebar jumps
+  to top instantly.
+
+`window.matchMedia('(prefers-reduced-motion: reduce)').matches` should
+report `true` in that browser. The `motion.test.ts` suite covers both
+the reduced-motion and default branches plus the SSR-safe fallback.
+
+## 10. Open follow-ups (deferred backlog)
 
 These are noted so the next theming session has a clear backlog,
 not embedded in this scope:
@@ -365,8 +447,10 @@ not embedded in this scope:
 
 ---
 
-*See also:* `frontend/src/lib/themes/tokens.css`,
+*See also:* `frontend/src/app.css`,
+`frontend/src/lib/themes/tokens.css`,
 `frontend/src/lib/themes/midnight-glass.css`,
+`frontend/src/lib/utils/motion.ts`,
 `frontend/src/lib/stores/preferences.svelte.ts`,
 `src/bearings/db/migrations/0026_preferences.sql`,
 `TODO.md` §"Theme switcher UI — 2026-04-23".

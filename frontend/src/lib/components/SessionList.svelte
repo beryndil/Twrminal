@@ -16,6 +16,7 @@
   import TemplatePicker from '$lib/components/TemplatePicker.svelte';
   import SeverityShield from '$lib/components/icons/SeverityShield.svelte';
   import TagIcon from '$lib/components/icons/TagIcon.svelte';
+  import { scrollBehavior } from '$lib/utils/motion';
 
   const CONFIRM_TIMEOUT_MS = 3_000;
 
@@ -48,7 +49,9 @@
     const t = sessions.scrollTick;
     if (t === lastSeenScrollTick) return;
     lastSeenScrollTick = t;
-    asideEl?.scrollTo?.({ top: 0, behavior: 'smooth' });
+    // `scrollBehavior()` resolves to 'auto' under `prefers-reduced-motion:
+    // reduce` so the bump-to-top still happens but as an instant snap.
+    asideEl?.scrollTo?.({ top: 0, behavior: scrollBehavior() });
   });
 
   async function importOne(file: File): Promise<api.Session> {

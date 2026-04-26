@@ -261,14 +261,19 @@
     inset 0 0 24px rgb(var(--bearings-sky-500) / 0.12);
 }
 
-/* ----- Buttons: transition baseline ----- */
+/* ----- Buttons: transition baseline -----
+ * Duration pulled from `--motion-duration-fast` (150ms) so the button
+ * lift, color crossfade, and focus-ring glow all settle on the same
+ * floor of the 150-300ms motion band. The reduced-motion guard in
+ * `app.css` overrides this to 0.01ms when the OS reports
+ * `prefers-reduced-motion: reduce`. */
 [data-theme='midnight-glass'] button {
   transition:
-    transform 0.15s ease,
-    box-shadow 0.15s ease,
-    filter 0.15s ease,
-    background-color 0.15s ease,
-    color 0.15s ease;
+    transform var(--motion-duration-fast) ease,
+    box-shadow var(--motion-duration-fast) ease,
+    filter var(--motion-duration-fast) ease,
+    background-color var(--motion-duration-fast) ease,
+    color var(--motion-duration-fast) ease;
 }
 
 /* ----- Primary action buttons: real gradient + lift -----

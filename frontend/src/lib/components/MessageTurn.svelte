@@ -6,6 +6,7 @@
   import { contextmenuDelegate } from '$lib/actions/contextmenu-delegate';
   import { linkify } from '$lib/linkify';
   import { preferences } from '$lib/stores/preferences.svelte';
+  import { scrollBehavior } from '$lib/utils/motion';
   import CollapsibleBody from './CollapsibleBody.svelte';
 
   type Props = {
@@ -256,7 +257,7 @@
   function jumpToToolCalls(): void {
     if (!toolWorkDetails) return;
     toolWorkDetails.open = true;
-    toolWorkDetails.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    toolWorkDetails.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
   }
 </script>
 

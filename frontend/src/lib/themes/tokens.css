@@ -18,6 +18,34 @@
  * A future theme switcher only needs to toggle the attribute value.
  */
 
+/* ----- Motion tokens (theme-independent) -----
+ * The 150-300ms transition-duration band Bearings targets across button
+ * lifts, focus glows, color crossfades, and the Conversation pressure
+ * bar. Theme treatments and component classes should reference these
+ * variables instead of hard-coding millisecond values, so the band
+ * stays consistent and a future "calm UI" preference can scale it
+ * uniformly. The reduced-motion guard in `app.css` overrides
+ * `transition-duration` / `animation-duration` to 0.01ms regardless of
+ * which token a rule used.
+ *
+ *   --motion-duration-fast (150ms)  micro-interactions: button hover,
+ *                                   focus ring, color crossfade
+ *                                   (matches Tailwind's default
+ *                                   `transition-*` duration)
+ *   --motion-duration-base (200ms)  generic transitions where 150ms
+ *                                   feels too snappy
+ *   --motion-duration-slow (300ms)  panel reveals, list reflows, the
+ *                                   slowest motion still allowed under
+ *                                   the audited band
+ *
+ * Anything slower than 300ms is out of band — escalate the design
+ * before introducing it. */
+:root {
+  --motion-duration-fast: 150ms;
+  --motion-duration-base: 200ms;
+  --motion-duration-slow: 300ms;
+}
+
 /* ----- Active default: Midnight Glass ----- */
 :root,
 [data-theme='midnight-glass'] {

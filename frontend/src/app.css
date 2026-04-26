@@ -59,3 +59,39 @@ html, body, #app { height: 100%; }
 *::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* Reduced-motion guard.
+ *
+ * Honors the OS-level "Reduce motion" preference (Windows / macOS /
+ * GNOME / KDE accessibility setting) for users with vestibular
+ * sensitivity. The 0.01ms duration is the WCAG-recommended floor: short
+ * enough to read as instant, long enough that listeners on
+ * `transitionend` / `animationend` still fire (a 0s value would skip
+ * those events on some engines and break code that relies on them).
+ *
+ * `scroll-behavior: auto` snaps any CSS-driven smooth scroll back to
+ * the default jump-scroll. The handful of imperative `scrollIntoView`
+ * / `scrollTo` calls in the codebase are independently guarded via
+ * `lib/utils/motion.ts` — the JS API doesn't read CSS, so a media
+ * query alone can't reach them.
+ *
+ * Component-level animations that should keep playing in reduced-motion
+ * (e.g. the BearingsMark "working…" indicator, which swaps to an
+ * opacity pulse) own their own `@media (prefers-reduced-motion: reduce)`
+ * fallback. The global rule below is intentionally aggressive — it
+ * disables motion by default, and components opt back in if they have
+ * a non-motion expression of the same state.
+ *
+ * Tokens: see `--motion-duration-{fast,base,slow}` in
+ * `lib/themes/tokens.css` for the 150-300ms transition-duration band
+ * the theme treatments target. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

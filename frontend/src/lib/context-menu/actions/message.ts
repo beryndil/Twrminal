@@ -22,6 +22,7 @@ import * as api from '$lib/api';
 import { checkpoints } from '$lib/stores/checkpoints.svelte';
 import { conversation } from '$lib/stores/conversation.svelte';
 import { sessions } from '$lib/stores/sessions.svelte';
+import { scrollBehavior } from '$lib/utils/motion';
 import { writeClipboard } from '../clipboard';
 import { reorgStore } from '../reorg.svelte';
 import { notYetImplemented } from '../stub.svelte';
@@ -49,7 +50,7 @@ function jumpToTurn(messageId: string): void {
     `[data-message-id="${CSS.escape(messageId)}"]`
   );
   if (!el) return;
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
   // A 1.5s outline pulse so the user's eye follows the scroll —
   // matches the sidebar-search jump feel. Use outline rather than
   // mutating classes so existing highlight / selection state survives.

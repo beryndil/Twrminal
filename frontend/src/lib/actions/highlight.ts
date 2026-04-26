@@ -10,6 +10,8 @@
  * view to help the user land on the right message when jumping from a
  * search hit.
  */
+import { scrollBehavior } from '$lib/utils/motion';
+
 const MARK_CLASS = 'search-mark';
 
 function unwrap(node: HTMLElement): void {
@@ -79,7 +81,7 @@ function apply(node: HTMLElement, query: string): void {
   if (total > 0) {
     const first = node.querySelector(`mark.${MARK_CLASS}`);
     if (first) {
-      (first as HTMLElement).scrollIntoView({ block: 'center', behavior: 'smooth' });
+      (first as HTMLElement).scrollIntoView({ block: 'center', behavior: scrollBehavior() });
     }
   }
 }
