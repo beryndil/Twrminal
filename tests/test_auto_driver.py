@@ -574,7 +574,9 @@ async def test_failure_reason_persists_to_item_notes(tmp_path: Path) -> None:
         item = await create_item(conn, checklist_id, label="silent-fail")
         runtime = StubRuntime(
             conn=conn,
-            turns_by_item={item["id"]: ["just prose, no sentinel"]},
+            turns_by_item={
+                item["id"]: ["just prose, no sentinel", "still no sentinel"],
+            },
         )
         driver = Driver(conn=conn, runtime=runtime, checklist_session_id=checklist_id)
         await driver.drive()
@@ -602,7 +604,7 @@ async def test_failure_note_preserves_user_authored_notes(tmp_path: Path) -> Non
         )
         runtime = StubRuntime(
             conn=conn,
-            turns_by_item={item["id"]: ["silent"]},
+            turns_by_item={item["id"]: ["silent", "silent again"]},
         )
         driver = Driver(conn=conn, runtime=runtime, checklist_session_id=checklist_id)
         await driver.drive()
@@ -652,19 +654,101 @@ async def test_failure_note_replaces_prior_autorun_line(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_silent_agent_exit_halts_failure(tmp_path: Path) -> None:
+    """Both the original turn and the unconditional nudge come back
+    silent. Two turns fired (original + nudge), failure recorded with
+    the low-pressure reason string."""
     conn = await init_db(tmp_path / "db.sqlite")
     try:
         checklist_id = await _fresh_checklist(conn)
         item = await create_item(conn, checklist_id, label="silent")
         runtime = StubRuntime(
             conn=conn,
-            turns_by_item={item["id"]: ["I did some stuff but said nothing."]},
+            turns_by_item={
+                item["id"]: [
+                    "I did some stuff but said nothing.",
+                    "still nothing despite the nudge.",
+                ],
+            },
         )
         driver = Driver(conn=conn, runtime=runtime, checklist_session_id=checklist_id)
         result = await driver.drive()
         assert result.outcome == DriverOutcome.HALTED_FAILURE
         assert result.items_failed == 1
         assert "completion sentinel" in (result.failure_reason or "")
+        # Two turns fired (original + unconditional nudge); confirms
+        # the low-pressure path nudges before failing.
+        assert len(runtime.turn_calls) == 2
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_silent_agent_exit_recovers_via_low_pressure_nudge(tmp_path: Path) -> None:
+    """Regression for 2026-04-26 L4.1 silent-halt. An agent forgets
+    the sentinel under low context pressure (e.g. answers design
+    questions in normal prose, ends turn). The driver nudges
+    unconditionally; the nudge response is CHECKLIST_ITEM_DONE; item
+    completes without halting the run."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        checklist_id = await _fresh_checklist(conn)
+        item = await create_item(conn, checklist_id, label="forgot-the-sentinel")
+        runtime = StubRuntime(
+            conn=conn,
+            turns_by_item={
+                item["id"]: [
+                    "Slice 6 design: heuristic + LLM analyzer, sync route.",
+                    "right, I was actually done.\nCHECKLIST_ITEM_DONE",
+                ],
+            },
+            # Low pressure on both turns — the bug class this guards
+            # against. Pre-fix, the driver would have failed on turn 1
+            # without ever reaching the nudge.
+            percentages_by_item={item["id"]: [22.0, 24.0]},
+        )
+        driver = Driver(conn=conn, runtime=runtime, checklist_session_id=checklist_id)
+        result = await driver.drive()
+        assert result.outcome == DriverOutcome.COMPLETED
+        assert result.items_completed == 1
+        assert result.items_failed == 0
+        # Single leg (nudge happens on the same leg, not a respawn).
+        assert result.legs_spawned == 1
+        # Two turns: the silent original + the recovery nudge.
+        assert len(runtime.turn_calls) == 2
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_silent_agent_exit_recovers_via_low_pressure_nudge_with_handoff(
+    tmp_path: Path,
+) -> None:
+    """The agent's nudge response can also be a HANDOFF — the driver
+    spawns a successor leg with the plug threaded forward, even
+    though the original silent-exit was at low pressure. Mirror of
+    the existing pressure-driven case but exercises the
+    unconditional-nudge codepath."""
+    conn = await init_db(tmp_path / "db.sqlite")
+    try:
+        checklist_id = await _fresh_checklist(conn)
+        item = await create_item(conn, checklist_id, label="low-press-handoff")
+        runtime = StubRuntime(
+            conn=conn,
+            turns_by_item={
+                item["id"]: [
+                    "silent at low pressure",
+                    "CHECKLIST_HANDOFF\nplug-from-low-press\nCHECKLIST_HANDOFF_END",
+                    "CHECKLIST_ITEM_DONE",
+                ],
+            },
+            percentages_by_item={item["id"]: [25.0, 28.0, 5.0]},
+        )
+        driver = Driver(conn=conn, runtime=runtime, checklist_session_id=checklist_id)
+        result = await driver.drive()
+        assert result.outcome == DriverOutcome.COMPLETED
+        assert result.items_completed == 1
+        assert result.legs_spawned == 2
+        assert runtime.spawn_calls[1][2] == "plug-from-low-press"
     finally:
         await conn.close()
 
@@ -930,27 +1014,33 @@ async def test_pressure_nudge_also_silent_halts_failure(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_pressure_below_threshold_skips_nudge(tmp_path: Path) -> None:
-    """If the leg is at 30% context and the agent goes silent, the
-    driver does NOT nudge — low pressure + silent agent = plain
-    silent-exit failure (the generic reason, not the pressure one)."""
+async def test_pressure_below_threshold_still_nudges_then_fails(tmp_path: Path) -> None:
+    """Post-2026-04-26: the nudge is unconditional. At 30% context the
+    driver still issues one nudge before halting, but the failure
+    reason carries the low-pressure suffix ("nudge response also
+    produced no sentinel") so the UI can distinguish from the
+    high-pressure 'agent refused' message."""
     conn = await init_db(tmp_path / "db.sqlite")
     try:
         checklist_id = await _fresh_checklist(conn)
         item = await create_item(conn, checklist_id, label="low-pressure")
         runtime = StubRuntime(
             conn=conn,
-            turns_by_item={item["id"]: ["silent, low pressure"]},
-            percentages_by_item={item["id"]: [30.0]},
+            turns_by_item={
+                item["id"]: ["silent, low pressure", "still silent after nudge"],
+            },
+            percentages_by_item={item["id"]: [30.0, 32.0]},
         )
         driver = Driver(conn=conn, runtime=runtime, checklist_session_id=checklist_id)
         result = await driver.drive()
         assert result.outcome == DriverOutcome.HALTED_FAILURE
-        # Generic silent-exit reason, NOT the pressure-nudge reason.
+        # Low-pressure reason — distinguishable from the high-pressure
+        # 'agent refused to emit a handoff plug' string.
         assert "completion sentinel" in (result.failure_reason or "")
+        assert "nudge response also" in (result.failure_reason or "")
         assert "refused" not in (result.failure_reason or "")
-        # Only the original turn fired — no nudge.
-        assert len(runtime.turn_calls) == 1
+        # Two turns fired: original + unconditional nudge.
+        assert len(runtime.turn_calls) == 2
     finally:
         await conn.close()
 
@@ -1603,7 +1693,8 @@ async def test_skip_failure_advances_past_silent_item(tmp_path: Path) -> None:
         runtime = StubRuntime(
             conn=conn,
             turns_by_item={
-                a["id"]: ["I did stuff but said nothing"],
+                # Two silent turns: original + the unconditional nudge.
+                a["id"]: ["I did stuff but said nothing", "still nothing"],
                 b["id"]: ["CHECKLIST_ITEM_DONE"],
             },
         )
@@ -1631,16 +1722,16 @@ async def test_skip_failure_advances_past_silent_item(tmp_path: Path) -> None:
 async def test_skip_failure_does_not_loop_on_failed_item(tmp_path: Path) -> None:
     """A failed-and-skipped item must not be re-picked by the outer
     loop — otherwise the run would loop forever on the same
-    uncompleted item. Verify by giving the agent only ONE silent
-    turn for the failing item; if it got re-picked, run_turn would
-    raise on missing script."""
+    uncompleted item. Verify by scripting exactly two silent turns
+    for the failing item (original + nudge); if the item got
+    re-picked, run_turn would raise on missing script."""
     conn = await init_db(tmp_path / "db.sqlite")
     try:
         checklist_id = await _fresh_checklist(conn)
         await create_item(conn, checklist_id, label="silent")
         runtime = StubRuntime(
             conn=conn,
-            turns_by_item={1: ["silent, no sentinel"]},  # exactly one script
+            turns_by_item={1: ["silent, no sentinel", "still silent on nudge"]},
         )
         config = DriverConfig(failure_policy="skip")
         driver = Driver(
@@ -1662,7 +1753,8 @@ async def test_skip_failure_does_not_loop_on_failed_item(tmp_path: Path) -> None
 @pytest.mark.asyncio
 async def test_halt_failure_default_still_halts(tmp_path: Path) -> None:
     """Sanity: default failure_policy='halt' preserves the
-    pre-existing first-failure-stops-run behavior."""
+    pre-existing first-failure-stops-run behavior. Two silent turns
+    are needed (original + unconditional nudge) before halt fires."""
     conn = await init_db(tmp_path / "db.sqlite")
     try:
         checklist_id = await _fresh_checklist(conn)
@@ -1670,7 +1762,7 @@ async def test_halt_failure_default_still_halts(tmp_path: Path) -> None:
         await create_item(conn, checklist_id, label="never-reached", sort_order=1)
         runtime = StubRuntime(
             conn=conn,
-            turns_by_item={1: ["silent, no sentinel"]},
+            turns_by_item={1: ["silent, no sentinel", "still silent on nudge"]},
         )
         # Default config — failure_policy="halt"
         driver = Driver(conn=conn, runtime=runtime, checklist_session_id=checklist_id)

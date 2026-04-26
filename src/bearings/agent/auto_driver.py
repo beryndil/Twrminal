@@ -526,47 +526,52 @@ class Driver:
                 continue
 
             # No done, no handoff, no blocking children. Before calling
-            # it a silent-exit failure, check context pressure: if the
-            # turn burned enough of the window that the NEXT organic
-            # turn is likely to cross the cliff, the agent may just
-            # have forgotten the handoff syntax. Nudge once — one extra
-            # turn asking explicitly for a handoff plug — and re-parse.
+            # it a silent-exit failure, ALWAYS nudge once. This used to
+            # fire only under context pressure on the assumption that
+            # silent-exits below the handoff threshold meant the agent
+            # had genuinely nothing to say — but the L4.1 leg on
+            # 2026-04-26 disproved that: an agent answered design
+            # questions in normal prose, ended its turn without a
+            # sentinel, and the run halted at low context. The nudge is
+            # cheap (one extra turn) and recovers the common
+            # forgot-the-sentinel failure mode. We adapt the prompt to
+            # the pressure state so the agent knows whether HANDOFF or
+            # DONE is the more likely missing sentinel; the agent is
+            # free to emit either regardless.
             pct = self._runtime.last_context_percentage(leg_session_id)
-            if pct is not None and pct >= self._config.handoff_threshold_percent:
-                nudge_text = await self._request_handoff_nudge(leg_session_id)
-                nudge_sentinels = parse_sentinels(nudge_text)
-                # A nudge-turn followup would be weird (the ask was
-                # "just emit the plug") but we honor one if it arrives
-                # to avoid losing agent-noted work.
-                await self._apply_followups(item, nudge_sentinels.followups)
-                if nudge_sentinels.handoff_plug is not None:
-                    plug = nudge_sentinels.handoff_plug
-                    continue
-                if nudge_sentinels.item_done:
-                    await self._mark_done(item["id"])
-                    self._items_completed += 1
-                    return _ItemOutcome.DONE
-                # Nudge also silent — fall through to failure with a
-                # reason that distinguishes the pressure case.
-                await self._record_failure(
-                    item["id"],
-                    (
-                        f"context at {pct:.1f}% but agent refused to emit "
-                        "a handoff plug even when asked explicitly"
-                    ),
-                )
-                return _ItemOutcome.FAILED
-
-            # No done, no handoff, no blocking children, context not
-            # under pressure — the agent ended the turn saying
-            # nothing. Fail-safe halt.
-            await self._record_failure(
-                item["id"],
-                (
-                    "agent ended turn without emitting a completion "
-                    "sentinel (CHECKLIST_ITEM_DONE / CHECKLIST_HANDOFF)"
-                ),
+            under_pressure = pct is not None and pct >= self._config.handoff_threshold_percent
+            nudge_text = await self._request_completion_nudge(
+                leg_session_id, under_pressure=under_pressure
             )
+            nudge_sentinels = parse_sentinels(nudge_text)
+            # A nudge-turn followup would be unusual (the ask was
+            # "just emit a sentinel") but we honor one if it arrives
+            # to avoid losing agent-noted work.
+            await self._apply_followups(item, nudge_sentinels.followups)
+            if nudge_sentinels.item_done:
+                await self._mark_done(item["id"])
+                self._items_completed += 1
+                return _ItemOutcome.DONE
+            if nudge_sentinels.handoff_plug is not None:
+                plug = nudge_sentinels.handoff_plug
+                continue
+            # Nudge also silent — fall through to failure. Two reason
+            # strings so the UI can distinguish "stubbornly refused
+            # under pressure" from "still didn't realize the sentinel
+            # protocol applied at low context."
+            if under_pressure:
+                assert pct is not None
+                reason = (
+                    f"context at {pct:.1f}% but agent refused to emit "
+                    "a handoff plug even when asked explicitly"
+                )
+            else:
+                reason = (
+                    "agent ended turn without emitting a completion "
+                    "sentinel (CHECKLIST_ITEM_DONE / CHECKLIST_HANDOFF); "
+                    "nudge response also produced no sentinel"
+                )
+            await self._record_failure(item["id"], reason)
             return _ItemOutcome.FAILED
 
         # Max legs exceeded — the agent kept handing off. Something is
@@ -827,20 +832,31 @@ class Driver:
             return False
         return row.get("closed_at") is None
 
-    async def _request_handoff_nudge(self, leg_session_id: str) -> str:
-        """Submit one extra turn on the current leg asking the agent
-        to emit a handoff plug. Used when the leg's context watchdog
-        crossed threshold but the agent didn't spontaneously emit
-        CHECKLIST_HANDOFF. Returns the assistant's response text for
-        sentinel parsing. Exceptions propagate — the caller treats
-        any error as silent-exit failure.
+    async def _request_completion_nudge(self, leg_session_id: str, *, under_pressure: bool) -> str:
+        """Submit one extra turn asking the agent to emit a sentinel.
+
+        Used whenever a leg's main turn ends without `item_done`,
+        `handoff_plug`, or blocking followups. Two prompt variants:
+
+        - **`under_pressure=True`**: leg is past
+          `handoff_threshold_percent`. Lead with the handoff ask
+          (most likely cause), but accept DONE / BLOCKED if the
+          agent actually meant one of those.
+        - **`under_pressure=False`**: leg is below threshold. The
+          agent probably finished the work and forgot the sentinel,
+          OR ended its turn talking to the user when it should have
+          handed off. Lead with the DONE ask, accept HANDOFF /
+          BLOCKED if applicable.
+
+        Returns the assistant's response text for sentinel parsing.
+        Exceptions propagate — the caller treats any error as
+        silent-exit failure.
 
         Kept as a driver method (not runtime) so the prompt text is
         authoritative in one place and test stubs don't have to
         re-implement the nudge shape."""
-        return await self._runtime.run_turn(
-            session_id=leg_session_id,
-            prompt=(
+        if under_pressure:
+            prompt = (
                 "You're approaching the context window limit on this "
                 "leg. Do NOT continue working on the checklist item "
                 "this turn. Instead, emit a handoff plug so a "
@@ -852,7 +868,26 @@ class Driver:
                 "If you're actually done with the item, emit "
                 "CHECKLIST_ITEM_DONE instead. Do one or the other, "
                 "nothing else."
-            ),
+            )
+        else:
+            prompt = (
+                "Your last turn ended without a checklist sentinel. "
+                "The autonomous driver needs one to advance. Pick the "
+                "one that matches reality and emit it now:\n\n"
+                "- If the item is complete, emit CHECKLIST_ITEM_DONE "
+                "on its own line.\n"
+                "- If you need a fresh context window to continue, "
+                "emit CHECKLIST_HANDOFF / <plug> / "
+                "CHECKLIST_HANDOFF_END.\n"
+                "- If a precondition is broken and you can't proceed, "
+                "emit CHECKLIST_BLOCKED / <what's broken> / "
+                "CHECKLIST_BLOCKED_END.\n\n"
+                "Do not continue the work in this reply — emit the "
+                "sentinel and stop."
+            )
+        return await self._runtime.run_turn(
+            session_id=leg_session_id,
+            prompt=prompt,
         )
 
     # --- prompts -----------------------------------------------------

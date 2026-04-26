@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.1] - 2026-04-26
+
+Autonomous-driver silent-exit halt: nudge unconditionally before
+declaring failure. Pre-fix, the driver only nudged when the leg's
+context was past `handoff_threshold_percent` (default 60%); silent
+exits at low context failed instantly. The L4.1 leg on 2026-04-26
+hit this — it answered Slice 6 design questions in normal prose,
+ended its turn, and the auto-run halted because no sentinel was
+emitted at ~25% context. Halting on the first such failure (default
+`failure_policy=halt`) meant the run errored, the next item never
+fired, and the operator had to manually re-arm.
+
+The nudge is cheap (one extra turn) and handles the common
+forgot-the-sentinel failure mode. Pressure-aware prompt: under
+pressure leads with the HANDOFF ask (most likely cause), at low
+pressure leads with the DONE ask. Either response is accepted in
+either case. Failure only when both the original turn and the
+nudge come back silent — failure-reason strings remain
+distinguishable so the UI can still tell "stubbornly refused under
+pressure" from "still didn't realize the protocol applied at low
+context."
+
+### Changed
+
+- **`src/bearings/agent/auto_driver.py`** — pulled the nudge out of
+  the `pct >= handoff_threshold_percent` guard so it fires on every
+  silent-exit. Renamed `_request_handoff_nudge` →
+  `_request_completion_nudge(*, under_pressure)` with two prompt
+  variants. Failure now records different reason strings for the
+  pressure vs low-pressure paths.
+
+### Tests
+
+- **`tests/test_auto_driver.py`** — added
+  `test_silent_agent_exit_recovers_via_low_pressure_nudge`
+  (regression for the L4.1 halt: silent agent at 22% pressure,
+  nudge response is `CHECKLIST_ITEM_DONE`, item completes) and
+  `test_silent_agent_exit_recovers_via_low_pressure_nudge_with_handoff`
+  (mirrors the same path but the nudge replies with HANDOFF and a
+  successor leg spawns). Updated the existing silent-exit / skip /
+  halt tests to script TWO silent turns each (original + nudge)
+  since the nudge is now unconditional. Renamed
+  `test_pressure_below_threshold_skips_nudge` →
+  `test_pressure_below_threshold_still_nudges_then_fails` to
+  reflect the inverted contract.
+- **`tests/test_auto_driver_persistence.py`** — same two-silent-turn
+  pattern in the persistence tests.
+
 ## [0.18.0] - 2026-04-26
 
 LLM-assisted (and heuristic-assisted) Session Reorg analyzer — Slice 6

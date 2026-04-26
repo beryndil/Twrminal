@@ -123,7 +123,8 @@ async def test_skip_failure_run_persists_attempted_failed_set(
         runtime = StubRuntime(
             conn=conn,
             turns_by_item={
-                a["id"]: ["no sentinel"],
+                # Two silent turns: original + the unconditional nudge.
+                a["id"]: ["no sentinel", "still no sentinel after nudge"],
                 b["id"]: ["CHECKLIST_ITEM_DONE"],
             },
         )
@@ -158,7 +159,11 @@ async def test_failure_halt_persists_failed_item_id_and_reason(
         item = await create_item(conn, checklist_id, label="silent")
         runtime = StubRuntime(
             conn=conn,
-            turns_by_item={item["id"]: ["agent said nothing useful"]},
+            turns_by_item={
+                # Original turn + nudge — both silent, so the run halts
+                # with the low-pressure failure reason.
+                item["id"]: ["agent said nothing useful", "still nothing"],
+            },
         )
         driver = Driver(conn=conn, runtime=runtime, checklist_session_id=checklist_id)
         await driver.drive()
