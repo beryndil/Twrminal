@@ -27,6 +27,7 @@
   } from '$lib/utils/conversation-ui';
   import BearingsMark from './icons/BearingsMark.svelte';
   import ContextMeter from './ContextMeter.svelte';
+  import FeedbackButton from './FeedbackButton.svelte';
   import PermissionModeSelector from './PermissionModeSelector.svelte';
   import StopUndoInline from './StopUndoInline.svelte';
   import TokenMeter from './TokenMeter.svelte';
@@ -397,6 +398,13 @@
         >
           ✓
         </button>
+        <!-- Feedback button — opens GitHub /issues/new with the
+             operator's environment prefilled. Standards §17:
+             every screen that has a header carries an in-app
+             channel back to the maintainer. The header is the
+             always-on surface; Settings > Help is the deeper
+             entry point. -->
+        <FeedbackButton />
       {/if}
     </h1>
     <p class="text-xs font-mono truncate text-slate-500">

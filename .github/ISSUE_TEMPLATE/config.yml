@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: README & docs
+    url: https://github.com/Beryndil/Bearings#readme
+    about: Setup, build, and architecture overview before filing.

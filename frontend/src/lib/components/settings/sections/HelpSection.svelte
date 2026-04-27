@@ -2,7 +2,7 @@
   /** Help section — central jump-off point for the in-app reference
    * material the operator needs while running the app.
    *
-   * Three rows:
+   * Five rows:
    *   1. "Keyboard shortcuts" — opens the cheat-sheet overlay via the
    *      shared `uiActions` store. The same overlay is bound to the
    *      `?` chord by the keyboard registry, so this row is a
@@ -17,12 +17,26 @@
    *   3. "Docs" — opens the `docs/` directory on GitHub for deeper
    *      reference (checklists, context menu, themes, menus.toml).
    *      Same `main`-pinning rationale.
+   *   4. "Report a bug" — opens GitHub's `/issues/new` with the
+   *      `bug.yml` template, body prefilled with version + browser
+   *      env + steps-to-reproduce scaffold. (Standards §17.)
+   *   5. "Request a feature" — same channel, `feature.yml` template.
+   *
+   * Bearings does NOT POST anything anywhere on click — both
+   * feedback rows just open a github.com URL the user manually
+   * submits. (§17 forbids telemetry.)
    *
    * No autosaving controls — every row is link-or-action only. */
   import SettingsCard from '../SettingsCard.svelte';
   import SettingsDivider from '../SettingsDivider.svelte';
   import SettingsLink from '../SettingsLink.svelte';
   import { uiActions } from '$lib/stores/ui_actions.svelte';
+  import { fetchVersion } from '$lib/api/version';
+  import {
+    buildFeedbackUrl,
+    composeEnv,
+    type FeedbackKind
+  } from '$lib/utils/feedback';
 
   const README_URL = 'https://github.com/Beryndil/Bearings#readme';
   const DOCS_URL = 'https://github.com/Beryndil/Bearings/tree/main/docs';
@@ -35,6 +49,21 @@
    * a time. Setting the flag is the whole action; Settings reacts. */
   function showCheatSheet(): void {
     uiActions.cheatSheetOpen = true;
+  }
+
+  /** Build and open a prefilled GitHub `/issues/new` URL. Fetches
+   * `/api/version` lazily — only on click — so opening Settings
+   * doesn't fire a request. Network failure falls through to
+   * version='unknown' so a transient blip doesn't block reporting. */
+  async function openFeedback(kind: FeedbackKind): Promise<void> {
+    let info: { version: string; build: string | null } | null = null;
+    try {
+      info = await fetchVersion();
+    } catch {
+      info = null;
+    }
+    const url = buildFeedbackUrl(kind, composeEnv(info));
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
 </script>
 
@@ -59,6 +88,20 @@
       description="In-repo reference for checklists, context menus, themes, and menus.toml."
       href={DOCS_URL}
       trailing="docs/ ↗"
+    />
+    <SettingsDivider inset />
+    <SettingsLink
+      title="Report a bug"
+      description="Opens GitHub with environment and a steps-to-reproduce scaffold prefilled."
+      onClick={() => openFeedback('bug')}
+      trailing="New bug ↗"
+    />
+    <SettingsDivider inset />
+    <SettingsLink
+      title="Request a feature"
+      description="Opens GitHub with a problem / proposal scaffold prefilled."
+      onClick={() => openFeedback('feature')}
+      trailing="New request ↗"
     />
   </SettingsCard>
 </div>

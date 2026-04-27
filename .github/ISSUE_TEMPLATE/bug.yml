@@ -1,0 +1,65 @@
+name: Bug report
+description: Something is broken or not behaving as documented.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. The in-app **Report a bug** button
+        (Settings → Help, or the megaphone icon in the conversation
+        header) prefills this form with your environment and a
+        steps-to-reproduce scaffold — clicking it from inside
+        Bearings is the fastest path. Bearings does **not** POST any
+        data anywhere on click; the button only opens this form, and
+        you submit it manually after reviewing.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Bearings version, browser UA, OS hint. The in-app button fills this in for you.
+      placeholder: |
+        - **Bearings version:** 0.21.0
+        - **Build:** 2026-04-25T20:00:00.000Z
+        - **Browser:** Mozilla/5.0 ...
+        - **Platform:** Linux x86_64
+        - **Language:** en-US
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: One- or two-line summary of the bug as the user experiences it.
+    validations:
+      required: true
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Numbered list. Be specific enough that someone else can run the steps.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Screenshots, logs, related issues, anything else that helps.
+    validations:
+      required: false
