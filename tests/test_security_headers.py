@@ -29,15 +29,22 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from bearings.api.middleware import (
-    DEFAULT_CSP,
-    SECURITY_HEADERS,
+    _INLINE_SCRIPT_RE,
+    build_csp,
+    compute_inline_script_hashes,
     install_global_exception_handler,
 )
+
+_BASELINE_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+}
 
 
 @pytest.mark.parametrize(
     "header,expected",
-    sorted(SECURITY_HEADERS.items()),
+    sorted(_BASELINE_HEADERS.items()),
 )
 def test_health_route_carries_security_headers(
     client: TestClient, header: str, expected: str
@@ -58,10 +65,66 @@ def test_csp_allows_localhost_websockets(client: TestClient) -> None:
     typed into the address bar."""
     resp = client.get("/api/health")
     csp = resp.headers.get("Content-Security-Policy", "")
-    assert csp == DEFAULT_CSP
     assert "ws://localhost:*" in csp
     assert "ws://127.0.0.1:*" in csp
     assert "ws://[::1]:*" in csp
+
+
+def test_csp_permits_bundle_inline_scripts(client: TestClient) -> None:
+    """The audit-shipped CSP omitted `script-src` and fell through to
+    `default-src 'self'`, which forbids inline scripts — that broke
+    SvelteKit's hydration bootstrap (3 inline <script> tags the SPA
+    can't run without). This regression test fetches the served `/`
+    document and asserts every inline script it contains is permitted
+    by the response's CSP `script-src` directive. If a future build
+    introduces a new inline script the server hasn't been restarted
+    to pick up, this test catches it before the SPA goes dark."""
+    resp = client.get("/")
+    if resp.status_code == 404:
+        pytest.skip("frontend bundle not built into web/dist; nothing to check")
+    assert resp.status_code == 200
+    csp = resp.headers.get("Content-Security-Policy", "")
+    hashes = compute_inline_script_hashes(resp.text)
+    assert hashes, "served index.html has no inline scripts to verify"
+    for digest in hashes:
+        assert f"'{digest}'" in csp, f"inline script {digest} not allowed by CSP"
+
+
+def test_compute_inline_script_hashes_skips_external_scripts() -> None:
+    """`<script src=...>` tags carry no inline body; CSP `'self'`
+    already covers them. The hasher must skip them so we don't pollute
+    `script-src` with hashes that don't correspond to anything."""
+    html = (
+        '<script src="/_app/foo.js"></script>'
+        "<script>console.log('hi')</script>"
+        '<script type="module" src="/bar.js"></script>'
+    )
+    hashes = compute_inline_script_hashes(html)
+    assert len(hashes) == 1
+    assert hashes[0].startswith("sha256-")
+
+
+def test_inline_script_regex_matches_attribute_variants() -> None:
+    """Sanity: SvelteKit emits inline scripts both with and without
+    attributes (`<script>` and `<script type="module">`). The regex
+    must catch both forms."""
+    html = '<script>a()</script><script type="module">b()</script>'
+    bodies = [m.group(1) for m in _INLINE_SCRIPT_RE.finditer(html)]
+    assert bodies == ["a()", "b()"]
+
+
+def test_build_csp_omits_script_src_when_no_hashes() -> None:
+    """No hashes → no `script-src` directive emitted, so callers that
+    don't serve a frontend (API-only embeddings, tests) inherit the
+    same baseline as `default-src 'self'`."""
+    csp = build_csp()
+    assert "script-src" not in csp
+    assert "default-src 'self'" in csp
+
+
+def test_build_csp_includes_provided_hashes() -> None:
+    csp = build_csp(script_hashes=["sha256-abc", "sha256-def"])
+    assert "script-src 'self' 'sha256-abc' 'sha256-def'" in csp
 
 
 def test_no_hsts_header(client: TestClient) -> None:
@@ -80,8 +143,9 @@ def test_security_headers_land_on_404(client: TestClient) -> None:
     bypasses the header-stamping path."""
     resp = client.get("/api/this-route-does-not-exist")
     assert resp.status_code == 404
-    for header, value in SECURITY_HEADERS.items():
+    for header, value in _BASELINE_HEADERS.items():
         assert resp.headers.get(header) == value
+    assert "Content-Security-Policy" in resp.headers
 
 
 def test_unhandled_exception_returns_sanitized_500(

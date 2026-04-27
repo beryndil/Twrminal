@@ -40,8 +40,12 @@ revision.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
-from collections.abc import Awaitable, Callable
+import re
+from collections.abc import Awaitable, Callable, Sequence
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -49,9 +53,6 @@ from starlette.responses import Response
 
 log = logging.getLogger(__name__)
 
-# Permissive CSP baseline. Audit (2026-04-25) called for "start
-# permissive so the SvelteKit bundle keeps working; tighten later."
-#
 # `connect-src` covers fetch / EventSource / WebSocket. The browser
 # does NOT fold ws:// into `'self'` even when the document was loaded
 # over http://same-origin — the schemes differ — so the explicit
@@ -64,22 +65,77 @@ log = logging.getLogger(__name__)
 # Tailwind / SvelteKit emit during hydration. Removing 'unsafe-inline'
 # is a follow-up audit item once we've inventoried which inline
 # styles are actually load-bearing vs. removable.
-DEFAULT_CSP = (
-    "default-src 'self'; "
-    "connect-src 'self' "
-    "ws://localhost:* ws://127.0.0.1:* ws://[::1]:*; "
-    "style-src 'self' 'unsafe-inline'"
-)
+#
+# `script-src` is built dynamically from the inline-script hashes in
+# the served `index.html` — see `compute_inline_script_hashes` and
+# `build_csp` below. The audit-shipped CSP omitted `script-src` and
+# fell through to `default-src 'self'`, which forbids inline scripts;
+# that broke SvelteKit's hydration bootstrap (3 inline <script> tags
+# the SPA can't run without). Pinning the actual hashes preserves
+# CSP's protection without the `'unsafe-inline'` downgrade.
 
-SECURITY_HEADERS: dict[str, str] = {
+_INLINE_SCRIPT_RE = re.compile(r"<script(?:\s[^>]*)?>(.*?)</script>", re.DOTALL)
+
+
+def compute_inline_script_hashes(html: str) -> list[str]:
+    """Extract the SHA-256 hash of every non-empty inline `<script>`
+    body in `html`, formatted as CSP source expressions
+    (`sha256-<base64>`). Scripts with a `src=` attribute (i.e. empty
+    body) are skipped — they're already covered by `script-src 'self'`.
+    """
+    hashes: list[str] = []
+    for match in _INLINE_SCRIPT_RE.finditer(html):
+        body = match.group(1)
+        if not body.strip():
+            continue
+        digest = hashlib.sha256(body.encode("utf-8")).digest()
+        hashes.append("sha256-" + base64.b64encode(digest).decode("ascii"))
+    return hashes
+
+
+def build_csp(*, script_hashes: Sequence[str] = ()) -> str:
+    """Assemble the Content-Security-Policy string.
+
+    `script_hashes` are the SvelteKit hydration scripts permitted to
+    run inline. When empty, no `script-src` directive is emitted and
+    the browser falls through to `default-src 'self'` (no inline
+    scripts allowed). Callers serving the SPA should pass the hashes
+    computed from `index.html`; callers that don't serve a frontend
+    can leave it empty.
+    """
+    parts = [
+        "default-src 'self'",
+        "connect-src 'self' ws://localhost:* ws://127.0.0.1:* ws://[::1]:*",
+        "style-src 'self' 'unsafe-inline'",
+    ]
+    if script_hashes:
+        quoted = " ".join(f"'{h}'" for h in script_hashes)
+        parts.append(f"script-src 'self' {quoted}")
+    return "; ".join(parts)
+
+
+def csp_from_static_dir(static_dir: Path) -> str:
+    """Read `static_dir/index.html`, hash its inline scripts, and build
+    the CSP. If the file is missing (e.g. the server is running without
+    a built frontend bundle) returns `build_csp()` with no script
+    hashes — the document won't load anyway, but the API surface still
+    gets the same baseline.
+    """
+    index = static_dir / "index.html"
+    if not index.exists():
+        return build_csp()
+    html = index.read_text(encoding="utf-8")
+    return build_csp(script_hashes=compute_inline_script_hashes(html))
+
+
+_BASE_HEADERS: dict[str, str] = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
-    "Content-Security-Policy": DEFAULT_CSP,
 }
 
 
-def install_security_headers(app: FastAPI) -> None:
+def install_security_headers(app: FastAPI, *, csp: str | None = None) -> None:
     """Wire the security-headers middleware onto `app`.
 
     Applies to every HTTP response, including the ones FastAPI
@@ -94,13 +150,15 @@ def install_security_headers(app: FastAPI) -> None:
     exists; the posture is defensive against later additions.
     """
 
+    headers = {**_BASE_HEADERS, "Content-Security-Policy": csp or build_csp()}
+
     @app.middleware("http")
     async def add_security_headers(
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         response = await call_next(request)
-        for header, value in SECURITY_HEADERS.items():
+        for header, value in headers.items():
             response.headers.setdefault(header, value)
         return response
 
