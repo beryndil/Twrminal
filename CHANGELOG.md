@@ -9,6 +9,29 @@ The `1.0.0` tag is reserved for the stability commitment after roughly
 two weeks of dogfood; pre-release versions continue under `0.x.y` per
 SemVer §4.
 
+## [Unreleased]
+
+### Added
+
+* **Daily probe + systemd-user timer** (master item B.1). New
+  `scripts/daily_probe.py` is a stdlib-only health probe (no httpx
+  / venv dependency) that hits `/api/health`, `/api/sessions?limit=5`,
+  `/api/quota/current` (the headroom-conceptual surface — the literal
+  `/api/usage/headroom` named in the done-when text doesn't exist in
+  v1's route surface; see the script docstring for the swap), the
+  paired `/api/quota/history`, `/openapi.json`, and `/metrics`. Logs
+  one JSONL record per probe plus a `SUMMARY` trailer to
+  `~/.local/share/bearings-v1/probes/YYYY-MM-DD.log` (mode 0700,
+  append). Exit 0 = all PASS, 1 = any FAIL.
+* **Probe systemd units.** `config/bearings-v1-probe.service`
+  (oneshot, hardened identical to `bearings-v1.service`) and
+  `config/bearings-v1-probe.timer` (daily 09:15 local, 5min jitter,
+  `Persistent=true`). Install:
+  `cp config/bearings-v1-probe.{service,timer} ~/.config/systemd/user/
+  && systemctl --user daemon-reload
+  && systemctl --user enable --now bearings-v1-probe.timer`.
+  Both pass `systemd-analyze --user verify`.
+
 ## [0.18.0] — 2026-04-29
 
 The v1 rebuild: behavioral parity with v0.17.x's feature surface, plus

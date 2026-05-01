@@ -50,6 +50,25 @@ build order has no further items, so this is the closing sweep.
 
 ## Remaining deferrals (post-v1 scope)
 
+### Daily-probe `/api/usage/headroom` endpoint swap — 2026-05-01
+
+Master item B.1 (daily probe script) names `/api/usage/headroom` in
+its done-when criteria. That endpoint does not exist in v1's route
+surface (verified against the live `/openapi.json` — only
+`/api/usage/by_model`, `/api/usage/by_tag`, `/api/usage/override_rates`
+are present). The probe instead hits `/api/quota/current` +
+`/api/quota/history` to cover the headroom-conceptual surface (the
+inspector's 7-day headroom chart already reads from those).
+
+**Action when a literal `headroom` endpoint lands** (if ever — the
+data surface is fully covered by `quota/*` today, so this may be a
+permanent rename rather than a missing route): swap the
+`quota_current` / `quota_history` rows in `scripts/daily_probe.py`
+`PROBES` for one `headroom` row pointing at the new path, drop this
+TODO entry, cite the resolving commit.
+
+
+
 ### Stopgap launcher → `bearings serve` CLI (deferred) — 2026-05-01
 
 `~/.local/share/bearings-v1/launch.py` still owns boot-time wiring

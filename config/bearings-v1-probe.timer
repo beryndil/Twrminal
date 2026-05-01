@@ -1,0 +1,23 @@
+# systemd user-timer: daily fire of bearings-v1-probe.service.
+#
+# Installed at ~/.config/systemd/user/bearings-v1-probe.timer.
+# See bearings-v1-probe.service for the install sequence.
+#
+# Schedule: 09:15 local time daily, with a small randomised jitter
+# so a host that hosts more than one user-timer doesn't fire them
+# all at the same instant. Persistent=true means a missed run (host
+# powered off at trigger time) catches up on the next boot rather
+# than silently skipping until the next scheduled instant.
+
+[Unit]
+Description=Bearings v1 — daily health probe timer (master item B.1)
+Documentation=file:///home/beryndil/Projects/Bearings-v1/scripts/daily_probe.py
+
+[Timer]
+OnCalendar=*-*-* 09:15:00
+RandomizedDelaySec=5min
+Persistent=true
+Unit=bearings-v1-probe.service
+
+[Install]
+WantedBy=timers.target

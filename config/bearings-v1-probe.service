@@ -1,0 +1,56 @@
+# systemd user-unit: oneshot daily-probe runner for bearings-v1.
+#
+# Installed (manually, by Dave) at:
+#     ~/.config/systemd/user/bearings-v1-probe.service
+# Paired timer:
+#     ~/.config/systemd/user/bearings-v1-probe.timer
+#
+# Activation:
+#     systemctl --user daemon-reload
+#     systemctl --user enable --now bearings-v1-probe.timer
+#
+# Inspect:
+#     systemctl --user list-timers bearings-v1-probe.timer
+#     journalctl --user -u bearings-v1-probe.service -n 50
+#     tail -n 50 ~/.local/share/bearings-v1/probes/$(date -u +%F).log
+#
+# The probe script is stdlib-only (urllib + json), so it does NOT
+# need the project venv. We invoke /usr/bin/python3 directly to keep
+# the runner free of any uv / venv lifecycle surface — even an
+# in-progress `uv sync` on the worktree must not break the morning
+# probe.
+
+[Unit]
+Description=Bearings v1 — daily health probe (master item B.1)
+Documentation=file:///home/beryndil/Projects/Bearings-v1/scripts/daily_probe.py
+# Defer until the bearings-v1 service has had a moment to come up if
+# the host is freshly booted. The probe still tolerates a refused
+# connection (logs a url_error and exits 1), but giving the service
+# the head start avoids a noisy first-boot-of-the-day failure.
+After=bearings-v1.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/beryndil/Projects/Bearings-v1
+ExecStart=/usr/bin/python3 /home/beryndil/Projects/Bearings-v1/scripts/daily_probe.py
+
+# Hardening — the probe only reads from loopback and writes to one
+# directory under $HOME, so we can lock everything else down.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/bearings-v1/probes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bearings-v1-probe
