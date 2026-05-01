@@ -88,6 +88,22 @@ uv run pytest
   `src/bearings/config.py` — override only the keys you need in the TOML file.
 - Never read env vars for secrets; wire them through config or keyring.
 
+## Session liveness signals (audits)
+
+When auditing whether a session is "in use" / "complete" / safe to close:
+
+- `last_viewed_at` is **NOT** a liveness signal. It only records that
+  Dave clicked the row in the sidebar. Glancing at a row during an
+  audit, scrolling past it, or opening it to read its plug all stamp
+  `last_viewed_at` without producing any work.
+- The real liveness signal is `message_count` (does it have a
+  conversation?) plus actual transcript content (is the conversation
+  ongoing or finished?). A 0-msg session is empty regardless of when
+  it was last viewed.
+- Corollary: don't move a session out of a "safe to close" bucket just
+  because `last_viewed_at` is recent. Re-bucket only on message
+  count / transcript evidence.
+
 ## Checklists ("create a checklist" — what Dave means)
 
 When Dave says **"create a checklist"** he means a Bearings
