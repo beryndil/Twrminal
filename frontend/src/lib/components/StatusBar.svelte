@@ -17,34 +17,27 @@
    * session-content focused (title, model, cost, tags, description),
    * the footer is chrome-state focused.
    *
-   * Recovery and auto-save are static-text indicators today: both
-   * features are unconditionally on (recovery is built into the WS
-   * reconnect loop in `ws_sessions.svelte.ts`; auto-save is the WS
-   * persistence path on every message). When/if either becomes
-   * configurable, the relevant store flag plugs in here. Disk usage
-   * ("2.1 GB" in the mockup) is deferred — would require a new server
-   * endpoint, out of scope for Phase 2a.
+   * Recovery and auto-save reflect live WS state via the agent store.
+   * Both features are tied to a connected runner — recovery is the WS
+   * reconnect loop in `ws_sessions.svelte.ts`, auto-save is the WS
+   * persistence path on every message — so they're meaningful only
+   * while `agent.state === 'open'`. Disconnected dots dim to slate to
+   * signal "not currently armed." Disk usage ("2.1 GB" in the mockup)
+   * is deferred — would require a new server endpoint, out of scope
+   * for Phase 2a.
+   *
+   * Version display reads live from `versionWatcher.version` rather
+   * than a one-shot mount fetch — when the server is upgraded the
+   * watcher's 60s poll picks up the new release string and the chrome
+   * label updates without waiting for the seamless reload to land.
    */
-  import { onMount } from 'svelte';
   import { agent } from '$lib/agent.svelte';
   import { sessions } from '$lib/stores/sessions.svelte';
   import { connectionLabel } from '$lib/utils/conversation-ui';
-  import { fetchVersion } from '$lib/api/version';
+  import { versionWatcher } from '$lib/stores/version_watcher.svelte';
 
-  let appVersion = $state<string | null>(null);
-
-  onMount(async () => {
-    try {
-      const info = await fetchVersion();
-      appVersion = info.version;
-    } catch {
-      // /api/version is best-effort here. A failure leaves the version
-      // slot rendering plain "Bearings" — the rest of the bar is
-      // unaffected, so a transient backend hiccup doesn't blank out
-      // the connection state or working-dir display.
-      appVersion = null;
-    }
-  });
+  let appVersion = $derived(versionWatcher.version);
+  let isConnected = $derived(agent.state === 'open');
 
   /** Compress `/home/<user>/...` paths to `~/...` for display. The full
    * absolute path stays available via the `title` attribute on hover. */
@@ -82,13 +75,19 @@
     {/if}
   </div>
   <div class="flex shrink-0 items-center gap-3">
-    <span class="inline-flex items-center gap-1.5">
-      <span class="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>
-      Recovery: Enabled
+    <span class="inline-flex items-center gap-1.5" data-testid="status-bar-recovery">
+      <span
+        class="h-1.5 w-1.5 rounded-full {isConnected ? 'bg-emerald-500' : 'bg-slate-600'}"
+        aria-hidden="true"
+      ></span>
+      Recovery: {isConnected ? 'Armed' : 'Idle'}
     </span>
-    <span class="inline-flex items-center gap-1.5">
-      <span class="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>
-      Auto-save: On
+    <span class="inline-flex items-center gap-1.5" data-testid="status-bar-autosave">
+      <span
+        class="h-1.5 w-1.5 rounded-full {isConnected ? 'bg-emerald-500' : 'bg-slate-600'}"
+        aria-hidden="true"
+      ></span>
+      Auto-save: {isConnected ? 'On' : 'Idle'}
     </span>
     <span
       class="rounded px-2 py-0.5 text-[10px] uppercase tracking-wider

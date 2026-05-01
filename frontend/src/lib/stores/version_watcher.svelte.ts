@@ -95,6 +95,15 @@ class VersionWatcher {
    * handshake). When this diverges from `myBuild`, the SPA is stale. */
   serverBuild = $state<string | null>(null);
 
+  /** The human-readable release string the server advertises. Updated
+   * alongside `serverBuild` on every poll so chrome surfaces (the
+   * StatusBar version label) reflect a server-side version bump
+   * without waiting for the seamless-reload to land — useful for the
+   * brief window where the server's already on v1.0.1 but the user's
+   * SPA hasn't rebooted yet, so they at least see "Bearings v1.0.1"
+   * instead of a stale "v1.0.0". */
+  version = $state<string | null>(null);
+
   /** Wall-clock of the last user activity ping. The visible-tab
    * reload waits for this to age past IDLE_DEBOUNCE_MS before firing.
    * Initialized to "now" on boot so the first debounce window starts
@@ -150,6 +159,7 @@ class VersionWatcher {
       const v = await fetchVersion();
       this.myBuild = v.build;
       this.serverBuild = v.build;
+      this.version = v.version;
     } catch {
       // First-call failure: leave myBuild null. The watcher stays
       // dormant (`wantsReload` returns false on null pin) until the
@@ -200,6 +210,7 @@ class VersionWatcher {
     try {
       const v = await fetchVersion();
       this.serverBuild = v.build;
+      this.version = v.version;
     } catch {
       // Transient failure — keep last known serverBuild rather than
       // forgetting it. Same discipline as the running-poll fix
