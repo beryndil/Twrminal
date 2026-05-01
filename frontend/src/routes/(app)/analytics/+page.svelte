@@ -23,6 +23,7 @@
    */
   import { onMount } from 'svelte';
   import * as api from '$lib/api';
+  import { billing } from '$lib/stores/billing.svelte';
   import { formatAbsolute } from '$lib/utils/datetime';
 
   let summary = $state<api.AnalyticsSummary | null>(null);
@@ -129,7 +130,15 @@
           <div class="mt-1 font-mono text-2xl text-slate-100">
             ${summary.total_cost_usd.toFixed(2)}
           </div>
-          <div class="mt-1 text-[11px] text-slate-500">PAYG total</div>
+          <div class="mt-1 text-[11px] text-slate-500">
+            {#if billing.showTokens}
+              subscription billing — see <a class="text-emerald-400 hover:underline" href="/tokens"
+                >/tokens</a
+              > for per-session
+            {:else}
+              PAYG total
+            {/if}
+          </div>
         </div>
       </div>
 
