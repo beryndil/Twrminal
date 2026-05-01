@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-05-01
+
+**v1.0.2 — theme consistency.** Phase B of the v1.0.x dashboard
+hardening plan. Pre-fix every chrome surface the v1.0.0 mockup
+intended as a brand affordance (active nav, "+ New Session" pill,
+brand glyph, primary buttons, tab indicator, system-status dot)
+used hardcoded `bg-emerald-*` / `text-emerald-*` Tailwind utilities.
+Theme switching flipped slate/amber/rose/sky/orange/teal/indigo
+per the per-theme palette blocks but emerald stayed pinned — non-
+evergreen themes inherited evergreen's brand color in chrome
+surfaces.
+
+### Added
+
+- **`--color-accent-brand` and `--color-accent-brand-soft` semantic
+  aliases** declared per theme:
+    - evergreen → emerald-500 / emerald-900 (forest green, brand-pinned)
+    - midnight-glass / default → sky-500 / sky-900 (violet primary)
+    - paper-light → sky-500 / sky-200 (AA-darkened sky on cream)
+- Tailwind config exposes `accent-brand` and `accent-brand-soft` color
+  utilities; components use `bg-accent-brand`, `text-accent-brand`,
+  `bg-accent-brand-soft/40`, etc. via Tailwind's `<alpha-value>`
+  substitution.
+
+### Changed
+
+- **Brand-affordance surfaces remapped from emerald-* to accent-brand**
+  across `SidebarBrand`, `NewSessionPill`, `SidebarNav` (4 active-state
+  variants), `SystemStatusCard` (Connection + Claude-reachable dots),
+  `UserIdentityBlock` (avatar circle), `InspectorTabNav` (active tab),
+  `ContextTab` (Memories tag_memory inline-code, Session Health icon,
+  Claude/Recovery/Auto-save dots, Save button), `MetricsTab` (analytics
+  link), `StatusBar` (version label, recovery/auto-save dots, connection
+  badge), and `analytics/+page.svelte` (subscription /tokens link).
+- **Semantic-success uses preserved** as emerald: ContextTab's ✓
+  glyph + Cache-read tile + function-name display; ChangesTab's
+  Created badge; AccentCards' Saved-tokens icon. The plan's open-
+  question 5 established the principle: positive change-class reads
+  as semantic-success, not brand affordance.
+
+### Fixed
+
+- **`tokens.css :root` fallback realigned with the active default
+  theme** (evergreen). Pre-fix the `:root` selector was joined with
+  `[data-theme='midnight-glass']`, so a no-data-theme element rendered
+  midnight-glass for an instant before the boot script set
+  `data-theme='evergreen'`. v1.0.2 splits the joined block:
+  midnight-glass keeps its own selector; evergreen.css now claims
+  `:root, [data-theme='evergreen']` so the synchronous fallback
+  paints the right palette.
+
+### Notes
+
+- Frontend gates: svelte-check 0/0, prettier clean, build OK; backend
+  gates green; 902 tests passing (4 pre-existing CommandMenu errors
+  unchanged from baseline — out of scope for v1.0.2).
+
 ## [1.0.1] - 2026-05-01
 
 **v1.0.1 — wiring honesty.** First of three v1.0.x hardening patches
