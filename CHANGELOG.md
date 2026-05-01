@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-05-01
+
+**v1.0.3 — visual hygiene.** Phase C of the v1.0.x dashboard hardening
+plan. Three small but visible polish fixes.
+
+### Fixed
+
+- **Recovery card glyph.** Pre-fix the Recovery accent card carried
+  U+26E8 (`⛨`, "shield with cross") which rendered as a tofu box on
+  font stacks lacking Symbola / Noto Symbols fallback (Hyprland's
+  default sans Inter is one such case). Replaced with an inline 14×14
+  shield SVG path in `currentColor` — indigo tint flows through
+  unchanged, crisp at any DPR. (`AccentCards.svelte`.)
+- **AccentCards symmetric layout.** Pre-fix when the Saved-tokens
+  card was suppressed (no cached tokens, e.g. a fresh session), the
+  Recovery card kept its `flex-1` and stretched across the full
+  main-content width — visually lopsided next to the two-card case.
+  `flex-1` now toggles on `saved` presence; when only Recovery shows,
+  cap at `max-w-md` and center via `justify-center` on the parent.
+  (`AccentCards.svelte`.)
+- **Memories empty-state copy.** Pre-fix the empty-state pointed at
+  "the sidebar's Tags panel" which doesn't exist as a labelled
+  surface. Copy now points at "the ✎ pencil next to any tag in the
+  sidebar's tag-filter list (under Recent Sessions)" — matches the
+  actual UI. (`memories/+page.svelte`.)
+
+### Notes
+
+- KPI grid breakpoint adjustment + utility extraction (homeShorten,
+  fmt) deferred from the original Phase C scope — the breakpoint
+  isn't biting at typical inspector widths, and the utility extraction
+  is pure refactor without a user-visible delta. Both can land any
+  time without a version bump.
+
 ## [1.0.2] - 2026-05-01
 
 **v1.0.2 — theme consistency.** Phase B of the v1.0.x dashboard
