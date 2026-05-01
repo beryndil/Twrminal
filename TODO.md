@@ -26,14 +26,46 @@ Master plan: `~/.claude/plans/methodical-clearing-backlog.md`.
 - `feat(synth-gate): work_evidence endpoint + bearings verify CLI` — `defbcf4`
 - `fix(claude-settings): explicit allow for mcp__bearings__bash + siblings` — `e95700f`
 - `feat(ui): persistent attachment chips below sent user bubbles` — `9527ada`
+- `fix(csp): drop invalid IPv6 ws://[::1]:* host-source from connect-src` — `354cc9f` (drive-by from smoke pass)
 
 **Deferred to follow-up plans (don't re-list under their own headers below):**
 - Bulk retitle from checklist view → `~/.claude/plans/bulk-retitling-checklist.md`
 - Agent-artifact previews (Phase 2) → `~/.claude/plans/previewing-agent-artifacts.md`
 - Spawn-from-reply Wave 3 → `~/.claude/plans/classifying-spawn-reply-wave-3.md`
 
-**Still on this TODO (not yet planned):**
-- v1.0.0 manual smoke test on Kubuntu + Hyprland + Chrome (only outstanding sweep item — needs UI session, can't run from terminal).
+**v1.0.0 smoke test (slice 8d) — done via Playwright/Chromium 2026-04-30:**
+
+Drove a real Chromium against `http://127.0.0.1:8787`. Verified:
+
+- ✅ Dashboard renders the v1.0.0 Evergreen layout end-to-end:
+  brand block + `+ New Session` pill + nav rail (Sessions / Tags /
+  Memories / Analytics / Settings) + Tools rail + Recent Sessions
+  list with searchbox + tag filter + system status + user identity
+  + status bar (Bearings v1.0.0 · ~/Projects/Bearings · Recovery:
+  Enabled · Auto-save: On · CONNECTED).
+- ✅ Conversation pane renders with composer (BYPASS pill, Send +
+  Attach + Browse buttons), accent cards (Saved 86% tokens, Recovery
+  armed), and scrollback history.
+- ✅ 4-tab right inspector (Context / Files / Changes / Metrics) —
+  Changes tab populated with 127 entries.
+- ✅ Tags page navigates and renders.
+- ✅ Memories page navigates without errors.
+- ✅ Analytics page renders the per-instance rollup (709 sessions /
+  270 open / 439 closed / 3.6k messages / 287 tokens with cache 2.7G
+  / $252 PAYG total) plus the 30-day sessions-per-day chart and Top
+  Tags bar list.
+- ⚠ Console error per page load: `ws://[::1]:*` invalid CSP source.
+  Fixed inline this sweep — see `354cc9f`.
+
+Screenshots saved to `smoke-dashboard.png` and `smoke-analytics.png`
+in repo root.
+
+Remaining gap: the test ran on Chromium-via-Playwright on Hyprland.
+The original TODO entry asked for **Chrome-stable on Kubuntu+Hyprland**
+specifically — that's a thinner remaining slice (drag-drop on
+external Hyprland file drops is the one DnD path Chromium has
+historically broken, per `cli.py` notes). Worth a targeted second
+pass when Chrome-stable is at hand. Demote-not-delete this entry.
 
 Bonus discovery: `bearings status` reports 269 open chat sessions out of
 709 total — large unclosed-session backlog worth a future cleanup pass
