@@ -115,8 +115,8 @@
         <p class="mx-auto max-w-md text-xs text-slate-500">
           Add a memory by clicking the
           <span class="text-slate-300">✎</span> pencil next to any tag in the sidebar's
-          <span class="text-slate-300">Tags</span> panel. Memories are durable per-tag context stitched
-          into the system prompt of every session that carries the tag.
+          <span class="text-slate-300">tag-filter list</span> (under Recent Sessions). Memories are durable
+          per-tag context stitched into the system prompt of every session that carries the tag.
         </p>
       </div>
     {:else}

@@ -114,7 +114,7 @@
 
 {#if sessions.selected}
   <div
-    class="flex flex-wrap gap-2 border-b border-slate-800 px-4 py-2"
+    class="flex flex-wrap gap-2 border-b border-slate-800 px-4 py-2 {saved ? '' : 'justify-center'}"
     data-testid="accent-cards"
     aria-label="Session summary highlights"
   >
@@ -141,15 +141,37 @@
     {/if}
 
     <div
-      class="flex min-w-[14rem] flex-1 items-center gap-3 rounded-md border
-        border-slate-800 bg-slate-900 px-3 py-2"
+      class="flex min-w-[14rem] items-center gap-3 rounded-md border
+        border-slate-800 bg-slate-900 px-3 py-2 {saved ? 'flex-1' : 'max-w-md'}"
       data-testid="accent-card-recovery"
     >
       <span
         class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full
           bg-indigo-900/60 text-indigo-300"
-        aria-hidden="true">⛨</span
+        aria-hidden="true"
       >
+        <!--
+          Inline shield SVG. The previous glyph ⛨ (U+26E8) rendered as
+          a tofu box on font stacks without a Symbola/Noto Symbols
+          fallback (Hyprland with Inter as the default sans). The 14×14
+          path traces a kite-shaped shield in `currentColor` so the
+          existing indigo tint flows through unchanged and the icon
+          stays crisp at any DPR.
+        -->
+        <svg
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M12 3 L20 6 L20 12 C20 17 16 20.5 12 21.5 C8 20.5 4 17 4 12 L4 6 Z" />
+        </svg>
+      </span>
       <div class="min-w-0">
         <div class="text-xs font-medium text-slate-200">Recovery armed</div>
         <div class="text-[11px] text-slate-500">Up to 5,000 events buffered for replay</div>
