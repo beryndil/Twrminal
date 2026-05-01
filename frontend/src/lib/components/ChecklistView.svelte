@@ -33,6 +33,12 @@
   import { sessions } from '$lib/stores/sessions.svelte';
   import ChecklistChat from '$lib/components/ChecklistChat.svelte';
   import DataView from '$lib/components/DataView.svelte';
+  import BulkTitleSuggestModal from '$lib/components/checklist/BulkTitleSuggestModal.svelte';
+
+  // Bulk title-suggest modal toggle. State lives here so the
+  // toolbar button can flip it; the modal handles its own load /
+  // apply flow against the active checklist's id.
+  let bulkSuggestOpen = $state(false);
 
   const selected = $derived(sessions.selected);
 
@@ -422,6 +428,20 @@
          indirectly, but the explicit check here is defensive if the
          header is ever extracted from this component). -->
     {#if selected?.kind === 'checklist' && !selected.closed_at}
+      <!-- Bulk-suggest button. Visible whenever the checklist is open;
+           the modal itself handles the LLM-disabled and no-linked-chats
+           cases so this stays a single chrome affordance. -->
+      <button
+        type="button"
+        class="rounded border border-slate-700 px-2 py-0.5 text-xs text-slate-300
+          hover:border-slate-500 hover:text-slate-100 disabled:opacity-50"
+        title="Suggest titles for every linked chat (LLM)"
+        aria-label="Suggest titles for linked chats"
+        onclick={() => (bulkSuggestOpen = true)}
+        data-testid="bulk-suggest-open"
+      >
+        ✨ Suggest all
+      </button>
       {#if runStatus}
         <span
           class="rounded px-2 py-0.5 text-xs font-medium {pillTone(runStatus)}"
@@ -646,3 +666,19 @@
     {/if}
   </DataView>
 </section>
+
+{#if selected?.kind === 'checklist'}
+  <!-- Modal lives outside the section so its overlay covers the
+       full viewport rather than being clipped to the right pane. -->
+  <BulkTitleSuggestModal
+    bind:open={bulkSuggestOpen}
+    sessionId={selected.id}
+    onApplied={() => {
+      // Refresh the sidebar so retitled paired-chat sessions reflect
+      // their new titles immediately. The checklist body itself
+      // doesn't display chat titles inline, so no local store
+      // invalidation needed beyond the global session list.
+      void sessions.refresh();
+    }}
+  />
+{/if}

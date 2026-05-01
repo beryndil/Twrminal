@@ -210,6 +210,53 @@ export function getPairedChat(
   return jsonFetch<Session>(fetchImpl, `/api/sessions/${sessionId}/checklist/items/${itemId}/chat`);
 }
 
+// --- bulk title suggestions -----------------------------------------
+//
+// Backed by `POST /sessions/{id}/checklist/suggest_item_titles`.
+// Plan: ~/.claude/plans/bulk-retitling-checklist.md. Behaves as a
+// batch over the single-session `suggest_titles` endpoint: lists
+// every item with `chat_session_id != null`, runs the suggester
+// serially per linked chat, returns a row per item with either
+// candidates or an inlined error.
+
+export type BulkTitleSuggestItem = {
+  item_id: number;
+  chat_session_id: string;
+  label: string;
+  current_title: string | null;
+  /** Three candidate titles (narrow → medium → wide abstraction)
+   * when the suggester succeeds; null when this row failed. */
+  candidates: string[] | null;
+  /** Inlined per-item failure reason. Mutually exclusive with
+   * `candidates`. The batch as a whole still returns 200 even when
+   * some rows error — the operator picks per-row from the modal. */
+  error: string | null;
+};
+
+export type BulkTitleSuggestResult = {
+  items: BulkTitleSuggestItem[];
+};
+
+/** Bulk-suggest titles for every linked chat in a checklist. Same
+ * gate semantics as the single-session route: 503 when
+ * `agent.enable_llm_title_suggest=False`; 400 when the parent isn't
+ * `kind=checklist`. Serial under the hood — caller can show an
+ * indeterminate spinner while it runs. */
+export function bulkSuggestItemTitles(
+  sessionId: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<BulkTitleSuggestResult> {
+  return jsonFetch<BulkTitleSuggestResult>(
+    fetchImpl,
+    `/api/sessions/${sessionId}/checklist/suggest_item_titles`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    }
+  );
+}
+
 // --- autonomous runner ----------------------------------------------
 //
 // Backed by `POST /run`, `GET /run`, `DELETE /run` on the checklist.
