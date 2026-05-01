@@ -80,8 +80,9 @@ _BEARINGS_CONFIG_RELPATH: Final[Path] = Path("bearings") / "config.toml"
 
 
 # Mirrors v0.17.x ``BillingMode``. Kept as a top-level ``Literal`` so the
-# field validator surfaces ``ValidationError`` on a typo (``"subsciption"``)
-# rather than accepting the string and confusing the renderer downstream.
+# field validator surfaces ``ValidationError`` on a typo (``"subscription"``
+# misspelt as ``"subscripton"`` etc.) rather than accepting the string and
+# confusing the renderer downstream.
 BillingMode = Literal["payg", "subscription"]
 
 
@@ -107,7 +108,7 @@ class BillingCfg(BaseModel):  # type: ignore[explicit-any]
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    mode: BillingMode = Field(default=DEFAULT_BILLING_MODE)  # type: ignore[assignment]
+    mode: BillingMode = Field(default=DEFAULT_BILLING_MODE)
     plan: str | None = Field(default=DEFAULT_BILLING_PLAN)
 
 

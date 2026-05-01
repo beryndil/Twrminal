@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from pathlib import Path
-from typing import Final
+from typing import Final, Literal
 
 # ---------------------------------------------------------------------------
 # Process-level defaults (project CLAUDE.md "Repo invariants")
@@ -58,8 +58,10 @@ DEFAULT_DB_PATH: Final[Path] = Path("~/.local/share/bearings-v1/sessions.db").ex
 # during the dogfood cutover (2026-05-01). "payg" preserves the legacy
 # pre-billing-knob behavior; users on Anthropic Max/Pro flip to
 # "subscription" in the config to swap session-card dollar figures for
-# token totals (rendering hookup is a future v1 item).
-DEFAULT_BILLING_MODE: Final[str] = "payg"
+# token totals (rendering hookup is a future v1 item). Typed as the same
+# ``Literal`` ``BillingCfg.mode`` declares so the Pydantic field default
+# satisfies ``mypy --strict`` without an inline ``# type: ignore``.
+DEFAULT_BILLING_MODE: Final[Literal["payg", "subscription"]] = "payg"
 DEFAULT_BILLING_PLAN: Final[str | None] = None
 
 # ---------------------------------------------------------------------------
