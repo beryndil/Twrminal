@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Final
+from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import (
@@ -50,6 +50,8 @@ from pydantic_settings import (
 
 from bearings.config.constants import (
     DEFAULT_ALLOWED_SHELL_COMMANDS,
+    DEFAULT_BILLING_MODE,
+    DEFAULT_BILLING_PLAN,
     DEFAULT_DB_PATH,
     DEFAULT_HOST,
     DEFAULT_PORT,
@@ -75,6 +77,38 @@ from bearings.config.constants import (
 _XDG_CONFIG_HOME_ENV: Final[str] = "XDG_CONFIG_HOME"
 _XDG_CONFIG_HOME_DEFAULT: Final[Path] = Path("~/.config").expanduser()
 _BEARINGS_CONFIG_RELPATH: Final[Path] = Path("bearings") / "config.toml"
+
+
+# Mirrors v0.17.x ``BillingMode``. Kept as a top-level ``Literal`` so the
+# field validator surfaces ``ValidationError`` on a typo (``"subsciption"``)
+# rather than accepting the string and confusing the renderer downstream.
+BillingMode = Literal["payg", "subscription"]
+
+
+class BillingCfg(BaseModel):  # type: ignore[explicit-any]
+    """Billing mode + plan label — mirrors v0.17.x ``BillingCfg`` so the
+    shared ``~/.config/bearings/config.toml`` round-trips cleanly during
+    the dogfood cutover.
+
+    ``mode``: ``"payg"`` (developer-API users; session-card shows dollar
+    figures) or ``"subscription"`` (Anthropic Max/Pro users; session-card
+    swaps to token totals because the dollar number is misleading on a
+    subscription plan). Default ``"payg"`` preserves pre-billing-knob
+    behavior.
+
+    ``plan``: informational label like ``"max_20x"`` / ``"pro"`` /
+    ``"max_5x"``. Currently unused by v1's renderer; reserved for a
+    future plan-aware token meter should Anthropic ship per-plan quota
+    endpoints. ``None`` is the no-plan-known sentinel.
+
+    Frozen so the model can participate in cache keys downstream; defaults
+    flow through the constants module per the no-inline-literals gate.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    mode: BillingMode = Field(default=DEFAULT_BILLING_MODE)  # type: ignore[assignment]
+    plan: str | None = Field(default=DEFAULT_BILLING_PLAN)
 
 
 class VaultCfg(BaseModel):  # type: ignore[explicit-any]
@@ -260,6 +294,14 @@ class Settings(BaseSettings):  # type: ignore[explicit-any]
     fs: FsCfg = Field(default_factory=FsCfg)
     shell: ShellCfg = Field(default_factory=ShellCfg)
 
+    # Billing mode mirrors v0.17.x so the shared XDG config file
+    # (``~/.config/bearings/config.toml``) round-trips cleanly during
+    # the dogfood cutover (2026-05-01). The renderer wiring is a
+    # post-cutover follow-up — accepting the field now unblocks the
+    # systemd unit; surfacing the value in the inspector is a separate
+    # item once the dogfood feedback says it matters.
+    billing: BillingCfg = Field(default_factory=BillingCfg)
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -293,4 +335,13 @@ class Settings(BaseSettings):  # type: ignore[explicit-any]
         )
 
 
-__all__ = ["FsCfg", "Settings", "ShellCfg", "UploadsCfg", "VaultCfg", "xdg_config_path"]
+__all__ = [
+    "BillingCfg",
+    "BillingMode",
+    "FsCfg",
+    "Settings",
+    "ShellCfg",
+    "UploadsCfg",
+    "VaultCfg",
+    "xdg_config_path",
+]

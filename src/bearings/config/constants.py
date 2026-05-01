@@ -53,6 +53,15 @@ DEFAULT_HOST: Final[str] = "127.0.0.1"
 # downstream code never has to think about it.
 DEFAULT_DB_PATH: Final[Path] = Path("~/.local/share/bearings-v1/sessions.db").expanduser()
 
+# Billing mode default — mirrors v0.17.x BillingCfg semantics so the shared
+# config file at ``~/.config/bearings/config.toml`` round-trips cleanly
+# during the dogfood cutover (2026-05-01). "payg" preserves the legacy
+# pre-billing-knob behavior; users on Anthropic Max/Pro flip to
+# "subscription" in the config to swap session-card dollar figures for
+# token totals (rendering hookup is a future v1 item).
+DEFAULT_BILLING_MODE: Final[str] = "payg"
+DEFAULT_BILLING_PLAN: Final[str | None] = None
+
 # ---------------------------------------------------------------------------
 # Routing / quota / usage defaults (docs/model-routing-v1-spec.md)
 # ---------------------------------------------------------------------------
@@ -1134,6 +1143,8 @@ __all__ = [
     "DEFAULT_ADVISOR_MAX_USES_HAIKU",
     "DEFAULT_ADVISOR_MAX_USES_SONNET",
     "DEFAULT_ALLOWED_SHELL_COMMANDS",
+    "DEFAULT_BILLING_MODE",
+    "DEFAULT_BILLING_PLAN",
     "DEFAULT_CHECKPOINT_LABEL_TEMPLATE",
     "DEFAULT_DB_PATH",
     "DEFAULT_HOST",

@@ -13,10 +13,17 @@
 #   * v1 (this unit) lives at /home/beryndil/Projects/Bearings-v1, port 8788,
 #     DB ~/.local/share/bearings-v1/, unit `bearings-v1.service`.
 #
-# At item 0.1 the FastAPI app does not exist yet (lands in items 1.1+).
-# This unit is therefore a verifiable shape: `systemd-analyze verify` passes,
-# but `systemctl --user start` will exit non-zero with a clean ExecStart-not-
-# found error until item 1.10 ("Misc API") wires the ASGI entry point.
+# 2026-05-01 — dogfood cutover: ExecStart points at the launch.py
+# stopgap because the planned `bearings serve` CLI still hasn't landed
+# (see TODO.md "stopgap launcher" entry). When that CLI ships, swap
+# the ExecStart back to the original `uv run uvicorn bearings.api.app:app`
+# shape and drop launch.py.
+#
+# Historical note: at item 0.1 the FastAPI app didn't exist; this unit
+# was a verifiable shape (`systemd-analyze verify` passed) until item
+# 1.10. The real app lives at `bearings.web.app:create_app` (NOT
+# `bearings.api.app:app`) and needs the DB-startup hooks launch.py
+# wires up — hence the launcher detour.
 
 [Unit]
 Description=Bearings v1 (localhost web UI for Claude Code agent sessions)
@@ -27,8 +34,9 @@ After=network.target
 Type=simple
 WorkingDirectory=/home/beryndil/Projects/Bearings-v1
 # Bind explicitly to localhost — Bearings is single-user / localhost only
-# per the project CLAUDE.md.
-ExecStart=/usr/bin/uv run uvicorn bearings.api.app:app --host 127.0.0.1 --port 8788
+# per the project CLAUDE.md. Uses the project venv directly (faster
+# restart than `uv run`) since deps are already resolved.
+ExecStart=/home/beryndil/Projects/Bearings-v1/.venv/bin/python /home/beryndil/.local/share/bearings-v1/launch.py
 Restart=on-failure
 RestartSec=2s
 
