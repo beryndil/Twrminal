@@ -144,6 +144,142 @@ def test_toggle_rejects_item_from_other_checklist(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
+# ---- Synth-gate (~/.claude/rules/synth-gate.md) ----------------------
+#
+# An orchestrator session that calls the toggle endpoint on a master
+# item must NOT be able to toggle the parent based on the executor's
+# DONE-string alone when the on-disk children are still unchecked.
+# These regressions cover the gate's three states: refuse-when-
+# children-unchecked, allow-when-children-checked, force-override.
+
+
+def test_toggle_parent_refused_when_children_unchecked(client: TestClient) -> None:
+    """Synth-gate: parent toggle returns 409 when any direct child is
+    still unchecked, names the unchecked children in the response, and
+    appends a discrepancy line to the checklist `notes`."""
+    row = _create_checklist(client)
+    parent = client.post(
+        f"/api/sessions/{row['id']}/checklist/items",
+        json={"label": "Wire bulk retitle UI"},
+    ).json()
+    child = client.post(
+        f"/api/sessions/{row['id']}/checklist/items",
+        json={"label": "Backend route", "parent_item_id": parent["id"]},
+    ).json()
+
+    resp = client.post(
+        f"/api/sessions/{row['id']}/checklist/items/{parent['id']}/toggle",
+        json={"checked": True},
+    )
+    assert resp.status_code == 409
+    body = resp.json()
+    assert body["detail"]["error"].startswith("synth-gate")
+    assert body["detail"]["item_id"] == parent["id"]
+    assert any(c["id"] == child["id"] for c in body["detail"]["unchecked_children"])
+
+    # Discrepancy logged to notes for the audit trail.
+    fresh = client.get(f"/api/sessions/{row['id']}/checklist").json()
+    assert "synth-gate: refused" in (fresh["notes"] or "")
+    assert f"#{parent['id']}" in fresh["notes"]
+    # Parent must still be unchecked on disk — no fabricated toggle.
+    parent_after = next(it for it in fresh["items"] if it["id"] == parent["id"])
+    assert parent_after["checked_at"] is None
+
+
+def test_toggle_parent_allowed_when_children_complete(client: TestClient) -> None:
+    """Synth-gate: parent toggle proceeds normally once every child
+    has been checked. No discrepancy note is logged on the happy path."""
+    row = _create_checklist(client)
+    parent = client.post(
+        f"/api/sessions/{row['id']}/checklist/items",
+        json={"label": "Top-level"},
+    ).json()
+    child = client.post(
+        f"/api/sessions/{row['id']}/checklist/items",
+        json={"label": "Step 1", "parent_item_id": parent["id"]},
+    ).json()
+    # Child completes first.
+    client.post(
+        f"/api/sessions/{row['id']}/checklist/items/{child['id']}/toggle",
+        json={"checked": True},
+    )
+    # Now the parent is free to advance.
+    resp = client.post(
+        f"/api/sessions/{row['id']}/checklist/items/{parent['id']}/toggle",
+        json={"checked": True},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["checked_at"] is not None
+
+
+def test_toggle_parent_force_overrides_synth_gate(client: TestClient) -> None:
+    """Synth-gate: `force=true` is the documented override. The toggle
+    succeeds but the discrepancy is still logged to `notes` with a
+    `(forced)`-style marker so the audit trail records the human
+    decision."""
+    row = _create_checklist(client)
+    parent = client.post(
+        f"/api/sessions/{row['id']}/checklist/items",
+        json={"label": "Parent"},
+    ).json()
+    client.post(
+        f"/api/sessions/{row['id']}/checklist/items",
+        json={"label": "Optional step", "parent_item_id": parent["id"]},
+    )
+    resp = client.post(
+        f"/api/sessions/{row['id']}/checklist/items/{parent['id']}/toggle",
+        json={"checked": True, "force": True},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["checked_at"] is not None
+    fresh = client.get(f"/api/sessions/{row['id']}/checklist").json()
+    assert "synth-gate: FORCED" in (fresh["notes"] or "")
+
+
+def test_toggle_leaf_item_unaffected_by_synth_gate(client: TestClient) -> None:
+    """Synth-gate: an item with no children is a leaf; the gate never
+    fires on it. Sanity check that the gate only triggers on the
+    parent-with-unchecked-children case."""
+    row = _create_checklist(client)
+    leaf = client.post(
+        f"/api/sessions/{row['id']}/checklist/items",
+        json={"label": "Leaf"},
+    ).json()
+    resp = client.post(
+        f"/api/sessions/{row['id']}/checklist/items/{leaf['id']}/toggle",
+        json={"checked": True},
+    )
+    assert resp.status_code == 200
+
+
+def test_toggle_uncheck_unaffected_by_synth_gate(client: TestClient) -> None:
+    """Synth-gate: only `checked=True` is gated. Unchecking a parent
+    is unconditional (the existing one-directional cascade behavior
+    in slice 4.1 stays intact)."""
+    row = _create_checklist(client)
+    parent = client.post(
+        f"/api/sessions/{row['id']}/checklist/items",
+        json={"label": "Parent"},
+    ).json()
+    # Force the parent checked to set up the uncheck-path.
+    client.post(
+        f"/api/sessions/{row['id']}/checklist/items/{parent['id']}/toggle",
+        json={"checked": True},
+    )
+    # Add an unchecked child *after* — pre-existing checks at the
+    # parent shouldn't block a later uncheck.
+    client.post(
+        f"/api/sessions/{row['id']}/checklist/items",
+        json={"label": "Late child", "parent_item_id": parent["id"]},
+    )
+    resp = client.post(
+        f"/api/sessions/{row['id']}/checklist/items/{parent['id']}/toggle",
+        json={"checked": False},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["checked_at"] is None
+
+
 def test_update_item_label(client: TestClient) -> None:
     row = _create_checklist(client)
     item = client.post(

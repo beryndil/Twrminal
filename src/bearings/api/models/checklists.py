@@ -36,9 +36,20 @@ class ItemUpdate(BaseModel):
 
 class ItemToggle(BaseModel):
     """Body for the toggle endpoint. `True` stamps `checked_at` to the
-    current time; `False` clears it."""
+    current time; `False` clears it.
+
+    `force` overrides the synth-gate (refuse-toggle-when-children-
+    unchecked). Default is `False`: a parent item with unchecked
+    children returns 409 with a `discrepancy` field naming the
+    unchecked children, and the discrepancy is appended to the
+    checklist's `notes` so the audit trail records the attempted
+    fabrication. `force=True` is the explicit override path for the
+    rare case where a human operator decides the parent really is
+    done independent of children — still logged in `notes` with a
+    `(forced)` suffix for the trail."""
 
     checked: bool
+    force: bool = False
 
 
 class ItemLink(BaseModel):

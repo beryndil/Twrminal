@@ -157,46 +157,39 @@ the audit-stall consequence.
 
 ---
 
-## Synth-gate cross-check on executor callbacks — 2026-04-27
+## Synth-gate cross-check on executor callbacks — 2026-04-27 → shipped 2026-05-01
 
-Surfaced from the Godmode-audit research session, 2026-04-27. Implements
-the Bearings-specific case of `~/.claude/rules/synth-gate.md`.
+**Status.** Shipped at the API-toggle layer (commit pending this
+sweep). The `POST /api/sessions/<id>/checklist/items/<iid>/toggle`
+endpoint now refuses to set `checked=True` on a parent item whose
+direct children are still unchecked. Refused calls return 409 with
+the unchecked children named in the response detail and a
+discrepancy line appended to the checklist `notes`. The `force=true`
+override is documented for the rare human-decided case and the
+discrepancy is still logged with `(forced)` framing for the audit
+trail.
 
-**Task.** Add an independent verification step in the orchestrator's
-executor-callback handler so a `DONE` / `DONE_WITH_CONCERNS` status from an
-executor is not trusted at face value before the master checklist advances.
+The auto-driver path was already gated via
+`_drive_blocking_children()` in `src/bearings/agent/auto_driver/dispatch.py`;
+the new HTTP-layer gate closes the same hole for a
+manual orchestrator (Claude session calling toggle via tool). Five
+regression tests cover the gate's three states (refuse / allow /
+force) plus the leaf-item and uncheck-direction sanity cases.
 
-**Why.** Today the orchestrator parses the status sigil out of the executor's
-prompt-POST body and toggles the master item based on the string alone (per
-`~/.claude/rules/executor-handoff-on-pressure.md` §"Orchestrator playbook").
-A buggy, partial, or garbled executor can claim DONE while the corresponding
-children of the master item are still unchecked — leaving the audit trail
-silently corrupted. No cross-check exists today.
-
-**Cross-check shape.** Before the orchestrator advances:
-- Fetch the master item's children via
-  `GET /api/sessions/<MASTER_ID>/checklist?parent_item_id=<ITEM_ID>`.
-- Confirm every child the executor claimed to tick is actually checked
-  on disk. (Required for `DONE`. For `DONE_WITH_CONCERNS`, same check
-  plus the concern note must be persisted in master `notes`.)
-- If mismatch: do NOT advance the item. Log the discrepancy in master
-  `notes` via PATCH. Surface the gap to Dave (in the orchestrator
-  session's stream) so he can adjudicate. Do NOT auto-toggle.
-
-**Files most likely.** `src/bearings/api/sessions.py` (the prompt-receiver
-that processes status callbacks; check for the orchestrator-side branch).
-Also consider whether the cross-check belongs in the orchestrator's worker
-loop instead of the API route — the worker has clean access to the master
-state and is the natural place to enforce a pre-toggle invariant.
-
-**Verification.** Add a regression test that simulates an executor posting
-`DONE` to the orchestrator while the master item's children are still
-unchecked. Assert the orchestrator does NOT toggle the master item and that
-a discrepancy line lands in master `notes`.
-
-**Defer reason.** Surfaced from Godmode-audit research session 2026-04-27.
-Dave is at his weekly cap on Anthropic plan; not free to spend executor
-turns on this now. Pick up next week.
+**Deferred follow-ups (not blocking).**
+- `DONE_WITH_CONCERNS` concern-note persistence: the API gate doesn't
+  yet require a concern body when force-overriding a parent that has
+  unchecked children. Today the operator must manually PATCH the
+  `notes`. Could add a `force_reason: str` requirement when
+  `force=true` AND children unchecked.
+- Executor-side prompt-POST status-string parsing: the prompt
+  endpoint still accepts arbitrary content; the synth-gate fires at
+  the toggle layer regardless. If we ever want to surface the
+  discrepancy back to the orchestrator's stream automatically, the
+  prompt-receiver would need to parse the sigil and call the toggle
+  endpoint server-side. Not needed today — the orchestrator-as-Claude
+  is the one calling toggle, and a 409 surfaces in its tool-call
+  output.
 
 Known gap: 15 shipped versions (v0.3.0–5, v0.3.8–12, v0.4.0–1,
 v0.5.0–1) exist in the archive's "## vX.Y.Z — shipped" sections but

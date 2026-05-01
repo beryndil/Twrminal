@@ -12,6 +12,9 @@ inlined here.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from bearings import metrics
@@ -50,6 +53,28 @@ async def _require_checklist_session(request: Request, session_id: str) -> None:
         raise HTTPException(status_code=404, detail="session not found")
     if session["kind"] != "checklist":
         raise HTTPException(status_code=400, detail="session is not a checklist session")
+
+
+def _utcnow_iso() -> str:
+    """Server-wall-clock UTC ISO timestamp for synth-gate audit notes.
+    Matches the seconds-precision shape `bearings status` emits so the
+    notes stay grep-friendly across the codebase."""
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+async def _append_checklist_note(conn: aiosqlite.Connection, session_id: str, line: str) -> None:
+    """Append a single line to the checklist's `notes` field. Used by
+    the synth-gate to record refused or forced parent-item toggles so
+    the audit trail captures the discrepancy alongside the on-disk
+    state. Idempotent against a missing checklist row — silently
+    no-ops, since the toggle endpoint already validated the session
+    upstream and a missing checklist there raises 404 anyway."""
+    existing = await store.get_checklist(conn, session_id)
+    if existing is None:
+        return
+    prior = existing.get("notes") or ""
+    merged = f"{prior}\n{line}" if prior else line
+    await store.update_checklist(conn, session_id, fields={"notes": merged})
 
 
 @router.get("", response_model=ChecklistOut)
@@ -120,6 +145,54 @@ async def toggle_item(session_id: str, item_id: int, body: ItemToggle, request: 
     existing = await store.get_item(conn, item_id)
     if existing is None or existing["checklist_id"] != session_id:
         raise HTTPException(status_code=404, detail="item not found")
+
+    # Synth-gate (~/.claude/rules/synth-gate.md): refuse a parent-item
+    # check when any direct child is still unchecked. Without this the
+    # orchestrator-as-Claude could fabricate a parent toggle on the
+    # strength of an executor's DONE string alone, even if the master
+    # checklist's children are still unchecked on disk. The auto-
+    # driver path already enforces this via _drive_blocking_children;
+    # this gate closes the same hole on the HTTP toggle path so a
+    # manual orchestrator can't bypass it.
+    #
+    # `force=True` is the documented override for the rare case where
+    # a human operator decides the parent is genuinely done. Either
+    # path appends a discrepancy line to the checklist `notes` so the
+    # audit trail records what happened — refused or forced.
+    if body.checked:
+        unchecked_children = await store.list_unchecked_children(conn, item_id)
+        if unchecked_children:
+            child_labels = ", ".join(f"#{c['id']} {c['label']}" for c in unchecked_children)
+            timestamp = _utcnow_iso()
+            if not body.force:
+                discrepancy = (
+                    f"[{timestamp}] synth-gate: refused toggle of item "
+                    f"#{item_id} ({existing['label']}) — {len(unchecked_children)} "
+                    f"unchecked child(ren): {child_labels}"
+                )
+                await _append_checklist_note(conn, session_id, discrepancy)
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "synth-gate: parent item has unchecked children",
+                        "item_id": item_id,
+                        "unchecked_children": [
+                            {"id": c["id"], "label": c["label"]} for c in unchecked_children
+                        ],
+                        "advice": (
+                            "Walk the unchecked children to completion first, OR re-toggle "
+                            "with `force=true` if you've decided the parent is genuinely "
+                            "done independent of children."
+                        ),
+                    },
+                )
+            forced_note = (
+                f"[{timestamp}] synth-gate: FORCED toggle of item "
+                f"#{item_id} ({existing['label']}) past {len(unchecked_children)} "
+                f"unchecked child(ren): {child_labels}"
+            )
+            await _append_checklist_note(conn, session_id, forced_note)
+
     row = await store.toggle_item(conn, item_id, checked=body.checked)
     if row is None:
         # Race: item was deleted between the check and the toggle.
