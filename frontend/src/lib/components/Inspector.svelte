@@ -54,14 +54,24 @@
 <aside class="flex h-full flex-col overflow-hidden border-l border-slate-800 bg-slate-900">
   <InspectorTabNav {activeTab} onSelect={selectTab} />
   <div class="flex-1 overflow-y-auto" data-testid="inspector-tab-content">
-    {#if activeTab === 'context'}
+    <!--
+      All four tabs stay mounted; inactive ones hide via the `hidden`
+      attribute. This preserves transient state (Session Instructions
+      draft, expanded system-prompt layers, scroll positions) across
+      tab switches — silent data loss was the v1.0.0 audit's headline
+      regression here.
+    -->
+    <div hidden={activeTab !== 'context'}>
       <ContextTab />
-    {:else if activeTab === 'files'}
+    </div>
+    <div hidden={activeTab !== 'files'}>
       <FilesTab />
-    {:else if activeTab === 'changes'}
+    </div>
+    <div hidden={activeTab !== 'changes'}>
       <ChangesTab />
-    {:else if activeTab === 'metrics'}
+    </div>
+    <div hidden={activeTab !== 'metrics'}>
       <MetricsTab />
-    {/if}
+    </div>
   </div>
 </aside>
