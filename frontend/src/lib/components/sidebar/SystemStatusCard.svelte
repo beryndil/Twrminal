@@ -53,7 +53,7 @@
       <span
         class="h-1.5 w-1.5 rounded-full
           {connectionStatus === 'ok'
-          ? 'bg-emerald-500'
+          ? 'bg-accent-brand'
           : connectionStatus === 'warn'
             ? 'bg-amber-500'
             : 'bg-rose-500'}"
@@ -64,7 +64,7 @@
     <li class="flex items-center gap-2" data-testid="system-status-claude">
       <span
         class="h-1.5 w-1.5 rounded-full
-          {connectionStatus === 'ok' ? 'bg-emerald-500' : 'bg-slate-600'}"
+          {connectionStatus === 'ok' ? 'bg-accent-brand' : 'bg-slate-600'}"
         aria-hidden="true"
       ></span>
       <span>Claude {connectionStatus === 'ok' ? 'reachable' : 'unreachable'}</span>

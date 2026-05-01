@@ -60,7 +60,7 @@
   aria-label="Application status"
 >
   <div class="flex min-w-0 items-center gap-3">
-    <span class="font-medium text-emerald-400" data-testid="status-bar-version">
+    <span class="font-medium text-accent-brand" data-testid="status-bar-version">
       {#if appVersion}Bearings v{appVersion}{:else}Bearings{/if}
     </span>
     {#if sessions.selected}
@@ -77,14 +77,14 @@
   <div class="flex shrink-0 items-center gap-3">
     <span class="inline-flex items-center gap-1.5" data-testid="status-bar-recovery">
       <span
-        class="h-1.5 w-1.5 rounded-full {isConnected ? 'bg-emerald-500' : 'bg-slate-600'}"
+        class="h-1.5 w-1.5 rounded-full {isConnected ? 'bg-accent-brand' : 'bg-slate-600'}"
         aria-hidden="true"
       ></span>
       Recovery: {isConnected ? 'Armed' : 'Idle'}
     </span>
     <span class="inline-flex items-center gap-1.5" data-testid="status-bar-autosave">
       <span
-        class="h-1.5 w-1.5 rounded-full {isConnected ? 'bg-emerald-500' : 'bg-slate-600'}"
+        class="h-1.5 w-1.5 rounded-full {isConnected ? 'bg-accent-brand' : 'bg-slate-600'}"
         aria-hidden="true"
       ></span>
       Auto-save: {isConnected ? 'On' : 'Idle'}
@@ -92,7 +92,7 @@
     <span
       class="rounded px-2 py-0.5 text-[10px] uppercase tracking-wider
         {agent.state === 'open'
-        ? 'bg-emerald-900 text-emerald-300'
+        ? 'bg-accent-brand-soft text-accent-brand'
         : agent.state === 'connecting'
           ? 'bg-amber-900 text-amber-300'
           : 'bg-slate-800 text-slate-400'}"

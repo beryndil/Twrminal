@@ -17,7 +17,7 @@
   import BearingsMark from '$lib/components/icons/BearingsMark.svelte';
 </script>
 
-<div class="flex items-center gap-2 px-2 py-2 text-emerald-400" data-testid="sidebar-brand">
+<div class="flex items-center gap-2 px-2 py-2 text-accent-brand" data-testid="sidebar-brand">
   <BearingsMark size={22} />
   <span class="text-base font-semibold tracking-tight">Bearings</span>
 </div>

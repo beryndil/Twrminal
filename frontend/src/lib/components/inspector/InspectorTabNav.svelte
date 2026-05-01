@@ -48,7 +48,7 @@
       class="border-b-2 px-3 py-2 text-xs font-medium uppercase tracking-wider
         transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500
         {activeTab === tab.id
-        ? 'border-emerald-500 text-emerald-300'
+        ? 'border-accent-brand text-accent-brand'
         : 'border-transparent text-slate-500 hover:text-slate-300'}"
       onclick={() => onSelect(tab.id)}
     >

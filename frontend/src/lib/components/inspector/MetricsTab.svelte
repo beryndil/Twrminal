@@ -155,7 +155,7 @@
 
     <p class="text-[11px] text-slate-500">
       Cross-session metrics live on the
-      <a class="text-emerald-400 hover:underline" href="/analytics">Analytics page</a>.
+      <a class="text-accent-brand hover:underline" href="/analytics">Analytics page</a>.
     </p>
   {/if}
 </div>

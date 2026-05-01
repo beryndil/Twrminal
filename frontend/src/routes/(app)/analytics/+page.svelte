@@ -132,7 +132,7 @@
           </div>
           <div class="mt-1 text-[11px] text-slate-500">
             {#if billing.showTokens}
-              subscription billing — see <a class="text-emerald-400 hover:underline" href="/tokens"
+              subscription billing — see <a class="text-accent-brand hover:underline" href="/tokens"
                 >/tokens</a
               > for per-session
             {:else}

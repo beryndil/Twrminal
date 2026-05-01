@@ -281,7 +281,7 @@
       </p>
       <p class="mt-1 text-[11px] text-slate-500">
         Memory CRUD ships in Phase 4 — backed by the
-        <code class="rounded bg-slate-800 px-1 text-emerald-400">tag_memory</code> system-prompt layer.
+        <code class="rounded bg-slate-800 px-1 text-accent-brand">tag_memory</code> system-prompt layer.
       </p>
     </section>
 
@@ -378,7 +378,7 @@
         <span
           class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full
             {agent.state === 'open'
-            ? 'bg-emerald-900/60 text-emerald-300'
+            ? 'bg-accent-brand-soft/60 text-accent-brand'
             : 'bg-slate-800 text-slate-500'}"
           aria-hidden="true">♥</span
         >
@@ -399,17 +399,17 @@
         <li class="flex items-center gap-2 text-slate-400">
           <span
             class="h-1.5 w-1.5 rounded-full
-              {agent.state === 'open' ? 'bg-emerald-500' : 'bg-slate-600'}"
+              {agent.state === 'open' ? 'bg-accent-brand' : 'bg-slate-600'}"
             aria-hidden="true"
           ></span>
           Claude {agent.state === 'open' ? 'connected' : 'unreachable'}
         </li>
         <li class="flex items-center gap-2 text-slate-400">
-          <span class="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>
+          <span class="h-1.5 w-1.5 rounded-full bg-accent-brand" aria-hidden="true"></span>
           Recovery armed
         </li>
         <li class="flex items-center gap-2 text-slate-400">
-          <span class="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>
+          <span class="h-1.5 w-1.5 rounded-full bg-accent-brand" aria-hidden="true"></span>
           Auto-save active
         </li>
       </ul>
@@ -494,7 +494,7 @@
         {/if}
         <button
           type="button"
-          class="rounded bg-emerald-600 px-2 py-1 text-[11px] hover:bg-emerald-500
+          class="rounded bg-accent-brand px-2 py-1 text-[11px] hover:bg-accent-brand/90
             disabled:opacity-50"
           onclick={saveInstructions}
           disabled={!instructionsDirty || instructionsSaving}

@@ -48,7 +48,7 @@
     data-testid="sidebar-nav-sessions"
     class="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors
       {isActive('/')
-      ? 'bg-emerald-900/40 text-emerald-300'
+      ? 'bg-accent-brand-soft/40 text-accent-brand'
       : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}"
   >
     <svg
@@ -77,7 +77,7 @@
     data-testid="sidebar-nav-tags"
     class="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors
       {isActive('/tags')
-      ? 'bg-emerald-900/40 text-emerald-300'
+      ? 'bg-accent-brand-soft/40 text-accent-brand'
       : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}"
   >
     <svg
@@ -102,7 +102,7 @@
     data-testid="sidebar-nav-memories"
     class="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors
       {isActive('/memories')
-      ? 'bg-emerald-900/40 text-emerald-300'
+      ? 'bg-accent-brand-soft/40 text-accent-brand'
       : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}"
   >
     <svg
@@ -126,7 +126,7 @@
     data-testid="sidebar-nav-analytics"
     class="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors
       {isActive('/analytics')
-      ? 'bg-emerald-900/40 text-emerald-300'
+      ? 'bg-accent-brand-soft/40 text-accent-brand'
       : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}"
   >
     <svg

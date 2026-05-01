@@ -62,7 +62,7 @@
   {:else}
     <span
       class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full
-        bg-emerald-700 text-[10px] font-semibold text-white"
+        bg-accent-brand/85 text-[10px] font-semibold text-white"
       aria-hidden="true"
     >
       {avatarText}
