@@ -23,6 +23,9 @@ Master plan: `~/.claude/plans/methodical-clearing-backlog.md`.
 - `perf(ui): memoize tool-call input pretty-print at reducer; not per delta` — `f86b086`
 - `feat(titles): add agent.title_suggest_model override; recommend Haiku` — `ffcdd1a`
 - `feat(cli): add bearings status and bearings log subcommands` — `d86454b`
+- `feat(synth-gate): work_evidence endpoint + bearings verify CLI` — `defbcf4`
+- `fix(claude-settings): explicit allow for mcp__bearings__bash + siblings` — `e95700f`
+- `feat(ui): persistent attachment chips below sent user bubbles` — `9527ada`
 
 **Deferred to follow-up plans (don't re-list under their own headers below):**
 - Bulk retitle from checklist view → `~/.claude/plans/bulk-retitling-checklist.md`
@@ -30,10 +33,7 @@ Master plan: `~/.claude/plans/methodical-clearing-backlog.md`.
 - Spawn-from-reply Wave 3 → `~/.claude/plans/classifying-spawn-reply-wave-3.md`
 
 **Still on this TODO (not yet planned):**
-- Synth-gate executor DONE callbacks against artifact evidence (auto_driver discipline gap).
-- Investigation: why `mcp__bearings__bash` denied under `bypassPermissions`.
-- Persistent attachment chips below user bubbles (composer post-send visibility).
-- v1.0.0 manual smoke test on Kubuntu + Hyprland + Chrome.
+- v1.0.0 manual smoke test on Kubuntu + Hyprland + Chrome (only outstanding sweep item — needs UI session, can't run from terminal).
 
 Bonus discovery: `bearings status` reports 269 open chat sessions out of
 709 total — large unclosed-session backlog worth a future cleanup pass
