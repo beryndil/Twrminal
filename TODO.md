@@ -86,6 +86,24 @@ the other tests in the file.
 
 ## Root-cause: why `mcp__bearings__bash` denied under `bypassPermissions` — 2026-04-27
 
+**2026-04-30 update — partial fix shipped.** Investigation confirmed
+hypothesis 1 (settings-merge) and disproved hypothesis 2 (PreToolUse
+hook). Applied conservative fix:
+`/home/beryndil/Projects/Bearings/.claude/settings.json` now
+explicitly allows `mcp__bearings__bash`,
+`mcp__bearings__get_tool_output`, and `mcp__bearings__dir_init`. This
+removes the merge ambiguity without flipping `defaultMode` in the
+project file (which would be surprising for anyone cloning the repo).
+Hypothesis 2 ruled out: PreToolUse hooks are only `Write|Edit`
+(`gsd-prompt-guard.js`, `check-freeze.sh`, `lockout.py pre-tool-use`)
+plus a single `Bash` matcher (`check-careful.sh`) that no-ops unless
+`careful.enabled` state file is present in the project; none could
+match `mcp__bearings__bash`. Hypothesis 3 (broker race) remains
+plausible but low-probability and unverified — the defense-in-depth
+from #520 closes the silent-halt class regardless.
+
+**Original investigation notes preserved below for context.**
+
 Surfaced from audit item #520 executor (this commit). The defensive
 broadening of `tool_deny_callback.py` ensures we no longer silently halt
 when ANY tool gets denied, but the upstream root cause of the deny on

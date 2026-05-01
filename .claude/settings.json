@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Edit(/home/beryndil/Projects/Bearings/**)",
-      "Write(/home/beryndil/Projects/Bearings/**)"
+      "Write(/home/beryndil/Projects/Bearings/**)",
+      "mcp__bearings__bash",
+      "mcp__bearings__get_tool_output",
+      "mcp__bearings__dir_init"
     ]
   }
 }
