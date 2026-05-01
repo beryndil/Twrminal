@@ -74,12 +74,19 @@ from .vault import (
     VaultSearchHit,
     VaultSearchOut,
 )
+from .work_evidence import (
+    BashFailure,
+    LinkedChecklistItem,
+    ToolSummary,
+    WorkEvidence,
+)
 
 __all__ = [
     "AnalyticsSummaryOut",
     "ArtifactOut",
     "ArtifactRegister",
     "Attachment",
+    "BashFailure",
     "AutoRunStart",
     "AutoRunStatus",
     "ChecklistOut",
@@ -97,6 +104,7 @@ __all__ = [
     "ItemOut",
     "ItemToggle",
     "ItemUpdate",
+    "LinkedChecklistItem",
     "MessageOut",
     "MessagePatchBody",
     "NewSessionSpec",
@@ -143,6 +151,7 @@ __all__ = [
     "TodosOut",
     "TokenTotalsOut",
     "ToolCallOut",
+    "ToolSummary",
     "TopTag",
     "UploadOut",
     "VaultDocOut",
@@ -150,4 +159,5 @@ __all__ = [
     "VaultIndexOut",
     "VaultSearchHit",
     "VaultSearchOut",
+    "WorkEvidence",
 ]

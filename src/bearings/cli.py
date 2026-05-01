@@ -320,6 +320,21 @@ def _add_status_parser(sub: _SubParsers) -> None:
     )
 
 
+def _add_verify_parser(sub: _SubParsers) -> None:
+    verify = sub.add_parser(
+        "verify",
+        help=("Print synth-gate work-evidence for an executor session (decision-discipline §4)."),
+    )
+    verify.add_argument("session", help="Executor session id to verify")
+    verify.add_argument("--host", default=None, help="Server host (default: from config)")
+    verify.add_argument("--port", type=int, default=None, help="Server port (default: from config)")
+    verify.add_argument(
+        "--token",
+        default=None,
+        help="Auth token (default: from config auth.token when auth.enabled)",
+    )
+
+
 def _add_log_parser(sub: _SubParsers) -> None:
     log_cmd = sub.add_parser(
         "log",
@@ -361,6 +376,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_window_parser(sub)
     _add_send_parser(sub)
     _add_status_parser(sub)
+    _add_verify_parser(sub)
     _add_log_parser(sub)
     _add_here_parser(sub)
     _add_pending_parser(sub)
@@ -766,6 +782,56 @@ def _handle_status_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_verify_command(args: argparse.Namespace) -> int:
+    """Print synth-gate evidence for one executor session. The
+    orchestrator (Dave or LLM) reads this output before toggling the
+    master checklist item per `~/.claude/rules/decision-discipline.md` §4."""
+    cfg = load_settings()
+    host = args.host or cfg.server.host
+    port = args.port or cfg.server.port
+    token = args.token or (cfg.auth.token if cfg.auth.enabled else None)
+    base = f"http://{host}:{port}"
+    try:
+        evidence = _http_get_json(f"{base}/api/sessions/{args.session}/work_evidence", token)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(f"session : {evidence.get('session_id', args.session)}")
+    linked = evidence.get("linked_checklist")
+    if linked:
+        check = linked.get("checked_at") or "(unchecked)"
+        block = f"  blocked: {linked['blocked_reason_text']}" if linked.get("blocked_at") else ""
+        print(f"item    : #{linked['item_id']} {linked.get('label', '')}  [{check}]{block}")
+    else:
+        print("item    : (no linked checklist item)")
+    print("tools   :")
+    for t in evidence.get("tool_summary", []):
+        marker = "" if t["failed"] == 0 else f"  ⚠ {t['failed']} failed"
+        print(f"  {t['name']:14}  ok={t['ok']:3}  fail={t['failed']:3}{marker}")
+    files = evidence.get("files_modified", [])
+    if files:
+        print(f"files   : {len(files)} modified")
+        for p in files[-10:]:
+            print(f"  {p}")
+        if len(files) > 10:
+            print(f"  ... ({len(files) - 10} more)")
+    commits = evidence.get("bash_commits", [])
+    if commits:
+        print(f"commits : {len(commits)}")
+        for c in commits[-5:]:
+            print(f"  {c}")
+    failures = evidence.get("bash_failures", [])
+    if failures:
+        print(f"bash failures: {len(failures)}")
+        for f in failures[-3:]:
+            cmd = f["cmd"][:80]
+            print(f"  ! {cmd}")
+    snippet = evidence.get("last_assistant_snippet")
+    if snippet:
+        print(f"last say:\n  {snippet}")
+    return 0
+
+
 def _handle_log_command(args: argparse.Namespace) -> int:
     """Tail the last N messages from one session. Default session is
     the most-recently-updated row (sessions are returned newest-first
@@ -816,6 +882,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "window": _handle_window_command,
         "send": _handle_send_command,
         "status": _handle_status_command,
+        "verify": _handle_verify_command,
         "log": _handle_log_command,
         "here": _run_here,
         "pending": _run_pending,
