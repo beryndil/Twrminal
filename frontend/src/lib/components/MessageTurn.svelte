@@ -10,6 +10,7 @@
   import { formatDuration } from '$lib/utils/datetime';
   import CollapsibleBody from './CollapsibleBody.svelte';
   import ClaudeMark from './icons/ClaudeMark.svelte';
+  import SentAttachmentChips from './SentAttachmentChips.svelte';
 
   type Props = {
     user: Message | null;
@@ -348,6 +349,7 @@
       content={user.content}
       {highlightQuery}
     />
+    <SentAttachmentChips attachments={user.attachments} />
   </article>
 {/if}
 
