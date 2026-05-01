@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-05-01
+
+**v1.0.1 — wiring honesty.** First of three v1.0.x hardening patches
+(plan `~/.claude/plans/tightening-dashboard-rough-edges.md`, Phase A).
+Targets dashboard surfaces that shipped at v1.0.0 with stale literals
+or unbound state, plus dead diagnostic code that's been removable
+since v0.14.
+
+### Changed
+
+- **Inspector tab state is preserved across switches.** All four tabs
+  (Context / Files / Changes / Metrics) stay mounted; inactive ones
+  hide via the `hidden` attribute rather than unmounting. Pre-fix, a
+  dirty Session Instructions draft, expanded system-prompt layers,
+  and tool-call scroll positions were destroyed every time the user
+  flipped tabs — silent data loss. (`Inspector.svelte`.)
+- **Metrics tab carries real per-session metrics** instead of a "ships
+  in Phase 6" placeholder pointing at a phase that already shipped.
+  Token totals (input/output/cache-read/cache-write), tool-call counts
+  (total/running/failed), and cumulative tool-call elapsed render on
+  the same fetch cadence ContextTab uses. The Analytics page link
+  stays as the cross-session entrypoint. (`inspector/MetricsTab.svelte`.)
+- **StatusBar version, recovery, and auto-save read live state.**
+  Version label binds to `versionWatcher.version` reactively; a server
+  upgrade refreshes the label within the watcher's 60s poll without
+  waiting for a seamless reload. Recovery and Auto-save dots dim and
+  their text flips to "Idle" when `agent.state !== 'open'` — matches
+  reality (recovery is the WS reconnect loop, auto-save is the WS
+  persistence path; neither is armed while disconnected).
+  (`StatusBar.svelte`, `version_watcher.svelte.ts`.)
+- **Analytics Cost-tile subtitle honors `billing.showTokens`.** PAYG
+  mode keeps the existing "PAYG total" subtitle; subscription mode
+  shows "subscription billing — see /tokens for per-session" so the
+  tile no longer lies to subscription-mode users. (`analytics/+page.svelte`.)
+
+### Removed
+
+- **Theme-diag reporter and `/api/diag/theme` endpoint.** The inline
+  reporter in `app.html` (added 2026-04-23 to verify theme wiring
+  without DevTools) and its server-side log sink at
+  `routes_diag.py` were marked removable since v0.14. The theming
+  investigation has long since closed; the reporter still fired on
+  every page load. Both gone. (`app.html`, `server.py`,
+  `api/routes_diag.py` deleted.)
+
+### Notes
+
+- `.research/` was already in `.gitignore` (line 59) — no change
+  needed for the audit's "untracked dirties git status" item.
+- Frontend test baseline unchanged at 902 passed + 4 pre-existing
+  CommandMenu `$effect` errors (out-of-scope for v1.0.1).
+- Backend gates: ruff + format + mypy + pytest (1376 passed) all
+  green.
+
 ## [1.0.0] - 2026-04-29
 
 **v1.0.0 — dashboard redesign complete.** Bearings exits 0.x with the
