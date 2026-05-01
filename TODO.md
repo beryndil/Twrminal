@@ -8,6 +8,39 @@ verbatim at `TODO-archive-2026-04-22.md` next to this file.
 
 ---
 
+## 2026-05-01 — v1-cutover residuals (handed off from Bearings sessions)
+
+Three checklist items from the v1 cutover that can't complete in their
+own Bearings sessions; tracked here so the next agent picks them up
+when the gate clears.
+
+- **D.3 Retire v0.17.x** — disable `bearings.service` (user unit) and
+  archive `~/.local/share/bearings/` (currently 932 MB, includes Firefox
+  SSB profile that holds write locks). The agent assigned to this in
+  session `e8c1d321cbdf417992c6cd149b2ccc3d` flagged: the service is
+  hosting the SDK process executing the conversation, so a `disable
+  --now` self-kills mid-execution. **Gate: run from outside any
+  v0.17-hosted session** (fresh shell, or a v1-hosted Bearings session
+  on port 8788). Sub-steps:
+  1. Stop Firefox SSB ("Bearings" PWA, currently PID 2329779) so its
+     profile inside `bearings/firefox-ssb/` releases its locks.
+  2. `systemctl --user disable --now bearings.service`.
+  3. `mv ~/.local/share/bearings/ ~/.local/share/bearings.archive/<DATE>/`
+     — note `~/.local/share/bearings.archive/db.sqlite.20260501` already
+     exists from A.1, so use a dated subdir to avoid clobbering.
+  4. Confirm 8787 is free; D.4 (re-port v1) is decided as **skip**, so
+     8788 stays as v1's port.
+
+- **C.1 Days 1–7 review** — elapsed-time gate. Probe timer
+  `bearings-v1-probe.timer` installed 2026-05-01 15:11 CDT; today is
+  day 1 of 7. Re-evaluate ~2026-05-08 once 7 daily probe runs have
+  landed in `~/.local/share/bearings-v1/probes/`. Done-when: 7 logs
+  present, all P0/P1 issues triaged per `docs/dogfood/issue-triage.md`.
+
+- **C.2 Days 8–14 review** — elapsed-time gate (sibling of C.1).
+  Re-evaluate ~2026-05-15. Done-when: 14 daily probe runs total, no
+  open P0/P1.
+
 ## 2026-04-30 — post-v1.0.0 backlog sweep
 
 Master plan: `~/.claude/plans/methodical-clearing-backlog.md`.
