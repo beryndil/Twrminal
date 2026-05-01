@@ -28,6 +28,13 @@
  * dark-ramp.
  */
 
+/* `:root` is bound here on top of the explicit `[data-theme='evergreen']`
+ * selector so a no-data-theme element (the synchronous fallback before
+ * the boot script lands) renders with evergreen's palette — the actual
+ * default theme as of v1.0.0. Pre-v1.0.2 the `:root` fallback lived in
+ * `tokens.css` against midnight-glass's block, so a boot-script failure
+ * painted midnight-glass instead of evergreen. v1.0.2 realigned. */
+:root,
 [data-theme='evergreen'] {
   /* ----- Slate — deep blue-black ramp -----
    * 950 is the page background (the deepest blue-black sampled

@@ -18,14 +18,14 @@
  *   - `default`         (saved snapshot of the pre-Midnight-Glass palette)
  *   - `paper-light`     (light cream, flat — defined in `paper-light.css`)
  *
- * `:root` carries the midnight-glass values for a deliberate reason: an
- * element rendered before `data-theme` resolves still needs *some*
- * palette, and midnight-glass's variables happen to live in this file.
- * Once the boot script sets `data-theme="evergreen"` (or whatever the
- * user picked), the per-theme block in `evergreen.css` (or peer)
- * overrides every variable. A future refactor could split midnight-
- * glass into its own file too, leaving `:root` empty — for now the
- * fallback comes free without code motion.
+ * `:root` is bound in `evergreen.css` (alongside `[data-theme='evergreen']`)
+ * so an element rendered before `data-theme` resolves still gets
+ * the *active default* palette. v1.0.0 flipped the active default
+ * to evergreen; v1.0.2 (this file's history note) realigned the
+ * synchronous-fallback `:root` selector onto evergreen so a
+ * boot-script failure paints the right theme instead of falling
+ * back to midnight-glass. Motion tokens stay on `:root` here —
+ * they're palette-independent and bind once.
  */
 
 /* ----- Motion tokens (theme-independent) -----
@@ -56,8 +56,14 @@
   --motion-duration-slow: 300ms;
 }
 
-/* ----- Active default: Midnight Glass ----- */
-:root,
+/* ----- Midnight Glass theme palette -----
+ * Pre-v1.0.2 this block also matched `:root` so the no-data-theme
+ * synchronous-fallback rendered as midnight-glass. v1.0.0 flipped
+ * the actual default to evergreen, leaving the fallback case
+ * out-of-sync; v1.0.2 moved the `:root` selector onto evergreen's
+ * variable block (in `evergreen.css`) so a boot-script failure
+ * still paints the right theme. This block now applies only when
+ * the user explicitly picks midnight-glass. */
 [data-theme='midnight-glass'] {
   /* Slate — warmer navy base so the UI reads as clearly different from
      Tailwind's cool-gray default slate. The blue channel is pushed well
