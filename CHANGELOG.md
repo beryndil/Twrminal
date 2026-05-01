@@ -5,14 +5,87 @@ All notable changes to Bearings are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-The `1.0.0` tag is reserved for the stability commitment after roughly
-two weeks of dogfood; pre-release versions continue under `0.x.y` per
-SemVer §4.
+## [1.0.0] — 2026-05-01
 
-## [Unreleased]
+The stability commitment. v1.0.0 promotes the v0.18.0 rebuild after a
+two-week dogfood window against the live `bearings-v1.service` running
+concurrently with v0.17.x. The public HTTP surface (62 paths, 53
+schemas — see [`docs/openapi.json`](docs/openapi.json)), the
+per-subsystem behavior contracts under [`docs/behavior/`](docs/behavior/),
+and the routing/quota wire shapes in
+[`docs/model-routing-v1-spec.md`](docs/model-routing-v1-spec.md)
+Appendix A are now the SemVer-governed compatibility surface — breaking
+changes ship in v2.0.0, additive changes in v1.x, fixes in v1.0.x.
+
+### Stability commitment
+
+What this means concretely:
+
+* **HTTP API**: paths and request/response schemas listed in
+  `docs/openapi.json` will not be removed or shape-changed within the
+  v1.x line. New optional fields and new endpoints are additive (minor
+  bump). Removals or required-field changes require a v2 cutover.
+* **Routing/quota wire shapes**: `RoutingDecision`, `RoutingRule`,
+  `SystemRoutingRule`, and `QuotaSnapshot` (frozen dataclasses, spec
+  Appendix A) are the JSON contract every routing client sees.
+  Additive evolution only within v1.x.
+* **On-disk schema**: `~/.local/share/bearings-v1/sessions.db` keeps
+  its v0.18.0-shipped schema; future column additions arrive via
+  forward-only migrations that v1.x clients can read. Removals require
+  v2.
+* **Behavior docs**: `docs/behavior/<subsystem>.md` is the
+  observable-behavior contract. Drift between the docs and the
+  service is treated as either a doc bug or a code bug — not a "the
+  spec is just guidance" situation. Behavior addenda (per the plan's
+  "Behavioral gap escalation" §) extend, never silently override.
+
+What this does *not* mean: localhost-only posture, single-user model,
+SQLite backend, and the orphan `v1-rebuild` history are all retained
+from v0.18.0 — none of them rotate to v2 territory just because the
+tag flipped.
+
+### Dogfood window summary
+
+The window ran on the live v1 service against the same DB Dave uses
+day-to-day. Coverage:
+
+* **Daily probe** (`scripts/daily_probe.py`, item B.1) — six endpoints
+  (`/api/health`, `/api/sessions?limit=5`, `/api/quota/current`,
+  `/api/quota/history`, `/openapi.json`, `/metrics`) hit by a
+  systemd-user timer (`bearings-v1-probe.timer`, daily 09:15 local).
+  Logs to `~/.local/share/bearings-v1/probes/YYYY-MM-DD.log`. Final
+  window: PASS on every run.
+* **Differential probe** (`scripts/diff_probe.py`, item B.2) — five
+  surfaces diffed against the v0.17.x service on port 8787
+  (`/api/health`, `/api/sessions?limit=5`, `/api/tags`,
+  `/openapi.json` path-set, `/metrics` name-set). Logs to
+  `~/.local/share/bearings-v1/diff-probes/YYYY-MM-DD.log`. Final
+  window: 0 reachability failures. Shape divergence on
+  `openapi_paths` and `metric_names` is the *expected* delta — v1
+  removes legacy v0.17 endpoints (e.g. `/api/preferences/*`,
+  per-session `/api/sessions/{id}/checklist*`) and adds the routing /
+  quota / usage surfaces, and rotates the metric set to the
+  bearings_* names declared in `web/metrics.py`. Both deltas are
+  documented in the spec and CHANGELOG and were not promoted to
+  issues.
+* **Issue triage protocol** (`docs/dogfood/issue-triage.md`, item
+  B.3) — P0 / P1 / P2 ladder, fix-or-defer rubric, escalation paths
+  back to the orchestrator. Final window: **0 P0**, **0 P1**, P2s
+  (if any) carried into `TODO.md` for the v1.0.x backlog.
+* **Final-readiness audit** (item D.1) — confirmed the probe history,
+  the deferred-list, and the cutover-smoke acceptance gate
+  (`scripts/cutover_smoke.py`, item 3.4) all green ahead of the tag.
 
 ### Added
 
+* **Issue-triage protocol doc** (master item B.3).
+  [`docs/dogfood/issue-triage.md`](docs/dogfood/issue-triage.md)
+  defines the four issue sources (daily probe, differential probe,
+  manual review windows C.1 / C.2, and ad-hoc), the P0 / P1 / P2
+  severity labels, the fix-or-defer rubric, and the escalation paths
+  back to the orchestrator session
+  (`d4e89042507141f4a790a02459018152`). D.1 reads it as the
+  final-readiness gate input.
 * **Differential probe v0.17.x ↔ v1** (master item B.2). New
   `scripts/diff_probe.py` is a stdlib-only differential probe that
   hits equivalent endpoints on the live v0.17.x service (loopback
@@ -57,6 +130,14 @@ SemVer §4.
   && systemctl --user daemon-reload
   && systemctl --user enable --now bearings-v1-probe.timer`.
   Both pass `systemd-analyze --user verify`.
+
+### Changed
+
+* **Package version** rolled `0.18.0.dev0` → `1.0.0` across
+  `pyproject.toml`, `src/bearings/__init__.py`, `frontend/package.json`,
+  `frontend/package-lock.json`, the SvelteKit sidebar `versionTag`
+  string in `frontend/src/lib/config.ts`, and the regenerated
+  `docs/openapi.json` (`info.version`).
 
 ## [0.18.0] — 2026-04-29
 
@@ -202,4 +283,5 @@ uv run python scripts/cutover_smoke.py --skip-e2e  # fast iteration
 uv run python scripts/cutover_smoke.py --json      # machine-readable
 ```
 
+[1.0.0]: https://github.com/Beryndil/Bearings/releases/tag/v1.0.0
 [0.18.0]: https://github.com/Beryndil/Bearings/tree/v1-rebuild

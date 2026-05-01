@@ -280,7 +280,7 @@ export const CHAT_LINK_REL = "noopener noreferrer";
 
 export const SIDEBAR_STRINGS = {
   heading: "Bearings",
-  versionTag: "v0.18.0-dev",
+  versionTag: "v1.0.0",
   sessionsLabel: "Session list",
   tagFilterLabel: "Filter by tag",
   tagFilterClearLabel: "Clear filter",

@@ -1,6 +1,6 @@
 [project]
 name = "bearings"
-version = "0.18.0.dev0"
+version = "1.0.0"
 description = "Localhost web UI that streams Claude Code agent sessions (v1 rebuild)."
 readme = "README.md"
 requires-python = ">=3.12"

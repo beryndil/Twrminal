@@ -15,9 +15,13 @@ from bearings.cli import main
 
 
 def test_package_exposes_version() -> None:
-    """``bearings.__version__`` must be a non-empty PEP 440 dev string."""
+    """``bearings.__version__`` must be a non-empty PEP 440 release string."""
     assert bearings.__version__
-    assert "dev" in bearings.__version__
+    # Released as 1.0.0 (D.2). Pre-1.0 dev installs were ``0.18.0.dev0``;
+    # the contract is now any non-empty PEP 440 string the SDK can parse.
+    parts = bearings.__version__.split(".")
+    assert len(parts) >= 2
+    assert parts[0].isdigit()
 
 
 def test_cli_entry_point_runs_clean(capsys: pytest.CaptureFixture[str]) -> None:

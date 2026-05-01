@@ -1,6 +1,6 @@
 {
   "name": "bearings-frontend",
-  "version": "0.18.0-dev0",
+  "version": "1.0.0",
   "private": true,
   "description": "Bearings v1 SvelteKit frontend.",
   "type": "module",

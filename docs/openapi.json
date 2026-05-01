@@ -3,7 +3,7 @@
   "info": {
     "title": "Bearings",
     "description": "Localhost web UI that streams Claude Code agent sessions (v1 rebuild).",
-    "version": "0.18.0.dev0"
+    "version": "1.0.0"
   },
   "paths": {
     "/api/tags": {

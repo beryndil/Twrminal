@@ -10,8 +10,9 @@ each running agent as a sidebar row, captures its conversation transcript
 in SQLite, and exposes a typed HTTP/WebSocket API for paired chats,
 checklists, vault, and per-message routing/usage.
 
-This branch (`v1-rebuild`) is the **v0.18.0 rebuild** with model-routing v1
-shipped from day one. v0.17.x lives at
+This branch (`v1-rebuild`) is the **v1.0.0 release** — the stability
+commitment after a two-week dogfood window on the v0.18.0 cutover, with
+model-routing v1 shipped from day one. v0.17.x lives at
 `/home/beryndil/Projects/Bearings/` and is **behavioral reference only**
 past Phase 0.
 

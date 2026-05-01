@@ -57,7 +57,7 @@ wheels = [
 
 [[package]]
 name = "bearings"
-version = "0.18.0.dev0"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
