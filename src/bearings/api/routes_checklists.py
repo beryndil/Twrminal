@@ -19,10 +19,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from bearings import metrics
 from bearings.agent.auto_driver import DriverConfig
+from bearings.agent.title_suggester import suggest_titles
 from bearings.api.auth import require_auth
 from bearings.api.models import (
     AutoRunStart,
     AutoRunStatus,
+    BulkTitleSuggestItem,
+    BulkTitleSuggestResult,
     ChecklistOut,
     ChecklistUpdate,
     ItemCreate,
@@ -202,6 +205,89 @@ async def toggle_item(session_id: str, item_id: int, body: ItemToggle, request: 
     if body.checked and await store.is_checklist_complete(conn, session_id):
         await store.close_session(conn, session_id)
     return ItemOut(**row)
+
+
+@router.post("/suggest_item_titles", response_model=BulkTitleSuggestResult)
+async def suggest_item_titles(session_id: str, request: Request) -> BulkTitleSuggestResult:
+    """Bulk title suggester for the master checklist view
+    (`~/.claude/plans/bulk-retitling-checklist.md`).
+
+    Lists every item in this checklist that has `chat_session_id IS
+    NOT NULL` and runs the existing single-session `suggest_titles`
+    helper against each linked chat. Returns `{items: [...]}` with
+    one row per linked item, each carrying either three candidate
+    titles or an inline `error` reason — per-item failures don't
+    abort the batch.
+
+    Gating mirrors the single-session route: 503 when
+    `agent.enable_llm_title_suggest` is False; 400 when the parent
+    isn't `kind=checklist` (via `_require_checklist_session`).
+
+    Concurrency is intentionally serial. Parallelism is a v2 — the UI
+    needs a Cancel button before parallel calls earn their keep."""
+    await _require_checklist_session(request, session_id)
+    conn = request.app.state.db
+    settings = request.app.state.settings
+
+    if not settings.agent.enable_llm_title_suggest:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "LLM title-suggest disabled in config "
+                "(set agent.enable_llm_title_suggest = true in config.toml)"
+            ),
+        )
+
+    checklist = await store.get_checklist(conn, session_id)
+    if checklist is None:
+        raise HTTPException(status_code=404, detail="checklist not found")
+
+    rows: list[BulkTitleSuggestItem] = []
+    fallback_model = settings.agent.title_suggest_model or settings.agent.model
+    for item in checklist.get("items", []):
+        chat_id = item.get("chat_session_id")
+        if not chat_id:
+            continue
+        chat_row = await store.get_session(conn, chat_id)
+        if chat_row is None:
+            rows.append(
+                BulkTitleSuggestItem(
+                    item_id=item["id"],
+                    chat_session_id=chat_id,
+                    label=item["label"],
+                    current_title=None,
+                    error="linked chat session not found",
+                )
+            )
+            continue
+        # Use Haiku via title_suggest_model when set; fall back to
+        # the chat's own model so an install without the override
+        # behaves identically to the single-session route.
+        model = settings.agent.title_suggest_model or chat_row.get("model") or fallback_model
+        messages = await store.list_messages(conn, chat_id)
+        titles, notes = await suggest_titles(messages, model=model)
+        if titles is None:
+            rows.append(
+                BulkTitleSuggestItem(
+                    item_id=item["id"],
+                    chat_session_id=chat_id,
+                    label=item["label"],
+                    current_title=chat_row.get("title"),
+                    error=notes or "title suggester failed",
+                )
+            )
+            continue
+        rows.append(
+            BulkTitleSuggestItem(
+                item_id=item["id"],
+                chat_session_id=chat_id,
+                label=item["label"],
+                current_title=chat_row.get("title"),
+                candidates=titles,
+            )
+        )
+
+    return BulkTitleSuggestResult(items=rows)
 
 
 @router.post("/items/{item_id}/link", response_model=ItemOut)

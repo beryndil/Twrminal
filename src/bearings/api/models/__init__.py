@@ -55,7 +55,7 @@ from .sessions import (
     SessionOut,
     SessionUpdate,
 )
-from .suggest_titles import SuggestTitlesResult
+from .suggest_titles import BulkTitleSuggestItem, BulkTitleSuggestResult, SuggestTitlesResult
 from .tags import (
     TagCreate,
     TagGroup,
@@ -87,6 +87,8 @@ __all__ = [
     "ArtifactRegister",
     "Attachment",
     "BashFailure",
+    "BulkTitleSuggestItem",
+    "BulkTitleSuggestResult",
     "AutoRunStart",
     "AutoRunStatus",
     "ChecklistOut",
