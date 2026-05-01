@@ -13,6 +13,32 @@ SemVer §4.
 
 ### Added
 
+* **Differential probe v0.17.x ↔ v1** (master item B.2). New
+  `scripts/diff_probe.py` is a stdlib-only differential probe that
+  hits equivalent endpoints on the live v0.17.x service (loopback
+  port 8787) and the v1 service (port 8788), then diffs structural
+  shape and logs the deltas. Three diff modes cover the
+  heterogeneous surface: `json_shape` (recursive type-skeleton diff
+  for `/api/health`, `/api/sessions?limit=5`, `/api/tags`),
+  `openapi_paths` ((METHOD, path) set diff for `/openapi.json` —
+  the highest-leverage mode, surfacing every endpoint added /
+  removed / renamed in v1), and `metric_names` (Prometheus
+  `# HELP <name>` set diff for `/metrics`). Logs one JSONL record
+  per probe plus a `SUMMARY` trailer to
+  `~/.local/share/bearings-v1/diff-probes/YYYY-MM-DD.log` (mode
+  0700, append). Exit 0 = both sides reachable on every probe,
+  1 = any reachability failure. Shape divergence is informational
+  (logged, not gated) — observing divergence over the cutover
+  window is the point. Backed by 28 unit tests in
+  `tests/test_diff_probe.py` covering shape extraction,
+  shape diff, OpenAPI path-set diff, Prometheus parse, log
+  serialisation, and end-to-end orchestration through a fake
+  transport. The `[tool.mypy]` `mypy_path = "scripts"` entry in
+  `pyproject.toml` is added in the same commit so the test's
+  `TYPE_CHECKING` import resolves cleanly under
+  `mypy --strict`; this also clears the pre-existing
+  `import-not-found` baseline that `tests/test_cutover_smoke.py`
+  inherited from item 3.4.
 * **Daily probe + systemd-user timer** (master item B.1). New
   `scripts/daily_probe.py` is a stdlib-only health probe (no httpx
   / venv dependency) that hits `/api/health`, `/api/sessions?limit=5`,

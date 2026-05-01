@@ -104,6 +104,13 @@ strict = true
 # production code. mypy silently ignores the non-``.py`` shell scripts
 # in that directory.
 files = ["src", "tests", "scripts"]
+# ``scripts/`` is a flat package-less directory; without an explicit
+# search-path entry, ``TYPE_CHECKING`` imports in script-under-test
+# tests (``test_cutover_smoke.py``, ``test_diff_probe.py``) report
+# ``import-not-found`` even though the runtime importlib-spec-loader
+# resolves them. Pinning ``mypy_path`` makes mypy's resolver agree
+# with runtime.
+mypy_path = "scripts"
 warn_unused_configs = true
 warn_unreachable = true
 disallow_any_explicit = true
