@@ -140,6 +140,12 @@
    *   visually distinct ring; teal-cyan threads that needle. */
   --color-border-accent: var(--bearings-emerald-500);
   --color-accent-info: var(--bearings-emerald-500);
+  /* Brand affordance pinned to forest emerald — the v1.0.0 dashboard
+   * mockup binds every brand surface (active nav, "+ New Session"
+   * pill, primary buttons, brand glyph) to this hue. Soft companion
+   * is the deep emerald-900 used for tinted active-row backgrounds. */
+  --color-accent-brand: var(--bearings-emerald-500);
+  --color-accent-brand-soft: var(--bearings-emerald-900);
 
   /* ----- Shiki tokens (Track E2) — evergreen forest mood.
    * Keywords lean emerald (the brand bleeding into syntax);

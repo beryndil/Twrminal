@@ -179,6 +179,13 @@
   --color-accent-warn: var(--bearings-amber-500);
   --color-accent-danger: var(--bearings-rose-500);
   --color-accent-info: var(--bearings-sky-500);
+  /* Brand affordance — primary action surfaces, active nav, brand
+   * glyphs. Each theme aliases this to its own brand hue so non-
+   * evergreen themes don't carry evergreen's emerald in chrome
+   * surfaces. Midnight-glass binds it to the violet sky family it
+   * already uses for primary interactive states. */
+  --color-accent-brand: var(--bearings-sky-500);
+  --color-accent-brand-soft: var(--bearings-sky-900);
   --color-mark-bg: var(--bearings-amber-500);
   --color-mark-text: var(--bearings-amber-100);
   --color-scrollbar-thumb: var(--bearings-slate-700);

@@ -144,6 +144,12 @@
   --color-mark-text: var(--bearings-amber-900);
   --color-scrollbar-thumb: var(--bearings-slate-500);
   --color-scrollbar-thumb-hover: var(--bearings-slate-300);
+  /* Brand affordance — paper-light leans on darkened sky-500 for AA
+   * contrast on the cream surface; the soft companion is the lighter
+   * sky-200 end so tinted surfaces don't go too saturated against
+   * the cream. */
+  --color-accent-brand: var(--bearings-sky-500);
+  --color-accent-brand-soft: var(--bearings-sky-200);
 
   /* ----- Shiki tokens (Track E2) — light-theme tuning.
    * Keywords stay sky-blue (paper-light's sky is now darker, so this

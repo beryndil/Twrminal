@@ -39,6 +39,14 @@ export default {
         orange: themed('orange', ['100', '600', '900']),
         teal: themed('teal', ['300', '900']),
         indigo: themed('indigo', ['300', '500', '900']),
+        // Semantic brand-affordance alias. Each theme rewires
+        // `--color-accent-brand` (and its soft companion) to its own
+        // primary hue so non-evergreen themes don't inherit
+        // evergreen's emerald in chrome surfaces (active nav, primary
+        // buttons, brand glyph). See `lib/themes/tokens.css` and
+        // each theme's variable block for the per-theme target.
+        'accent-brand': 'rgb(var(--color-accent-brand) / <alpha-value>)',
+        'accent-brand-soft': 'rgb(var(--color-accent-brand-soft) / <alpha-value>)',
       },
       // `flash-red` is used by ContextMeter when the current context window
       // crosses the empirical 32K-token recall-degradation threshold. The
