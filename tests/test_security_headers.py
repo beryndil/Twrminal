@@ -65,12 +65,17 @@ def test_csp_allows_localhost_websockets(client: TestClient) -> None:
     CSP, but the document that *opens* the socket is — so this
     clause has to land for the SvelteKit bundle to talk to
     /ws/sessions and /ws/agent regardless of which loopback the user
-    typed into the address bar."""
+    typed into the address bar.
+
+    IPv6 host-sources (e.g. `ws://[::1]:*`) are intentionally NOT
+    asserted: they're rejected by the CSP host-source grammar in
+    every browser (logged as 'invalid source' and ignored). Surfaced
+    by the v1.0.0 Playwright smoke pass on 2026-04-30."""
     resp = client.get("/api/health")
     csp = resp.headers.get("Content-Security-Policy", "")
     assert "ws://localhost:*" in csp
     assert "ws://127.0.0.1:*" in csp
-    assert "ws://[::1]:*" in csp
+    assert "ws://[::1]:*" not in csp
 
 
 @pytest.mark.parametrize(

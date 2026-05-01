@@ -105,7 +105,14 @@ def build_csp(*, script_hashes: Sequence[str] = ()) -> str:
     """
     parts = [
         "default-src 'self'",
-        "connect-src 'self' ws://localhost:* ws://127.0.0.1:* ws://[::1]:*",
+        # IPv6 host-sources (e.g. `ws://[::1]:*`) are not part of the
+        # CSP host-source grammar — every browser logs an "invalid
+        # source" warning and ignores the entry. Bearings binds
+        # 127.0.0.1 by default, so the IPv4 + DNS forms cover the
+        # actual reachable WS endpoints; users on a machine that
+        # binds the IPv6 loopback can override CSP via config if it
+        # ever matters.
+        "connect-src 'self' ws://localhost:* ws://127.0.0.1:*",
         "style-src 'self' 'unsafe-inline'",
     ]
     if script_hashes:
