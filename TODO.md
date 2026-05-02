@@ -8,11 +8,43 @@ When a TODO is resolved, strike it from this file in the same commit
 that lands the fix and cite the resolving commit hash in the removal
 trailer.
 
+## v1.1 closing-sweep (2026-05-02) — corrects v1.0's lying close
+
+The 2026-04-29 close of the v1 master checklist
+(`0f6e4006fb1d4340bda9983af3432064`) marked 29/29 items DONE without
+artifact verification. The 2026-05-02 audit
+(`bearings__get_tool_output toolu_01LjpFH7TnMzpGR81Z325Ky3`) found
+~25% of arch §1.1.5 unbuilt — including the entire session-create
+flow (button → broken route, no `POST /api/sessions`, NewSessionForm
+orphaned). The v1.1 closing-sweep
+(`~/.claude/plans/belated-closing-sweep.md`) closes the gap.
+
+What v1.1 ships:
+
+* **Phase 0.** ``POST /api/sessions`` + ``/sessions/new`` route +
+  NewSessionForm submit wiring.
+* **Phase 1.** RoutingRuleEditor mounted in ``/settings`` (system) +
+  ``/tags`` (per-tag); ``/tags`` and ``/analytics`` stub pages
+  replaced with real management surfaces; ChecklistChat orphan deleted.
+* **Phase 2.** ``PATCH /api/sessions/{id}/model`` (DB-only swap; live
+  runner forward deferred per "PATCH model" entry below) +
+  ``POST /api/sessions/{id}/regenerate``.
+
+What v1.1 defers (logged below):
+
+* PairedChatIndicator wiring.
+* PATCH model live runner forward.
+* The 12 spec'd route modules from arch §1.1.5 — all absent in v1.0
+  AND with zero v1 frontend consumers; deferred per the plan's
+  "KEEP only modules with a v1 frontend consumer" rule.
+* `bearings serve` CLI (entry below predates this sweep).
+* `/api/usage/headroom` rename (entry below predates this sweep).
+* Theme server-sync (entry below predates this sweep).
+
 ## Resolved by item 3.4 (final ledger sweep)
 
 The ledger entries below were swept on the cutover-smoke commit (item
-3.4, master id `0f6e4006fb1d4340bda9983af3432064` final entry). v1's
-build order has no further items, so this is the closing sweep.
+3.4, master id `0f6e4006fb1d4340bda9983af3432064` final entry).
 
 * **Item 2.5 — chat.md augmentation for non-routing inspector
   subsections.** Resolved by item 3.3 documentation pass (commit
@@ -140,6 +172,44 @@ label or `null`. Mount `PairedChatIndicator` in
 the lookup result. Same data also unblocks the sidebar annotation
 (`↳ <parent checklist title>` per paired-chats.md §"From the
 sidebar").
+
+#### Missing arch §1.1.5 route modules (deferred — no v1 UI consumer)
+
+The audit flagged 12 spec'd route modules absent from
+``src/bearings/web/routes/``:
+
+* ``sessions_bulk.py`` — bulk close/reopen/delete/tag.
+* ``checkpoints.py`` — chat-undo checkpoint CRUD.
+* ``templates.py`` — Templates CRUD.
+* ``reorg.py`` — session-reorg analyze + apply.
+* ``spawn_from_reply.py`` — ``+ SPAWN`` action on a reply.
+* ``reply_actions.py`` — inline reply-action execution.
+* ``artifacts.py`` — artifact register + serve.
+* ``commands.py`` — slash-command palette scan.
+* ``preferences.py`` — per-user preferences.
+* ``pending.py`` — ``.bearings/pending.toml`` ops.
+* ``history.py`` — ``history.jsonl`` reader.
+* ``config.py`` — ``/api/ui-config`` runtime knob exposure.
+
+Per-commit grep over ``frontend/src/**/*.{ts,svelte}`` (excluding
+test files) found **zero** consumers for any of these endpoints in
+v1.1's frontend tree. Building backend modules with no frontend
+caller is dead-weight code; deferring per the closing-sweep plan's
+"KEEP only modules with v1 frontend consumers" decision.
+
+The audit's claim that ``/api/checklists`` list+create is absent
+turned out to be a non-issue: checklists are sessions of
+``kind="checklist"``, so the unified ``/api/sessions`` list+create
+landed in this sweep covers them. The audit's claim about a
+session-level bulk-tag-set endpoint (``PUT /api/sessions/{id}/tags``)
+is similarly unbacked — the existing per-tag attach/detach
+endpoints are what the v1 frontend uses.
+
+**Action when each module's UI consumer lands**: implement the
+backend module from arch §1.1.5 in the same commit that lands the
+frontend caller. The arch doc is the source of truth for the route
+shape; the per-module test patterns in
+``tests/test_*_api.py`` are the reference for the integration tests.
 
 #### PATCH model: live runner forward (deferred)
 
