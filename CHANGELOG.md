@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-05-01
+
+**v1.0.4 — spawn-from-reply Wave 3.** LLM shape classifier for assistant
+replies. The `⊕ classify` button calls a new `/classify` endpoint that
+drives an LLM to decide whether a reply warrants a single chat, N parallel
+chats, or a checklist session. A confirmation card shows the shape and
+preview before any session is created.
+
+### Added
+
+- **LLM spawn classifier** (`agent/spawn_classifier.py`). Reads the
+  assistant reply, calls the title-suggest model (Haiku-class), and returns
+  `single_chat / multi_chat / checklist` with a reason string and suggested
+  titles/labels. Graceful fallback to `single_chat` on disabled flag or LLM
+  error. New config gate: `agent.enable_llm_spawn_classifier` (default
+  `false`).
+- **`POST /api/sessions/{id}/spawn_from_reply/{msg_id}/classify`** endpoint
+  (`api/routes_spawn_classify.py`). Returns `SpawnClassifyResult` — always
+  200, always usable. Same 404/400 guards as the spawn route.
+- **`SpawnClassifiedCard.svelte`** confirmation card. Renders below the
+  triggering turn. Shows a colour-coded shape badge (`teal` single / `blue`
+  multi / `purple` checklist), the reason string, and a shape-appropriate
+  preview (title + description for single; item list for multi/checklist).
+  Apply / Cancel buttons.
+- **`⊕ classify` button** in `MessageTurn.svelte` (alongside `＋ spawn`).
+  Triggers the classify flow; original spawn button unchanged.
+- **Multi-chat + checklist apply paths** in `Conversation.svelte`.
+  `single_chat` → existing `spawnFromReply`. `multi_chat` → one
+  `spawnFromReply` per suggested item, navigate to first. `checklist` →
+  `createSession(kind=checklist)` + `createItem` per label, navigate to new
+  session.
+
 ## [1.0.3] - 2026-05-01
 
 **v1.0.3 — visual hygiene.** Phase C of the v1.0.x dashboard hardening
