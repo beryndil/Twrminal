@@ -1,3 +1,4 @@
+# mypy: disable-error-code=explicit-any
 """Pure builder of SDK-options kwargs from a :class:`RoutingDecision`.
 
 This module lands the three deferred SDK-currency shifts that arch
@@ -60,15 +61,38 @@ References:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING, Any
 
 from bearings.agent.routing import RoutingDecision
 from bearings.config.constants import (
     ADVISOR_TOOL_BETA_HEADER,
+    BEARINGS_MCP_SERVER_NAME,
+    CLOSE_SESSION_TOOL_NAME,
     EFFORT_LEVEL_TO_SDK,
     EXECUTOR_FALLBACK_MODEL,
     EXECUTOR_MODEL_FULL_ID_PREFIX,
+    KNOWN_SDK_PERMISSION_MODES,
+    KNOWN_SDK_SETTING_SOURCES,
+    PERMISSION_PROFILE_ALLOWED_TOOLS,
+    PERMISSION_PROFILE_DISALLOWED_TOOLS,
+    PERMISSION_PROFILE_TO_SDK_MODE,
 )
+
+if TYPE_CHECKING:
+    from claude_agent_sdk.types import McpSdkServerConfig
+
+
+# CanUseTool callback signature per the SDK
+# (``ClaudeAgentOptions.can_use_tool``). The SDK returns either a
+# ``PermissionResultAllow`` or ``PermissionResultDeny`` from this
+# callback; the broker (item A4) wires our ApprovalBroker into it.
+# Aliased here as ``Any``-shaped because the SDK's permission result
+# union is large and we don't want every consumer of OptionsKwargs to
+# carry the SDK's type-import surface — the callback site (sdk_loop.py)
+# narrows back to the concrete types at call.
+type CanUseToolCallback = Callable[[str, dict[str, Any], Any], Awaitable[Any]]
 
 # Researcher subagent prompt is large and lives in
 # ``agent/researcher_prompt.py`` per arch §1.1.4. Item 1.2 doesn't need
@@ -148,20 +172,24 @@ class SubagentSpec:
 class OptionsKwargs:
     """Kwargs payload for :class:`claude_agent_sdk.ClaudeAgentOptions`.
 
-    Names exactly the fields the routing decision determines (arch §5
-    deferred shifts #2, #4, #5, #6). The fields the *runner-loop* /
-    *MCP-server* / *hooks* surfaces own (``hooks``, ``mcp_servers``,
-    ``can_use_tool``, ``cwd``, ``add_dirs``, ``permission_mode``,
-    ``allowed_tools``, ``disallowed_tools``, ``setting_sources``,
-    ``thinking``, ``max_budget_usd``) are *not* in this carrier — they
-    join at the SDK boundary in item 1.3+.
+    Two field cohorts:
 
-    :attr:`include_partial_messages` is set ``True`` per arch §5 #7 so
-    the executor's text/thinking/tool-output deltas stream through the
-    SDK's partial-message channel; this is invariant for v1 and is
-    therefore baked here rather than tunable per decision.
+    * **Routing-shift fields** (arch §5 #2, #4, #5, #6) — derived
+      from a :class:`RoutingDecision`. Populated by
+      :func:`build_options_kwargs`. Existed since item 1.2.
+    * **Runner-loop / MCP-server / hooks fields** (arch §5 deferred
+      surface) — populated by :func:`compose_session_options` when
+      the worker loop is about to construct an SDK client. These
+      fields have safe defaults so :func:`build_options_kwargs`
+      can return a partially-populated carrier the existing tests
+      treat as the routing-shift-only shape.
+
+    :attr:`include_partial_messages` is set ``True`` per arch §5 #7
+    so the executor's text/thinking/tool-output deltas stream through
+    the SDK's partial-message channel; this is invariant for v1.
     """
 
+    # ---- Routing-shift fields (no defaults — every caller supplies)
     model: str
     fallback_model: str
     betas: tuple[str, ...]
@@ -169,6 +197,37 @@ class OptionsKwargs:
     advisor_max_uses: int
     include_partial_messages: bool
     subagents: tuple[SubagentSpec, ...]
+
+    # ---- Runner-loop / MCP-server / hooks fields (defaulted)
+    # ``system_prompt``: ``""`` means "use the SDK default"; the
+    # worker's :func:`compose_session_options` always populates a
+    # real value via :func:`bearings.agent.system_prompt.build_system_prompt`.
+    system_prompt: str = ""
+    # ``cwd``: empty string means "no cwd override"; populated from
+    # the session's ``working_dir``.
+    cwd: str = ""
+    # ``permission_mode``: ``""`` means "use the SDK default";
+    # populated from the session's permission profile.
+    permission_mode: str = ""
+    allowed_tools: tuple[str, ...] = ()
+    disallowed_tools: tuple[str, ...] = ()
+    # ``setting_sources``: ``None`` means "let the SDK pick";
+    # otherwise a tuple of literals from
+    # :data:`bearings.config.constants.KNOWN_SDK_SETTING_SOURCES`.
+    setting_sources: tuple[str, ...] | None = None
+    # ``max_budget_usd``: ``None`` means "no cap"; populated from
+    # ``SessionConfig.max_budget_usd``.
+    max_budget_usd: float | None = None
+    # ``mcp_servers``: name → SDK MCP server config. Empty by
+    # default; :func:`compose_session_options` populates the
+    # ``"bearings"`` entry pointing at the close_session tool.
+    mcp_servers: Mapping[str, McpSdkServerConfig] = field(default_factory=dict)
+    # ``hooks``: empty in v1 per the wiring-agent-loop sign-off Q5
+    # (recommended answer accepted 2026-05-01).
+    hooks: Mapping[str, tuple[Any, ...]] = field(default_factory=dict)
+    # ``can_use_tool``: ``None`` until A4 lands the
+    # :class:`ApprovalBroker` callback bridge.
+    can_use_tool: CanUseToolCallback | None = None
 
 
 def build_options_kwargs(decision: RoutingDecision) -> OptionsKwargs:
@@ -231,6 +290,108 @@ def build_options_kwargs(decision: RoutingDecision) -> OptionsKwargs:
     )
 
 
+def compose_session_options(
+    *,
+    decision: RoutingDecision,
+    session_instructions: str | None,
+    working_dir: str,
+    permission_profile: str,
+    permission_mode_override: str | None,
+    setting_sources: tuple[str, ...] | None,
+    max_budget_usd: float | None,
+    bearings_mcp_server: McpSdkServerConfig,
+    can_use_tool: CanUseToolCallback | None = None,
+    extra_system_prompt_parts: tuple[str, ...] = (),
+) -> OptionsKwargs:
+    """Build the full :class:`OptionsKwargs` for :class:`ClaudeAgentOptions` construction.
+
+    Composes the routing-shift fields from :func:`build_options_kwargs`
+    with the runner-loop / MCP-server / system-prompt surface the
+    worker (sdk_loop.py) needs at SDK-client init time.
+
+    Args:
+        decision: Active :class:`RoutingDecision` for this session.
+        session_instructions: Per-session steering text (the row's
+            ``session_instructions`` column). The system-prompt
+            assembler appends :data:`bearings.agent.bearings_mcp.CLOSE_SESSION_INSTRUCTION`
+            after this so the agent always knows about the close
+            tool.
+        working_dir: ``SessionConfig.working_dir`` — passed to the
+            SDK as ``cwd``.
+        permission_profile: ``"restricted"`` / ``"standard"`` /
+            ``"expanded"`` — resolved via the constants module to
+            ``permission_mode`` + ``allowed_tools`` + ``disallowed_tools``.
+        permission_mode_override: An explicit
+            ``ClaudeAgentOptions.permission_mode`` literal that
+            overrides the profile's resolved mode. ``None`` means
+            "use the profile's default".
+        setting_sources: Optional ``setting_sources`` tuple; ``None``
+            means "let the SDK pick".
+        max_budget_usd: Pass-through to the SDK. ``None`` means
+            "no cap".
+        bearings_mcp_server: The SDK MCP server wrapping the
+            :func:`bearings.agent.bearings_mcp.close_session` tool.
+            Constructed by the worker via
+            :func:`bearings.agent.bearings_mcp.build_bearings_mcp_server`
+            with closure-captured session id + DB factory.
+        can_use_tool: Optional approval-bridge callback. ``None``
+            in v1 until A4 lands the :class:`ApprovalBroker`.
+        extra_system_prompt_parts: Additional system-prompt blocks
+            to append after the default surface (used by tests that
+            need to verify the splice order; production callers
+            leave empty).
+
+    Returns:
+        Fully-populated :class:`OptionsKwargs` ready for SDK splat
+        via ``ClaudeAgentOptions(**kwargs.as_sdk_kwargs())``.
+    """
+    from bearings.agent.system_prompt import build_system_prompt
+
+    base = build_options_kwargs(decision)
+    if permission_profile not in PERMISSION_PROFILE_TO_SDK_MODE:
+        raise ValueError(
+            f"compose_session_options: permission_profile {permission_profile!r} "
+            f"not in {sorted(PERMISSION_PROFILE_TO_SDK_MODE)}"
+        )
+    if permission_mode_override is not None:
+        if permission_mode_override not in KNOWN_SDK_PERMISSION_MODES:
+            raise ValueError(
+                f"compose_session_options: permission_mode_override "
+                f"{permission_mode_override!r} not in {sorted(KNOWN_SDK_PERMISSION_MODES)}"
+            )
+        permission_mode = permission_mode_override
+    else:
+        permission_mode = PERMISSION_PROFILE_TO_SDK_MODE[permission_profile]
+    if setting_sources is not None:
+        for src in setting_sources:
+            if src not in KNOWN_SDK_SETTING_SOURCES:
+                raise ValueError(
+                    f"compose_session_options: setting_sources entry {src!r} not in "
+                    f"{sorted(KNOWN_SDK_SETTING_SOURCES)}"
+                )
+    allowed = list(PERMISSION_PROFILE_ALLOWED_TOOLS[permission_profile])
+    close_session_handle = f"mcp__{BEARINGS_MCP_SERVER_NAME}__{CLOSE_SESSION_TOOL_NAME}"
+    if close_session_handle not in allowed:
+        allowed.append(close_session_handle)
+    system_prompt = build_system_prompt(
+        session_instructions=session_instructions,
+        extras=extra_system_prompt_parts,
+    )
+    return replace(
+        base,
+        system_prompt=system_prompt,
+        cwd=working_dir,
+        permission_mode=permission_mode,
+        allowed_tools=tuple(allowed),
+        disallowed_tools=PERMISSION_PROFILE_DISALLOWED_TOOLS[permission_profile],
+        setting_sources=setting_sources,
+        max_budget_usd=max_budget_usd,
+        mcp_servers={BEARINGS_MCP_SERVER_NAME: bearings_mcp_server},
+        hooks={},
+        can_use_tool=can_use_tool,
+    )
+
+
 def _resolve_fallback_model(executor_model: str) -> str:
     """Resolve the SDK ``fallback_model`` for an executor short name.
 
@@ -253,7 +414,9 @@ def _resolve_fallback_model(executor_model: str) -> str:
 
 
 __all__ = [
+    "CanUseToolCallback",
     "OptionsKwargs",
     "SubagentSpec",
     "build_options_kwargs",
+    "compose_session_options",
 ]

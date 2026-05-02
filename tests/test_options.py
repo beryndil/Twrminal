@@ -250,9 +250,11 @@ def test_module_all_export_set() -> None:
     from bearings.agent import options as options_mod
 
     assert set(options_mod.__all__) == {
+        "CanUseToolCallback",
         "OptionsKwargs",
         "SubagentSpec",
         "build_options_kwargs",
+        "compose_session_options",
     }
 
 
