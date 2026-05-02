@@ -1,2 +1,0 @@
-import"../chunks/CWj6FrbW.js";import"../chunks/B-0T-Oec.js";import{a as o,f as s}from"../chunks/QfPsKkP1.js";var a=s(`<div class="flex h-full flex-col p-6"><h2 class="mb-1 text-lg font-semibold text-fg-strong">Analytics</h2> <p class="text-sm text-fg-muted">Per-instance analytics are coming in a follow-up phase. Session counts, token usage, and cost
-    rollups will surface here once the analytics endpoints are wired.</p></div>`);function r(t){var e=a();o(t,e)}export{r as component};

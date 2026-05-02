@@ -60,9 +60,11 @@
      * subsections' contract (the shell passes the same row to every
      * tab). The Usage rollups are app-wide; the prop is unused inside
      * the body but kept on the public surface so the shell doesn't
-     * need a tab-specific switch.
+     * need a tab-specific switch. Optional so the standalone
+     * ``/analytics`` page (closing-sweep audit P1.8) can mount this
+     * component without synthesising a stub row.
      */
-    session: SessionOut;
+    session?: SessionOut;
     /** Test seams. */
     fetchHistory?: typeof getQuotaHistory;
     fetchByModel?: typeof getUsageByModel;

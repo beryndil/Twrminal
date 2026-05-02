@@ -1,1 +1,0 @@
-import{a as r,O as n,b as t}from"./Cu8728xH.js";import{g as i}from"./BPY_UIFm.js";async function d(a={}){const s={query:[["period",a.period??"week"]]};return a.signal!==void 0&&(s.signal=a.signal),await i(r,s)}async function E(a={}){const e=a.days??n,s={query:[["days",String(e)]]};return a.signal!==void 0&&(s.signal=a.signal),await i(t,s)}export{d as a,E as g};
