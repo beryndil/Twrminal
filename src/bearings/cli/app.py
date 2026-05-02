@@ -29,6 +29,7 @@ import sys
 from collections.abc import Sequence
 
 from bearings import __version__
+from bearings.cli import serve as serve_cli
 from bearings.cli import todo as todo_cli
 from bearings.config.constants import (
     CLI_EXIT_OK,
@@ -42,8 +43,8 @@ from bearings.config.constants import (
 # its real subcommand surface). When a real subcommand is supplied the
 # notice is not printed; the subcommand handles its own output.
 _BOOTSTRAP_MESSAGE: str = (
-    "bearings v{version} (v1 rebuild — todo subcommand wired in item 1.7; "
-    "serve / init / window / send / here / pending / gc land in subsequent items)\n"
+    "bearings v{version} (v1 rebuild — todo + serve subcommands wired; "
+    "init / window / send / here / pending / gc land in subsequent items)\n"
 )
 
 
@@ -72,6 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="<subcommand>",
     )
     todo_cli.build_subparser(sub)
+    serve_cli.build_subparser(sub)
     return parser
 
 
