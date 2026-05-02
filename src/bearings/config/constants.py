@@ -688,6 +688,29 @@ SESSION_CLOSING_SUMMARY_MIN_LENGTH: Final[int] = 1
 SESSION_CLOSING_SUMMARY_MAX_LENGTH: Final[int] = 2_000
 
 # ---------------------------------------------------------------------------
+# Bearings-internal MCP server (item Slice B / dogfood-unblock plan).
+#
+# The agent reaches Bearings-internal capability via an in-process MCP
+# server registered on ``ClaudeAgentOptions.mcp_servers``. The server
+# name and the tool name are constants because they appear in three
+# places: the SDK options wiring (item 1.3+), the agent system-prompt
+# instruction text, and the test fixtures that exercise the tool
+# directly.
+# ---------------------------------------------------------------------------
+
+# Server name on ``ClaudeAgentOptions.mcp_servers``. Agents reference
+# tools as ``mcp__<server>__<tool>``; the SDK builds that handle from
+# the key the consumer puts in the ``mcp_servers`` mapping. Keeping the
+# server name here means the system-prompt instruction can render the
+# fully-qualified tool name without inline literals.
+BEARINGS_MCP_SERVER_NAME: Final[str] = "bearings"
+
+# ``close_session`` tool name. Agent-facing surface; do not rename
+# without coordinating with the system-prompt instruction text and any
+# allowed-tools allowlist that pins the namespaced form.
+CLOSE_SESSION_TOOL_NAME: Final[str] = "close_session"
+
+# ---------------------------------------------------------------------------
 # Bearings CLI (item 1.7; arch §1.1.1 ``cli/`` package; behavior surface
 # in ``docs/behavior/bearings-cli.md``).
 #
@@ -1131,6 +1154,7 @@ __all__ = [
     "AUTO_DRIVER_STATE_IDLE",
     "AUTO_DRIVER_STATE_PAUSED",
     "AUTO_DRIVER_STATE_RUNNING",
+    "BEARINGS_MCP_SERVER_NAME",
     "BEARINGS_TODO_CHECK_DEFAULT_MAX_AGE_DAYS",
     "BEARINGS_TODO_ENTRY_HEADING_PREFIX",
     "BEARINGS_TODO_FILENAME",
@@ -1150,6 +1174,7 @@ __all__ = [
     "CLI_EXIT_OK",
     "CLI_EXIT_OPERATION_FAILURE",
     "CLI_EXIT_USAGE_ERROR",
+    "CLOSE_SESSION_TOOL_NAME",
     "DEFAULT_ADVISOR_MAX_USES_HAIKU",
     "DEFAULT_ADVISOR_MAX_USES_SONNET",
     "DEFAULT_ALLOWED_SHELL_COMMANDS",
