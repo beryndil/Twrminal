@@ -76,3 +76,62 @@
     @apply h-full bg-surface-0 text-fg antialiased;
   }
 }
+
+/* Markdown prose rendered inside assistant message bubbles. */
+.message-turn__body {
+  @apply text-sm leading-relaxed;
+}
+.message-turn__body p {
+  @apply mb-2 last:mb-0;
+}
+.message-turn__body h1,
+.message-turn__body h2,
+.message-turn__body h3 {
+  @apply mb-2 mt-4 font-semibold text-fg-strong first:mt-0;
+}
+.message-turn__body h1 {
+  @apply text-base;
+}
+.message-turn__body h2 {
+  @apply text-sm;
+}
+.message-turn__body h3 {
+  @apply text-sm;
+}
+.message-turn__body ul,
+.message-turn__body ol {
+  @apply mb-2 ml-4;
+}
+.message-turn__body ul {
+  @apply list-disc;
+}
+.message-turn__body ol {
+  @apply list-decimal;
+}
+.message-turn__body li {
+  @apply mb-0.5;
+}
+.message-turn__body code {
+  @apply rounded bg-surface-2 px-1 py-0.5 font-mono text-xs text-fg-strong;
+}
+.message-turn__body pre {
+  @apply mb-2 overflow-x-auto rounded bg-surface-2 p-2;
+}
+.message-turn__body pre code {
+  @apply bg-transparent p-0;
+}
+.message-turn__body a {
+  @apply text-accent underline;
+}
+.message-turn__body blockquote {
+  @apply mb-2 border-l-2 border-border pl-3 text-fg-muted;
+}
+.message-turn__body hr {
+  @apply my-3 border-border;
+}
+.message-turn__body strong {
+  @apply font-semibold text-fg-strong;
+}
+.message-turn__body em {
+  @apply italic;
+}

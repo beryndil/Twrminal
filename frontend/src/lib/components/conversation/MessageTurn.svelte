@@ -61,14 +61,14 @@
 </script>
 
 <article
-  class="message-turn flex flex-col gap-2 border-b border-border px-4 py-3"
+  class="message-turn flex flex-col gap-2 px-4 py-4"
   data-testid="message-turn"
   data-turn-id={turn.id}
   data-role={turn.role}
 >
   {#if turn.role === "user"}
     <div
-      class="self-end rounded bg-surface-2 px-3 py-2 text-sm"
+      class="user-bubble self-end rounded px-3 py-2 text-sm text-fg-strong"
       data-testid="message-turn-user-body"
     >
       <!-- User bubbles get linkifier-anchored URLs / paths but no
@@ -128,3 +128,11 @@
     </div>
   {/if}
 </article>
+
+<style>
+  /* User bubble — soft brand-tinted surface to visually distinguish from
+     assistant bubbles, matching v0.17.x's right-aligned user prompt style. */
+  .user-bubble {
+    background-color: rgb(var(--bearings-accent) / 0.14);
+  }
+</style>

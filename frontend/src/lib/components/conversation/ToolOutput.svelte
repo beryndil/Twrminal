@@ -60,34 +60,41 @@
 </script>
 
 <details
-  class="tool-output mb-2 rounded border border-border bg-surface-1"
+  class="tool-output mb-2 rounded border border-border bg-surface-0"
   data-testid="tool-output"
 >
   <summary
-    class="flex cursor-pointer items-center gap-2 px-2 py-1 text-xs"
+    class="flex cursor-pointer items-center gap-2 px-2 py-1.5 font-mono text-xs"
     data-testid="tool-output-summary"
   >
-    <span
-      class="inline-block h-2 w-2 rounded-full"
-      class:bg-green-400={call.done && call.ok === true}
-      class:bg-red-400={call.done && call.ok === false}
-      class:bg-fg-muted={!call.done}
-      data-testid="tool-output-status-pip"
-      aria-label={statusLabel}
-    ></span>
+    <span class="text-fg-muted">$</span>
     <span class="font-medium text-fg-strong" data-testid="tool-output-name">{call.name}</span>
-    <span class="ml-auto font-mono text-fg-muted" data-testid="tool-output-elapsed"
-      >{elapsedLabel}</span
+    <span
+      class="ml-auto inline-flex items-center gap-1.5 font-mono text-fg-muted"
+      data-testid="tool-output-elapsed"
     >
+      <span
+        class="inline-block h-1.5 w-1.5 rounded-full"
+        class:bg-accent={call.done && call.ok === true}
+        class:bg-red-400={call.done && call.ok === false}
+        class:bg-fg-muted={!call.done}
+        data-testid="tool-output-status-pip"
+        aria-label={statusLabel}
+      ></span>
+      {elapsedLabel}
+    </span>
   </summary>
-  <div class="tool-output__body px-2 py-2 text-xs" data-testid="tool-output-body">
+  <div
+    class="tool-output__body border-t border-border px-2 py-2 text-xs"
+    data-testid="tool-output-body"
+  >
     {#if call.output.length === 0 && !call.done}
       <p class="text-fg-muted" data-testid="tool-output-empty">
         {CONVERSATION_STRINGS.toolStatusRunning}…
       </p>
     {:else}
       <pre
-        class="whitespace-pre-wrap break-words font-mono"
+        class="whitespace-pre-wrap break-words font-mono text-fg"
         data-testid="tool-output-stream">{call.output}</pre>
     {/if}
     {#if elidedCount > 0}
