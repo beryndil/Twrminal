@@ -7,7 +7,7 @@
  * chips and the global list to populate the filter panel.
  */
 import { API_TAGS_ENDPOINT, sessionTagsEndpoint } from "../config";
-import { getJson, type RequestOptions } from "./client";
+import { deleteResource, getJson, patchJson, postJson, type RequestOptions } from "./client";
 
 /**
  * Wire shape for one tag — one-to-one with
@@ -52,4 +52,48 @@ export async function listSessionTags(
     options.signal = params.signal;
   }
   return await getJson<TagOut[]>(sessionTagsEndpoint(sessionId), options);
+}
+
+/**
+ * Wire shape for ``POST /api/tags`` + ``PATCH /api/tags/{id}`` —
+ * one-to-one with :class:`bearings.web.models.tags.TagIn`. ``color``
+ * accepts any string the server's hex / palette validator allows;
+ * ``working_dir`` must be non-empty when supplied (the backend
+ * enforces ``min_length=1``).
+ */
+export interface TagInput {
+  name: string;
+  color?: string | null;
+  default_model?: string | null;
+  working_dir?: string | null;
+}
+
+/**
+ * Create a tag via ``POST /api/tags``. 201 on success; 409 if the
+ * name is already taken (the caller should surface that to the user
+ * inline rather than as a generic failure).
+ */
+export async function createTag(body: TagInput, options: RequestOptions = {}): Promise<TagOut> {
+  return await postJson<TagOut>(API_TAGS_ENDPOINT, body, options);
+}
+
+/**
+ * Update a tag via ``PATCH /api/tags/{id}``. The PATCH replaces the
+ * mutable field set wholesale per the backend contract — callers send
+ * the full :class:`TagInput` payload, not a partial.
+ */
+export async function updateTag(
+  tagId: number,
+  body: TagInput,
+  options: RequestOptions = {},
+): Promise<TagOut> {
+  return await patchJson<TagOut>(`${API_TAGS_ENDPOINT}/${tagId}`, body, options);
+}
+
+/**
+ * Delete a tag via ``DELETE /api/tags/{id}``. The cascade clears
+ * ``session_tags`` and ``tag_memories`` rows referencing the tag.
+ */
+export async function deleteTag(tagId: number, options: RequestOptions = {}): Promise<void> {
+  await deleteResource<void>(`${API_TAGS_ENDPOINT}/${tagId}`, options);
 }

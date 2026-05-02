@@ -1,0 +1,1 @@
+import{h as e}from"./CY4s9fmn.js";import{D as o,K as a}from"./Cu8728xH.js";const t=e({activeTabId:o,activeSessionId:null}),c=t;function r(s){a.includes(s)&&(t.activeTabId=s)}function T(s){t.activeSessionId=s}export{r as a,c as i,T as s};
