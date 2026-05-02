@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
    * Memories page — per-tag editor over user-authored system-prompt
-   * fragments (item 2.10; arch §1.1.3). Different from the vault:
-   * memories ARE editable; vault is read-only.
+   * fragments (arch §1.1.3). Different from the vault: memories ARE
+   * editable; vault is read-only.
    *
    * Reachable at ``/memories``. Renders into the center column of
    * the app shell when no session is selected.

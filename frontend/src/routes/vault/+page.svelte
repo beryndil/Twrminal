@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * Vault page — read-only browser over plans + TODO.md files
-   * (item 2.10; ``docs/behavior/vault.md``).
+   * (``docs/behavior/vault.md``).
    *
    * Reachable at ``/vault``. Renders into the center column of the
    * app shell (``+layout.svelte``'s ``children`` slot) when no
