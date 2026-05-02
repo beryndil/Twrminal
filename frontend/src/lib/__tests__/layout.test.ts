@@ -1,13 +1,26 @@
 /**
- * Layout-shape regression test for item 2.1's app shell.
+ * Layout-shape regression test for the app shell.
  *
  * Asserts the three-column grid that `docs/behavior/chat.md`
  * §"opens an existing chat" describes — sidebar / main / inspector —
- * so a refactor in items 2.2-2.10 cannot silently collapse one of the
- * columns.
+ * so a refactor cannot silently collapse one of the columns.
+ *
+ * SvelteKit's ``$app/state`` and ``$app/navigation`` are stubbed
+ * because the layout reads ``page.params.id`` to sync the inspector
+ * store from the URL and dispatches client-nav via ``goto`` on
+ * synthetic ``onSelect`` activations. The stubs let the layout mount
+ * without a SvelteKit harness — vitest renders components against
+ * the bare component runtime, not a SvelteKit page server.
  */
 import { render } from "@testing-library/svelte";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("$app/state", () => ({
+  page: { params: {}, route: { id: "/" } },
+}));
+vi.mock("$app/navigation", () => ({
+  goto: vi.fn(),
+}));
 
 import Layout from "../../routes/+layout.svelte";
 
