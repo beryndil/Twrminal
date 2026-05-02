@@ -329,13 +329,52 @@
           aria-label="Conversation pane"
         >
           <header
-            class="app-shell__main-header border-b border-border p-3"
+            class="app-shell__main-header border-b border-border px-3 py-2"
             data-testid="app-shell-main-header"
           >
             {#if activeSession !== null}
-              <p class="truncate text-sm text-fg-strong" data-testid="conversation-header-title">
-                {activeSession.title}
-              </p>
+              <!-- Title + model + msg count -->
+              <div class="flex min-w-0 items-baseline gap-2">
+                <p
+                  class="flex-1 truncate text-sm font-medium text-fg-strong"
+                  data-testid="conversation-header-title"
+                >
+                  {activeSession.title}
+                </p>
+                <span class="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-xs text-fg-muted">
+                  {activeSession.model}
+                </span>
+                {#if activeSession.message_count > 0}
+                  <span class="shrink-0 text-xs text-fg-muted"
+                    >{activeSession.message_count} msgs</span
+                  >
+                {/if}
+              </div>
+              <!-- Tags -->
+              {#if (sessionsStore.tagsBySessionId[activeSession.id] ?? []).length > 0}
+                <div class="mt-1 flex flex-wrap gap-1" data-testid="conversation-header-tags">
+                  {#each sessionsStore.tagsBySessionId[activeSession.id] ?? [] as tag (tag.id)}
+                    <span
+                      class="rounded px-1.5 py-0.5 text-xs"
+                      style={tag.color ? `background:${tag.color}22;color:${tag.color}` : undefined}
+                      class:bg-surface-2={!tag.color}
+                      class:text-fg-muted={!tag.color}
+                      data-testid="conversation-header-tag"
+                    >
+                      {tag.name}
+                    </span>
+                  {/each}
+                </div>
+              {/if}
+              <!-- Description excerpt -->
+              {#if activeSession.description}
+                <p
+                  class="mt-1 line-clamp-2 text-xs text-fg-muted"
+                  data-testid="conversation-header-desc"
+                >
+                  {activeSession.description}
+                </p>
+              {/if}
             {/if}
           </header>
           <section
@@ -380,6 +419,33 @@
         >
           <Inspector session={activeSession} />
         </aside>
+
+        <!-- Status bar — spans full width -->
+        <footer
+          class="app-shell__statusbar border-t border-border bg-surface-0 px-3"
+          data-testid="status-bar"
+          aria-label="Status bar"
+        >
+          <span class="text-fg-muted">{SIDEBAR_STRINGS.heading} {SIDEBAR_STRINGS.versionTag}</span>
+          <span class="ml-auto flex items-center gap-4">
+            <span class="flex items-center gap-1.5 text-fg-muted">
+              <span class="inline-block h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true"
+              ></span>
+              Recovery: Idle
+            </span>
+            <span class="flex items-center gap-1.5 text-fg-muted">
+              <span class="inline-block h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true"
+              ></span>
+              Auto-save: Idle
+            </span>
+            <span
+              class="rounded bg-surface-2 px-2 py-0.5 text-xs font-medium text-fg-muted"
+              data-testid="status-bar-connection"
+            >
+              IDLE
+            </span>
+          </span>
+        </footer>
       </div>
     </ContextMenuProvider>
   </KeybindingsProvider>
@@ -401,9 +467,18 @@
   .app-shell {
     display: grid;
     grid-template-columns: 16rem minmax(0, 1fr) 20rem;
+    grid-template-rows: 1fr auto;
     height: 100vh;
     width: 100vw;
     overflow: hidden;
+  }
+
+  .app-shell__statusbar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    height: 1.75rem;
+    font-size: 0.6875rem;
   }
 
   .app-shell__sidebar,
