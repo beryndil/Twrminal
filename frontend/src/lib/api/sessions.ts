@@ -663,3 +663,47 @@ export function spawnFromReply(
     { method: 'POST' }
   );
 }
+
+// ---------------------------------------------------------------------------
+// Wave 3 — spawn-from-reply classifier types + client
+// ---------------------------------------------------------------------------
+
+/** Shape returned by the /classify endpoint.  Mirrors the Python
+ * ``SpawnShape`` StrEnum — serialised as a plain string on the wire. */
+export type SpawnShape = 'single_chat' | 'multi_chat' | 'checklist';
+
+/** Suggested content for a single-chat spawn. */
+export type SingleChatPayload = { title: string; description: string };
+
+/** One item in a multi-chat fan-out (2–5 entries). */
+export type MultiChatPayload = { title: string; description: string };
+
+/** One flat checklist item. */
+export type ChecklistPayload = { label: string; notes: string };
+
+/** Full classify response.  Exactly one of the three ``suggested_*``
+ * fields is non-null, matching ``shape``.  The endpoint always returns
+ * 200 — on classifier failure it returns shape=single_chat with reason
+ * "classifier disabled or failed". */
+export type SpawnClassifyResult = {
+  shape: SpawnShape;
+  reason: string;
+  suggested_single: SingleChatPayload | null;
+  suggested_multi: MultiChatPayload[] | null;
+  suggested_checklist: ChecklistPayload[] | null;
+};
+
+/** Wave 3 — hit the /classify endpoint. Returns the LLM-classified
+ * shape (or a graceful single_chat fallback when the classifier is
+ * disabled or fails). Never rejects — the server guarantees 200. */
+export function classifySpawn(
+  parentSessionId: string,
+  messageId: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<SpawnClassifyResult> {
+  return jsonFetch<SpawnClassifyResult>(
+    fetchImpl,
+    `/api/sessions/${parentSessionId}/spawn_from_reply/${messageId}/classify`,
+    { method: 'POST' }
+  );
+}
