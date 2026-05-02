@@ -545,9 +545,9 @@
     padding: 1rem;
     min-width: 30rem;
     max-width: 40rem;
-    background: var(--surface-1, #111);
+    background: rgb(var(--bearings-surface-1));
     border-radius: 0.5rem;
-    color: var(--fg, #f3f4f6);
+    color: rgb(var(--bearings-fg));
   }
   .new-session-form__title {
     font-size: 1.125rem;
@@ -558,7 +558,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    border: 1px solid var(--surface-2, #1f1f1f);
+    border: 1px solid rgb(var(--bearings-border));
     border-radius: 0.375rem;
     padding: 0.75rem;
   }
@@ -567,7 +567,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--fg-muted, #888);
+    color: rgb(var(--bearings-fg-muted));
     padding: 0 0.25rem;
   }
   .new-session-form__row {
@@ -582,22 +582,22 @@
     align-items: stretch;
   }
   .new-session-form__row label {
-    color: var(--fg-muted, #aaa);
+    color: rgb(var(--bearings-fg-muted));
   }
   .new-session-form__inline {
     margin-left: 0.5rem;
   }
   .new-session-form__advisor-hint {
     font-size: 0.75rem;
-    color: var(--fg-muted, #888);
+    color: rgb(var(--bearings-fg-muted));
     margin: 0;
   }
   .new-session-form__row textarea,
   .new-session-form__row select,
   .new-session-form__row input {
-    background: var(--surface-2, #1a1a1a);
+    background: rgb(var(--bearings-surface-2));
     color: inherit;
-    border: 1px solid var(--surface-3, #262626);
+    border: 1px solid rgb(var(--bearings-border));
     border-radius: 0.25rem;
     padding: 0.25rem 0.5rem;
     font: inherit;
@@ -612,15 +612,15 @@
     gap: 0.5rem;
   }
   .new-session-form__actions button {
-    border: 1px solid var(--surface-3, #262626);
-    background: var(--surface-2, #1a1a1a);
+    border: 1px solid rgb(var(--bearings-border));
+    background: rgb(var(--bearings-surface-2));
     color: inherit;
     border-radius: 0.25rem;
     padding: 0.375rem 0.75rem;
     cursor: pointer;
   }
   .new-session-form__actions button[type="submit"] {
-    background: var(--accent-info, #2563eb);
+    background: rgb(var(--bearings-accent));
     border-color: transparent;
     color: white;
   }

@@ -47,7 +47,7 @@
   }
   .analytics-page__lede {
     font-size: 0.875rem;
-    color: var(--fg-muted, #888);
+    color: rgb(var(--bearings-fg-muted));
     margin: 0.25rem 0 0 0;
   }
 </style>

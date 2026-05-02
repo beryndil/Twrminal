@@ -51,13 +51,13 @@
 <style>
   .routing-preview {
     font-size: 0.75rem;
-    color: var(--fg-muted, #888);
+    color: rgb(var(--bearings-fg-muted));
     margin: 0.25rem 0;
   }
   .routing-preview[data-kind="manual"] {
-    color: var(--accent-info, #60a5fa);
+    color: rgb(var(--bearings-accent));
   }
   .routing-preview[data-kind="error"] {
-    color: var(--accent-error, #ef4444);
+    color: #ef4444;
   }
 </style>

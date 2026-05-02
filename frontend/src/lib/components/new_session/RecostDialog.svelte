@@ -89,14 +89,14 @@
     gap: 0.5rem;
     align-items: center;
     padding: 0.5rem 0.75rem;
-    background: var(--accent-warn-bg, rgba(250, 204, 21, 0.12));
-    border: 1px solid var(--accent-warn, #facc15);
+    background: rgba(250, 204, 21, 0.12);
+    border: 1px solid #facc15;
     border-radius: 0.375rem;
     font-size: 0.8125rem;
   }
   .recost-dialog__copy {
     margin: 0;
-    color: var(--fg, #f3f4f6);
+    color: rgb(var(--bearings-fg));
     flex: 1 1 auto;
   }
   .recost-dialog__override {
@@ -104,13 +104,13 @@
     border: 1px solid currentColor;
     border-radius: 0.25rem;
     padding: 0.25rem 0.5rem;
-    color: var(--accent-warn, #facc15);
+    color: #facc15;
     cursor: pointer;
     font: inherit;
   }
   .recost-dialog__override:hover,
   .recost-dialog__override:focus-visible {
-    background: var(--accent-warn, #facc15);
-    color: var(--bg, #0a0a0a);
+    background: #facc15;
+    color: rgb(var(--bearings-surface-0));
   }
 </style>

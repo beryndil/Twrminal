@@ -5,6 +5,23 @@ All notable changes to Bearings are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **theme contrast on light themes** — scoped style blocks across
+  `routes/sessions/new`, `routes/tags`, `routes/settings`,
+  `routes/analytics`, `lib/components/new_session/*`, and
+  `lib/components/routing/*` referenced undeclared CSS variable names
+  (`--surface-1/2/3`, `--fg`, `--fg-muted`, `--accent-info`,
+  `--accent-danger`, `--bg`, `--border`). Every reference fell through
+  to its hardcoded dark-color fallback regardless of `data-theme`,
+  producing a dark "New Session" card on a paper-light page with
+  near-invisible tag-chip text. Remapped surface / fg / accent / border
+  refs to the actual themed `--bearings-*` channel-triple tokens; warn /
+  error / ok semantic colors stay inlined as literals (no theme
+  vocabulary for them yet).
+
 ## [1.0.0] — 2026-05-01
 
 The stability commitment. v1.0.0 promotes the v0.18.0 rebuild after a

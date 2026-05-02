@@ -82,6 +82,25 @@ The ledger entries below were swept on the cutover-smoke commit (item
 
 ## Remaining deferrals (post-v1 scope)
 
+### Theme picker silently flips to OS scheme on first paint — 2026-05-02
+
+`frontend/src/lib/themes/persistence.ts:resolveBootTheme()` returns
+`loadStoredTheme() ?? resolveOsFallbackTheme()`, and
+`resolveOsFallbackTheme()` returns `THEME_PAPER_LIGHT` when
+`(prefers-color-scheme: light)` matches. `index.html` paints
+`data-theme="evergreen"` on first frame, then `ThemeProvider`'s
+`onMount` re-applies `themeStore.theme` and the OS fallback overrides
+the static-HTML choice. Net effect for a user on a light-scheme OS who
+hasn't explicitly clicked the picker: the page boots evergreen,
+flickers, and lands on paper-light without telling them. Dave hit this
+during the `/sessions/new` contrast-bug investigation 2026-05-02.
+
+**Action**: either (a) drop the OS fallback so the static-HTML default
+(`evergreen`) is the sole "no persisted choice" path, or (b) make the
+picker write the OS-fallback resolution into localStorage on first
+boot so the choice surfaces in the UI. Probably (b) — keeps OS-aware
+defaulting, removes the silent flip.
+
 ### Daily-probe `/api/usage/headroom` endpoint swap — 2026-05-01
 
 Master item B.1 (daily probe script) names `/api/usage/headroom` in

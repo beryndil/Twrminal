@@ -235,8 +235,8 @@
     padding: 1rem;
   }
   .test-dialog {
-    background: var(--surface-1, #1a1a1a);
-    border: 1px solid var(--border, #2a2a2a);
+    background: rgb(var(--bearings-surface-1));
+    border: 1px solid rgb(var(--bearings-border));
     border-radius: 0.5rem;
     padding: 1rem 1.25rem;
     width: min(560px, 100%);
@@ -245,7 +245,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    color: var(--fg, #f3f4f6);
+    color: rgb(var(--bearings-fg));
   }
   .test-dialog__header {
     display: flex;
@@ -269,7 +269,7 @@
   .test-dialog__intro {
     margin: 0;
     font-size: 0.8125rem;
-    color: var(--fg-muted, #9ca3af);
+    color: rgb(var(--bearings-fg-muted));
   }
   .test-dialog__field {
     display: flex;
@@ -280,14 +280,14 @@
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--fg-muted, #9ca3af);
+    color: rgb(var(--bearings-fg-muted));
   }
   .test-dialog__textarea {
     min-height: 6rem;
     padding: 0.5rem;
     border-radius: 0.25rem;
-    background: var(--surface-2, #0a0a0a);
-    border: 1px solid var(--border, #2a2a2a);
+    background: rgb(var(--bearings-surface-2));
+    border: 1px solid rgb(var(--bearings-border));
     color: inherit;
     font: inherit;
     resize: vertical;
@@ -297,8 +297,8 @@
     justify-content: flex-end;
   }
   .test-dialog__evaluate {
-    background: var(--accent, #3b82f6);
-    color: var(--bg, #0a0a0a);
+    background: rgb(var(--bearings-accent));
+    color: rgb(var(--bearings-surface-0));
     border: none;
     border-radius: 0.25rem;
     padding: 0.375rem 0.75rem;
@@ -306,7 +306,7 @@
     font: inherit;
   }
   .test-dialog__result {
-    border-top: 1px solid var(--border, #2a2a2a);
+    border-top: 1px solid rgb(var(--bearings-border));
     padding-top: 0.75rem;
     display: flex;
     flex-direction: column;
@@ -314,16 +314,16 @@
   }
   .test-dialog__verdict-matched {
     margin: 0;
-    color: var(--accent-success, #4ade80);
+    color: #4ade80;
     font-weight: 600;
   }
   .test-dialog__verdict-missed {
     margin: 0;
-    color: var(--fg-muted, #9ca3af);
+    color: rgb(var(--bearings-fg-muted));
   }
   .test-dialog__invalid {
     margin: 0;
-    color: var(--accent-error, #f87171);
+    color: #f87171;
   }
   .test-dialog__decision {
     display: grid;
@@ -333,7 +333,7 @@
     font-size: 0.8125rem;
   }
   .test-dialog__decision dt {
-    color: var(--fg-muted, #9ca3af);
+    color: rgb(var(--bearings-fg-muted));
   }
   .test-dialog__decision dd {
     margin: 0;

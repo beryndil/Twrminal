@@ -494,16 +494,16 @@
     gap: 0.5rem;
     align-items: start;
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border, #2a2a2a);
+    border: 1px solid rgb(var(--bearings-border));
     border-radius: 0.375rem;
-    background: var(--surface-1, #1a1a1a);
+    background: rgb(var(--bearings-surface-1));
   }
   .rule-row--disabled {
     opacity: 0.55;
   }
   .rule-row--review {
-    border-color: var(--accent-warn, #facc15);
-    box-shadow: 0 0 0 1px var(--accent-warn, #facc15) inset;
+    border-color: #facc15;
+    box-shadow: 0 0 0 1px #facc15 inset;
   }
   .rule-row--seeded {
     border-style: dashed;
@@ -511,7 +511,7 @@
   .rule-row__handle {
     background: transparent;
     border: none;
-    color: var(--fg-muted, #9ca3af);
+    color: rgb(var(--bearings-fg-muted));
     cursor: grab;
     padding: 0.25rem;
     align-self: center;
@@ -522,7 +522,7 @@
     font-size: 0.6875rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--fg-muted, #9ca3af);
+    color: rgb(var(--bearings-fg-muted));
     margin-bottom: 0.125rem;
   }
   .rule-row__priority-input {
@@ -552,10 +552,10 @@
     font-size: 0.75rem;
   }
   .rule-row__warning {
-    color: var(--accent-error, #f87171);
+    color: #f87171;
   }
   .rule-row__review-flag {
-    color: var(--accent-warn, #facc15);
+    color: #facc15;
     font-weight: 600;
   }
   .rule-row__controls {
@@ -570,9 +570,9 @@
   .rule-row__seeded-badge {
     font-size: 0.6875rem;
     padding: 0.125rem 0.375rem;
-    border: 1px solid var(--border, #2a2a2a);
+    border: 1px solid rgb(var(--bearings-border));
     border-radius: 0.25rem;
-    color: var(--fg-muted, #9ca3af);
+    color: rgb(var(--bearings-fg-muted));
   }
   .rule-row__actions {
     display: flex;
@@ -581,8 +581,8 @@
   }
   .rule-row__action {
     background: transparent;
-    color: var(--fg, #f3f4f6);
-    border: 1px solid var(--border, #2a2a2a);
+    color: rgb(var(--bearings-fg));
+    border: 1px solid rgb(var(--bearings-border));
     border-radius: 0.25rem;
     padding: 0.25rem 0.5rem;
     cursor: pointer;
@@ -590,14 +590,14 @@
     font-size: 0.75rem;
   }
   .rule-row__action--danger {
-    color: var(--accent-error, #f87171);
+    color: #f87171;
   }
   input,
   select,
   textarea {
-    background: var(--surface-2, #0a0a0a);
+    background: rgb(var(--bearings-surface-2));
     color: inherit;
-    border: 1px solid var(--border, #2a2a2a);
+    border: 1px solid rgb(var(--bearings-border));
     border-radius: 0.25rem;
     padding: 0.25rem 0.375rem;
     font: inherit;

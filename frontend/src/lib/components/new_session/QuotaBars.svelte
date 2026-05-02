@@ -150,12 +150,12 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--fg-muted, #888);
+    color: rgb(var(--bearings-fg-muted));
     margin: 0;
   }
   .quota-bars__unavailable {
     font-size: 0.75rem;
-    color: var(--fg-muted, #888);
+    color: rgb(var(--bearings-fg-muted));
     margin: 0;
   }
   .quota-bars__row {
@@ -166,33 +166,33 @@
     font-size: 0.75rem;
   }
   .quota-bars__label {
-    color: var(--fg-muted, #888);
+    color: rgb(var(--bearings-fg-muted));
   }
   .quota-bars__track {
     display: block;
     height: 0.5rem;
-    background: var(--surface-2, #1a1a1a);
+    background: rgb(var(--bearings-surface-2));
     border-radius: 9999px;
     overflow: hidden;
   }
   .quota-bars__fill {
     display: block;
     height: 100%;
-    background: var(--accent-ok, #4ade80);
+    background: #4ade80;
     transition: width 200ms ease;
   }
   .quota-bars__row[data-severity="yellow"] .quota-bars__fill {
-    background: var(--accent-warn, #facc15);
+    background: #facc15;
   }
   .quota-bars__row[data-severity="red"] .quota-bars__fill {
-    background: var(--accent-error, #ef4444);
+    background: #ef4444;
   }
   .quota-bars__row[data-severity="unknown"] .quota-bars__fill {
-    background: var(--fg-muted, #888);
+    background: #888;
   }
   .quota-bars__pct {
     text-align: right;
-    color: var(--fg-muted, #888);
+    color: rgb(var(--bearings-fg-muted));
     font-variant-numeric: tabular-nums;
   }
 </style>

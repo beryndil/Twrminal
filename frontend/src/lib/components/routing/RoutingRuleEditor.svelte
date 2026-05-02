@@ -534,11 +534,11 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--fg-muted, #9ca3af);
+    color: rgb(var(--bearings-fg-muted));
   }
   .routing-editor__add {
-    background: var(--accent, #3b82f6);
-    color: var(--bg, #0a0a0a);
+    background: rgb(var(--bearings-accent));
+    color: rgb(var(--bearings-surface-0));
     border: none;
     border-radius: 0.25rem;
     padding: 0.375rem 0.75rem;
@@ -548,7 +548,7 @@
   }
   .routing-editor__error {
     margin: 0;
-    color: var(--accent-error, #f87171);
+    color: #f87171;
     font-size: 0.8125rem;
   }
   .routing-editor__list {
@@ -561,7 +561,7 @@
   }
   .routing-editor__placeholder {
     margin: 0;
-    color: var(--fg-muted, #9ca3af);
+    color: rgb(var(--bearings-fg-muted));
     font-size: 0.8125rem;
   }
 </style>

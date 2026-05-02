@@ -56,12 +56,12 @@
   .settings-page__heading {
     font-size: 1.125rem;
     font-weight: 600;
-    color: var(--fg-strong, #f3f4f6);
+    color: rgb(var(--bearings-fg-strong));
     margin: 0;
   }
   .settings-page__lede {
     font-size: 0.8125rem;
-    color: var(--fg-muted, #888);
+    color: rgb(var(--bearings-fg-muted));
     margin: 0;
   }
 </style>
