@@ -6,8 +6,12 @@
    * Behavior anchors:
    *
    * - ``docs/behavior/chat.md`` §"opens an existing chat" — selecting
-   *   the row reconnects the conversation pane (the click handler
-   *   surfaces the id; the parent decides what to do with it).
+   *   the row reconnects the conversation pane. The row is rendered
+   *   as an ``<a href="/sessions/{id}">`` so SvelteKit client-nav
+   *   handles the URL change; the route file at
+   *   ``routes/sessions/[id]/+page.svelte`` syncs the inspector store
+   *   from the URL on mount. (Sign-off decision 2026-05-01:
+   *   SvelteKit client-nav, no chrome flash.)
    * - §"creates a chat" — clicking a tag chip on a session row toggles
    *   that tag in the global filter set (the "finder-click" behavior).
    * - §"Error states" — the red flashing pip is the
@@ -16,9 +20,10 @@
    *   style).
    *
    * The component is presentational: props in, events out via
-   * callback props. The parent (``SessionList.svelte``) wires the
-   * click handlers to the stores. Keeping the presentation pure
-   * makes the row testable in isolation against synthetic data.
+   * callback props. ``onSelect`` is retained for the few callers that
+   * still want to react to a row activation (e.g. the integration
+   * tests that pre-date URL routing); the anchor's ``href`` is what
+   * actually drives navigation.
    */
   import { SESSION_KIND_CHAT, SIDEBAR_STRINGS } from "../../config";
   import type { SessionOut } from "../../api/sessions";
@@ -32,13 +37,20 @@
     selectedTagIds: ReadonlySet<number>;
     /** Selected-row highlight (the conversation pane is pointing at this row). */
     isSelected: boolean;
-    /** Row click — typically "open this session in the conversation pane". */
+    /**
+     * Row activation callback — fires alongside the anchor navigation
+     * so callers that observed selection through this prop (existing
+     * integration tests, future keyboard-nav surfaces) keep working.
+     * The actual URL change is owned by the anchor's ``href``.
+     */
     onSelect: (sessionId: string) => void;
     /** Tag-chip click — finder-click integration; toggles tag in filter set. */
     onToggleTag: (tagId: number) => void;
   }
 
   const { session, tags, selectedTagIds, isSelected, onSelect, onToggleTag }: Props = $props();
+
+  const sessionHref = $derived(`/sessions/${encodeURIComponent(session.id)}`);
 
   const isClosed = $derived(session.closed_at !== null);
 
@@ -49,14 +61,15 @@
   );
 </script>
 
-<button
-  type="button"
-  class="session-row group flex w-full flex-col gap-1 border-b border-border px-3 py-2 text-left transition-colors hover:bg-surface-2"
+<a
+  href={sessionHref}
+  class="session-row group flex w-full flex-col gap-1 border-b border-border px-3 py-2 text-left no-underline transition-colors hover:bg-surface-2"
   class:session-row--selected={isSelected}
   class:bg-surface-2={isSelected}
   class:opacity-70={isClosed}
   data-testid="session-row"
   data-session-id={session.id}
+  data-sveltekit-preload-data="hover"
   aria-current={isSelected ? "true" : undefined}
   onclick={() => onSelect(session.id)}
 >
@@ -104,11 +117,13 @@
     <span class="flex flex-wrap gap-1" data-testid="session-row-tags">
       {#each tags as tag (tag.id)}
         <!--
-          Nested <button> inside the row <button> is invalid HTML — Svelte
-          will warn. We render the chip as a span with role="button" + a
-          stopPropagation handler so the chip click doesn't also fire the
-          row click. (The composer-row pattern in chat.md drives the same
-          tradeoff for the clickable chip on the conversation header.)
+          The chip is rendered as a span with role="button" + a
+          stopPropagation handler so clicking the chip toggles the
+          tag-filter without also navigating the row's anchor href.
+          (The composer-row pattern in chat.md drives the same tradeoff
+          for the clickable chip on the conversation header.) Tabindex
+          keeps the chip keyboard-reachable when the user tabs through
+          the row.
         -->
         <span
           role="button"
@@ -138,7 +153,7 @@
       {/each}
     </span>
   {/if}
-</button>
+</a>
 
 <style>
   /*

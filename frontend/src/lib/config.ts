@@ -73,6 +73,22 @@ export const messageEndpoint = (messageId: string): string =>
   `${API_BASE}/messages/${encodeURIComponent(messageId)}`;
 
 /**
+ * ``POST /api/sessions/{id}/prompt`` — composer submit surface per
+ * ``docs/behavior/prompt-endpoint.md``. Body shape: ``{ content: str }``;
+ * 202 Accepted ack body: ``{ queued: bool, session_id: str }``.
+ */
+export const sessionPromptEndpoint = (sessionId: string): string =>
+  `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/prompt`;
+
+/**
+ * Hard cap on a single prompt submission, mirroring the backend's
+ * :data:`bearings.config.constants.PROMPT_CONTENT_MAX_CHARS` (64 000).
+ * The Composer enforces this client-side so the user gets immediate
+ * feedback rather than a 422 round-trip.
+ */
+export const PROMPT_CONTENT_MAX_CHARS = 64_000;
+
+/**
  * ``POST /api/routing/preview`` — new-session dialog's reactive
  * routing preview surface (spec §6 + §9). Body shape: ``{ tags:
  * int[], message: str }``; response shape: ``RoutingPreviewOut`` per
@@ -277,6 +293,21 @@ export const CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS = 8000;
  * security review can grep one place rather than chasing call sites.
  */
 export const CHAT_LINK_REL = "noopener noreferrer";
+
+/**
+ * Composer copy — surfaced by ``Composer.svelte`` (the chat input
+ * footer). Behaviour doc anchor: ``docs/behavior/chat.md``
+ * §"Composer & message submission".
+ */
+export const COMPOSER_STRINGS = {
+  textareaAriaLabel: "Message composer",
+  textareaPlaceholder: "Send a message…  (Enter to send, Shift+Enter for newline)",
+  sendButtonLabel: "Send",
+  sendButtonAriaLabel: "Send message",
+  sending: "Sending…",
+  sendFailed: "Couldn't send the message.",
+  sessionClosedHint: "This session is closed — reopen it to send a message.",
+} as const;
 
 export const SIDEBAR_STRINGS = {
   heading: "Bearings",

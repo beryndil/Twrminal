@@ -9,26 +9,30 @@
    *   │  (left)    │   (center)               │ (right)    │
    *   └────────────┴──────────────────────────┴────────────┘
    *
-   * The columns are SvelteKit `<slot>`-style named regions so each
-   * downstream item plugs into the right column without touching the
-   * shell:
+   * Each column hosts a self-contained component subtree:
    *
-   * - Item 2.2 (sidebar + tag filtering) renders into the left column.
-   * - Item 2.3 (Conversation + streaming) renders into the center.
-   * - Item 2.5 (Inspector core + Agent/Context/Instructions) renders
-   *   into the right column; item 2.6 plugs Routing/Usage tabs into
-   *   the same shell without restructuring it.
+   * - Sidebar: ``SessionList`` (session rows + tag filter chrome).
+   * - Center: ``Conversation`` (header + transcript) + ``Composer``
+   *   (textarea footer); when a checklist row is selected,
+   *   ``ChecklistView`` swaps in instead.
+   * - Inspector: ``Inspector`` (Agent / Context / Instructions /
+   *   Routing / Usage tabs).
    *
-   * The center column houses the conversation header / body /
-   * composer described in `docs/behavior/chat.md` §"opens an existing
-   * chat"; rendering of a real conversation is item 2.3's surface.
+   * The visible-row selection is owned by the inspector store
+   * (``$lib/stores/inspector.svelte``); URL routing
+   * (``/sessions/[id]``) syncs into it on navigation so reload +
+   * browser back/forward preserve the active session.
    */
   import "../app.css";
   import type { Snippet } from "svelte";
 
+  import { page } from "$app/state";
+  import { goto } from "$app/navigation";
+
   import { SESSION_KIND_CHECKLIST, SIDEBAR_STRINGS } from "$lib/config";
   import SessionList from "$lib/components/sidebar/SessionList.svelte";
   import Conversation from "$lib/components/conversation/Conversation.svelte";
+  import Composer from "$lib/components/composer/Composer.svelte";
   import ChecklistView from "$lib/components/checklist/ChecklistView.svelte";
   import Inspector from "$lib/components/inspector/Inspector.svelte";
   import ThemeProvider from "$lib/themes/ThemeProvider.svelte";
@@ -66,8 +70,35 @@
       : (sessionsStore.sessions.find((row) => row.id === selectedSessionId) ?? null),
   );
 
+  /**
+   * Sync the store from the URL on every navigation. The
+   * ``/sessions/[id]`` route file fires the same effect from its own
+   * ``+page.svelte`` — wiring it here too means the empty-children
+   * branches (``/``, ``/settings``, ``/memories``, ``/vault``) get
+   * the store cleared back to ``null``, so the conversation pane
+   * reverts to its empty state when the user navigates away from a
+   * session URL.
+   */
+  $effect(() => {
+    const routeId = page.route.id;
+    const id = page.params.id;
+    if (routeId === "/sessions/[id]" && typeof id === "string" && id.length > 0) {
+      setActiveSession(id);
+    } else {
+      setActiveSession(null);
+    }
+  });
+
+  /**
+   * Sidebar still passes ``onSelect`` for compatibility with existing
+   * tests + the future keyboard-nav surface. Activation goes through
+   * SvelteKit client-nav (anchor href on the row); we mirror that here
+   * via :func:`goto` so a synthetic onSelect call (or a tag-chip
+   * keyboard activation that bubbled past the chip's own handler)
+   * still navigates the same way.
+   */
   function handleSelectSession(sessionId: string): void {
-    setActiveSession(sessionId);
+    void goto(`/sessions/${encodeURIComponent(sessionId)}`);
   }
 </script>
 
@@ -98,10 +129,11 @@
             class="app-shell__main-header border-b border-border p-3"
             data-testid="app-shell-main-header"
           >
-            <p class="text-sm text-fg-muted">
-              Conversation header — model dropdown, quota bars, paired-checklist breadcrumb (item
-              2.3).
-            </p>
+            {#if activeSession !== null}
+              <p class="truncate text-sm text-fg-strong" data-testid="conversation-header-title">
+                {activeSession.title}
+              </p>
+            {/if}
           </header>
           <section
             class="app-shell__main-body text-fg"
@@ -128,7 +160,13 @@
             class="app-shell__main-composer border-t border-border bg-surface-1 p-3"
             data-testid="app-shell-main-composer"
           >
-            <p class="text-sm text-fg-muted">Composer — multi-line input + send (item 2.3).</p>
+            {#if selectedSessionId !== null && activeSession?.kind !== SESSION_KIND_CHECKLIST}
+              <Composer
+                sessionId={selectedSessionId}
+                disabled={activeSession?.closed_at !== null &&
+                  activeSession?.closed_at !== undefined}
+              />
+            {/if}
           </footer>
         </main>
 
@@ -148,7 +186,7 @@
   /*
    * The grid is the only piece that has to hold across themes —
    * everything else uses Tailwind utility classes so theme switches
-   * (item 2.9) re-tint the shell synchronously.
+   * re-tint the shell synchronously.
    */
   .app-shell {
     display: grid;
