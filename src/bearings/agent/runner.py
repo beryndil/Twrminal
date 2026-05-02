@@ -64,6 +64,7 @@ References:
 from __future__ import annotations
 
 import asyncio
+import time
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -77,6 +78,13 @@ from bearings.config.constants import (
     STREAM_MAX_TOOL_OUTPUT_CHARS,
     STREAM_TRUNCATION_MARKER_TEMPLATE,
 )
+
+
+def _monotonic_ns() -> int:
+    """``time.monotonic_ns`` indirection so tests can patch it without
+    monkey-patching the standard library. Production callers pay the
+    same cost as a direct call (a single function dispatch)."""
+    return time.monotonic_ns()
 
 
 @dataclass(frozen=True)
@@ -175,6 +183,16 @@ class SessionRunner:
         # a time." Item 1.7 lays the enqueue path; the worker-loop side
         # (item 1.3+) drains via :meth:`pop_next_prompt`.
         self._prompt_queue: deque[QueuedPrompt] = deque()
+        # Edge-triggered signal the worker loop awaits when the prompt
+        # queue is empty. ``enqueue_prompt`` sets it; ``pop_next_prompt``
+        # clears it on the transition to empty. Exposed via
+        # :attr:`new_prompt_event` so the worker can ``await`` it
+        # instead of busy-polling.
+        self._new_prompt_event: asyncio.Event = asyncio.Event()
+        # Monotonic-clock timestamp the supervisor's reaper polls. Set
+        # on construction, refreshed on every emit / enqueue / subscribe
+        # so an active session never trips the idle-reap threshold.
+        self._last_active_ns: int = _monotonic_ns()
 
     # -- properties --------------------------------------------------
 
@@ -209,6 +227,28 @@ class SessionRunner:
         """
         return len(self._prompt_queue)
 
+    @property
+    def new_prompt_event(self) -> asyncio.Event:
+        """Edge-triggered signal the worker loop awaits when the prompt
+        queue is empty.
+
+        Set by :meth:`enqueue_prompt`; cleared by :meth:`pop_next_prompt`
+        on the queue→empty transition. The worker reads
+        ``await runner.new_prompt_event.wait()`` instead of polling.
+        """
+        return self._new_prompt_event
+
+    @property
+    def last_active_ns(self) -> int:
+        """``time.monotonic_ns()`` timestamp of the most recent emit /
+        enqueue / subscribe.
+
+        The supervisor's idle reaper (item A5) polls this against
+        :data:`bearings.config.constants.IDLE_REAP_THRESHOLD_S` to
+        decide which sessions to tear down.
+        """
+        return self._last_active_ns
+
     def enqueue_prompt(self, *, message_id: str, content: str) -> None:
         """Append ``content`` to the FIFO prompt queue.
 
@@ -229,6 +269,8 @@ class SessionRunner:
         if not content:
             raise ValueError("enqueue_prompt: content must be non-empty")
         self._prompt_queue.append(QueuedPrompt(message_id=message_id, content=content))
+        self._new_prompt_event.set()
+        self._last_active_ns = _monotonic_ns()
 
     def pop_next_prompt(self) -> QueuedPrompt | None:
         """Drain one prompt from the FIFO; ``None`` when empty.
@@ -239,7 +281,13 @@ class SessionRunner:
         """
         if not self._prompt_queue:
             return None
-        return self._prompt_queue.popleft()
+        item = self._prompt_queue.popleft()
+        if not self._prompt_queue:
+            # Queue drained — clear the gate so the worker awaits again
+            # next time around. enqueue_prompt re-sets it on the next
+            # arrival.
+            self._new_prompt_event.clear()
+        return item
 
     def peek_next_prompt(self) -> QueuedPrompt | None:
         """Return the next prompt without dequeuing; ``None`` when empty.
@@ -322,6 +370,7 @@ class SessionRunner:
         queue: asyncio.Queue[StreamEntry] = asyncio.Queue()
         replay: list[StreamEntry] = [(seq, event) for seq, event in self._buffer if seq > since_seq]
         self._subscribers.add(queue)
+        self._last_active_ns = _monotonic_ns()
         return replay, queue
 
     def unsubscribe(self, queue: asyncio.Queue[StreamEntry]) -> None:
@@ -404,6 +453,7 @@ class SessionRunner:
         self._next_seq += 1
         entry: StreamEntry = (seq, event)
         self._buffer.append(entry)
+        self._last_active_ns = _monotonic_ns()
         # ``put_nowait`` is correct: the queues are unbounded
         # (default-constructed in :meth:`subscribe`) so the call never
         # raises :class:`asyncio.QueueFull`. A future bound on the
