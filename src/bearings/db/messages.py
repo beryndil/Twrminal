@@ -320,6 +320,33 @@ async def get(
     return None if row is None else _row_to_message(row)
 
 
+async def latest_user_content(
+    connection: aiosqlite.Connection,
+    session_id: str,
+) -> str | None:
+    """Return the most recent user-role message content; ``None`` if none.
+
+    Backs ``POST /api/sessions/{id}/regenerate`` (arch §1.1.5 — landed
+    in the v1.1 closing-sweep). The route replays the latest user
+    prompt by re-dispatching its content; this helper is the read.
+
+    Returns ``None`` when the session has no user-role messages yet
+    (a freshly created session that's never been prompted) — the
+    route layer translates that to a 409 because there's nothing to
+    regenerate from.
+    """
+    cursor = await connection.execute(
+        _SELECT_MESSAGE_COLUMNS + " WHERE session_id = ? AND role = 'user' "
+        "ORDER BY created_at DESC, id DESC LIMIT 1",
+        (session_id,),
+    )
+    try:
+        row = await cursor.fetchone()
+    finally:
+        await cursor.close()
+    return None if row is None else _row_to_message(row).content
+
+
 async def list_for_session(
     connection: aiosqlite.Connection,
     session_id: str,

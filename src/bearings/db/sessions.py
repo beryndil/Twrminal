@@ -361,6 +361,41 @@ async def update_title(
     return await get(connection, session_id)
 
 
+async def update_model(
+    connection: aiosqlite.Connection,
+    session_id: str,
+    *,
+    model: str,
+) -> Session | None:
+    """Replace ``model``; returns the new row or ``None`` if absent.
+
+    Backs ``PATCH /api/sessions/{id}/model`` (arch §1.1.5 — landed in
+    the v1.1 closing-sweep). Validation mirrors :class:`Session`'s
+    own model invariant via :func:`_is_known_model`; an unknown
+    model name raises ``ValueError`` so the route layer can surface
+    a 422.
+
+    **Live-runner semantics** — this helper updates the DB row only.
+    Spec §7 calls for an in-flight ``runner.set_model()`` forward
+    so the swap takes effect mid-turn; v1.1 ships the DB-only swap
+    (next session boot picks up the new model) and defers the live
+    forward to a follow-up. See TODO.md "PATCH model: live runner
+    forward (deferred)".
+    """
+    if not _is_known_model(model):
+        raise ValueError(f"update_model: model {model!r} not recognised")
+    existing = await get(connection, session_id)
+    if existing is None:
+        return None
+    timestamp = now_iso()
+    await connection.execute(
+        "UPDATE sessions SET model = ?, updated_at = ? WHERE id = ?",
+        (model, timestamp, session_id),
+    )
+    await connection.commit()
+    return await get(connection, session_id)
+
+
 async def close(
     connection: aiosqlite.Connection,
     session_id: str,

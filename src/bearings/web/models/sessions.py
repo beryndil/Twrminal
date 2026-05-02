@@ -124,6 +124,21 @@ class SessionCreate(BaseModel):
     tag_ids: list[int] = Field(default_factory=list)
 
 
+class SessionModelUpdate(BaseModel):
+    """Request shape for ``PATCH /api/sessions/{id}/model`` (spec §7
+    mid-session model swap; arch §1.1.5).
+
+    The wire field name matches the column name (``model``); v1.1 ships
+    the DB-only swap (next session boot reads the new value). The
+    live-runner forward to :meth:`AgentSession.set_model` is deferred
+    per TODO.md.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    model: str = Field(min_length=1)
+
+
 class SessionDescriptionUpdate(BaseModel):  # pragma: no cover — reserved for v1 PATCH expansion
     """Reserved request shape for the description (plug) PATCH path.
 
@@ -142,6 +157,7 @@ __all__ = [
     "PromptIn",
     "SessionCreate",
     "SessionDescriptionUpdate",
+    "SessionModelUpdate",
     "SessionOut",
     "SessionTitleUpdate",
 ]

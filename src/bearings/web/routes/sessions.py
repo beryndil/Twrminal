@@ -4,17 +4,25 @@ Per ``docs/architecture-v1.md`` §1.1.5 ``web/routes/sessions.py``
 owns:
 
 * ``GET    /api/sessions``                — list sessions (filtered).
-* ``POST   /api/sessions``                — create a session (item
-                                            v1.1 closing-sweep —
-                                            previously deferred,
-                                            never landed in v1.0).
+* ``POST   /api/sessions``                — create a session (v1.1
+                                            closing-sweep — previously
+                                            deferred, never landed in
+                                            v1.0).
 * ``GET    /api/sessions/{id}``           — fetch one session row.
 * ``PATCH  /api/sessions/{id}``           — title-only edit (item 1.7
                                             scope; description PATCH
                                             lands with item 2.x).
+* ``PATCH  /api/sessions/{id}/model``     — swap the executor model
+                                            (spec §7; v1.1 closing-
+                                            sweep). DB-only today;
+                                            live-runner forward
+                                            deferred per TODO.md.
 * ``DELETE /api/sessions/{id}``           — delete session (cascades).
 * ``POST   /api/sessions/{id}/close``     — close (sets ``closed_at``).
 * ``POST   /api/sessions/{id}/reopen``    — clear ``closed_at``.
+* ``POST   /api/sessions/{id}/regenerate`` — replay the latest user
+                                            prompt (v1.1 closing-
+                                            sweep).
 * ``POST   /api/sessions/{id}/prompt``    — the prompt endpoint per
                                             ``docs/behavior/prompt-endpoint.md``.
 
@@ -42,12 +50,14 @@ from bearings.config.constants import (
     PROMPT_ACK_QUEUED_KEY,
     PROMPT_ACK_SESSION_ID_KEY,
 )
+from bearings.db import messages as messages_db
 from bearings.db import sessions as sessions_db
 from bearings.db import tags as tags_db
 from bearings.db.sessions import Session
 from bearings.web.models.sessions import (
     PromptIn,
     SessionCreate,
+    SessionModelUpdate,
     SessionOut,
     SessionTitleUpdate,
 )
@@ -297,6 +307,40 @@ async def close_session(session_id: str, request: Request) -> SessionOut:
     return _to_out(row)
 
 
+@router.patch("/api/sessions/{session_id}/model", response_model=SessionOut)
+async def patch_session_model(
+    session_id: str,
+    payload: SessionModelUpdate,
+    request: Request,
+) -> SessionOut:
+    """Swap the session's executor model (spec §7; arch §1.1.5).
+
+    DB-only today: persists the new model name on the session row so
+    the next session boot picks it up. The live-runner forward to
+    :meth:`AgentSession.set_model` is deferred — see TODO.md "PATCH
+    model: live runner forward (deferred)" for the resolution sketch
+    (route the swap through the runner's prompt queue or expose a
+    distinct control queue per arch §3.2).
+
+    422 on unknown model names; the validator delegates to
+    :func:`sessions_db._is_known_model_name` so the alphabet stays in
+    one place.
+    """
+    db = _db(request)
+    try:
+        row = await sessions_db.update_model(db, session_id, model=payload.model)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no session matches {session_id!r}",
+        )
+    return _to_out(row)
+
+
 @router.post("/api/sessions/{session_id}/reopen", response_model=SessionOut)
 async def reopen_session(session_id: str, request: Request) -> SessionOut:
     """Clear ``closed_at`` per behavior doc §"Reopen semantics"."""
@@ -308,6 +352,91 @@ async def reopen_session(session_id: str, request: Request) -> SessionOut:
             detail=f"no session matches {session_id!r}",
         )
     return _to_out(row)
+
+
+# ---- regenerate ------------------------------------------------------------
+
+
+@router.post(
+    "/api/sessions/{session_id}/regenerate",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def regenerate_session(session_id: str, request: Request) -> Response:
+    """Re-enqueue the latest user prompt for ``session_id``.
+
+    Per arch §1.1.5 the v1 regenerate surface — landed in the v1.1
+    closing-sweep. Semantics: the latest user-role message is replayed
+    through :func:`dispatch_prompt`, which queues it behind any
+    in-flight turn. The previous assistant turn is left in the
+    transcript; "regenerate" produces a new assistant turn alongside
+    rather than replacing the old one.
+
+    Failure modes mirror the prompt endpoint:
+
+    * 404 — session missing OR session has no user messages yet to
+      regenerate from.
+    * 409 — session closed (the prompt queue rejects).
+    * 429 — rate limit (per-session window enforced by the same
+      limiter the prompt endpoint uses).
+
+    Returns 202 with a JSON envelope echoing the queued state, mirror
+    of the prompt endpoint's ack shape.
+    """
+    db = _db(request)
+    factory = _runner_factory(request)
+    limiter = _rate_limiter(request)
+    if not await sessions_db.exists(db, session_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no session matches {session_id!r}",
+        )
+    content = await messages_db.latest_user_content(db, session_id)
+    if content is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"session {session_id!r} has no user messages to regenerate from",
+        )
+    result = await dispatch_prompt(
+        db,
+        factory,
+        limiter,
+        session_id=session_id,
+        content=content,
+    )
+    outcome = result.outcome
+    if outcome is PromptDispatchOutcome.QUEUED:
+        body = {
+            PROMPT_ACK_QUEUED_KEY: True,
+            PROMPT_ACK_SESSION_ID_KEY: session_id,
+        }
+        return Response(
+            content=json.dumps(body),
+            status_code=status.HTTP_202_ACCEPTED,
+            media_type="application/json",
+            headers={"Location": f"/api/sessions/{session_id}"},
+        )
+    if outcome is PromptDispatchOutcome.NOT_FOUND:  # pragma: no cover — guarded above
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=result.detail or f"no session matches {session_id!r}",
+        )
+    if outcome is PromptDispatchOutcome.CLOSED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=result.detail or "session is closed",
+        )
+    if outcome is PromptDispatchOutcome.RATE_LIMITED:
+        retry_after = result.retry_after_s or 1
+        return Response(
+            content=json.dumps({"detail": result.detail or "rate limit exceeded"}),
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            media_type="application/json",
+            headers={"Retry-After": str(retry_after)},
+        )
+    raise HTTPException(  # pragma: no cover — exhaustive enum match above
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=f"unhandled regenerate dispatch outcome {outcome.value!r}",
+    )
 
 
 # ---- prompt endpoint -------------------------------------------------------

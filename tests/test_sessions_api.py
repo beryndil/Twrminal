@@ -342,6 +342,97 @@ async def test_close_session(
     assert response.json()["closed_at"] is not None
 
 
+async def test_patch_model_swap(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Happy path — PATCH /model updates the row's model column."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    with TestClient(app) as client:
+        response = client.patch(f"/api/sessions/{sid}/model", json={"model": "opus"})
+    assert response.status_code == 200
+    assert response.json()["model"] == "opus"
+    refreshed = await sessions_db.get(conn, sid)
+    assert refreshed is not None
+    assert refreshed.model == "opus"
+
+
+async def test_patch_model_unknown_422(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    with TestClient(app) as client:
+        response = client.patch(f"/api/sessions/{sid}/model", json={"model": "bogus-model-99"})
+    assert response.status_code == 422
+    refreshed = await sessions_db.get(conn, sid)
+    assert refreshed is not None
+    assert refreshed.model == "sonnet"
+
+
+async def test_patch_model_404(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    app, _ = app_and_db
+    with TestClient(app) as client:
+        response = client.patch("/api/sessions/ses_missing/model", json={"model": "opus"})
+    assert response.status_code == 404
+
+
+async def test_regenerate_no_messages_404(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Freshly-created sessions with no user messages 404 on regenerate."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    with TestClient(app) as client:
+        response = client.post(f"/api/sessions/{sid}/regenerate")
+    assert response.status_code == 404
+    assert "regenerate" in response.json()["detail"]
+
+
+async def test_regenerate_unknown_session_404(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    app, _ = app_and_db
+    with TestClient(app) as client:
+        response = client.post("/api/sessions/ses_missing/regenerate")
+    assert response.status_code == 404
+
+
+async def test_regenerate_replays_latest_user_message(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """With a user message in history the regenerate endpoint queues a replay."""
+    from bearings.db import messages as messages_db
+
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    await messages_db.insert_user(conn, session_id=sid, content="first prompt")
+    await messages_db.insert_user(conn, session_id=sid, content="latest prompt")
+    with TestClient(app) as client:
+        response = client.post(f"/api/sessions/{sid}/regenerate")
+    assert response.status_code == 202
+    body = response.json()
+    assert body["queued"] is True
+    assert body["session_id"] == sid
+    assert response.headers["Location"] == f"/api/sessions/{sid}"
+
+
+async def test_regenerate_closed_session_409(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    from bearings.db import messages as messages_db
+
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    await messages_db.insert_user(conn, session_id=sid, content="hello")
+    await sessions_db.close(conn, sid)
+    with TestClient(app) as client:
+        response = client.post(f"/api/sessions/{sid}/regenerate")
+    assert response.status_code == 409
+
+
 async def test_close_session_404(
     app_and_db: tuple[FastAPI, aiosqlite.Connection],
 ) -> None:

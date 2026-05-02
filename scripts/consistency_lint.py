@@ -103,6 +103,7 @@ ROUTE_HANDLER_VERB_VOCAB: Final[frozenset[str]] = frozenset(
         "prompt",
         "put",
         "refresh",
+        "regenerate",
         "reopen",
         "reorder",
         "resolve",

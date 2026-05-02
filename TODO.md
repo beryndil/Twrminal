@@ -141,6 +141,23 @@ the lookup result. Same data also unblocks the sidebar annotation
 (`↳ <parent checklist title>` per paired-chats.md §"From the
 sidebar").
 
+#### PATCH model: live runner forward (deferred)
+
+The v1.1 closing-sweep ships ``PATCH /api/sessions/{id}/model`` as a
+DB-only swap. Spec §7 calls for the live forward to
+:meth:`AgentSession.set_model` so the swap takes effect mid-turn —
+that requires routing the swap through the runner's prompt queue (or
+a dedicated control queue per arch §3.2) since the route layer holds
+a :class:`SessionRunner`, not the inner :class:`AgentSession`.
+
+**Action when the live forward lands**: extend
+:meth:`SessionRunner.enqueue_set_model` (or a similar dedicated queue
+if mixing control + data on one queue is too messy), have the
+worker loop drain it before the next prompt, then call
+``await self._client.set_model(model)`` from the worker. Drop the
+"DB-only" caveat from :func:`update_model`'s docstring and from the
+``patch_session_model`` route's docstring.
+
 #### ChecklistChat — deleted (no documented role)
 
 The `ChecklistChat.svelte` component shipped as an orphan (only its
