@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   THEME_DEFAULT,
+  THEME_EVERGREEN,
   THEME_MIDNIGHT_GLASS,
   THEME_PAPER_LIGHT,
   THEME_STORAGE_KEY,
@@ -45,6 +46,7 @@ afterEach(() => {
 
 describe("isThemeId", () => {
   it("accepts every theme in the alphabet", () => {
+    expect(isThemeId(THEME_EVERGREEN)).toBe(true);
     expect(isThemeId(THEME_MIDNIGHT_GLASS)).toBe(true);
     expect(isThemeId(THEME_DEFAULT)).toBe(true);
     expect(isThemeId(THEME_PAPER_LIGHT)).toBe(true);
@@ -65,9 +67,9 @@ describe("resolveOsFallbackTheme", () => {
     expect(resolveOsFallbackTheme()).toBe(THEME_PAPER_LIGHT);
   });
 
-  it("returns midnight-glass otherwise", () => {
+  it("returns evergreen otherwise", () => {
     setMatchMedia(false);
-    expect(resolveOsFallbackTheme()).toBe(THEME_MIDNIGHT_GLASS);
+    expect(resolveOsFallbackTheme()).toBe(THEME_EVERGREEN);
   });
 });
 
@@ -111,6 +113,6 @@ describe("resolveBootTheme", () => {
     setMatchMedia(true);
     expect(resolveBootTheme()).toBe(THEME_PAPER_LIGHT);
     setMatchMedia(false);
-    expect(resolveBootTheme()).toBe(THEME_MIDNIGHT_GLASS);
+    expect(resolveBootTheme()).toBe(THEME_EVERGREEN);
   });
 });

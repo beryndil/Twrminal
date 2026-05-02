@@ -21,7 +21,7 @@
  */
 import {
   KNOWN_THEMES,
-  THEME_MIDNIGHT_GLASS,
+  THEME_EVERGREEN,
   THEME_PAPER_LIGHT,
   THEME_STORAGE_KEY,
   type ThemeId,
@@ -30,15 +30,15 @@ import {
 /**
  * OS color-scheme fallback per the doc's first-paint rules.
  * Returns the dark theme on non-DOM environments (SSR / prerender)
- * since :file:`src/app.html` boots with ``midnight-glass``.
+ * since :file:`src/app.html` boots with ``evergreen``.
  */
 export function resolveOsFallbackTheme(): ThemeId {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-    return THEME_MIDNIGHT_GLASS;
+    return THEME_EVERGREEN;
   }
   return window.matchMedia("(prefers-color-scheme: light)").matches
     ? THEME_PAPER_LIGHT
-    : THEME_MIDNIGHT_GLASS;
+    : THEME_EVERGREEN;
 }
 
 /**

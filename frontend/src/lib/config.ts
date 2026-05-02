@@ -1298,17 +1298,24 @@ export const MEMORIES_STRINGS = {
 // ---- Themes (item 2.9; mirrors ``docs/behavior/themes.md`` §"Theme picker UI") ----
 
 /**
- * The three themes shipped in v1, per ``docs/behavior/themes.md``
- * §"Theme picker UI". Identifiers are wire-shaped strings written into
- * ``data-theme`` on the document root and into the localStorage value;
- * adding a fourth theme means appending one entry to this alphabet plus
- * a matching CSS variable block in :file:`src/app.css`.
+ * The four themes shipped in v1. Evergreen (forest-green, flat) is the
+ * v0.17.x visual-parity default added for the skinning pass. Identifiers
+ * are wire-shaped strings written into ``data-theme`` on the document
+ * root and into the localStorage value; adding another theme means
+ * appending one entry to this alphabet plus a matching CSS variable
+ * block in :file:`src/app.css`.
  */
+export const THEME_EVERGREEN = "evergreen";
 export const THEME_MIDNIGHT_GLASS = "midnight-glass";
 export const THEME_DEFAULT = "default";
 export const THEME_PAPER_LIGHT = "paper-light";
 
-export const KNOWN_THEMES = [THEME_MIDNIGHT_GLASS, THEME_DEFAULT, THEME_PAPER_LIGHT] as const;
+export const KNOWN_THEMES = [
+  THEME_EVERGREEN,
+  THEME_MIDNIGHT_GLASS,
+  THEME_DEFAULT,
+  THEME_PAPER_LIGHT,
+] as const;
 export type ThemeId = (typeof KNOWN_THEMES)[number];
 
 /**
@@ -1321,6 +1328,7 @@ export type ThemeId = (typeof KNOWN_THEMES)[number];
  * without a CSS-variable read.
  */
 export const THEME_COLOR_HEX: Record<ThemeId, string> = {
+  [THEME_EVERGREEN]: "#0e131b",
   [THEME_MIDNIGHT_GLASS]: "#0e1729",
   [THEME_DEFAULT]: "#111827",
   [THEME_PAPER_LIGHT]: "#faf7f0",
@@ -1350,6 +1358,7 @@ export const THEME_STRINGS = {
   pickerCaption: "Saved per device. Applies immediately.",
   saveFailedToast: "Couldn't save your theme — try again.",
   themeLabels: {
+    [THEME_EVERGREEN]: "Evergreen (forest-green, flat)",
     [THEME_MIDNIGHT_GLASS]: "Midnight Glass (warm-navy, glass panels)",
     [THEME_DEFAULT]: "Default (Tailwind classic dark)",
     [THEME_PAPER_LIGHT]: "Paper Light (cream, flat)",

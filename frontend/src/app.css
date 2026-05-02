@@ -18,8 +18,21 @@
 @tailwind utilities;
 
 @layer base {
-  /* Midnight Glass — default warm-navy with glass panels. */
+  /* Evergreen — forest-green, flat. Matches v0.17.x default theme. */
   :root,
+  [data-theme="evergreen"] {
+    --bearings-surface-0: 14 19 27; /* slate-950: deep bg */
+    --bearings-surface-1: 20 27 36; /* slate-900: sidebar / inspector panels */
+    --bearings-surface-2: 33 40 51; /* slate-800: elevated cards / hovered rows */
+    --bearings-fg: 231 234 237; /* slate-100 */
+    --bearings-fg-muted: 139 152 161; /* slate-400 */
+    --bearings-fg-strong: 245 246 249; /* slate-50 */
+    --bearings-accent: 37 136 70; /* emerald-500: forest green brand */
+    --bearings-accent-muted: 30 110 56; /* emerald-600 */
+    --bearings-border: 56 65 75; /* slate-700 */
+  }
+
+  /* Midnight Glass — warm-navy with glass panels. */
   [data-theme="midnight-glass"] {
     --bearings-surface-0: 14 23 41; /* deep navy app background */
     --bearings-surface-1: 22 33 56; /* sidebar / inspector panels */
