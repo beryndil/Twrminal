@@ -1,0 +1,2 @@
+import"../chunks/CWj6FrbW.js";import"../chunks/C-k2v2yf.js";import{a as e,f as o}from"../chunks/CbdPjdN0.js";var i=o(`<div class="flex h-full flex-col p-6"><h2 class="mb-1 text-lg font-semibold text-fg-strong">Tags</h2> <p class="text-sm text-fg-muted">Tag management is coming in a follow-up phase. For now, tag filtering lives in the sidebar and
+    tag editing happens via the right-click menu on a session row.</p></div>`);function m(t){var a=i();e(t,a)}export{m as component};

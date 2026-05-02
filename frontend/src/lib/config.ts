@@ -301,7 +301,8 @@ export const CHAT_LINK_REL = "noopener noreferrer";
  */
 export const COMPOSER_STRINGS = {
   textareaAriaLabel: "Message composer",
-  textareaPlaceholder: "Send a message…  (Enter to send, Shift+Enter for newline)",
+  textareaPlaceholder:
+    "Send a prompt (Enter · Shift+Enter for newline · / for commands · Ctrl+V to paste files)",
   sendButtonLabel: "Send",
   sendButtonAriaLabel: "Send message",
   sending: "Sending…",

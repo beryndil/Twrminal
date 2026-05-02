@@ -148,7 +148,8 @@
   }
 
   .inspector__tab--active {
-    color: var(--bearings-fg-strong, currentColor);
-    background-color: var(--bearings-surface-2, rgba(255, 255, 255, 0.08));
+    color: rgb(var(--bearings-accent));
+    background-color: transparent;
+    box-shadow: inset 0 -2px 0 rgb(var(--bearings-accent));
   }
 </style>
