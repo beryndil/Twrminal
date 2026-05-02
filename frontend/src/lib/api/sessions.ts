@@ -95,6 +95,44 @@ export async function reopenSession(
   return await postJson<SessionOut>(path, null, options);
 }
 
+/**
+ * Wire shape for ``POST /api/sessions`` — one-to-one with
+ * :class:`bearings.web.models.sessions.SessionCreate`. ``tag_ids``
+ * defaults to an empty list at the API boundary; the new-session form
+ * enforces the "≥1 tag" rule at the UI layer.
+ *
+ * Not exported: the only consumer today is :func:`createSession`'s
+ * argument list. A second consumer would re-export from here; until
+ * that lands, knip flags an exported-but-unused declaration.
+ */
+interface SessionCreateBody {
+  kind: string;
+  title: string;
+  working_dir: string;
+  model: string;
+  description?: string | null;
+  session_instructions?: string | null;
+  permission_mode?: string | null;
+  max_budget_usd?: number | null;
+  tag_ids?: number[];
+}
+
+/**
+ * Create a session via ``POST /api/sessions``. The server returns 201
+ * with the freshly-created :class:`SessionOut` row and a ``Location``
+ * header pointing at ``/api/sessions/<id>``. Caller follows up with
+ * :func:`sendPrompt` if it has a first-message payload (the create
+ * endpoint itself only inserts the row; queueing the first user turn
+ * is a separate step so the create flow can succeed even when the
+ * runner-factory is offline).
+ */
+export async function createSession(
+  body: SessionCreateBody,
+  options: RequestOptions = {},
+): Promise<SessionOut> {
+  return await postJson<SessionOut>(API_SESSIONS_ENDPOINT, body, options);
+}
+
 export async function listSessions(params: ListSessionsParams = {}): Promise<SessionOut[]> {
   const query: Array<readonly [string, string]> = [];
   if (params.kind !== undefined) {
