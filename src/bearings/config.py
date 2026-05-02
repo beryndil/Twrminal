@@ -237,6 +237,15 @@ class AgentCfg(BaseModel):
     # the user at this config key; the SessionEdit modal surfaces the
     # message inline so the operator knows exactly which flag to flip.
     enable_llm_title_suggest: bool = False
+    # Spawn-from-reply Wave 3 (`~/.claude/plans/classifying-spawn-reply-wave-3.md`).
+    # Whether `POST /sessions/{id}/spawn_from_reply/{message_id}/classify`
+    # is allowed to spawn an in-process one-shot `claude_agent_sdk.query()`
+    # call to classify an assistant reply into single_chat / multi_chat /
+    # checklist shape. Disabled by default — the fallback path always
+    # returns single_chat so the route degrades gracefully without a 503.
+    # Flip on once the classifier prompt has been dogfooded against real
+    # replies and the shape heuristics feel stable.
+    enable_llm_spawn_classifier: bool = False
     # Override the model used by suggest_titles + bulk-suggest when LLM
     # title-suggest is enabled. None means "fall back to the session's
     # configured model" (typically Opus / Sonnet). A title-summarizer

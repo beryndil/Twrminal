@@ -55,6 +55,13 @@ from .sessions import (
     SessionOut,
     SessionUpdate,
 )
+from .spawn_classify import (
+    ChecklistPayload,
+    MultiChatPayload,
+    SingleChatPayload,
+    SpawnClassifyResult,
+    SpawnShape,
+)
 from .suggest_titles import BulkTitleSuggestItem, BulkTitleSuggestResult, SuggestTitlesResult
 from .tags import (
     TagCreate,
@@ -128,6 +135,11 @@ __all__ = [
     "ReorgSplitResult",
     "ReorgWarning",
     "RegenerateFromMessageOut",
+    "ChecklistPayload",
+    "MultiChatPayload",
+    "SingleChatPayload",
+    "SpawnClassifyResult",
+    "SpawnShape",
     "SearchHit",
     "SessionBulkBody",
     "SessionBulkResult",
