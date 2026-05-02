@@ -38,9 +38,15 @@
      * handler with the assistant message; the parent's
      * `Conversation.svelte` calls `sessions.spawnFromReply` which
      * creates a fresh chat session seeded with this reply and selects
-     * it. v0 hard-codes single-chat shape — Wave 3 will swap in an
-     * LLM classifier that may pick checklist / N-chats instead. */
+     * it. Single-chat shape only — use `⊕ classify` for LLM-driven
+     * multi-chat / checklist. */
     onSpawn?: (msg: Message) => void;
+    /** Wave 3 — `⊕ classify` button. Calls the /classify endpoint to
+     * let the LLM decide the spawn shape (single_chat / multi_chat /
+     * checklist) and shows a confirmation card. The parent's
+     * `Conversation.svelte` handles the API call + card rendering;
+     * this prop fires the trigger callback with the assistant message. */
+    onSpawnClassify?: (msg: Message) => void;
     /** L4.3.2 — `✂ TLDR` button. Renders on every finished assistant
      * reply alongside `＋ SPAWN`. Click fires the handler with the
      * assistant message; the parent's `Conversation.svelte` opens the
@@ -123,6 +129,7 @@
     onMoreInfo,
     isLatestAssistant = false,
     onSpawn,
+    onSpawnClassify,
     onTldr,
     onCritique,
     onQuoteReply,
@@ -558,12 +565,7 @@
           </button>
         {/if}
         {#if !isStreaming && onSpawn}
-          <!-- L4.3.1 / Wave 2 lane 1. Renders on every finished
-               assistant reply (not gated on isLatestAssistant) —
-               spawning a child thread off an older reply is a
-               legitimate workflow. v0 always creates one chat-kind
-               session seeded with this reply; Wave 3 will swap in an
-               LLM classifier that may pick checklist / N-chat shapes. -->
+          <!-- L4.3.1 / Wave 2 lane 1. Always single-chat shape. -->
           <button
             type="button"
             class="text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-300"
@@ -573,6 +575,22 @@
             onclick={() => onSpawn(assistant!)}
           >
             ＋ spawn
+          </button>
+        {/if}
+        {#if !isStreaming && onSpawnClassify}
+          <!-- Wave 3 — classify-then-confirm. Calls /classify and
+               shows SpawnClassifiedCard below this turn. The LLM
+               picks single_chat / multi_chat / checklist; operator
+               confirms before any session is created. -->
+          <button
+            type="button"
+            class="text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-300"
+            aria-label="Classify and spawn from this reply"
+            title="Let the LLM classify the best spawn shape, then confirm"
+            data-testid="spawn-classify-button"
+            onclick={() => onSpawnClassify(assistant!)}
+          >
+            ⊕ classify
           </button>
         {/if}
         {#if !isStreaming && onTldr}

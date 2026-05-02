@@ -12,6 +12,8 @@
   import { ReorgController } from '$lib/utils/reorg-actions.svelte';
   import ApprovalModal from '$lib/components/ApprovalModal.svelte';
   import ReplyActionPreview from '$lib/components/ReplyActionPreview.svelte';
+  import SpawnClassifiedCard from '$lib/components/SpawnClassifiedCard.svelte';
+  import * as checklists from '$lib/api/checklists';
   import AskUserQuestionModal from '$lib/components/AskUserQuestionModal.svelte';
   import BearingsMark from '$lib/components/icons/BearingsMark.svelte';
   import BulkActionBar from '$lib/components/BulkActionBar.svelte';
@@ -122,6 +124,105 @@
     const spawned = await sessions.spawnFromReply(sid, msg.id);
     if (spawned) {
       void goto(`/sessions/${encodeURIComponent(spawned.id)}`);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Wave 3 — classify-spawn state + handlers
+  // ---------------------------------------------------------------------------
+
+  /** The assistant message id that triggered the classify flow, or
+   * null when no card is open.  Used in the template to decide which
+   * turn should render the SpawnClassifiedCard below it. */
+  let classifyMessageId = $state<string | null>(null);
+  let classifyLoading = $state(false);
+  let classifyResult = $state<api.SpawnClassifyResult | null>(null);
+
+  /** `⊕ classify` button handler. Calls /classify and opens the card
+   * below the triggering turn. If a card is already open for a
+   * different message, the old one is replaced. */
+  async function onSpawnClassify(msg: api.Message): Promise<void> {
+    const sid = msg.session_id;
+    if (!sid) return;
+    classifyMessageId = msg.id;
+    classifyLoading = true;
+    classifyResult = null;
+    try {
+      classifyResult = await api.classifySpawn(sid, msg.id);
+    } catch {
+      // classifySpawn should not throw (server always returns 200);
+      // guard anyway — close the card on unexpected network error.
+      classifyMessageId = null;
+    } finally {
+      classifyLoading = false;
+    }
+  }
+
+  function onClassifyCancel(): void {
+    classifyMessageId = null;
+    classifyResult = null;
+    classifyLoading = false;
+  }
+
+  /** Apply the classifier's result. Drives the appropriate spawn
+   * path per shape and navigates to the first created session.
+   *
+   * single_chat  → existing spawnFromReply (one call).
+   * multi_chat   → spawnFromReply once per suggested item (N calls,
+   *                same source message). Navigate to the first.
+   * checklist    → createSession(kind=checklist) + createItem per
+   *                suggested label. Navigate to the new session.
+   */
+  async function onClassifyApply(result: api.SpawnClassifyResult): Promise<void> {
+    const msgId = classifyMessageId;
+    const parent = sessions.selected;
+    if (!msgId || !parent) return;
+    onClassifyCancel();
+
+    if (result.shape === 'single_chat') {
+      // Existing path — simplest.
+      const spawned = await sessions.spawnFromReply(parent.id, msgId);
+      if (spawned) void goto(`/sessions/${encodeURIComponent(spawned.id)}`);
+      return;
+    }
+
+    if (result.shape === 'multi_chat' && result.suggested_multi) {
+      // Create N sessions from the same message. The server derives
+      // title/desc from the reply each time; sessions are independent
+      // threads for exploring each suggested approach.
+      let firstId: string | null = null;
+      for (const _item of result.suggested_multi) {
+        const spawned = await sessions.spawnFromReply(parent.id, msgId);
+        if (spawned && !firstId) firstId = spawned.id;
+      }
+      if (firstId) void goto(`/sessions/${encodeURIComponent(firstId)}`);
+      return;
+    }
+
+    if (result.shape === 'checklist' && result.suggested_checklist) {
+      const items = result.suggested_checklist;
+      const firstLabel = items[0]?.label ?? 'Spawned checklist';
+      try {
+        const newSession = await api.createSession({
+          working_dir: parent.working_dir,
+          model: parent.model,
+          title: firstLabel.slice(0, 60),
+          description: `Classified spawn from session ${parent.id}`,
+          tag_ids: [...parent.tag_ids],
+          kind: 'checklist',
+        });
+        // Unshift into sidebar so it's immediately visible.
+        sessions.list = [newSession, ...sessions.list.filter((s) => s.id !== newSession.id)];
+        sessions.select(newSession.id);
+        // Create all items in order.
+        for (const item of items) {
+          await checklists.createItem(newSession.id, { label: item.label, notes: item.notes });
+        }
+        void goto(`/sessions/${encodeURIComponent(newSession.id)}`);
+      } catch {
+        // Session creation failed — no partial state to clean up
+        // (items are only created after the session exists).
+      }
     }
   }
 
@@ -542,6 +643,7 @@
             {onCopyMessage}
             {onMoreInfo}
             {onSpawn}
+            {onSpawnClassify}
             {onTldr}
             {onCritique}
             {onQuoteReply}
@@ -553,6 +655,16 @@
             onToggleSelect={(msg, shift) => bulk.toggleSelect(msg, shift, conversation.messages)}
             workingDir={sessions.selected?.working_dir ?? null}
           />
+          {#if item.turn.assistant?.id === classifyMessageId}
+            <!-- Wave 3: SpawnClassifiedCard sits directly below the
+                 turn whose assistant message triggered /classify. -->
+            <SpawnClassifiedCard
+              result={classifyResult}
+              loading={classifyLoading}
+              onApply={onClassifyApply}
+              onCancel={onClassifyCancel}
+            />
+          {/if}
         {:else}
           <ReorgAuditDivider audit={item.audit} onJumpTo={onJumpToAuditTarget} />
         {/if}
