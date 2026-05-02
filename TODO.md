@@ -31,7 +31,7 @@ Master plan: `~/.claude/plans/methodical-clearing-backlog.md`.
 **Deferred to follow-up plans (don't re-list under their own headers below):**
 - Bulk retitle from checklist view → `~/.claude/plans/bulk-retitling-checklist.md`
 - Agent-artifact previews (Phase 2) → `~/.claude/plans/previewing-agent-artifacts.md`
-- Spawn-from-reply Wave 3 → `~/.claude/plans/classifying-spawn-reply-wave-3.md`
+- ~~Spawn-from-reply Wave 3~~ → DONE (2026-05-01) — LLM shape classifier, /classify endpoint, SpawnClassifiedCard, multi_chat + checklist apply paths. Commits: e5b8f35 c79bc4a 6b5af23 a8e74c6.
 
 **v1.0.0 smoke test (slice 8d) — done via Playwright/Chromium 2026-04-30:**
 
