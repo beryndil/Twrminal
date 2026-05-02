@@ -254,6 +254,10 @@ def create_app(
     # agent-loop.md`` Slice A1.3.
     if isinstance(factory, InProcessRunnerRegistry):
 
+        @app.on_event("startup")
+        async def _start_reaper() -> None:
+            factory.start_reaper()
+
         @app.on_event("shutdown")
         async def _drain_supervisors() -> None:
             await factory.aclose()

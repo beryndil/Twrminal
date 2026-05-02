@@ -698,6 +698,26 @@ SESSION_CLOSING_SUMMARY_MAX_LENGTH: Final[int] = 2_000
 # directly.
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Idle-reap (Slice A5 of wiring-agent-loop.md). Per sign-off Q3
+# (accepted 2026-05-01) the threshold is 600s with a 60s poll cadence:
+# matches the v0.17.x behavior-doc-cited "long-idle teardown is
+# server-side transparent" feel without thrashing the SDK subprocess.
+# A session goes idle when it has zero subscribers AND zero queued
+# prompts; the reaper polls last_active_ns and cancels the supervisor
+# task so the SDK subprocess closes. The next prompt POST re-spawns
+# transparently per behavior doc §"long-idle teardown".
+# ---------------------------------------------------------------------------
+
+# Seconds without activity before a session's supervisor is reaped.
+IDLE_REAP_THRESHOLD_S: Final[int] = 600
+
+# Poll cadence for the reaper task. Tests inject a much smaller
+# value via the constants-module monkey-patch fixture.
+IDLE_REAP_POLL_INTERVAL_S: Final[int] = 60
+
+# ---------------------------------------------------------------------------
+
 # Server name on ``ClaudeAgentOptions.mcp_servers``. Agents reference
 # tools as ``mcp__<server>__<tool>``; the SDK builds that handle from
 # the key the consumer puts in the ``mcp_servers`` mapping. Keeping the
@@ -1214,6 +1234,8 @@ __all__ = [
     "HEALTH_STATUS_DEGRADED",
     "HEALTH_STATUS_OK",
     "HISTORY_PRIME_MAX_CHARS",
+    "IDLE_REAP_POLL_INTERVAL_S",
+    "IDLE_REAP_THRESHOLD_S",
     "ITEM_OUTCOME_BLOCKED",
     "ITEM_OUTCOME_FAILED",
     "ITEM_OUTCOME_SKIPPED",
