@@ -32,8 +32,15 @@ import {
  * :class:`bearings.agent.sentinel.SentinelFinding`. Per-kind payload
  * fields default to ``null``; consumers branch on ``kind`` to know
  * which fields are populated.
+ *
+ * Not exported: every consumer is internal to this module. The
+ * external API surface is :func:`parseSentinels` /
+ * :func:`firstTerminalSentinel` — both return arrays of this shape
+ * but callers structurally-type against the function's return type.
+ * Re-export when a second module imports the type by name (the
+ * v1.0 ChecklistChat consumer was removed in the closing-sweep).
  */
-export interface SentinelFinding {
+interface SentinelFinding {
   kind: SentinelKind;
   plug: string | null;
   label: string | null;

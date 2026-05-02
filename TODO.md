@@ -112,3 +112,41 @@ scheduled separately): extend
 ``frontend/src/lib/themes/persistence.ts`` to call the API client,
 keeping localStorage as the synchronous boot-time read so the no-flash
 guarantee holds.
+
+### Closing-sweep gap log — 2026-05-02
+
+The 2026-05-02 audit (`bearings__get_tool_output`
+`toolu_01LjpFH7TnMzpGR81Z325Ky3`) found ~25% of arch §1.1.5 unbuilt
+despite the v1 master checklist
+(`0f6e4006fb1d4340bda9983af3432064`) marking 29/29 DONE. The
+closing-sweep plan (`~/.claude/plans/belated-closing-sweep.md`) is
+the source of truth for the work; the entries below are deferrals
+that arose during execution.
+
+#### PairedChatIndicator wiring (deferred)
+
+`paired-chats.md` §"From the chat side" point 2 mandates a breadcrumb
+chip on the conversation header (`<parent checklist title> › <item
+label>`). The `PairedChatIndicator.svelte` component is built
+(`frontend/src/lib/components/conversation/PairedChatIndicator.svelte`)
+but unmounted because no backend endpoint exposes the
+`(parent_title, item_label)` lookup for a chat session id.
+
+**Action when the lookup endpoint lands**: add
+`GET /api/sessions/{id}/paired-chat-info` (or extend `SessionOut` with
+a `paired_chat` block) returning the parent checklist title + item
+label or `null`. Mount `PairedChatIndicator` in
+`frontend/src/routes/+layout.svelte`'s conversation header guarded on
+the lookup result. Same data also unblocks the sidebar annotation
+(`↳ <parent checklist title>` per paired-chats.md §"From the
+sidebar").
+
+#### ChecklistChat — deleted (no documented role)
+
+The `ChecklistChat.svelte` component shipped as an orphan (only its
+own test imported it). No `docs/behavior/*.md` describes the embedded
+conversation pane it offered; the v1 paired-chat flow uses
+`goto(/sessions/<id>)` for full pane swap. Removed in commit (this
+sweep) along with its test and its `CHECKLIST_STRINGS.checklistChat*`
+entries. Re-add only when a behavior doc justifies an inline pane
+alternative to pane-swap.

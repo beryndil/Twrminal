@@ -1139,12 +1139,6 @@ export const CHECKLIST_STRINGS = {
   sentinelEventTooltipAmber: "Item is blocked.",
   sentinelEventTooltipRed: "Item failed.",
   sentinelEventTooltipGrey: "Item was skipped.",
-  // ChecklistChat surface — the embedded conversation pane.
-  checklistChatAriaLabel: "Paired chat",
-  checklistChatNoSelection: "Select a checklist item with a paired chat to continue.",
-  checklistChatBreadcrumbPrefix: "Working on",
-  checklistChatSentinelHeading: "Sentinel events",
-  checklistChatSentinelEmpty: "No sentinels in the latest assistant turn.",
   // Per-sentinel-kind label (sentinel kind → user-visible chip).
   sentinelKindLabels: {
     item_done: "item done",
