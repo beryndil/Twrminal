@@ -506,25 +506,36 @@ class SessionSetup:
     :func:`bearings.agent.session_bootstrap.build_session_setup`;
     tests construct synthetic instances directly.
 
-    The ``session`` and ``options`` fields are typed as ``Any`` to
-    avoid an upward import from this module to ``agent.session`` /
-    ``agent.options`` (per arch §3.1 #2 — ``runner.py`` is the layer
-    floor; importing higher-up agent modules would introduce a
-    sibling-cycle the AST cycle-prevention guard rejects). Concrete
-    consumers (sdk_loop.py + the runner-factory supervisor) read
-    these fields under their own typed wrappers.
+    The ``session``, ``options``, and ``approval_broker`` fields are
+    typed as ``Any`` to avoid an upward import from this module to
+    ``agent.session`` / ``agent.options`` / ``agent.approval`` (per
+    arch §3.1 #2 — ``runner.py`` is the layer floor; importing
+    higher-up agent modules would introduce a sibling-cycle the AST
+    cycle-prevention guard rejects). Concrete consumers
+    (sdk_loop.py + the runner-factory supervisor + the approvals
+    REST/WS routes) read these fields under their own typed
+    wrappers.
+
+    :attr:`approval_broker` is ``None`` before A4 wires the
+    :class:`ApprovalBroker`; populated for sessions whose options
+    enable can_use_tool. The route layer pulls it off ``app.state``
+    via the registry to resolve REST/WS approvals.
     """
 
     session: Any
     options: Any
+    approval_broker: Any = None
 
 
-# Async callable: takes a session id, returns the per-session
-# :class:`SessionSetup`, or ``None`` when the session row is absent
-# or unsupported (e.g. checklist sessions, which have their own
-# driver). Lives in the ``agent`` layer so the web-layer registry
-# binding can read it without cross-layer imports.
-SessionSetupFn = Callable[[str], Awaitable[SessionSetup | None]]
+# Async callable: takes a session id + the freshly-materialised
+# :class:`SessionRunner`, returns the per-session :class:`SessionSetup`,
+# or ``None`` when the session row is absent or unsupported (e.g.
+# checklist sessions, which have their own driver). The runner is
+# threaded so the bootstrap can construct per-session collaborators
+# that need ``runner.emit`` (e.g. :class:`bearings.agent.approval.ApprovalBroker`).
+# Lives in the ``agent`` layer so the web-layer registry binding can
+# read it without cross-layer imports.
+SessionSetupFn = Callable[[str, "SessionRunner"], Awaitable[SessionSetup | None]]
 
 
 __all__ = [

@@ -1089,6 +1089,7 @@ OPENAPI_DESCRIPTION: Final[str] = (
 # Route-group tag alphabet. Every router carries a ``tags=[...]`` arg
 # at ``include_router`` time so the rendered OpenAPI groups operations.
 ROUTE_TAG_SESSIONS: Final[str] = "sessions"
+ROUTE_TAG_APPROVALS: Final[str] = "approvals"
 ROUTE_TAG_MESSAGES: Final[str] = "messages"
 ROUTE_TAG_TAGS: Final[str] = "tags"
 ROUTE_TAG_MEMORIES: Final[str] = "memories"
@@ -1272,6 +1273,7 @@ __all__ = [
     "QUOTA_BAR_YELLOW_PCT",
     "QUOTA_THRESHOLD_PCT",
     "RING_BUFFER_MAX",
+    "ROUTE_TAG_APPROVALS",
     "ROUTE_TAG_CHECKLISTS",
     "ROUTE_TAG_DIAG",
     "ROUTE_TAG_FS",

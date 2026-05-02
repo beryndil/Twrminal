@@ -72,6 +72,13 @@ class InProcessRunnerRegistry:
     def __init__(self, session_setup: SessionSetupFn | None = None) -> None:
         self._runners: dict[str, SessionRunner] = {}
         self._supervisors: dict[str, asyncio.Task[None]] = {}
+        # Per-session ApprovalBroker handles, populated when the
+        # bootstrap wires can_use_tool. Keyed by session id so the
+        # /api/sessions/{id}/approvals route + the WS approval-resolved
+        # frame can resolve the right broker. ``object`` typing avoids
+        # a cross-layer ApprovalBroker import here — the route layer
+        # narrows back at the call site.
+        self._approval_brokers: dict[str, object] = {}
         self._session_setup = session_setup
         self._spawn_lock = asyncio.Lock()
 
@@ -107,9 +114,11 @@ class InProcessRunnerRegistry:
         """Materialise the per-session :class:`SessionSetup` and
         spawn the worker task. Silently no-ops if the setup callable
         returns ``None`` (session row missing)."""
-        setup = await self._session_setup(session_id) if self._session_setup else None
+        setup = await self._session_setup(session_id, runner) if self._session_setup else None
         if setup is None:
             return
+        if setup.approval_broker is not None:
+            self._approval_brokers[session_id] = setup.approval_broker
         task = asyncio.create_task(
             run_session_loop(runner, setup.session, setup.options),
             name=f"sdk_loop:{session_id}",
@@ -127,6 +136,16 @@ class InProcessRunnerRegistry:
         Test introspection — production code does not reach for
         worker handles directly."""
         return self._supervisors.get(session_id)
+
+    def get_approval_broker(self, session_id: str) -> object | None:
+        """Return the per-session ApprovalBroker if one is wired.
+
+        ``object`` typed to avoid a cross-layer import; the route
+        layer (``web/routes/approvals.py``) narrows back to the
+        :class:`bearings.agent.approval.ApprovalBroker` concrete
+        class at the call site.
+        """
+        return self._approval_brokers.get(session_id)
 
     def close_all(self) -> None:
         """Drop every registered runner. For test teardown only —
@@ -146,6 +165,14 @@ class InProcessRunnerRegistry:
         endpoints) can still read the ring buffer for a session even
         after the worker has been reaped.
         """
+        # Cancel any in-flight approval futures first so the
+        # SDK-side can_use_tool callbacks unblock and let the
+        # supervisor task observe the cancellation cleanly.
+        for broker in self._approval_brokers.values():
+            cancel_all = getattr(broker, "cancel_all", None)
+            if callable(cancel_all):
+                cancel_all()
+        self._approval_brokers.clear()
         tasks = list(self._supervisors.values())
         for task in tasks:
             if not task.done():

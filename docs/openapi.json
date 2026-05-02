@@ -2136,6 +2136,61 @@
         }
       }
     },
+    "/api/sessions/{session_id}/approvals/{request_id}": {
+      "post": {
+        "tags": [
+          "approvals"
+        ],
+        "summary": "Resolve Approval",
+        "description": "Resolve a pending approval-modal request.\n\nThe SDK callback waiting on the broker future receives\n``payload.approved`` and translates it into a\n:class:`PermissionResultAllow` / :class:`PermissionResultDeny`\nSDK return value.",
+        "operationId": "resolve_approval_api_sessions__session_id__approvals__request_id__post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalResolution"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{session_id}/messages": {
       "get": {
         "tags": [
@@ -3449,6 +3504,21 @@
   },
   "components": {
     "schemas": {
+      "ApprovalResolution": {
+        "properties": {
+          "approved": {
+            "type": "boolean",
+            "title": "Approved"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "approved"
+        ],
+        "title": "ApprovalResolution",
+        "description": "Request body for ``POST /api/sessions/{id}/approvals/{request_id}``.\n\nA single boolean carrying the user's choice. The route resolves\nthe matching broker future with this value; the SDK callback\ntranslates it into a ``PermissionResultAllow`` /\n``PermissionResultDeny`` SDK return."
+      },
       "AutoDriverRunOut": {
         "properties": {
           "id": {

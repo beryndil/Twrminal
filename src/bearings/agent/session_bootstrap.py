@@ -26,16 +26,16 @@ from __future__ import annotations
 
 import aiosqlite
 
+from bearings.agent.approval import ApprovalBroker
 from bearings.agent.bearings_mcp import (
     CloseSessionDeps,
     build_bearings_mcp_server,
 )
 from bearings.agent.options import (
-    CanUseToolCallback,
     compose_session_options,
 )
 from bearings.agent.routing import RoutingDecision
-from bearings.agent.runner import SessionSetup, SessionSetupFn
+from bearings.agent.runner import SessionRunner, SessionSetup, SessionSetupFn
 from bearings.agent.session import AgentSession, PermissionProfile, SessionConfig
 from bearings.config.constants import (
     DEFAULT_TEMPLATE_ADVISOR_MAX_USES,
@@ -49,7 +49,7 @@ from bearings.db import sessions as sessions_db
 def build_session_setup(
     db_connection: aiosqlite.Connection,
     *,
-    can_use_tool: CanUseToolCallback | None = None,
+    enable_approval_broker: bool = True,
 ) -> SessionSetupFn:
     """Build a ``session_setup`` callable bound to ``db_connection``.
 
@@ -64,12 +64,14 @@ def build_session_setup(
         db_connection: The long-lived :class:`aiosqlite.Connection`
             from ``app.state.db_connection``. Same connection the
             session rows + close_session DB writes go through.
-        can_use_tool: Optional approval-bridge callback. ``None``
-            in v1 (A4 lands the :class:`ApprovalBroker`; until then
-            the SDK's default permission gating applies).
+        enable_approval_broker: When ``True`` (default), each
+            session gets a fresh :class:`ApprovalBroker` whose
+            callback is wired into ``OptionsKwargs.can_use_tool``.
+            Disabled by tests that exercise the bootstrap without
+            the approval surface.
     """
 
-    async def setup(session_id: str) -> SessionSetup | None:
+    async def setup(session_id: str, runner: SessionRunner) -> SessionSetup | None:
         row = await sessions_db.get(db_connection, session_id)
         if row is None:
             return None
@@ -104,6 +106,7 @@ def build_session_setup(
 
         deps = CloseSessionDeps(session_id=session_id, db_factory=db_factory)
         bearings_mcp_server = build_bearings_mcp_server(deps)
+        broker = ApprovalBroker(runner) if enable_approval_broker else None
         options = compose_session_options(
             decision=decision,
             session_instructions=row.session_instructions,
@@ -115,9 +118,13 @@ def build_session_setup(
             setting_sources=None,
             max_budget_usd=row.max_budget_usd,
             bearings_mcp_server=bearings_mcp_server,
-            can_use_tool=can_use_tool,
+            can_use_tool=broker.callback() if broker is not None else None,
         )
-        return SessionSetup(session=agent_session, options=options)
+        return SessionSetup(
+            session=agent_session,
+            options=options,
+            approval_broker=broker,
+        )
 
     return setup
 

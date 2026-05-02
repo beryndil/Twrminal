@@ -42,6 +42,7 @@ from bearings.agent.session_bootstrap import build_session_setup
 from bearings.config.constants import (
     OPENAPI_DESCRIPTION,
     OPENAPI_TITLE,
+    ROUTE_TAG_APPROVALS,
     ROUTE_TAG_CHECKLISTS,
     ROUTE_TAG_DIAG,
     ROUTE_TAG_FS,
@@ -62,6 +63,7 @@ from bearings.config.constants import (
 )
 from bearings.config.settings import FsCfg, ShellCfg, UploadsCfg, VaultCfg
 from bearings.metrics import BearingsMetrics
+from bearings.web.routes.approvals import router as approvals_router
 from bearings.web.routes.checklists import router as checklists_router
 from bearings.web.routes.diag import router as diag_router
 from bearings.web.routes.fs import router as fs_router
@@ -218,6 +220,7 @@ def create_app(
     app.include_router(vault_router, tags=[ROUTE_TAG_VAULT])
     app.include_router(checklists_router, tags=[ROUTE_TAG_CHECKLISTS])
     app.include_router(sessions_router, tags=[ROUTE_TAG_SESSIONS])
+    app.include_router(approvals_router, tags=[ROUTE_TAG_APPROVALS])
     app.include_router(messages_router, tags=[ROUTE_TAG_MESSAGES])
     app.include_router(paired_chats_router, tags=[ROUTE_TAG_PAIRED_CHATS])
     app.include_router(routing_router, tags=[ROUTE_TAG_ROUTING])

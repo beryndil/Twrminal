@@ -163,7 +163,7 @@ async def test_factory_spawns_supervisor_on_first_call(
         conn, kind=SESSION_KIND_CHAT, title="t", working_dir="/tmp/wd", model="sonnet"
     )
 
-    async def setup(session_id: str) -> SessionSetup | None:
+    async def setup(session_id: str, runner: object) -> SessionSetup | None:
         if session_id != session_row.id:
             return None
         return _build_setup_for(conn, session_id)
@@ -209,7 +209,7 @@ async def test_factory_skips_supervisor_when_setup_returns_none(
     """If the setup callable returns None (session row missing), the
     runner still materialises but no supervisor is spawned."""
 
-    async def setup(session_id: str) -> SessionSetup | None:
+    async def setup(session_id: str, runner: object) -> SessionSetup | None:
         return None
 
     factory = InProcessRunnerRegistry(session_setup=setup)
@@ -226,7 +226,7 @@ async def test_aclose_cancels_supervisor_tasks(
         conn, kind=SESSION_KIND_CHAT, title="t", working_dir="/tmp/wd", model="sonnet"
     )
 
-    async def setup(session_id: str) -> SessionSetup | None:
+    async def setup(session_id: str, runner: object) -> SessionSetup | None:
         return _build_setup_for(conn, session_id) if session_id == session_row.id else None
 
     import bearings.web.runner_factory as factory_mod
@@ -276,7 +276,7 @@ async def test_aclose_is_idempotent() -> None:
 async def test_build_in_process_factory_threads_setup_through() -> None:
     sentinel_calls: list[str] = []
 
-    async def setup(session_id: str) -> SessionSetup | None:
+    async def setup(session_id: str, runner: object) -> SessionSetup | None:
         sentinel_calls.append(session_id)
         return None
 
