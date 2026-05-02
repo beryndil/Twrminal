@@ -41,6 +41,8 @@ from bearings.config.constants import (
     KNOWN_EXECUTOR_MODELS,
     KNOWN_SDK_PERMISSION_MODES,
     KNOWN_SESSION_KINDS,
+    SESSION_CLOSING_SUMMARY_MAX_LENGTH,
+    SESSION_CLOSING_SUMMARY_MIN_LENGTH,
     SESSION_DESCRIPTION_MAX_LENGTH,
     SESSION_ID_PREFIX,
     SESSION_TITLE_MAX_LENGTH,
@@ -97,6 +99,7 @@ class Session:
     last_viewed_at: str | None
     last_completed_at: str | None
     closed_at: str | None
+    closing_summary: str | None
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -148,6 +151,18 @@ class Session:
             raise ValueError(f"Session.total_cost_usd must be ≥ 0 (got {self.total_cost_usd})")
         if self.message_count < 0:
             raise ValueError(f"Session.message_count must be ≥ 0 (got {self.message_count})")
+        if self.closing_summary is not None:
+            length = len(self.closing_summary)
+            if length < SESSION_CLOSING_SUMMARY_MIN_LENGTH:
+                raise ValueError(
+                    f"Session.closing_summary must be ≥ "
+                    f"{SESSION_CLOSING_SUMMARY_MIN_LENGTH} chars when set (got {length})"
+                )
+            if length > SESSION_CLOSING_SUMMARY_MAX_LENGTH:
+                raise ValueError(
+                    f"Session.closing_summary must be ≤ "
+                    f"{SESSION_CLOSING_SUMMARY_MAX_LENGTH} chars (got {length})"
+                )
 
 
 def _is_known_model(name: str) -> bool:
@@ -201,6 +216,7 @@ async def create(
         last_viewed_at=None,
         last_completed_at=None,
         closed_at=None,
+        closing_summary=None,
     )
     await connection.execute(
         "INSERT INTO sessions "
@@ -362,6 +378,61 @@ async def close(
     return await get(connection, session_id)
 
 
+async def close_with_summary(
+    connection: aiosqlite.Connection,
+    session_id: str,
+    *,
+    summary: str,
+) -> Session | None:
+    """Stamp ``closed_at`` AND persist the agent-authored ``closing_summary``.
+
+    Backs the ``close_session`` MCP tool: the agent calls the tool when
+    it judges the user's task complete and supplies a 1-3 sentence
+    summary. Different from :func:`close` in two ways:
+
+    * Writes ``closing_summary`` in the same transaction as
+      ``closed_at`` so a crash mid-write can never leave the row in a
+      "closed without summary" state.
+    * Idempotent no-op when the row is already closed: returns
+      ``None`` instead of overwriting an earlier summary. A confused
+      agent re-calling ``close_session`` on a row another caller (the
+      sidebar reaper, a manual close) already finalized never erases
+      the canonical close.
+
+    Returns the updated row on the first successful close; ``None``
+    when the row is missing OR already closed.
+
+    The summary is validated client-side (Pydantic ``Field`` bounds on
+    the MCP tool's parameter shape) and again here via
+    :class:`Session`'s ``__post_init__`` — defence in depth so a direct
+    DB-side caller cannot insert an out-of-bounds summary.
+    """
+    length = len(summary)
+    if length < SESSION_CLOSING_SUMMARY_MIN_LENGTH:
+        raise ValueError(
+            f"close_with_summary: summary must be ≥ "
+            f"{SESSION_CLOSING_SUMMARY_MIN_LENGTH} chars (got {length})"
+        )
+    if length > SESSION_CLOSING_SUMMARY_MAX_LENGTH:
+        raise ValueError(
+            f"close_with_summary: summary must be ≤ "
+            f"{SESSION_CLOSING_SUMMARY_MAX_LENGTH} chars (got {length})"
+        )
+    existing = await get(connection, session_id)
+    if existing is None:
+        return None
+    if existing.closed_at is not None:
+        # Already closed — preserve the prior summary + timestamp.
+        return None
+    timestamp = now_iso()
+    await connection.execute(
+        "UPDATE sessions SET closed_at = ?, closing_summary = ?, updated_at = ? WHERE id = ?",
+        (timestamp, summary, timestamp, session_id),
+    )
+    await connection.commit()
+    return await get(connection, session_id)
+
+
 async def reopen(
     connection: aiosqlite.Connection,
     session_id: str,
@@ -450,7 +521,7 @@ _SELECT_SESSION_COLUMNS = (
     "permission_mode, max_budget_usd, total_cost_usd, message_count, "
     "last_context_pct, last_context_tokens, last_context_max, pinned, error_pending, "
     "checklist_item_id, created_at, updated_at, last_viewed_at, last_completed_at, "
-    "closed_at FROM sessions"
+    "closed_at, closing_summary FROM sessions"
 )
 
 
@@ -468,7 +539,8 @@ _SELECT_SESSION_COLUMNS_DISTINCT = (
     "sessions.message_count, sessions.last_context_pct, sessions.last_context_tokens, "
     "sessions.last_context_max, sessions.pinned, sessions.error_pending, "
     "sessions.checklist_item_id, sessions.created_at, sessions.updated_at, "
-    "sessions.last_viewed_at, sessions.last_completed_at, sessions.closed_at FROM sessions"
+    "sessions.last_viewed_at, sessions.last_completed_at, sessions.closed_at, "
+    "sessions.closing_summary FROM sessions"
 )
 
 
@@ -497,12 +569,14 @@ def _row_to_session(row: aiosqlite.Row | tuple[object, ...]) -> Session:
         last_viewed_at=None if row[19] is None else str(row[19]),
         last_completed_at=None if row[20] is None else str(row[20]),
         closed_at=None if row[21] is None else str(row[21]),
+        closing_summary=None if row[22] is None else str(row[22]),
     )
 
 
 __all__ = [
     "Session",
     "close",
+    "close_with_summary",
     "create",
     "delete",
     "exists",

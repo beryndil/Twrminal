@@ -32,6 +32,7 @@ const fixtureSession: SessionOut = {
   last_viewed_at: null,
   last_completed_at: null,
   closed_at: null,
+  closing_summary: null,
 };
 
 const fixtureTag: TagOut = {

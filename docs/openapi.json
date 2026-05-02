@@ -5176,6 +5176,17 @@
               }
             ],
             "title": "Closed At"
+          },
+          "closing_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Summary"
           }
         },
         "additionalProperties": false,
@@ -5202,7 +5213,8 @@
           "updated_at",
           "last_viewed_at",
           "last_completed_at",
-          "closed_at"
+          "closed_at",
+          "closing_summary"
         ],
         "title": "SessionOut",
         "description": "Response shape for ``GET /api/sessions/{id}`` and the row list."

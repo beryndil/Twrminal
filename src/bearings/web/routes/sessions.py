@@ -117,6 +117,7 @@ def _to_out(session: Session) -> SessionOut:
         last_viewed_at=session.last_viewed_at,
         last_completed_at=session.last_completed_at,
         closed_at=session.closed_at,
+        closing_summary=session.closing_summary,
     )
 
 

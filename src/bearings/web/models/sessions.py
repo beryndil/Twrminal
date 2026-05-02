@@ -85,6 +85,7 @@ class SessionOut(BaseModel):
     last_viewed_at: str | None
     last_completed_at: str | None
     closed_at: str | None
+    closing_summary: str | None
 
 
 class SessionTitleUpdate(BaseModel):

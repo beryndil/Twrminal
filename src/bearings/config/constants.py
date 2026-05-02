@@ -679,6 +679,14 @@ SESSION_TITLE_MAX_LENGTH: Final[int] = 500
 # matches checklist-item notes for consistency.
 SESSION_DESCRIPTION_MAX_LENGTH: Final[int] = 30_000
 
+# Closing-summary bounds (the agent-authored 1-3 sentence summary the
+# ``close_session`` MCP tool stamps when judging the user's task done).
+# Plan §"Slice B" pins the wire shape at 1-2000 chars: long enough for a
+# multi-sentence summary, short enough to render as a hover tooltip on
+# a closed sidebar row without overflow.
+SESSION_CLOSING_SUMMARY_MIN_LENGTH: Final[int] = 1
+SESSION_CLOSING_SUMMARY_MAX_LENGTH: Final[int] = 2_000
+
 # ---------------------------------------------------------------------------
 # Bearings CLI (item 1.7; arch §1.1.1 ``cli/`` package; behavior surface
 # in ``docs/behavior/bearings-cli.md``).
@@ -1263,6 +1271,8 @@ __all__ = [
     "SENTINEL_KIND_ITEM_BLOCKED",
     "SENTINEL_KIND_ITEM_DONE",
     "SENTINEL_KIND_ITEM_FAILED",
+    "SESSION_CLOSING_SUMMARY_MAX_LENGTH",
+    "SESSION_CLOSING_SUMMARY_MIN_LENGTH",
     "SESSION_DESCRIPTION_MAX_LENGTH",
     "SESSION_ID_PREFIX",
     "SESSION_KIND_CHAT",

@@ -49,6 +49,13 @@ export interface SessionOut {
   last_viewed_at: string | null;
   last_completed_at: string | null;
   closed_at: string | null;
+  /**
+   * Agent-authored 1-3 sentence summary of why the session was
+   * closed, written by the ``close_session`` MCP tool when the agent
+   * judges the user's task complete. Surfaced as the sidebar tooltip
+   * on closed rows; ``null`` for rows closed manually (or never).
+   */
+  closing_summary: string | null;
 }
 
 interface ListSessionsParams {

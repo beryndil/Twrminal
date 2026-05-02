@@ -70,6 +70,11 @@ CREATE TABLE IF NOT EXISTS sessions (
     last_viewed_at           TEXT,
     last_completed_at        TEXT,
     closed_at                TEXT,
+    -- The ``close_session`` MCP tool stamps a 1-3 sentence summary
+    -- here when the agent judges the user's task complete; the sidebar
+    -- surfaces it as the closed-row tooltip and preserves it across
+    -- reopens. NULL on every row that was never closed by the agent.
+    closing_summary          TEXT,
     FOREIGN KEY (checklist_item_id) REFERENCES checklist_items(id) ON DELETE SET NULL
 );
 

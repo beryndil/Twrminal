@@ -78,4 +78,33 @@ async def load_schema(connection: aiosqlite.Connection) -> None:
     schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
     await connection.execute("PRAGMA foreign_keys = ON")
     await connection.executescript(schema_sql)
+    await _ensure_added_columns(connection)
     await connection.commit()
+
+
+# Columns that landed after the initial schema.sql shipped. The
+# canonical CREATE TABLE in ``schema.sql`` is authoritative for fresh
+# databases (it lists each column); this list catches existing
+# databases — migrated from v0.17.x or carried over a prior v1
+# install — that predate the column. SQLite's ``ALTER TABLE ... ADD
+# COLUMN`` is not idempotent on its own, so we gate each ALTER on
+# ``PRAGMA table_info``.
+_ADDED_COLUMNS: Final[tuple[tuple[str, str, str], ...]] = (("sessions", "closing_summary", "TEXT"),)
+
+
+async def _ensure_added_columns(connection: aiosqlite.Connection) -> None:
+    """Add columns introduced after the original schema.sql ship.
+
+    Each tuple is ``(table, column, sqlite_type)``; the column is
+    added only when ``PRAGMA table_info(<table>)`` does not already
+    list it. Keeps ``load_schema`` a single idempotent entrypoint
+    rather than scattering ALTERs across migration files.
+    """
+    for table, column, column_type in _ADDED_COLUMNS:
+        async with connection.execute(f"PRAGMA table_info({table})") as cursor:
+            rows = await cursor.fetchall()
+        existing = {row[1] for row in rows}
+        if column not in existing:
+            await connection.execute(
+                f"ALTER TABLE {table} ADD COLUMN {column} {column_type}",
+            )
