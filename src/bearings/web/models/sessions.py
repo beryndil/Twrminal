@@ -96,6 +96,34 @@ class SessionTitleUpdate(BaseModel):
     title: str = Field(min_length=1, max_length=SESSION_TITLE_MAX_LENGTH)
 
 
+class SessionCreate(BaseModel):
+    """Request shape for ``POST /api/sessions``.
+
+    Per arch §1.1.5 the v1 session-create surface. The Pydantic shape
+    enforces field shape; the route handler enforces ``kind`` membership
+    in :data:`KNOWN_SESSION_KINDS`, that ``tag_ids`` references existing
+    rows, and the deeper dataclass invariants (model name format,
+    permission-mode enum, etc.) via :class:`Session.__post_init__`.
+
+    ``tag_ids`` defaults to the empty list — the new-session form
+    enforces "≥1 tag" at the UI layer; the API accepts zero so a CLI
+    or test caller can create an untagged session without first
+    creating a tag.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    title: str = Field(min_length=1, max_length=SESSION_TITLE_MAX_LENGTH)
+    working_dir: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+    description: str | None = Field(default=None, max_length=SESSION_DESCRIPTION_MAX_LENGTH)
+    session_instructions: str | None = None
+    permission_mode: str | None = None
+    max_budget_usd: float | None = None
+    tag_ids: list[int] = Field(default_factory=list)
+
+
 class SessionDescriptionUpdate(BaseModel):  # pragma: no cover — reserved for v1 PATCH expansion
     """Reserved request shape for the description (plug) PATCH path.
 
@@ -112,6 +140,7 @@ class SessionDescriptionUpdate(BaseModel):  # pragma: no cover — reserved for 
 __all__ = [
     "PromptAck",
     "PromptIn",
+    "SessionCreate",
     "SessionDescriptionUpdate",
     "SessionOut",
     "SessionTitleUpdate",

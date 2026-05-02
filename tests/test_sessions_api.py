@@ -168,6 +168,130 @@ async def test_get_session_round_trip(
     assert body["title"] == "the-title"
 
 
+async def test_create_session_minimal(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Happy path — minimal payload returns 201 + Location + a fresh row."""
+    app, _ = app_and_db
+    payload = {
+        "kind": SESSION_KIND_CHAT,
+        "title": "first chat",
+        "working_dir": "/tmp/wd",
+        "model": "claude-sonnet-4-5",
+    }
+    with TestClient(app) as client:
+        response = client.post("/api/sessions", json=payload)
+    assert response.status_code == 201
+    body = response.json()
+    assert body["title"] == "first chat"
+    assert body["kind"] == SESSION_KIND_CHAT
+    assert body["working_dir"] == "/tmp/wd"
+    assert body["model"] == "claude-sonnet-4-5"
+    assert body["id"].startswith("ses_")
+    assert response.headers["Location"] == f"/api/sessions/{body['id']}"
+    # Default fields surface as zeros / nulls per :class:`SessionOut`.
+    assert body["message_count"] == 0
+    assert body["total_cost_usd"] == 0.0
+    assert body["closed_at"] is None
+
+
+async def test_create_session_with_tags(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """``tag_ids`` populates ``session_tags`` atomically with the row."""
+    from bearings.db import tags as tags_db
+
+    app, conn = app_and_db
+    tag_a = await tags_db.create(conn, name="bearings/a")
+    tag_b = await tags_db.create(conn, name="bearings/b")
+    payload = {
+        "kind": SESSION_KIND_CHAT,
+        "title": "tagged",
+        "working_dir": "/tmp/wd",
+        "model": "claude-sonnet-4-5",
+        "tag_ids": [tag_a.id, tag_b.id],
+    }
+    with TestClient(app) as client:
+        response = client.post("/api/sessions", json=payload)
+        assert response.status_code == 201
+        sid = response.json()["id"]
+        # Round-trip through the per-session tags endpoint to confirm
+        # both rows landed.
+        tags_response = client.get(f"/api/sessions/{sid}/tags")
+    assert tags_response.status_code == 200
+    attached = {row["id"] for row in tags_response.json()}
+    assert attached == {tag_a.id, tag_b.id}
+
+
+async def test_create_session_unknown_kind_422(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    app, _ = app_and_db
+    payload = {
+        "kind": "bogus",
+        "title": "x",
+        "working_dir": "/tmp/wd",
+        "model": "claude-sonnet-4-5",
+    }
+    with TestClient(app) as client:
+        response = client.post("/api/sessions", json=payload)
+    assert response.status_code == 422
+    assert "kind" in response.json()["detail"]
+
+
+async def test_create_session_unknown_tag_404(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Bad ``tag_ids`` returns 404 BEFORE the session row is inserted."""
+    app, conn = app_and_db
+    payload = {
+        "kind": SESSION_KIND_CHAT,
+        "title": "x",
+        "working_dir": "/tmp/wd",
+        "model": "claude-sonnet-4-5",
+        "tag_ids": [9999],
+    }
+    with TestClient(app) as client:
+        response = client.post("/api/sessions", json=payload)
+    assert response.status_code == 404
+    assert "9999" in response.json()["detail"]
+    # Verify NO orphan session landed in the table.
+    rows = await sessions_db.list_all(conn)
+    assert rows == []
+
+
+async def test_create_session_empty_title_422(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    app, _ = app_and_db
+    payload = {
+        "kind": SESSION_KIND_CHAT,
+        "title": "",
+        "working_dir": "/tmp/wd",
+        "model": "claude-sonnet-4-5",
+    }
+    with TestClient(app) as client:
+        response = client.post("/api/sessions", json=payload)
+    assert response.status_code == 422
+
+
+async def test_create_session_extra_field_422(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """``extra='forbid'`` keeps the wire shape pinned to the documented fields."""
+    app, _ = app_and_db
+    payload = {
+        "kind": SESSION_KIND_CHAT,
+        "title": "x",
+        "working_dir": "/tmp/wd",
+        "model": "claude-sonnet-4-5",
+        "id": "ses_caller_chose_this",  # Not allowed.
+    }
+    with TestClient(app) as client:
+        response = client.post("/api/sessions", json=payload)
+    assert response.status_code == 422
+
+
 async def test_get_session_404(
     app_and_db: tuple[FastAPI, aiosqlite.Connection],
 ) -> None:

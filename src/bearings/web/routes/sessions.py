@@ -4,6 +4,10 @@ Per ``docs/architecture-v1.md`` §1.1.5 ``web/routes/sessions.py``
 owns:
 
 * ``GET    /api/sessions``                — list sessions (filtered).
+* ``POST   /api/sessions``                — create a session (item
+                                            v1.1 closing-sweep —
+                                            previously deferred,
+                                            never landed in v1.0).
 * ``GET    /api/sessions/{id}``           — fetch one session row.
 * ``PATCH  /api/sessions/{id}``           — title-only edit (item 1.7
                                             scope; description PATCH
@@ -39,9 +43,11 @@ from bearings.config.constants import (
     PROMPT_ACK_SESSION_ID_KEY,
 )
 from bearings.db import sessions as sessions_db
+from bearings.db import tags as tags_db
 from bearings.db.sessions import Session
 from bearings.web.models.sessions import (
     PromptIn,
+    SessionCreate,
     SessionOut,
     SessionTitleUpdate,
 )
@@ -160,6 +166,72 @@ async def list_sessions(
         tag_ids=tag_filter,
     )
     return [_to_out(row) for row in rows]
+
+
+@router.post(
+    "/api/sessions",
+    response_model=SessionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_session(
+    payload: SessionCreate,
+    request: Request,
+    response: Response,
+) -> SessionOut:
+    """Create a session row + attach tags atomically.
+
+    Per arch §1.1.5 the v1 session-create surface — the closing-sweep
+    audit (2026-05-02) found this endpoint missing despite the master
+    checklist marking the item DONE.
+
+    Validation precedence:
+
+    * ``kind`` must be in :data:`KNOWN_SESSION_KINDS` → 422 otherwise.
+    * Every id in ``tag_ids`` must reference an existing tag row → 404
+      with the missing list otherwise. Tag existence is checked BEFORE
+      :func:`sessions_db.create` so a bad tag id never leaves an
+      orphaned session.
+    * Deeper field invariants (model name format, permission-mode enum,
+      title bounds beyond Pydantic's) raise ``ValueError`` from
+      :class:`Session.__post_init__` and surface as 422.
+
+    Returns 201 with ``Location: /api/sessions/<id>``.
+    """
+    db = _db(request)
+    if payload.kind not in KNOWN_SESSION_KINDS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"kind {payload.kind!r} not in {sorted(KNOWN_SESSION_KINDS)}",
+        )
+    tag_ids = tuple(payload.tag_ids)
+    if tag_ids:
+        existing_ids = {tag.id for tag in await tags_db.list_all(db)}
+        missing = sorted({tid for tid in tag_ids if tid not in existing_ids})
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"unknown tag_ids: {missing}",
+            )
+    try:
+        row = await sessions_db.create(
+            db,
+            kind=payload.kind,
+            title=payload.title,
+            working_dir=payload.working_dir,
+            model=payload.model,
+            description=payload.description,
+            session_instructions=payload.session_instructions,
+            permission_mode=payload.permission_mode,
+            max_budget_usd=payload.max_budget_usd,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    if tag_ids:
+        await tags_db.set_for_session(db, session_id=row.id, tag_ids=tag_ids)
+    response.headers["Location"] = f"/api/sessions/{row.id}"
+    return _to_out(row)
 
 
 @router.get("/api/sessions/{session_id}", response_model=SessionOut)
