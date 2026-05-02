@@ -15,7 +15,7 @@
  * the wire shape.
  */
 import { API_SESSIONS_ENDPOINT } from "../config";
-import { getJson, type RequestOptions } from "./client";
+import { getJson, postJson, type RequestOptions } from "./client";
 
 /**
  * Wire shape for one session row — one-to-one with
@@ -79,6 +79,22 @@ interface ListSessionsParams {
  * @throws :class:`ApiError` on non-2xx responses (422 for an unknown
  *   ``kind``, 5xx for backend faults).
  */
+/**
+ * Reopen a closed session via ``POST /api/sessions/{id}/reopen``. The
+ * server clears ``closed_at`` while preserving any ``closing_summary``
+ * (per ``docs/behavior/paired-chats.md`` §"Reopen semantics" — the
+ * agent-authored summary stays available as session metadata so the
+ * operator can see what the agent thought it had finished). Returns
+ * the refreshed session row.
+ */
+export async function reopenSession(
+  sessionId: string,
+  options: RequestOptions = {},
+): Promise<SessionOut> {
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}/reopen`;
+  return await postJson<SessionOut>(path, null, options);
+}
+
 export async function listSessions(params: ListSessionsParams = {}): Promise<SessionOut[]> {
   const query: Array<readonly [string, string]> = [];
   if (params.kind !== undefined) {

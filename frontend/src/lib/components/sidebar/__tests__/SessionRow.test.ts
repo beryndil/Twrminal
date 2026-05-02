@@ -169,6 +169,90 @@ describe("SessionRow", () => {
     expect(onToggleTag).toHaveBeenCalledWith(7);
   });
 
+  it("renders the closing-summary tooltip on closed rows via the title attribute", () => {
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: {
+          ...baseSession,
+          closed_at: "2026-01-02T00:00:00Z",
+          closing_summary: "Implemented X and verified the gate.",
+        },
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    expect(getByTestId("session-row")).toHaveAttribute(
+      "title",
+      "Implemented X and verified the gate.",
+    );
+  });
+
+  it("omits the title attribute when closing_summary is null even on closed rows", () => {
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: { ...baseSession, closed_at: "2026-01-02T00:00:00Z", closing_summary: null },
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    expect(getByTestId("session-row")).not.toHaveAttribute("title");
+  });
+
+  it("renders the Reopen button on closed rows when onReopen is provided", () => {
+    const onReopen = vi.fn();
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: { ...baseSession, closed_at: "2026-01-02T00:00:00Z" },
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+        onReopen,
+      },
+    });
+    expect(getByTestId("session-reopen-button")).toBeInTheDocument();
+  });
+
+  it("hides the Reopen button when onReopen is omitted", () => {
+    const { queryByTestId } = render(SessionRow, {
+      props: {
+        session: { ...baseSession, closed_at: "2026-01-02T00:00:00Z" },
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    expect(queryByTestId("session-reopen-button")).toBeNull();
+  });
+
+  it("clicking the Reopen button fires onReopen and not onSelect", async () => {
+    const onReopen = vi.fn();
+    const onSelect = vi.fn();
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: { ...baseSession, closed_at: "2026-01-02T00:00:00Z" },
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect,
+        onToggleTag: vi.fn(),
+        onReopen,
+      },
+    });
+    await fireEvent.click(getByTestId("session-reopen-button"));
+    expect(onReopen).toHaveBeenCalledWith("ses_a");
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it("tag-chip click does not also fire the row's onSelect (event.stopPropagation)", async () => {
     const onSelect = vi.fn();
     const onToggleTag = vi.fn();

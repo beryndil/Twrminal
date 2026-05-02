@@ -46,9 +46,17 @@
     onSelect: (sessionId: string) => void;
     /** Tag-chip click — finder-click integration; toggles tag in filter set. */
     onToggleTag: (tagId: number) => void;
+    /**
+     * Reopen-button click on a closed row. Optional because
+     * non-sidebar callers (e.g. the conversation header) may render
+     * a row without offering reopen. When omitted the button is
+     * hidden so the row stays presentational.
+     */
+    onReopen?: (sessionId: string) => void;
   }
 
-  const { session, tags, selectedTagIds, isSelected, onSelect, onToggleTag }: Props = $props();
+  const { session, tags, selectedTagIds, isSelected, onSelect, onToggleTag, onReopen }: Props =
+    $props();
 
   const sessionHref = $derived(`/sessions/${encodeURIComponent(session.id)}`);
 
@@ -71,6 +79,7 @@
   data-session-id={session.id}
   data-sveltekit-preload-data="hover"
   aria-current={isSelected ? "true" : undefined}
+  title={isClosed && session.closing_summary !== null ? session.closing_summary : undefined}
   onclick={() => onSelect(session.id)}
 >
   <span class="flex items-center gap-2">
@@ -110,6 +119,29 @@
       >
         ◌
       </span>
+      {#if onReopen !== undefined}
+        <!--
+          Reopen button on closed rows. ``stopPropagation`` is required
+          because the row is wrapped in an anchor: a bare click would
+          otherwise navigate to ``/sessions/{id}`` before the reopen
+          callback fires. The button is keyboard-reachable via the
+          natural tab order; the row's own ``onclick`` does not
+          intercept Enter on a focused button.
+        -->
+        <button
+          type="button"
+          class="rounded border border-border bg-surface-1 px-1.5 py-0.5 text-xs text-fg hover:bg-surface-2"
+          aria-label={SIDEBAR_STRINGS.reopenButtonAriaLabelTemplate(session.title)}
+          data-testid="session-reopen-button"
+          onclick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onReopen(session.id);
+          }}
+        >
+          {SIDEBAR_STRINGS.reopenButtonLabel}
+        </button>
+      {/if}
     {/if}
   </span>
 

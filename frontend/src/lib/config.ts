@@ -323,6 +323,13 @@ export const SIDEBAR_STRINGS = {
   pinnedIndicatorAriaLabel: "Pinned",
   closedIndicatorAriaLabel: "Closed",
   errorPendingIndicatorAriaLabel: "Needs attention",
+  closedGroupLabel: "Closed",
+  closedToggleExpandLabel: (count: number) => `Closed (${count})`,
+  closedToggleAriaExpanded: "Hide closed sessions",
+  closedToggleAriaCollapsed: "Show closed sessions",
+  reopenButtonLabel: "Reopen",
+  reopenButtonAriaLabelTemplate: (title: string) => `Reopen session "${title}"`,
+  reopenFailedLabel: "Couldn't reopen — try again.",
   kindIndicatorAriaLabels: {
     [SESSION_KIND_CHAT]: "Chat session",
     [SESSION_KIND_CHECKLIST]: "Checklist session",

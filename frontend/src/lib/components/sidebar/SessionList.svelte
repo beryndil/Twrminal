@@ -41,8 +41,8 @@
    */
   import { onMount } from "svelte";
 
+  import { reopenSession as reopenSessionDefault, type SessionOut } from "../../api/sessions";
   import { SIDEBAR_STRINGS } from "../../config";
-  import type { SessionOut } from "../../api/sessions";
   import type { TagOut } from "../../api/tags";
   import {
     refreshSessions as refreshSessionsDefault,
@@ -73,6 +73,11 @@
     refreshTags?: typeof refreshTagsDefault;
     toggleTag?: typeof toggleTagDefault;
     clearTagFilter?: typeof clearTagFilterDefault;
+    /**
+     * API client for the reopen-button on closed rows. Injected so
+     * unit tests can substitute a fake without touching the network.
+     */
+    reopenSession?: typeof reopenSessionDefault;
   }
 
   const {
@@ -84,6 +89,7 @@
     refreshTags = refreshTagsDefault,
     toggleTag = toggleTagDefault,
     clearTagFilter = clearTagFilterDefault,
+    reopenSession = reopenSessionDefault,
   }: Props = $props();
 
   /**
@@ -138,9 +144,49 @@
     }
   }
 
-  const groups = $derived(
-    groupSessions(sessionsStore.sessions, sessionsStore.tagsBySessionId, tagsStore.selectedIds),
+  /**
+   * The sidebar splits ``sessionsStore.sessions`` into two cohorts:
+   * open rows render in their tag groups (the default surface), and
+   * closed rows surface only when the operator clicks the "Closed
+   * (N)" expander at the bottom of the list. This realises the
+   * Slice B4 UX intent — "default filter excludes closed sessions"
+   * — without dropping closed rows from the cache (so the count is
+   * accurate without an extra fetch).
+   */
+  const openSessions = $derived(
+    sessionsStore.sessions.filter((session) => session.closed_at === null),
   );
+  const closedSessions = $derived(
+    sessionsStore.sessions.filter((session) => session.closed_at !== null),
+  );
+  const groups = $derived(
+    groupSessions(openSessions, sessionsStore.tagsBySessionId, tagsStore.selectedIds),
+  );
+
+  /**
+   * Local UI state — whether the closed-sessions expander is open.
+   * Resets on every tag-filter change so a narrow-and-broaden cycle
+   * doesn't leave a stale expanded panel pointing at the wrong rows;
+   * tracked through ``$effect`` against the filter set so the
+   * collapsed state is the steady-state default.
+   */
+  let showClosed = $state(false);
+  let reopenError = $state<string | null>(null);
+
+  $effect(() => {
+    void tagsStore.selectedIds;
+    showClosed = false;
+  });
+
+  async function handleReopen(sessionId: string): Promise<void> {
+    try {
+      reopenError = null;
+      await reopenSession(sessionId);
+      await refreshSessions(tagsStore.selectedIds);
+    } catch (error) {
+      reopenError = error instanceof Error ? error.message : String(error);
+    }
+  }
 
   /**
    * Fetch on mount + on every filter-set change. ``$effect`` re-runs
@@ -177,7 +223,7 @@
       <p class="px-3 py-2 text-xs text-red-400" data-testid="session-list-error">
         {SIDEBAR_STRINGS.loadFailed}
       </p>
-    {:else if groups.length === 0}
+    {:else if groups.length === 0 && closedSessions.length === 0}
       <p class="px-3 py-2 text-xs text-fg-muted" data-testid="session-list-empty">
         {tagsStore.selectedIds.size > 0
           ? SIDEBAR_STRINGS.emptySessionList
@@ -208,6 +254,50 @@
           {/each}
         </section>
       {/each}
+      {#if closedSessions.length > 0}
+        <section
+          class="session-list__closed border-t border-border"
+          data-testid="session-list-closed-section"
+        >
+          <button
+            type="button"
+            class="flex w-full items-center justify-between bg-surface-1 px-3 py-1 text-left text-xs font-semibold uppercase tracking-wider text-fg-muted hover:bg-surface-2"
+            aria-expanded={showClosed}
+            aria-label={showClosed
+              ? SIDEBAR_STRINGS.closedToggleAriaExpanded
+              : SIDEBAR_STRINGS.closedToggleAriaCollapsed}
+            data-testid="session-list-closed-toggle"
+            onclick={() => {
+              showClosed = !showClosed;
+            }}
+          >
+            <span>{SIDEBAR_STRINGS.closedToggleExpandLabel(closedSessions.length)}</span>
+            <span aria-hidden="true">{showClosed ? "▾" : "▸"}</span>
+          </button>
+          {#if showClosed}
+            <div data-testid="session-list-closed-rows">
+              {#each closedSessions as session (`closed:${session.id}`)}
+                <SessionRow
+                  {session}
+                  tags={sessionsStore.tagsBySessionId[session.id] ?? []}
+                  selectedTagIds={tagsStore.selectedIds}
+                  isSelected={selectedSessionId === session.id}
+                  {onSelect}
+                  onToggleTag={toggleTag}
+                  onReopen={(id) => {
+                    void handleReopen(id);
+                  }}
+                />
+              {/each}
+              {#if reopenError !== null}
+                <p class="px-3 py-1 text-xs text-red-400" data-testid="session-list-reopen-error">
+                  {SIDEBAR_STRINGS.reopenFailedLabel}
+                </p>
+              {/if}
+            </div>
+          {/if}
+        </section>
+      {/if}
     {/if}
   </nav>
 </div>
