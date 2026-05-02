@@ -1,0 +1,1 @@
+import{A as t,s as g}from"./BHq2M3wB.js";import{g as o}from"./tPiVIWiM.js";async function r(i={}){const s={};return i.group!==void 0&&(s.query=[["group",i.group]]),i.signal!==void 0&&(s.signal=i.signal),await o(t,s)}async function u(i,s={}){const n={};return s.signal!==void 0&&(n.signal=s.signal),await o(g(i),n)}export{u as a,r as l};
