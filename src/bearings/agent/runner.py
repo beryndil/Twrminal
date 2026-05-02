@@ -1,3 +1,4 @@
+# mypy: disable-error-code=explicit-any
 """Per-session runner — ring buffer + subscriber set + emit + idle reap.
 
 Item 1.1 declared the type surface (``SessionRunner`` placeholder,
@@ -66,9 +67,9 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from bearings.agent.events import AgentEvent, ToolCallEnd, ToolOutputDelta
 from bearings.agent.routing import RoutingDecision
@@ -494,4 +495,44 @@ class RunnerFactory(Protocol):
     async def __call__(self, session_id: str) -> SessionRunner: ...
 
 
-__all__ = ["QueuedPrompt", "RunnerFactory", "RunnerStatus", "SessionRunner", "StreamEntry"]
+@dataclass(frozen=True)
+class SessionSetup:
+    """Per-session bootstrap payload — what the worker-loop supervisor
+    needs to spawn :func:`bearings.agent.sdk_loop.run_session_loop`.
+
+    Lives in the ``agent`` layer (not ``web``) so the runner-factory
+    binding can import it without violating arch §3.1 layer rules.
+    Production callers materialise these via
+    :func:`bearings.agent.session_bootstrap.build_session_setup`;
+    tests construct synthetic instances directly.
+
+    The ``session`` and ``options`` fields are typed as ``Any`` to
+    avoid an upward import from this module to ``agent.session`` /
+    ``agent.options`` (per arch §3.1 #2 — ``runner.py`` is the layer
+    floor; importing higher-up agent modules would introduce a
+    sibling-cycle the AST cycle-prevention guard rejects). Concrete
+    consumers (sdk_loop.py + the runner-factory supervisor) read
+    these fields under their own typed wrappers.
+    """
+
+    session: Any
+    options: Any
+
+
+# Async callable: takes a session id, returns the per-session
+# :class:`SessionSetup`, or ``None`` when the session row is absent
+# or unsupported (e.g. checklist sessions, which have their own
+# driver). Lives in the ``agent`` layer so the web-layer registry
+# binding can read it without cross-layer imports.
+SessionSetupFn = Callable[[str], Awaitable[SessionSetup | None]]
+
+
+__all__ = [
+    "QueuedPrompt",
+    "RunnerFactory",
+    "RunnerStatus",
+    "SessionRunner",
+    "SessionSetup",
+    "SessionSetupFn",
+    "StreamEntry",
+]

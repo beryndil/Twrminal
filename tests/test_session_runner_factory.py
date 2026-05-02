@@ -306,5 +306,7 @@ def test_runner_factory_protocol_resolvable() -> None:
         "RunnerFactory",
         "RunnerStatus",
         "SessionRunner",
+        "SessionSetup",
+        "SessionSetupFn",
         "StreamEntry",
     }

@@ -73,5 +73,7 @@ def test_module_exports() -> None:
 
     assert set(runner_factory_mod.__all__) == {
         "InProcessRunnerRegistry",
+        "SessionSetup",
+        "SessionSetupFn",
         "build_in_process_factory",
     }

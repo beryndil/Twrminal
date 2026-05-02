@@ -38,6 +38,7 @@ from bearings.agent.auto_driver_runtime import AutoDriverRegistry, build_registr
 from bearings.agent.prompt_dispatch import RateLimiter
 from bearings.agent.quota import QuotaPoller
 from bearings.agent.runner import RunnerFactory
+from bearings.agent.session_bootstrap import build_session_setup
 from bearings.config.constants import (
     OPENAPI_DESCRIPTION,
     OPENAPI_TITLE,
@@ -77,7 +78,10 @@ from bearings.web.routes.tags import router as tags_router
 from bearings.web.routes.uploads import router as uploads_router
 from bearings.web.routes.usage import router as usage_router
 from bearings.web.routes.vault import router as vault_router
-from bearings.web.runner_factory import build_in_process_factory
+from bearings.web.runner_factory import (
+    InProcessRunnerRegistry,
+    build_in_process_factory,
+)
 from bearings.web.static import mount_static_bundle
 from bearings.web.streaming import SINCE_SEQ_QUERY_PARAM, serve_session_stream
 
@@ -130,7 +134,22 @@ def create_app(
     """
     if heartbeat_interval_s <= 0:
         raise ValueError(f"heartbeat_interval_s must be > 0 (got {heartbeat_interval_s})")
-    factory: RunnerFactory = runner_factory or build_in_process_factory()
+    # When the caller hasn't injected a factory but DID supply a DB
+    # connection, build the production supervisor binding: every
+    # first-touch ``__call__`` materialises the per-session
+    # AgentSession + composed OptionsKwargs from the row and spawns
+    # ``run_session_loop`` as the worker. Per Slice A1.3 of
+    # ``~/.claude/plans/wiring-agent-loop.md`` this is the seam that
+    # makes POST /api/sessions/<id>/prompt actually run a turn.
+    factory: RunnerFactory
+    if runner_factory is not None:
+        factory = runner_factory
+    elif db_connection is not None:
+        factory = build_in_process_factory(
+            session_setup=build_session_setup(db_connection),
+        )
+    else:
+        factory = build_in_process_factory()
     app = FastAPI(
         title=OPENAPI_TITLE,
         description=OPENAPI_DESCRIPTION,
@@ -223,6 +242,19 @@ def create_app(
     # ``web/static.py``). Idempotent on a missing ``dist/`` so
     # backend-only test runs do not need a built frontend.
     mount_static_bundle(app)
+
+    # Shutdown drain — when the factory is the InProcessRunnerRegistry
+    # (the production path), cancel every per-session supervisor task
+    # so the SDK CLI subprocesses tear down cleanly. Wired as a
+    # FastAPI shutdown event so uvicorn's graceful-shutdown path
+    # awaits the drain before exiting. Per ``~/.claude/plans/wiring-
+    # agent-loop.md`` Slice A1.3.
+    if isinstance(factory, InProcessRunnerRegistry):
+
+        @app.on_event("shutdown")
+        async def _drain_supervisors() -> None:
+            await factory.aclose()
+
     return app
 
 
