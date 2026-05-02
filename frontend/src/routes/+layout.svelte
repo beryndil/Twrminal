@@ -100,6 +100,9 @@
   function handleSelectSession(sessionId: string): void {
     void goto(`/sessions/${encodeURIComponent(sessionId)}`);
   }
+
+  /** Current URL path as a plain string for nav-active comparisons. */
+  const currentPath: string = $derived(page.url.pathname as string);
 </script>
 
 <ThemeProvider>
@@ -111,10 +114,210 @@
           data-testid="app-shell-sidebar"
           aria-label="Sessions sidebar"
         >
-          <header class="app-shell__sidebar-header border-b border-border p-3">
-            <h1 class="font-mono text-sm text-fg-strong">{SIDEBAR_STRINGS.heading}</h1>
-            <p class="text-xs text-fg-muted">{SIDEBAR_STRINGS.versionTag}</p>
-          </header>
+          <!-- Brand -->
+          <div class="flex items-center gap-2 px-2 py-2 text-accent" data-testid="sidebar-brand">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 512 512"
+              width="22"
+              height="22"
+              aria-hidden="true"
+              data-testid="bearings-mark"
+            >
+              <g fill="none" stroke="currentColor">
+                <circle cx="256" cy="256" r="220" stroke-width="18" opacity="0.3" />
+                <circle cx="256" cy="256" r="160" stroke-width="12" opacity="0.5" />
+                <circle cx="256" cy="256" r="100" stroke-width="12" opacity="0.7" />
+              </g>
+              <circle cx="256" cy="256" r="34" fill="currentColor" />
+              <g fill="currentColor">
+                <circle cx="386" cy="256" r="24" />
+                <circle cx="347.92" cy="347.92" r="24" />
+                <circle cx="256" cy="386" r="24" />
+                <circle cx="164.08" cy="347.92" r="24" />
+                <circle cx="126" cy="256" r="24" />
+                <circle cx="164.08" cy="164.08" r="24" />
+                <circle cx="256" cy="126" r="24" />
+                <circle cx="347.92" cy="164.08" r="24" />
+              </g>
+            </svg>
+            <span class="text-base font-semibold tracking-tight">{SIDEBAR_STRINGS.heading}</span>
+          </div>
+
+          <!-- New Session -->
+          <div class="px-2 pb-2">
+            <button
+              type="button"
+              class="flex w-full items-center justify-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-muted focus:outline-none focus:ring-2 focus:ring-accent/70"
+              aria-label={SIDEBAR_STRINGS.newSessionAriaLabel}
+              data-testid="new-session-pill"
+              onclick={() => void goto("/sessions/new")}
+            >
+              <span aria-hidden="true">+</span>
+              <span>{SIDEBAR_STRINGS.newSessionLabel}</span>
+            </button>
+          </div>
+
+          <!-- Primary nav -->
+          <nav
+            class="flex flex-col gap-0.5 px-1 pb-1"
+            aria-label={SIDEBAR_STRINGS.navAriaLabel}
+            data-testid="sidebar-nav"
+          >
+            <a
+              href="/"
+              class="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors"
+              class:nav-link--active={currentPath === "/" || currentPath.startsWith("/sessions/")}
+              class:text-accent={currentPath === "/" || currentPath.startsWith("/sessions/")}
+              class:text-fg-muted={currentPath !== "/" && !currentPath.startsWith("/sessions/")}
+              class:hover:bg-surface-2={currentPath !== "/" &&
+                !currentPath.startsWith("/sessions/")}
+              class:hover:text-fg={currentPath !== "/" && !currentPath.startsWith("/sessions/")}
+              data-testid="sidebar-nav-sessions"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line
+                  x1="8"
+                  y1="18"
+                  x2="21"
+                  y2="18"
+                />
+                <circle cx="3.5" cy="6" r="1.2" /><circle cx="3.5" cy="12" r="1.2" /><circle
+                  cx="3.5"
+                  cy="18"
+                  r="1.2"
+                />
+              </svg>
+              {SIDEBAR_STRINGS.navSessions}
+            </a>
+
+            <a
+              href="/tags"
+              class="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors"
+              class:nav-link--active={currentPath === "/tags"}
+              class:text-accent={currentPath === "/tags"}
+              class:text-fg-muted={currentPath !== "/tags"}
+              class:hover:bg-surface-2={currentPath !== "/tags"}
+              class:hover:text-fg={currentPath !== "/tags"}
+              data-testid="sidebar-nav-tags"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path
+                  d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
+                />
+                <circle cx="7" cy="7" r="1.2" fill="currentColor" stroke="none" />
+              </svg>
+              {SIDEBAR_STRINGS.navTags}
+            </a>
+
+            <a
+              href="/memories"
+              class="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors"
+              class:nav-link--active={currentPath === "/memories"}
+              class:text-accent={currentPath === "/memories"}
+              class:text-fg-muted={currentPath !== "/memories"}
+              class:hover:bg-surface-2={currentPath !== "/memories"}
+              class:hover:text-fg={currentPath !== "/memories"}
+              data-testid="sidebar-nav-memories"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
+              {SIDEBAR_STRINGS.navMemories}
+            </a>
+
+            <a
+              href="/analytics"
+              class="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors"
+              class:nav-link--active={currentPath === "/analytics"}
+              class:text-accent={currentPath === "/analytics"}
+              class:text-fg-muted={currentPath !== "/analytics"}
+              class:hover:bg-surface-2={currentPath !== "/analytics"}
+              class:hover:text-fg={currentPath !== "/analytics"}
+              data-testid="sidebar-nav-analytics"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <line x1="6" y1="20" x2="6" y2="14" /><line x1="12" y1="20" x2="12" y2="4" /><line
+                  x1="18"
+                  y1="20"
+                  x2="18"
+                  y2="10"
+                />
+              </svg>
+              {SIDEBAR_STRINGS.navAnalytics}
+            </a>
+
+            <a
+              href="/settings"
+              class="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors"
+              class:nav-link--active={currentPath === "/settings"}
+              class:text-accent={currentPath === "/settings"}
+              class:text-fg-muted={currentPath !== "/settings"}
+              class:hover:bg-surface-2={currentPath !== "/settings"}
+              class:hover:text-fg={currentPath !== "/settings"}
+              data-testid="sidebar-nav-settings"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path
+                  d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"
+                />
+              </svg>
+              {SIDEBAR_STRINGS.navSettings}
+            </a>
+          </nav>
+
+          <!-- Session list -->
           <div class="app-shell__sidebar-body" data-testid="app-shell-sidebar-body">
             <SessionList {selectedSessionId} onSelect={handleSelectSession} />
           </div>
@@ -188,6 +391,13 @@
    * everything else uses Tailwind utility classes so theme switches
    * re-tint the shell synchronously.
    */
+
+  /* Active nav link — soft accent tint that re-tints on theme change. */
+  .nav-link--active {
+    background-color: rgb(var(--bearings-accent) / 0.12);
+    color: rgb(var(--bearings-accent));
+  }
+
   .app-shell {
     display: grid;
     grid-template-columns: 16rem minmax(0, 1fr) 20rem;

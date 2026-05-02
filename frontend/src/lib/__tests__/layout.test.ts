@@ -16,7 +16,7 @@ import { render } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("$app/state", () => ({
-  page: { params: {}, route: { id: "/" } },
+  page: { params: {}, route: { id: "/" }, url: { pathname: "/" } },
 }));
 vi.mock("$app/navigation", () => ({
   goto: vi.fn(),
