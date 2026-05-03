@@ -19,6 +19,7 @@ function turn(overrides: Partial<MessageTurnView> = {}): MessageTurnView {
     routing: null,
     error: null,
     createdAt: null,
+    resumed: false,
     ...overrides,
   };
 }

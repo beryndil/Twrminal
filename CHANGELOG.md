@@ -9,6 +9,49 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **`runner_status` event + `turn_replayed` reducer** (wiring-v1-daily-driver item 1.4).
+  - `src/bearings/agent/events.py` — added `RunnerStatusEvent` (`type:
+    "runner_status"`, `streaming_active: bool`, `current_turn_id: str | None`)
+    to the `AgentEvent` discriminated union. Sent once per WS connect after the
+    replay drain so clients can reconcile their spinner state on reconnect.
+  - `src/bearings/agent/runner.py` — added `get_status_event()` method to
+    `SessionRunner`; synthesises a `RunnerStatusEvent` from `_status.is_running`
+    and a reverse-scan of the ring buffer for the most recent `MessageStart`;
+    imports `MessageStart` and `RunnerStatusEvent` from `events`.
+  - `src/bearings/web/streaming.py` — `serve_session_stream` now calls
+    `runner.get_status_event()` after `_send_replay` and sends the result as
+    `event_frame(seq=0, …)`; seq=0 is intentional (synthetic frame, not ring-
+    buffered) and the frontend handles it before the seq-dedup filter.
+  - `frontend/src/lib/api/events.ts` — added `RunnerStatusEvent` interface and
+    included it in the `AgentEvent` union.
+  - `frontend/src/lib/config.ts` — added `turnResumedLabel: "↻ resumed"` to
+    `CONVERSATION_STRINGS`.
+  - `frontend/src/lib/stores/conversation.svelte.ts` — added `streamingActive:
+    boolean` and `currentTurnId: string | null` to `ConversationState` (reset
+    in `resetConversation`); added `applyRunnerStatus` (called before seq-dedup
+    for `runner_status` frames) and `applyStreamingState` (sets/clears
+    `streamingActive`/`currentTurnId` on `message_start`, `message_complete`,
+    `error`); added `resumed: boolean` to `MessageTurnView`; `turn_replayed`
+    arm in `applyEvent` now marks the matching user row with `resumed: true`
+    instead of being a no-op; `runner_status` added as an explicit exhaustive
+    case.
+  - `frontend/src/lib/components/conversation/MessageTurn.svelte` — user bubble
+    now renders a `<span data-testid="message-turn-resumed">↻ resumed</span>`
+    annotation when `turn.resumed` is true.
+  - `frontend/src/lib/components/conversation/Conversation.svelte` —
+    `hasInFlightTurn` derived now gates on `conversationStore.streamingActive &&
+    turns.some(!complete)` so the Stop button is hidden when the runner is idle
+    even if the replay left an incomplete assistant turn open.
+  - `tests/test_streaming_unit.py` — added `RunnerStatusEvent` fixtures to the
+    parametrised round-trip test (active + idle variants).
+  - `tests/test_streaming_reconnect.py` — added three tests for
+    `get_status_event()` covering idle runner, running runner with
+    `MessageStart` in buffer, and multi-turn reverse-scan ordering.
+  - `tests/test_streaming_integration.py` — updated `close_after` budgets in
+    `test_live_tool_output_streaming_roundtrip` (+1 for runner_status) and
+    `test_heartbeat_fires_when_idle` (+1 for runner_status); both tests now
+    assert the synthetic first frame.
+
 - **ApprovalModal + AskUserQuestionModal** (wiring-v1-daily-driver item 1.1).
   - `frontend/src/lib/components/conversation/ApprovalModal.svelte` — generic
     allow / deny modal shown when the agent needs permission to use a tool.

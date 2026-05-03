@@ -67,19 +67,30 @@
   data-role={turn.role}
 >
   {#if turn.role === "user"}
-    <div
-      class="user-bubble self-end rounded px-3 py-2 text-sm text-fg-strong"
-      data-testid="message-turn-user-body"
-    >
-      <!-- User bubbles get linkifier-anchored URLs / paths but no
-           Markdown reflow (chat.md notes user bubbles render as
-           Markdown — applying the same renderMarkdown pipeline as
-           assistant bubbles is a TODO once the linkifier integrates
-           with the marked tokeniser). The HTML output of
-           ``linkifyToHtml`` is escaped per-segment; we still pass it
-           through ``sanitizeHtml`` for defense in depth. -->
-      <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-      {@html sanitizeHtml(linkifyToHtml(turn.body))}
+    <div class="flex flex-col items-end gap-1">
+      {#if turn.resumed}
+        <span
+          class="text-xs text-fg-muted"
+          data-testid="message-turn-resumed"
+          title="This prompt was re-queued and replayed to the runner after a restart"
+        >
+          {CONVERSATION_STRINGS.turnResumedLabel}
+        </span>
+      {/if}
+      <div
+        class="user-bubble self-end rounded px-3 py-2 text-sm text-fg-strong"
+        data-testid="message-turn-user-body"
+      >
+        <!-- User bubbles get linkifier-anchored URLs / paths but no
+             Markdown reflow (chat.md notes user bubbles render as
+             Markdown — applying the same renderMarkdown pipeline as
+             assistant bubbles is a TODO once the linkifier integrates
+             with the marked tokeniser). The HTML output of
+             ``linkifyToHtml`` is escaped per-segment; we still pass it
+             through ``sanitizeHtml`` for defense in depth. -->
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+        {@html sanitizeHtml(linkifyToHtml(turn.body))}
+      </div>
     </div>
   {:else}
     {#if turn.toolCalls.length > 0}

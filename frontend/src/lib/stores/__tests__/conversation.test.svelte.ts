@@ -43,6 +43,7 @@ const userMsg: MessageTurnView = {
   routing: null,
   error: null,
   createdAt: null,
+  resumed: false,
 };
 
 describe("applyEvent — user/assistant lifecycle", () => {

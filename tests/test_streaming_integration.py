@@ -192,10 +192,18 @@ def test_websocket_invalid_since_seq_closes_with_1003() -> None:
 @pytest.mark.asyncio
 async def test_live_tool_output_streaming_roundtrip() -> None:
     """``ToolCallStart`` → ``ToolOutputDeltax3`` → ``ToolCallEnd`` arrive
-    in order on a live WS subscriber, all via the in-loop fake."""
+    in order on a live WS subscriber, all via the in-loop fake.
+
+    ``close_after`` is set to ``len(events) + 1`` because
+    :func:`serve_session_stream` now emits one synthetic
+    ``runner_status`` frame (seq=0) after the replay drain and before
+    any live events arrive. The frame budget is: 1 (runner_status) +
+    len(events), then the next idle heartbeat attempt triggers the
+    fake's disconnect.
+    """
     runner = SessionRunner("sess-live")
     events = _tool_roundtrip_events()
-    fake_ws = _FakeWebSocket(close_after=len(events))
+    fake_ws = _FakeWebSocket(close_after=len(events) + 1)
 
     async def producer() -> None:
         # Yield first so the handler enters its drain loop before any
@@ -217,7 +225,7 @@ async def test_live_tool_output_streaming_roundtrip() -> None:
             # Short heartbeat so the post-events idle wait triggers a
             # heartbeat send-attempt fast — the fake_ws raises
             # ``WebSocketDisconnect`` on that next send because the
-            # ``close_after`` budget is already used up by the events.
+            # ``close_after`` budget is already used up.
             heartbeat_interval_s=0.05,
         )
     )
@@ -225,16 +233,23 @@ async def test_live_tool_output_streaming_roundtrip() -> None:
     await asyncio.wait_for(handler_task, timeout=2.0)
 
     assert fake_ws.accepted is True
-    assert len(fake_ws.sent) == len(events)
+    # One extra runner_status frame precedes the actual events.
+    assert len(fake_ws.sent) == len(events) + 1
+    # First frame must be runner_status (seq=0, synthetic).
+    first_kind, first_seq, first_event = parse_frame(fake_ws.sent[0])  # type: ignore[misc]
+    assert first_kind == "event"
+    assert first_seq == 0
+    assert first_event.type == "runner_status"
+    # Remaining frames are the live events in order.
     received: list[AgentEvent] = []
     seqs: list[int] = []
-    for text in fake_ws.sent:
+    for text in fake_ws.sent[1:]:
         kind, seq, event = parse_frame(text)  # type: ignore[misc]
         assert kind == "event"
         received.append(event)
         seqs.append(seq)
     assert received == events
-    # Live path also assigns contiguous monotonic seqs starting at 1.
+    # Live path assigns contiguous monotonic seqs starting at 1.
     assert seqs == list(range(1, 1 + len(events)))
 
 
@@ -296,9 +311,14 @@ async def test_live_streaming_preserves_tool_output_byte_order() -> None:
 async def test_heartbeat_fires_when_idle() -> None:
     """When no event arrives within heartbeat interval, a heartbeat
     frame is sent. Tests the long-tool keepalive surface per behavior
-    doc §"Long-tool keepalive"."""
+    doc §"Long-tool keepalive".
+
+    ``close_after=3``: the handler now sends one ``runner_status`` frame
+    (seq=0) right after the replay drain, then heartbeats on idle.
+    Budget: 1 (runner_status) + 2 (heartbeats), then disconnect.
+    """
     runner = SessionRunner("sess-idle")
-    fake_ws = _FakeWebSocket(close_after=2)
+    fake_ws = _FakeWebSocket(close_after=3)
     handler_task = asyncio.create_task(
         serve_session_stream(
             fake_ws,  # type: ignore[arg-type]
@@ -306,10 +326,15 @@ async def test_heartbeat_fires_when_idle() -> None:
             heartbeat_interval_s=0.05,  # short — fire fast
         )
     )
-    # No producer — handler should send heartbeats only.
+    # No producer — handler sends runner_status then heartbeats only.
     await asyncio.wait_for(handler_task, timeout=2.0)
-    assert len(fake_ws.sent) == 2
-    for text in fake_ws.sent:
+    assert len(fake_ws.sent) == 3
+    # First frame is the synthetic runner_status.
+    first = json.loads(fake_ws.sent[0])
+    assert first["kind"] == "event"
+    assert first["event"]["type"] == "runner_status"
+    # Remaining frames are heartbeats.
+    for text in fake_ws.sent[1:]:
         payload = json.loads(text)
         assert payload["kind"] == "heartbeat"
         assert isinstance(payload["ts"], (int, float))

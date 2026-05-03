@@ -79,10 +79,13 @@ async def serve_session_stream(
     2. Atomic snapshot + queue registration via
        :meth:`SessionRunner.subscribe`.
     3. Send each replay entry as a separate event frame (oldest first).
-    4. Loop: ``await queue.get()`` with a
+    4. Send a :class:`bearings.agent.events.RunnerStatusEvent` frame
+       (seq=0) so the client can reconcile ``streamingActive`` after
+       replay — fixes the indefinite spinner on reconnect mid-turn.
+    5. Loop: ``await queue.get()`` with a
        ``heartbeat_interval_s`` timeout; on timeout, send a heartbeat
        frame; on event, send an event frame.
-    5. On any disconnect (client close, server shutdown), unsubscribe
+    6. On any disconnect (client close, server shutdown), unsubscribe
        and return cleanly. Runner survives the WS close — the next
        reconnect resumes from the ring buffer.
 
@@ -101,6 +104,11 @@ async def serve_session_stream(
     replay, queue = runner.subscribe(since_seq=since_seq)
     try:
         await _send_replay(websocket, replay)
+        # Seq=0 is intentional: RunnerStatusEvent is synthetic (never
+        # stored in the ring buffer) so it has no real seq. The frontend
+        # handles it before the seq-dedup filter, so seq=0 is safe even
+        # when the client's lastSeq is already > 0.
+        await websocket.send_text(event_frame(0, runner.get_status_event()))
         await _stream_live(websocket, queue, heartbeat_interval_s)
     except WebSocketDisconnect:
         # Normal client-initiated close.

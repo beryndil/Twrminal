@@ -71,7 +71,13 @@ from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from bearings.agent.events import AgentEvent, ToolCallEnd, ToolOutputDelta
+from bearings.agent.events import (
+    AgentEvent,
+    MessageStart,
+    RunnerStatusEvent,
+    ToolCallEnd,
+    ToolOutputDelta,
+)
 from bearings.agent.routing import RoutingDecision
 from bearings.config.constants import (
     RING_BUFFER_MAX,
@@ -333,6 +339,32 @@ class SessionRunner:
         snapshot; existing subscribers are not notified — status
         changes ride alongside the next emitted event in v1."""
         self._status = status
+
+    def get_status_event(self) -> RunnerStatusEvent:
+        """Synthesise a :class:`RunnerStatusEvent` from current status.
+
+        Walks the ring buffer in reverse to find the most recent
+        :class:`MessageStart` when ``is_running`` is true — that
+        gives the ``current_turn_id`` without requiring the SDK loop to
+        track it separately. Returns ``None`` for ``current_turn_id``
+        when the ring buffer holds no unfinished ``MessageStart`` (e.g.
+        the buffer was evicted, or no turn has started yet).
+
+        Called by :func:`bearings.web.streaming.serve_session_stream`
+        after the replay drain so the client can reconcile
+        ``streamingActive`` on reconnect.
+        """
+        current_turn_id: str | None = None
+        if self._status.is_running:
+            for _seq, event in reversed(list(self._buffer)):
+                if isinstance(event, MessageStart):
+                    current_turn_id = event.message_id
+                    break
+        return RunnerStatusEvent(
+            session_id=self.session_id,
+            streaming_active=self._status.is_running,
+            current_turn_id=current_turn_id,
+        )
 
     async def emit(self, event: AgentEvent) -> int:
         """Append ``event`` to the ring buffer and fan out to subscribers.

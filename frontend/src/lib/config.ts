@@ -291,6 +291,8 @@ export const CONVERSATION_STRINGS = {
   // Item 1.3 pagination affordance.
   loadOlderLabel: "Load older messages",
   loadingOlder: "Loading…",
+  // Item 1.4 turn_replayed annotation — user row inline badge.
+  turnResumedLabel: "↻ resumed",
 } as const;
 
 /**

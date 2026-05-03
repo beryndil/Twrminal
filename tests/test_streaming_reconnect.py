@@ -39,7 +39,9 @@ import pytest
 
 from bearings.agent.events import (
     AgentEvent,
+    MessageComplete,
     MessageStart,
+    RunnerStatusEvent,
     Token,
     ToolCallEnd,
     ToolCallStart,
@@ -249,6 +251,83 @@ async def test_status_survives_resubscribe_cycle() -> None:
     # Status snapshot unchanged across the resubscribe cycle.
     assert runner.status.is_running is True
     assert runner.status.routing_decision == decision
+
+
+# ---------------------------------------------------------------------------
+# get_status_event — post-replay RunnerStatusEvent synthesis
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_status_event_idle_runner() -> None:
+    """Idle runner (is_running=False) → streaming_active=False, current_turn_id=None."""
+    runner = SessionRunner("s1")
+    # Status defaults to is_running=False on construction.
+    event = runner.get_status_event()
+    assert isinstance(event, RunnerStatusEvent)
+    assert event.session_id == "s1"
+    assert event.streaming_active is False
+    assert event.current_turn_id is None
+
+
+@pytest.mark.asyncio
+async def test_get_status_event_running_with_message_start_in_buffer() -> None:
+    """Running runner with a MessageStart in the ring buffer → current_turn_id set."""
+    from bearings.agent.routing import RoutingDecision
+
+    runner = SessionRunner("s1")
+    runner.set_status(
+        RunnerStatus(
+            is_running=True,
+            is_awaiting_user=False,
+            routing_decision=RoutingDecision(
+                executor_model="sonnet",
+                advisor_model=None,
+                advisor_max_uses=0,
+                effort_level="auto",
+                source="default",
+                reason="default",
+                matched_rule_id=None,
+            ),
+        )
+    )
+    await runner.emit(MessageStart(session_id="s1", message_id="msg-42"))
+    event = runner.get_status_event()
+    assert event.streaming_active is True
+    assert event.current_turn_id == "msg-42"
+
+
+@pytest.mark.asyncio
+async def test_get_status_event_returns_most_recent_message_start_in_buffer() -> None:
+    """When multiple MessageStart events are in the buffer, current_turn_id
+    reflects the most recent one (reverse-scan semantics)."""
+    from bearings.agent.routing import RoutingDecision
+
+    runner = SessionRunner("s1")
+    runner.set_status(
+        RunnerStatus(
+            is_running=True,
+            is_awaiting_user=False,
+            routing_decision=RoutingDecision(
+                executor_model="sonnet",
+                advisor_model=None,
+                advisor_max_uses=0,
+                effort_level="auto",
+                source="default",
+                reason="default",
+                matched_rule_id=None,
+            ),
+        )
+    )
+    # First turn — complete.
+    await runner.emit(MessageStart(session_id="s1", message_id="msg-first"))
+    await runner.emit(MessageComplete(session_id="s1", message_id="msg-first", content="done"))
+    # Second turn — in flight.
+    await runner.emit(MessageStart(session_id="s1", message_id="msg-live"))
+    event = runner.get_status_event()
+    # Reverse scan should find the in-flight MessageStart first.
+    assert event.streaming_active is True
+    assert event.current_turn_id == "msg-live"
 
 
 # ---------------------------------------------------------------------------

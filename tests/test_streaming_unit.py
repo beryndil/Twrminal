@@ -31,6 +31,7 @@ from bearings.agent.events import (
     MessageComplete,
     MessageStart,
     RoutingBadge,
+    RunnerStatusEvent,
     Thinking,
     TodoWriteUpdate,
     Token,
@@ -120,6 +121,8 @@ def _every_event() -> list[AgentEvent]:
             routing_source="tag_rule",
             routing_reason="matched bearings/architect",
         ),
+        RunnerStatusEvent(session_id="s1", streaming_active=True, current_turn_id="m1"),
+        RunnerStatusEvent(session_id="s1", streaming_active=False, current_turn_id=None),
     ]
 
 

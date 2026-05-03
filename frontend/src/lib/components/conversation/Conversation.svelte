@@ -49,10 +49,14 @@
   let atBottom = $state(true);
   let showJumpAffordance = $state(false);
 
-  // ``true`` while the most recent assistant turn is still in-flight
-  // (no ``message_complete`` yet). Drives the Stop button visibility.
+  // ``true`` while the runner is streaming AND there is an open
+  // assistant turn. Gating on ``streamingActive`` prevents an indefinite
+  // spinner when the runner died mid-turn (item 1.4 ``runner_status``
+  // sets ``streamingActive=false`` on reconnect, clearing the Stop
+  // button even though the replay contains an uncompleted turn).
   const hasInFlightTurn = $derived(
-    conversationStore.turns.some((t) => t.role === "assistant" && !t.complete),
+    conversationStore.streamingActive &&
+      conversationStore.turns.some((t) => t.role === "assistant" && !t.complete),
   );
 
   $effect(() => {

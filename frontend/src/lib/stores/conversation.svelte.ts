@@ -22,7 +22,7 @@
  * Svelte's ``$state`` proxy reads — they never call into the store
  * functions outside of the conversation cluster.
  */
-import type { AgentEvent } from "../api/events";
+import type { AgentEvent, RunnerStatusEvent } from "../api/events";
 import { listMessages, type MessageOut, type MessagePage } from "../api/messages";
 import type { StreamFrame } from "../api/streaming";
 import { CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS, MESSAGE_PAGE_SIZE, WS_FRAME_KIND_EVENT } from "../config";
@@ -68,6 +68,12 @@ export interface MessageTurnView {
   error: string | null;
   /** Created-at timestamp (server-side; ISO8601). */
   createdAt: string | null;
+  /**
+   * ``true`` when a ``turn_replayed`` event arrived for this message_id —
+   * surfaces as the "↻ resumed" inline annotation on the user bubble
+   * (item 1.4). Only ever set on user-role rows.
+   */
+  resumed: boolean;
 }
 
 export interface TurnRouting {
@@ -113,6 +119,20 @@ interface ConversationState {
    * ``null`` when no turns are loaded or pagination is not in use.
    */
   oldestSeq: number | null;
+  /**
+   * ``true`` while the runner is actively streaming a turn. Set by
+   * ``message_start``, cleared by ``message_complete`` / ``error``,
+   * and reconciled on reconnect via ``runner_status`` (item 1.4).
+   * Gating the Stop button on this prevents an indefinite spinner when
+   * the runner died while a ``MessageStart`` was open in the buffer.
+   */
+  streamingActive: boolean;
+  /**
+   * Assistant ``message_id`` of the live turn, or ``null`` when idle.
+   * Carried by the ``runner_status`` event on reconnect; updated on
+   * ``message_start`` / ``message_complete``.
+   */
+  currentTurnId: string | null;
 }
 
 const state: ConversationState = $state({
@@ -125,6 +145,8 @@ const state: ConversationState = $state({
   pendingApproval: null,
   hasMore: false,
   oldestSeq: null,
+  streamingActive: false,
+  currentTurnId: null,
 });
 
 export const conversationStore = state;
@@ -168,6 +190,8 @@ export function resetConversation(sessionId: string | null): void {
   state.pendingApproval = null;
   state.hasMore = false;
   state.oldestSeq = null;
+  state.streamingActive = false;
+  state.currentTurnId = null;
 }
 
 /**
@@ -217,16 +241,50 @@ export function ingestFrame(frame: StreamFrame): void {
   if (frame.kind !== WS_FRAME_KIND_EVENT) {
     return;
   }
+  // runner_status is a synthetic post-replay frame (seq=0, never stored
+  // in the ring buffer) — reconcile streamingActive before the seq-dedup
+  // filter so it's never dropped.
+  if (frame.event.type === "runner_status") {
+    applyRunnerStatus(frame.event);
+    return;
+  }
   if (frame.seq <= state.lastSeq) {
     // Replay tail or reordered duplicate — drop. The runner emits
     // monotonic seq per session so this is safe.
     return;
   }
+  // Track streaming state imperatively before the pure turns reducer.
+  applyStreamingState(frame.event);
   // Update pendingApproval for out-of-turn approval events BEFORE
   // the pure turns reducer runs (which is a no-op for these events).
   applyApprovalState(frame.event);
   state.turns = applyEvent(state.turns, frame.event);
   state.lastSeq = frame.seq;
+}
+
+/**
+ * Reconcile ``streamingActive`` / ``currentTurnId`` from a
+ * ``runner_status`` frame (item 1.4). Called before the seq-dedup
+ * filter so the synthetic post-replay frame is never silently dropped.
+ */
+function applyRunnerStatus(event: RunnerStatusEvent): void {
+  state.streamingActive = event.streaming_active;
+  state.currentTurnId = event.current_turn_id;
+}
+
+/**
+ * Imperative reducer arm for streaming-state tracking. Mirrors the
+ * runner's own ``is_running`` lifecycle: ``message_start`` opens a
+ * live turn; ``message_complete`` and ``error`` close it.
+ */
+function applyStreamingState(event: AgentEvent): void {
+  if (event.type === "message_start") {
+    state.streamingActive = true;
+    state.currentTurnId = event.message_id;
+  } else if (event.type === "message_complete" || event.type === "error") {
+    state.streamingActive = false;
+    state.currentTurnId = null;
+  }
 }
 
 /**
@@ -276,6 +334,7 @@ export function applyEvent(
           routing: null,
           error: null,
           createdAt: null,
+          resumed: false,
         },
       ];
     case "message_start":
@@ -292,6 +351,7 @@ export function applyEvent(
           routing: null,
           error: null,
           createdAt: null,
+          resumed: false,
         },
       ];
     case "token":
@@ -374,13 +434,26 @@ export function applyEvent(
       // assistant turn carrying the error so the user surface still
       // shows it.
       return attachError(turns, event.message);
-    case "context_usage":
     case "turn_replayed":
+      // Surface as "↻ resumed" inline annotation on the matching user
+      // row. Per behavior doc §"Reconnect / resume" the annotation
+      // tells the user their queued prompt was re-played to the runner
+      // after a restart (not silently re-answered).
+      return turns.map((turn) => {
+        if (turn.id === event.message_id) {
+          return { ...turn, resumed: true };
+        }
+        return turn;
+      });
+    case "context_usage":
     case "approval_request":
     case "approval_resolved":
     case "todo_write_update":
-      // Out-of-turn events are surfaced by other inspector / approval
-      // surfaces — no transcript-level effect.
+    case "runner_status":
+      // Out-of-turn / synthetic events are surfaced by other surfaces
+      // (inspector, approval modals, streaming reconciliation) — no
+      // transcript-level effect. runner_status is handled before this
+      // switch in ingestFrame, but the case is listed for exhaustiveness.
       return turns.slice();
     default: {
       // Exhaustiveness guard — TypeScript flags the assignment if a
@@ -444,6 +517,7 @@ function attachError(turns: readonly MessageTurnView[], message: string): Messag
       routing: null,
       error: message,
       createdAt: null,
+      resumed: false,
     },
   ];
 }
@@ -469,6 +543,7 @@ function rowToTurn(row: MessageOut): MessageTurnView {
         : null,
     error: null,
     createdAt: row.created_at,
+    resumed: false,
   };
 }
 

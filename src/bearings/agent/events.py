@@ -236,6 +236,26 @@ class TodoWriteUpdate(_BaseEvent):
     todos_json: str
 
 
+class RunnerStatusEvent(_BaseEvent):
+    """Post-replay status frame — sent once on WS connect after replay.
+
+    The client uses this to reconcile ``streamingActive`` on reconnect.
+    Without it a reconnect mid-turn shows an indefinite spinner if the
+    runner died while a ``MessageStart`` was still open in the ring
+    buffer. ``streaming_active`` is the authoritative flag;
+    ``current_turn_id`` (the assistant ``message_id`` for the live
+    turn) lets the UI highlight the right bubble.
+
+    Emitted by :meth:`bearings.agent.runner.SessionRunner.get_status_event`
+    and sent by :func:`bearings.web.streaming.serve_session_stream`
+    right after the replay drain.
+    """
+
+    type: Literal["runner_status"] = "runner_status"
+    streaming_active: bool
+    current_turn_id: str | None = None
+
+
 # Discriminated-union alias — arch §4.7 lists 16 events. Pydantic
 # resolves the right variant from the ``type`` field at parse time.
 # PEP 695 ``type`` keyword form per ruff UP040; equivalent to a
@@ -257,7 +277,8 @@ type AgentEvent = Annotated[
     | ApprovalRequest
     | ApprovalResolved
     | TodoWriteUpdate
-    | RoutingBadge,
+    | RoutingBadge
+    | RunnerStatusEvent,
     Field(discriminator="type"),
 ]
 
@@ -271,6 +292,7 @@ __all__ = [
     "MessageComplete",
     "MessageStart",
     "RoutingBadge",
+    "RunnerStatusEvent",
     "Thinking",
     "TodoWriteUpdate",
     "Token",

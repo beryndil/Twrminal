@@ -133,6 +133,18 @@ export interface TodoWriteUpdateEvent extends BaseEvent {
   todos_json: string;
 }
 
+/**
+ * Post-replay status frame — sent once on WS connect after the replay drain.
+ * The client uses ``streaming_active`` to reconcile its spinner state; seq=0
+ * is intentional (synthetic frame, not stored in the ring buffer) and is
+ * handled before the seq-dedup filter in :func:`ingestFrame`.
+ */
+export interface RunnerStatusEvent extends BaseEvent {
+  type: "runner_status";
+  streaming_active: boolean;
+  current_turn_id: string | null;
+}
+
 export type AgentEvent =
   | UserMessageEvent
   | TokenEvent
@@ -149,4 +161,5 @@ export type AgentEvent =
   | TurnReplayedEvent
   | ApprovalRequestEvent
   | ApprovalResolvedEvent
-  | TodoWriteUpdateEvent;
+  | TodoWriteUpdateEvent
+  | RunnerStatusEvent;
