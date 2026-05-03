@@ -13,7 +13,7 @@
  * - §"What the user sees" — a duplicate chord registration MUST throw
  *   so a typo cannot silently shadow a working chord in production.
  */
-import { KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH, KEYBOARD_SHORTCUT_STRINGS } from "../config";
+import { KEYBOARD_SHORTCUT_STRINGS } from "../config";
 import { chordKey, eventToCodeKey, eventToNamedKey, type ChordMatch } from "./chord";
 import { KEYBINDINGS, type KeybindingSpec } from "./bindings";
 import { getHandler, keybindingsState } from "./store.svelte";
@@ -125,13 +125,6 @@ export function bindingAllowedInContext(
 export function dispatchKeyEvent(event: KeyboardEvent): string | undefined {
   const binding = lookupBindingForEvent(event);
   if (binding === undefined) return undefined;
-  if (binding.id === KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH) {
-    // ``displayOnly`` — wired by the sidebar search component itself.
-    // Defensive: we already filter ``displayOnly`` out of the registry,
-    // but the explicit guard keeps the intent obvious if a future
-    // refactor flips that filter.
-    return undefined;
-  }
   if (!bindingAllowedInContext(binding, keybindingsState)) return undefined;
   const handler = getHandler(binding.id);
   if (handler === undefined) return undefined;

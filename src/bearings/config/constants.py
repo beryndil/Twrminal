@@ -1132,6 +1132,21 @@ ROUTE_TAG_DIAG: Final[str] = "diag"
 ROUTE_TAG_HEALTH: Final[str] = "health"
 ROUTE_TAG_METRICS: Final[str] = "metrics"
 ROUTE_TAG_COMMANDS: Final[str] = "commands"
+ROUTE_TAG_HISTORY: Final[str] = "history"
+
+# History search result hard cap. The search endpoint returns at most this
+# many hits (sessions + messages combined) per query to keep response sizes
+# predictable.
+HISTORY_SEARCH_RESULT_CAP: Final[int] = 50
+
+# Maximum characters rendered in a history search snippet. The snippet is
+# extracted from the matching field (message content or session description)
+# around the first occurrence of the query term.
+HISTORY_SEARCH_SNIPPET_CHARS: Final[int] = 120
+
+# Debounce window (milliseconds) for the sidebar search input. Mirrors the
+# vault-search debounce so two reactive search surfaces feel consistent.
+HISTORY_SEARCH_DEBOUNCE_MS: Final[int] = 300
 
 
 # Self-consistency: every profile that appears in the resolution tables
@@ -1241,6 +1256,9 @@ __all__ = [
     "HEALTH_STATUS_DEGRADED",
     "HEALTH_STATUS_OK",
     "HISTORY_PRIME_MAX_CHARS",
+    "HISTORY_SEARCH_DEBOUNCE_MS",
+    "HISTORY_SEARCH_RESULT_CAP",
+    "HISTORY_SEARCH_SNIPPET_CHARS",
     "IDLE_REAP_POLL_INTERVAL_S",
     "IDLE_REAP_THRESHOLD_S",
     "ITEM_OUTCOME_BLOCKED",
@@ -1309,6 +1327,7 @@ __all__ = [
     "ROUTE_TAG_DIAG",
     "ROUTE_TAG_FS",
     "ROUTE_TAG_HEALTH",
+    "ROUTE_TAG_HISTORY",
     "ROUTE_TAG_MEMORIES",
     "ROUTE_TAG_MESSAGES",
     "ROUTE_TAG_METRICS",

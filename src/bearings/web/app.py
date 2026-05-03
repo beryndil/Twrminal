@@ -48,6 +48,7 @@ from bearings.config.constants import (
     ROUTE_TAG_DIAG,
     ROUTE_TAG_FS,
     ROUTE_TAG_HEALTH,
+    ROUTE_TAG_HISTORY,
     ROUTE_TAG_MEMORIES,
     ROUTE_TAG_MESSAGES,
     ROUTE_TAG_METRICS,
@@ -70,6 +71,7 @@ from bearings.web.routes.commands import router as commands_router
 from bearings.web.routes.diag import router as diag_router
 from bearings.web.routes.fs import router as fs_router
 from bearings.web.routes.health import router as health_router
+from bearings.web.routes.history import router as history_router
 from bearings.web.routes.memories import router as memories_router
 from bearings.web.routes.messages import router as messages_router
 from bearings.web.routes.metrics import router as metrics_router
@@ -230,6 +232,8 @@ def create_app(
     app.include_router(usage_router, tags=[ROUTE_TAG_USAGE])
     # Item 2.3 — slash-command scanner.
     app.include_router(commands_router, tags=[ROUTE_TAG_COMMANDS])
+    # Item 2.4 — history search.
+    app.include_router(history_router, tags=[ROUTE_TAG_HISTORY])
     # Item 1.10 — misc-API surfaces.
     app.include_router(uploads_router, tags=[ROUTE_TAG_UPLOADS])
     app.include_router(fs_router, tags=[ROUTE_TAG_FS])

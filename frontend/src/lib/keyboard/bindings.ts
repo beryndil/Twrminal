@@ -175,7 +175,6 @@ export const KEYBINDINGS: readonly KeybindingSpec[] = [
     chord: { code: "KeyK", ctrl: true, display: ["Ctrl", "K"] },
     section: KEYBINDING_SECTION_COMMAND_PALETTE,
     global: true,
-    displayOnly: true,
   },
 ];
 

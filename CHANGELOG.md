@@ -9,6 +9,33 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Sidebar search** (wiring-v1-daily-driver item 2.4).
+  - `src/bearings/web/routes/history.py` — `GET /api/history/search?q=`
+    performs case-insensitive LIKE search over `sessions.title`,
+    `sessions.description`, and `messages.content`. Returns up to 50 hits
+    (session hits first, then message hits); each hit carries a `kind`,
+    `session_id`, `session_title`, optional `message_id`, and a 120-char
+    snippet centred on the first match occurrence. Empty / blank queries
+    return immediately without touching the DB.
+  - `src/bearings/web/models/history.py` — `HistorySearchResult` Pydantic model.
+  - `src/bearings/config/constants.py` — `HISTORY_SEARCH_RESULT_CAP`,
+    `HISTORY_SEARCH_SNIPPET_CHARS`, `HISTORY_SEARCH_DEBOUNCE_MS`, and
+    `ROUTE_TAG_HISTORY` constants.
+  - `src/bearings/web/app.py` — mounts history router.
+  - `frontend/src/lib/config.ts` — `API_HISTORY_SEARCH_ENDPOINT`,
+    `HISTORY_SEARCH_DEBOUNCE_MS`, `HISTORY_SEARCH_RESULT_CAP`, and
+    `SIDEBAR_SEARCH_STRINGS`.
+  - `frontend/src/lib/api/history.ts` — `searchHistory(q)` client; returns
+    empty array on network/server error for graceful sidebar degradation.
+  - `frontend/src/lib/components/sidebar/SidebarSearch.svelte` — full-screen
+    overlay: debounced input (300 ms), scrollable results list with SESSION /
+    MESSAGE kind badges, ArrowUp/Down keyboard navigation, Enter to select,
+    Escape to close, backdrop click to close. Clicking a result calls
+    `goto('/sessions/{id}')` with `#msg-{id}` hash for message hits.
+  - `frontend/src/routes/+layout.svelte` — mounts `<SidebarSearch />`.
+  - `frontend/src/lib/keyboard/bindings.ts` — `KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH`
+    wired as `Ctrl+K` (`global: true`); `displayOnly: true` removed.
+
 - **Slash-command palette** (wiring-v1-daily-driver item 2.3).
   - `src/bearings/web/routes/commands.py` — `GET /api/commands` scans
     `~/.claude/commands/**/*.md` (user commands), `~/.claude/skills/*/SKILL.md`

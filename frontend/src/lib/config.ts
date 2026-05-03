@@ -103,6 +103,31 @@ export const sessionStopEndpoint = (sessionId: string): string =>
 export const API_COMMANDS_ENDPOINT = `${API_BASE}/commands`;
 
 /**
+ * ``GET /api/history/search?q=<term>`` — full-text search over sessions
+ * and messages (item 2.4).
+ */
+export const API_HISTORY_SEARCH_ENDPOINT = `${API_BASE}/history/search`;
+
+/**
+ * Debounce window (ms) for the sidebar search input. Mirrors
+ * :data:`bearings.config.constants.HISTORY_SEARCH_DEBOUNCE_MS`.
+ */
+export const HISTORY_SEARCH_DEBOUNCE_MS = 300;
+
+/**
+ * UI strings for the sidebar search overlay (item 2.4).
+ */
+export const SIDEBAR_SEARCH_STRINGS = {
+  placeholder: "Search sessions and messages…",
+  ariaLabel: "Search sessions and messages",
+  closeLabel: "Close search",
+  emptyResults: "No results.",
+  loadingLabel: "Searching…",
+  sessionKindLabel: "session",
+  messageKindLabel: "message",
+} as const;
+
+/**
  * Hard cap on a single prompt submission, mirroring the backend's
  * :data:`bearings.config.constants.PROMPT_CONTENT_MAX_CHARS` (64 000).
  * The Composer enforces this client-side so the user gets immediate

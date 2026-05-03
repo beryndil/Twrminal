@@ -41,6 +41,7 @@
   import { sessionsStore } from "$lib/stores/sessions.svelte";
   import { inspectorStore, setActiveSession } from "$lib/stores/inspector.svelte";
   import ContextMeter from "$lib/components/conversation/ContextMeter.svelte";
+  import SidebarSearch from "$lib/components/sidebar/SidebarSearch.svelte";
 
   interface Props {
     children?: Snippet;
@@ -451,6 +452,9 @@
         </footer>
       </div>
     </ContextMenuProvider>
+    <!-- Item 2.4 — sidebar search overlay. Mounted inside KeybindingsProvider
+         so its bindHandler call has access to the live keybindings store. -->
+    <SidebarSearch />
   </KeybindingsProvider>
 </ThemeProvider>
 
