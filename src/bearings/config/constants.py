@@ -1134,6 +1134,7 @@ ROUTE_TAG_METRICS: Final[str] = "metrics"
 ROUTE_TAG_COMMANDS: Final[str] = "commands"
 ROUTE_TAG_HISTORY: Final[str] = "history"
 ROUTE_TAG_WS_SESSIONS: Final[str] = "ws-sessions"
+ROUTE_TAG_PREFERENCES: Final[str] = "preferences"
 
 # History search result hard cap. The search endpoint returns at most this
 # many hits (sessions + messages combined) per query to keep response sizes
@@ -1333,6 +1334,7 @@ __all__ = [
     "ROUTE_TAG_MESSAGES",
     "ROUTE_TAG_METRICS",
     "ROUTE_TAG_PAIRED_CHATS",
+    "ROUTE_TAG_PREFERENCES",
     "ROUTE_TAG_QUOTA",
     "ROUTE_TAG_ROUTING",
     "ROUTE_TAG_SESSIONS",

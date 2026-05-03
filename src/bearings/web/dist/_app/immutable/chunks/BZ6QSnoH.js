@@ -1,1 +1,0 @@
-import{O as r,c as n,d as t}from"./CqiscO-7.js";import{g as i}from"./CDr4_kZm.js";async function d(a={}){const s={query:[["period",a.period??"week"]]};return a.signal!==void 0&&(s.signal=a.signal),await i(n,s)}async function E(a={}){const e=a.days??r,s={query:[["days",String(e)]]};return a.signal!==void 0&&(s.signal=a.signal),await i(t,s)}export{E as a,d as g};

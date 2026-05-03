@@ -39,8 +39,14 @@
   import { createSession } from "$lib/api/sessions";
   import { listTags, type TagOut } from "$lib/api/tags";
   import { sendPrompt } from "$lib/api/prompt";
+  import { getPreferences } from "$lib/api/preferences";
   import { ApiError } from "$lib/api/client";
-  import { EXECUTOR_MODEL_SONNET, SESSION_KIND_CHAT, type ExecutorModel } from "$lib/config";
+  import {
+    EXECUTOR_MODEL_SONNET,
+    KNOWN_EXECUTOR_MODELS,
+    SESSION_KIND_CHAT,
+    type ExecutorModel,
+  } from "$lib/config";
   import NewSessionForm, {
     type NewSessionSubmission,
   } from "$lib/components/new_session/NewSessionForm.svelte";
@@ -56,16 +62,35 @@
 
   let selectedTagIds = $state<number[]>([]);
   let workingDir = $state("");
+  // initialExecutor is set from preferences on mount; falls back to Sonnet.
+  let initialExecutor = $state<ExecutorModel>(EXECUTOR_MODEL_SONNET);
 
   let submitError = $state<string | null>(null);
   let submitting = $state(false);
 
-  // Hydrate the tag list once on mount. A failure leaves the picker
-  // empty + the user can still type a working dir + first message but
-  // the submit guard ("≥1 tag") will surface the failure.
+  // Hydrate tags and preferences once on mount. A preferences failure is
+  // non-fatal — the form still works with its hardcoded defaults.
   $effect(() => {
     void hydrateTags();
+    void hydratePrefs();
   });
+
+  async function hydratePrefs(): Promise<void> {
+    try {
+      const prefs = await getPreferences();
+      if (prefs.default_working_dir != null && prefs.default_working_dir.trim() !== "") {
+        workingDir = prefs.default_working_dir;
+      }
+      if (
+        prefs.default_model != null &&
+        (KNOWN_EXECUTOR_MODELS as readonly string[]).includes(prefs.default_model)
+      ) {
+        initialExecutor = prefs.default_model as ExecutorModel;
+      }
+    } catch {
+      // Silently ignore — defaults fall back to hardcoded values.
+    }
+  }
 
   async function hydrateTags(): Promise<void> {
     tagsLoading = true;
@@ -163,11 +188,6 @@
   function handleCancel(): void {
     void goto("/");
   }
-
-  // Default executor — matches the form's own default so the routing
-  // preview line shows "Sonnet" before the user touches anything.
-  const _defaultExecutor: ExecutorModel = EXECUTOR_MODEL_SONNET;
-  void _defaultExecutor;
 </script>
 
 <section class="new-session-page" data-testid="new-session-page" aria-label="Create new session">
@@ -224,6 +244,7 @@
   <NewSessionForm
     tagIds={selectedTagIds}
     {workingDir}
+    {initialExecutor}
     onSubmit={(payload) => {
       void handleSubmit(payload);
     }}

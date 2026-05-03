@@ -73,6 +73,9 @@ EXPECTED_TABLES = frozenset(
         # body lives under the configured uploads-storage-root keyed
         # by sha256; this table is the metadata side of the contract.
         "uploads",
+        # Item 3.2 addition — singleton user-preferences row (theme,
+        # default_model, default_permission_mode, default_working_dir).
+        "preferences",
     }
 )
 

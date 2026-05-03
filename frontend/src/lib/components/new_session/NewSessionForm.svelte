@@ -112,6 +112,13 @@
     previewRouting?: typeof previewRoutingDefault;
     getCurrentQuota?: typeof getCurrentQuotaDefault;
     debounceMs?: number;
+    /**
+     * Preselected executor model injected by the host (item 3.2).
+     * Used to auto-fill from ``/api/preferences``; falls back to
+     * ``EXECUTOR_MODEL_SONNET`` when omitted.  The user can still
+     * override via the executor selector.
+     */
+    initialExecutor?: ExecutorModel;
   }
 
   const {
@@ -122,6 +129,7 @@
     previewRouting = previewRoutingDefault,
     getCurrentQuota = getCurrentQuotaDefault,
     debounceMs = ROUTING_PREVIEW_DEBOUNCE_MS,
+    initialExecutor = EXECUTOR_MODEL_SONNET,
   }: Props = $props();
 
   // ---- Form state --------------------------------------------------------
@@ -131,7 +139,10 @@
   // Routing axes — defaulted per spec §1 / §2 (Sonnet executor, Opus
   // advisor, max=5, auto effort) and updated by the preview unless the
   // user has overridden.
-  let executor = $state<ExecutorModel>(EXECUTOR_MODEL_SONNET);
+  // untrack: we only want the initial prop value as a seed; reactive
+  // updates to initialExecutor after mount should NOT re-set executor
+  // (the routing preview owns executor once the form is live).
+  let executor = $state<ExecutorModel>(untrack(() => initialExecutor));
   let advisor = $state<AdvisorModelChoice>(ADVISOR_MODEL_OPUS);
   let advisorMaxUses = $state<number>(DEFAULT_ADVISOR_MAX_USES_SONNET);
   let effort = $state<EffortLevel>(EFFORT_LEVEL_AUTO);

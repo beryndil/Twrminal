@@ -53,6 +53,7 @@ from bearings.config.constants import (
     ROUTE_TAG_MESSAGES,
     ROUTE_TAG_METRICS,
     ROUTE_TAG_PAIRED_CHATS,
+    ROUTE_TAG_PREFERENCES,
     ROUTE_TAG_QUOTA,
     ROUTE_TAG_ROUTING,
     ROUTE_TAG_SESSIONS,
@@ -77,6 +78,7 @@ from bearings.web.routes.memories import router as memories_router
 from bearings.web.routes.messages import router as messages_router
 from bearings.web.routes.metrics import router as metrics_router
 from bearings.web.routes.paired_chats import router as paired_chats_router
+from bearings.web.routes.preferences import router as preferences_router
 from bearings.web.routes.quota import router as quota_router
 from bearings.web.routes.routing import router as routing_router
 from bearings.web.routes.sessions import router as sessions_router
@@ -243,6 +245,8 @@ def create_app(
     app.include_router(routing_router, tags=[ROUTE_TAG_ROUTING])
     app.include_router(quota_router, tags=[ROUTE_TAG_QUOTA])
     app.include_router(usage_router, tags=[ROUTE_TAG_USAGE])
+    # Item 3.2 — user preferences singleton.
+    app.include_router(preferences_router, tags=[ROUTE_TAG_PREFERENCES])
     # Item 2.3 — slash-command scanner.
     app.include_router(commands_router, tags=[ROUTE_TAG_COMMANDS])
     # Item 2.4 — history search.

@@ -103,6 +103,12 @@ export const sessionStopEndpoint = (sessionId: string): string =>
 export const API_COMMANDS_ENDPOINT = `${API_BASE}/commands`;
 
 /**
+ * ``GET /api/preferences`` + ``PATCH /api/preferences`` — singleton
+ * user-preferences row (item 3.2).
+ */
+export const API_PREFERENCES_ENDPOINT = `${API_BASE}/preferences`;
+
+/**
  * ``GET /api/history/search?q=<term>`` — full-text search over sessions
  * and messages (item 2.4).
  */
@@ -1502,6 +1508,51 @@ export const THEME_STRINGS = {
     [THEME_DEFAULT]: "Default (Tailwind classic dark)",
     [THEME_PAPER_LIGHT]: "Paper Light (cream, flat)",
   } as const satisfies Record<ThemeId, string>,
+} as const;
+
+// ---- Preferences / defaults (item 3.2) ----
+
+/**
+ * Valid ``permission_mode`` literals accepted by the SDK, mirrored from
+ * :data:`bearings.config.constants.KNOWN_SDK_PERMISSION_MODES`.
+ * Exposed here so the Defaults section in ``/settings`` can build a
+ * typed ``<select>`` without duplicating the list.
+ */
+export const KNOWN_PERMISSION_MODES = [
+  "default",
+  "acceptEdits",
+  "plan",
+  "bypassPermissions",
+  "dontAsk",
+  "auto",
+] as const;
+export type PermissionMode = (typeof KNOWN_PERMISSION_MODES)[number];
+
+/** Human-readable labels for permission mode values. */
+export const PERMISSION_MODE_LABELS: Record<PermissionMode, string> = {
+  default: "Default",
+  acceptEdits: "Accept edits",
+  plan: "Plan only",
+  bypassPermissions: "Bypass permissions",
+  dontAsk: "Don't ask",
+  auto: "Auto",
+};
+
+/** Preferences section UI strings. */
+export const PREFERENCES_STRINGS = {
+  defaultsHeading: "Defaults",
+  defaultsLede: "Pre-fill the new-session form. Leave a field blank to use the system default.",
+  themeLabel: "Default theme",
+  modelLabel: "Default model",
+  permissionModeLabel: "Default permission mode",
+  workingDirLabel: "Default working directory",
+  saveButton: "Save defaults",
+  savedFeedback: "Saved.",
+  saveError: "Couldn't save — try again.",
+  loadError: "Couldn't load preferences.",
+  modelPlaceholder: "(use routing rules)",
+  permissionModePlaceholder: "(SDK default)",
+  workingDirPlaceholder: "/path/to/project",
 } as const;
 
 // ---- Keyboard shortcuts (item 2.9; mirrors ``docs/behavior/keyboard-shortcuts.md``) ----

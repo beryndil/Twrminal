@@ -9,6 +9,35 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Preferences API + settings Defaults section** (wiring-v1-daily-driver item 3.2).
+  - `src/bearings/db/schema.sql` — `preferences` singleton table
+    (`id=1 CHECK`, `theme TEXT NOT NULL DEFAULT 'default'`, `default_model`,
+    `default_permission_mode`, `default_working_dir`, `updated_at`). Seeded
+    via `INSERT OR IGNORE` on every `load_schema` call.
+  - `src/bearings/db/preferences.py` — `get_preferences` / `patch_preferences`
+    DB helpers. `patch_preferences` accepts a `fields: frozenset[str]`
+    parameter so the route layer can distinguish "omit" from "set to NULL".
+  - `src/bearings/web/models/preferences.py` — `PreferencesOut` /
+    `PreferencesPatch` Pydantic wire shapes.
+  - `src/bearings/web/routes/preferences.py` — `GET /api/preferences` and
+    `PATCH /api/preferences` (partial update via `model_fields_set`).
+  - `src/bearings/web/app.py` — mounts preferences router.
+  - `src/bearings/config/constants.py` — `ROUTE_TAG_PREFERENCES`.
+  - `frontend/src/lib/api/preferences.ts` — `getPreferences` / `patchPreferences` helpers.
+  - `frontend/src/lib/config.ts` — `API_PREFERENCES_ENDPOINT`,
+    `KNOWN_PERMISSION_MODES`, `PERMISSION_MODE_LABELS`, `PREFERENCES_STRINGS`.
+  - `frontend/src/routes/settings/+page.svelte` — **Defaults section** with
+    four selects/inputs (theme, default model, default permission mode,
+    default working dir). Reads on mount, writes on "Save defaults" click,
+    shows "Saved." feedback for 2 s.
+  - `frontend/src/lib/components/new_session/NewSessionForm.svelte` —
+    `initialExecutor` prop; initial executor state seeded from it.
+  - `frontend/src/routes/sessions/new/+page.svelte` — fetches
+    `/api/preferences` on mount; pre-fills working directory and executor
+    model from defaults (fails silently so form still works offline).
+  - `~/.local/share/bearings-v1/launch.py` — calls `load_schema` on the
+    DB connection at startup so schema migrations apply on boot.
+
 - **Folder picker for new-session form** (wiring-v1-daily-driver item 3.1).
   - `src/bearings/web/routes/fs.py` — `POST /api/fs/pick` endpoint. Validates
     the requested root against configured `allow_roots`; falls back to the

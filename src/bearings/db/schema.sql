@@ -529,6 +529,36 @@ CREATE INDEX IF NOT EXISTS idx_uploads_created_at
     ON uploads(created_at DESC);
 
 -- ---------------------------------------------------------------------------
+-- User preferences — singleton row (id = 1 enforced by CHECK).
+--
+-- Stores global defaults that the settings page reads + saves and that
+-- the new-session form auto-fills from:
+--
+--   • theme                   — active UI theme id (e.g. 'default',
+--                               'evergreen', 'midnight-glass', 'paper-light').
+--   • default_model           — executor model to pre-fill in new-session
+--                               form (NULL = let routing decide).
+--   • default_permission_mode — SDK permission_mode to pre-fill
+--                               (NULL = use SDK default).
+--   • default_working_dir     — working directory to pre-fill in
+--                               new-session form (NULL = leave blank).
+--
+-- The singleton is seeded via INSERT OR IGNORE so load_schema is
+-- idempotent and existing rows are never overwritten.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS preferences (
+    id                      INTEGER PRIMARY KEY CHECK (id = 1),
+    theme                   TEXT    NOT NULL DEFAULT 'default',
+    default_model           TEXT,
+    default_permission_mode TEXT,
+    default_working_dir     TEXT,
+    updated_at              TEXT    NOT NULL
+        DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+INSERT OR IGNORE INTO preferences (id) VALUES (1);
+
+-- ---------------------------------------------------------------------------
 -- Default system_routing_rules seed.
 --
 -- Verbatim from docs/model-routing-v1-spec.md §3 default rule table.
