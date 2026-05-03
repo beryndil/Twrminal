@@ -194,6 +194,21 @@ export async function listSessions(params: ListSessionsParams = {}): Promise<Ses
 }
 
 /**
+ * Return the single most-recently-updated session row (open or closed),
+ * or ``null`` when no sessions exist yet. Used by the new-session form
+ * to pre-fill ``working_dir`` and ``model`` from the previous session
+ * (item 3.4 default-from-last-session auto-fill).
+ *
+ * The underlying list endpoint sorts by ``updated_at DESC``, so the
+ * first row is always the most recently touched session — exactly the
+ * right source for "what did the user use last time?"
+ */
+export async function getMostRecentSession(signal?: AbortSignal): Promise<SessionOut | null> {
+  const sessions = await listSessions({ includeClosed: true, signal });
+  return sessions[0] ?? null;
+}
+
+/**
  * Swap the session's permission mode via
  * ``PATCH /api/sessions/{id}/permission_mode`` (item 3.3).
  *

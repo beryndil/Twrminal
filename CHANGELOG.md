@@ -9,6 +9,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Default-from-last-session auto-fill** (wiring-v1-daily-driver item 3.4).
+  - `frontend/src/lib/api/sessions.ts` — `getMostRecentSession()` helper:
+    calls `listSessions({includeClosed: true})` and returns the first row
+    (sorted `updated_at DESC` by the backend) or `null` when no sessions exist.
+  - `frontend/src/routes/sessions/new/+page.svelte` — replaces the
+    preferences-only `hydratePrefs()` call with `hydrateDefaults()`: fetches
+    the most-recently-updated session on mount and pre-fills `workingDir` +
+    `initialExecutor` from it; falls back to the preferences-API defaults
+    (item 3.2) only when no prior session exists; both sources are
+    overridable before submit. No templates picker — deferred.
+
 - **Permission-mode toggle** (wiring-v1-daily-driver item 3.3).
   - `src/bearings/db/sessions.py` — `update_permission_mode` DB helper.
     Validates non-`None` values against `KNOWN_SDK_PERMISSION_MODES`; `None`

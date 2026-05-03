@@ -33,10 +33,16 @@
    *
    * Closing-sweep audit (2026-05-02) — this route was the missing
    * surface that made ``+ New Session`` go nowhere.
+   *
+   * Item 3.4 (default-from-last-session): on mount the form fetches the
+   * most-recently-updated session and pre-fills ``workingDir`` + the
+   * initial executor model from it.  Prefs-API defaults (item 3.2) are
+   * the fallback when no prior session exists.  Both sources are
+   * overridable before the user submits.
    */
   import { goto } from "$app/navigation";
 
-  import { createSession } from "$lib/api/sessions";
+  import { createSession, getMostRecentSession } from "$lib/api/sessions";
   import { listTags, type TagOut } from "$lib/api/tags";
   import { sendPrompt } from "$lib/api/prompt";
   import { getPreferences } from "$lib/api/preferences";
@@ -62,20 +68,41 @@
 
   let selectedTagIds = $state<number[]>([]);
   let workingDir = $state("");
-  // initialExecutor is set from preferences on mount; falls back to Sonnet.
+  // initialExecutor is set from last session (or prefs fallback) on mount.
   let initialExecutor = $state<ExecutorModel>(EXECUTOR_MODEL_SONNET);
 
   let submitError = $state<string | null>(null);
   let submitting = $state(false);
 
-  // Hydrate tags and preferences once on mount. A preferences failure is
-  // non-fatal — the form still works with its hardcoded defaults.
+  // Hydrate tags + session defaults once on mount. All failures are
+  // non-fatal — the form still works with its hardcoded fallbacks.
   $effect(() => {
     void hydrateTags();
-    void hydratePrefs();
+    void hydrateDefaults();
   });
 
-  async function hydratePrefs(): Promise<void> {
+  /**
+   * Pre-fill ``workingDir`` + ``initialExecutor`` from the most-recently-
+   * updated session (item 3.4).  Falls back to the preferences-API
+   * defaults (item 3.2) when no prior session exists.
+   */
+  async function hydrateDefaults(): Promise<void> {
+    // Primary source: most-recent session.
+    try {
+      const recent = await getMostRecentSession();
+      if (recent !== null) {
+        if (recent.working_dir.trim() !== "") {
+          workingDir = recent.working_dir;
+        }
+        if ((KNOWN_EXECUTOR_MODELS as readonly string[]).includes(recent.model)) {
+          initialExecutor = recent.model as ExecutorModel;
+        }
+        return;
+      }
+    } catch {
+      // Fall through to preferences.
+    }
+    // Fallback: preferences-API defaults (3.2).
     try {
       const prefs = await getPreferences();
       if (prefs.default_working_dir != null && prefs.default_working_dir.trim() !== "") {
@@ -88,7 +115,7 @@
         initialExecutor = prefs.default_model as ExecutorModel;
       }
     } catch {
-      // Silently ignore — defaults fall back to hardcoded values.
+      // Silently ignore — hardcoded defaults remain.
     }
   }
 
