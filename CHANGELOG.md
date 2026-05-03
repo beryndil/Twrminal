@@ -9,6 +9,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **`fallback_model == model` crashed the SDK CLI** for `haiku` sessions
+  (`agent/sdk_loop.py:_to_sdk_options`). The bearings
+  `EXECUTOR_FALLBACK_MODEL` table maps `haiku → haiku` to encode "no
+  further fallback", but the Claude CLI rejects identical pairs with
+  `Error: Fallback model cannot be the same as the main model`. Drop
+  the SDK option when the resolved fallback equals the main model;
+  the SDK then runs without a fallback override, which is the same
+  semantic the table was trying to express.
 - **agent loop never spawned — every posted prompt queued forever**
   (`bearings/cli/serve.py`, stopgap `~/.local/share/bearings-v1/launch.py`).
   Both boot paths called `create_app()` *without* `db_connection`,

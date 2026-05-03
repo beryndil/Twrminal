@@ -251,9 +251,14 @@ def _to_sdk_options(kwargs: OptionsKwargs) -> ClaudeAgentOptions:
     * ``permission_mode=""`` → ``None``.
     * ``setting_sources=None`` → ``None``.
     """
+    # ``fallback_model`` is dropped when it matches ``model`` because the
+    # SDK CLI rejects identical pairs ("Fallback model cannot be the
+    # same as the main model"). The bearings ``EXECUTOR_FALLBACK_MODEL``
+    # table encodes "haiku has no further fallback" by mapping
+    # ``haiku → haiku``; that semantic survives by simply omitting the
+    # SDK option (SDK then runs without a fallback override).
     sdk_kwargs: dict[str, Any] = {
         "model": kwargs.model,
-        "fallback_model": kwargs.fallback_model,
         "betas": list(kwargs.betas),
         "include_partial_messages": kwargs.include_partial_messages,
         "allowed_tools": list(kwargs.allowed_tools),
@@ -262,6 +267,8 @@ def _to_sdk_options(kwargs: OptionsKwargs) -> ClaudeAgentOptions:
         "max_budget_usd": kwargs.max_budget_usd,
         "can_use_tool": kwargs.can_use_tool,
     }
+    if kwargs.fallback_model and kwargs.fallback_model != kwargs.model:
+        sdk_kwargs["fallback_model"] = kwargs.fallback_model
     if kwargs.effort is not None:
         sdk_kwargs["effort"] = kwargs.effort
     if kwargs.system_prompt:
