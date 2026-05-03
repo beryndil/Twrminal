@@ -79,6 +79,13 @@ export interface TurnRouting {
   routingReason: string;
 }
 
+/** Live pending approval request; ``null`` when no modal is shown. */
+export interface PendingApproval {
+  requestId: string;
+  toolName: string;
+  toolInputJson: string;
+}
+
 interface ConversationState {
   sessionId: string | null;
   turns: MessageTurnView[];
@@ -88,6 +95,11 @@ interface ConversationState {
   loading: boolean;
   /** Last hydrate / WS error. */
   error: Error | null;
+  /**
+   * Set on ``approval_request``; cleared on ``approval_resolved``
+   * (request_id match) or session reset. Drives the approval modals.
+   */
+  pendingApproval: PendingApproval | null;
 }
 
 const state: ConversationState = $state({
@@ -96,6 +108,7 @@ const state: ConversationState = $state({
   lastSeq: 0,
   loading: false,
   error: null,
+  pendingApproval: null,
 });
 
 export const conversationStore = state;
@@ -116,6 +129,7 @@ export function resetConversation(sessionId: string | null): void {
   state.lastSeq = 0;
   state.loading = false;
   state.error = null;
+  state.pendingApproval = null;
 }
 
 export function setLoading(loading: boolean): void {
@@ -140,8 +154,31 @@ export function ingestFrame(frame: StreamFrame): void {
     // monotonic seq per session so this is safe.
     return;
   }
+  // Update pendingApproval for out-of-turn approval events BEFORE
+  // the pure turns reducer runs (which is a no-op for these events).
+  applyApprovalState(frame.event);
   state.turns = applyEvent(state.turns, frame.event);
   state.lastSeq = frame.seq;
+}
+
+/**
+ * Imperative reducer arm for approval modal state. Kept separate from
+ * :func:`applyEvent` so the pure turns reducer stays testable without
+ * side-effectful state writes.
+ */
+function applyApprovalState(event: AgentEvent): void {
+  if (event.type === "approval_request") {
+    state.pendingApproval = {
+      requestId: event.request_id,
+      toolName: event.tool_name,
+      toolInputJson: event.tool_input_json,
+    };
+  } else if (
+    event.type === "approval_resolved" &&
+    state.pendingApproval?.requestId === event.request_id
+  ) {
+    state.pendingApproval = null;
+  }
 }
 
 /**

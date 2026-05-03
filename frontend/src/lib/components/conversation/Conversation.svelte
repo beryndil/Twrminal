@@ -31,6 +31,8 @@
     setError,
     setLoading,
   } from "../../stores/conversation.svelte";
+  import ApprovalModal from "./ApprovalModal.svelte";
+  import AskUserQuestionModal from "./AskUserQuestionModal.svelte";
   import MessageTurn from "./MessageTurn.svelte";
 
   interface Props {
@@ -147,3 +149,11 @@
     </button>
   {/if}
 </section>
+
+{#if conversationStore.pendingApproval !== null && sessionId !== null}
+  {#if conversationStore.pendingApproval.toolName === "AskUserQuestion"}
+    <AskUserQuestionModal {sessionId} approval={conversationStore.pendingApproval} />
+  {:else}
+    <ApprovalModal {sessionId} approval={conversationStore.pendingApproval} />
+  {/if}
+{/if}

@@ -66,7 +66,7 @@ async def resolve_approval(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="approval broker has unexpected type",
         )
-    resolved = await broker.resolve(request_id, approved=payload.approved)
+    resolved = await broker.resolve(request_id, approved=payload.approved, answer=payload.answer)
     if not resolved:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

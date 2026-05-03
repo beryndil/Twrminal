@@ -232,6 +232,100 @@ describe("ingestFrame — replay cursor", () => {
   });
 });
 
+describe("ingestFrame — pendingApproval", () => {
+  it("sets pendingApproval on approval_request", () => {
+    resetConversation("ses_a");
+    expect(conversationStore.pendingApproval).toBeNull();
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 1,
+      event: {
+        session_id: "ses_a",
+        type: "approval_request",
+        request_id: "req_1",
+        tool_name: "Bash",
+        tool_input_json: '{"cmd":"ls"}',
+      },
+    });
+    expect(conversationStore.pendingApproval).toMatchObject({
+      requestId: "req_1",
+      toolName: "Bash",
+      toolInputJson: '{"cmd":"ls"}',
+    });
+  });
+
+  it("clears pendingApproval on approval_resolved with matching request_id", () => {
+    resetConversation("ses_a");
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 1,
+      event: {
+        session_id: "ses_a",
+        type: "approval_request",
+        request_id: "req_1",
+        tool_name: "Read",
+        tool_input_json: "{}",
+      },
+    });
+    expect(conversationStore.pendingApproval).not.toBeNull();
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 2,
+      event: {
+        session_id: "ses_a",
+        type: "approval_resolved",
+        request_id: "req_1",
+        approved: true,
+      },
+    });
+    expect(conversationStore.pendingApproval).toBeNull();
+  });
+
+  it("does NOT clear pendingApproval on approval_resolved with mismatched request_id", () => {
+    resetConversation("ses_a");
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 1,
+      event: {
+        session_id: "ses_a",
+        type: "approval_request",
+        request_id: "req_1",
+        tool_name: "Edit",
+        tool_input_json: "{}",
+      },
+    });
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 2,
+      event: {
+        session_id: "ses_a",
+        type: "approval_resolved",
+        request_id: "req_other",
+        approved: false,
+      },
+    });
+    expect(conversationStore.pendingApproval?.requestId).toBe("req_1");
+  });
+
+  it("clears pendingApproval on resetConversation", () => {
+    resetConversation("ses_a");
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 1,
+      event: {
+        session_id: "ses_a",
+        type: "approval_request",
+        request_id: "req_1",
+        tool_name: "Bash",
+        tool_input_json: "{}",
+      },
+    });
+    expect(conversationStore.pendingApproval).not.toBeNull();
+    resetConversation("ses_b");
+    expect(conversationStore.pendingApproval).toBeNull();
+  });
+});
+
 describe("hydrateTurns", () => {
   it("loads persisted MessageOut rows into typed MessageTurnView", () => {
     hydrateTurns("ses_a", [

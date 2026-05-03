@@ -9,15 +9,18 @@ from pydantic import BaseModel, ConfigDict
 class ApprovalResolution(BaseModel):
     """Request body for ``POST /api/sessions/{id}/approvals/{request_id}``.
 
-    A single boolean carrying the user's choice. The route resolves
-    the matching broker future with this value; the SDK callback
-    translates it into a ``PermissionResultAllow`` /
-    ``PermissionResultDeny`` SDK return.
+    ``approved`` carries the user's allow/deny choice. ``answer`` is an
+    optional text payload used exclusively for ``AskUserQuestion`` tool
+    approvals — the frontend sends the user's typed answer and the
+    broker threads it back to the SDK callback as
+    ``PermissionResultAllow.updated_input``, giving the agent the text
+    it asked for.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     approved: bool
+    answer: str | None = None
 
 
 __all__ = ["ApprovalResolution"]

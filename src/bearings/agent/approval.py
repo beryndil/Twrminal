@@ -68,6 +68,12 @@ class ApprovalBroker:
     def __init__(self, runner: SessionRunner) -> None:
         self._runner = runner
         self._pending: dict[str, asyncio.Future[bool]] = {}
+        # Side-channel: ``answer`` text for ``AskUserQuestion`` resolutions.
+        # Set by :meth:`resolve` before the future is resolved so the SDK
+        # callback can read it synchronously after ``await self.open()``
+        # returns (no race: ``set_result`` only schedules the awaiting
+        # coroutine; it doesn't run until the current coroutine yields).
+        self._answers: dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # SDK-side: produce a callback the SDK invokes for each gated tool.
@@ -98,9 +104,16 @@ class ApprovalBroker:
                 tool_input=tool_input,
             )
             if approved:
+                # For AskUserQuestion, the user's typed answer arrives via
+                # ``resolve(answer=...)`` and is stored in ``_answers``
+                # before the future resolves, so we can pop it here safely.
+                answer = self._answers.pop(request_id, None)
+                updated: dict[str, Any] | None = (
+                    {**tool_input, "answer": answer} if answer is not None else None
+                )
                 return PermissionResultAllow(
                     behavior="allow",
-                    updated_input=None,
+                    updated_input=updated,
                     updated_permissions=None,
                 )
             return PermissionResultDeny(
@@ -148,12 +161,14 @@ class ApprovalBroker:
             )
             return await future
         finally:
-            # Drop the entry whether the future resolved, raised, or
-            # was cancelled. A subsequent open() with the same id is
-            # then permitted.
+            # Drop the pending entry whether the future resolved, raised,
+            # or was cancelled. Do NOT pop _answers here — the SDK callback
+            # reads it synchronously after this ``finally`` block completes
+            # (the awaiting coroutine resumes only after the current turn
+            # ends). For cancellation, ``cancel_all`` clears _answers.
             self._pending.pop(request_id, None)
 
-    async def resolve(self, request_id: str, *, approved: bool) -> bool:
+    async def resolve(self, request_id: str, *, approved: bool, answer: str | None = None) -> bool:
         """Mark ``request_id`` as resolved.
 
         Returns ``True`` if the future was resolved (i.e. the broker
@@ -167,6 +182,10 @@ class ApprovalBroker:
         future = self._pending.get(request_id)
         if future is None or future.done():
             return False
+        # Store answer BEFORE set_result so the callback can read it
+        # synchronously in the turn after ``await self.open()`` returns.
+        if answer is not None:
+            self._answers[request_id] = answer
         future.set_result(approved)
         await self._runner.emit(
             ApprovalResolved(
@@ -187,6 +206,7 @@ class ApprovalBroker:
             if not future.done():
                 future.cancel()
         self._pending.clear()
+        self._answers.clear()
 
     @property
     def pending_count(self) -> int:

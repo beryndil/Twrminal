@@ -7,6 +7,37 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **ApprovalModal + AskUserQuestionModal** (wiring-v1-daily-driver item 1.1).
+  - `frontend/src/lib/components/conversation/ApprovalModal.svelte` — generic
+    allow / deny modal shown when the agent needs permission to use a tool.
+    Resolves via `POST /api/sessions/{id}/approvals/{request_id}` and stays
+    open until the `approval_resolved` WS event arrives so multi-tab resolution
+    (Tab B approves → Tab A modal closes) works automatically.
+  - `frontend/src/lib/components/conversation/AskUserQuestionModal.svelte` —
+    text-input variant shown when `tool_name === 'AskUserQuestion'`; the user's
+    typed answer is sent as `{ approved: true, answer: "…" }` and the backend
+    threads it back to the SDK callback as `PermissionResultAllow.updated_input`.
+  - `frontend/src/lib/api/approvals.ts` — typed client for the approval
+    endpoint (handles 204 No Content without the shared `postJson` helper).
+  - `frontend/src/lib/stores/conversation.svelte.ts` — added `PendingApproval`
+    interface and `pendingApproval: PendingApproval | null` state; `ingestFrame`
+    now calls `applyApprovalState` to set/clear it on `approval_request` /
+    `approval_resolved` events; `resetConversation` zeroes it on session switch.
+  - `frontend/src/lib/components/conversation/Conversation.svelte` — mounts the
+    appropriate modal based on `conversationStore.pendingApproval`.
+  - `frontend/src/lib/config.ts` — added `sessionApprovalEndpoint` URL helper
+    and `APPROVAL_STRINGS` i18n table.
+  - `src/bearings/web/models/approvals.py` — added `answer: str | None = None`
+    to `ApprovalResolution` for the `AskUserQuestion` answer payload.
+  - `src/bearings/agent/approval.py` — `ApprovalBroker` now holds a
+    `_answers` side-channel dict; `resolve(answer=…)` stores the text before
+    resolving the future so the `_can_use_tool` callback can pass it as
+    `updated_input`; `cancel_all` clears it.
+  - `src/bearings/web/routes/approvals.py` — passes `answer=payload.answer`
+    to `broker.resolve`.
+
 ### Fixed
 
 - **conversation transcript hit `each_key_duplicate` on every page load**

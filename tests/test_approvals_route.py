@@ -147,3 +147,27 @@ async def test_resolve_rejects_missing_field(conn: aiosqlite.Connection) -> None
     with TestClient(app) as client:
         response = client.post("/api/sessions/ses_t/approvals/r5", json={})
         assert response.status_code == 422
+
+
+async def test_resolve_with_answer_passes_to_broker(conn: aiosqlite.Connection) -> None:
+    """When ``answer`` is included the broker threads it to the SDK
+    callback as ``updated_input``; the route still returns 204."""
+    runner = SessionRunner("ses_t")
+    broker = ApprovalBroker(runner)
+    app, _ = _app_with_broker(conn, "ses_t", broker)
+
+    open_task = asyncio.create_task(
+        broker.open(request_id="r_ans", tool_name="AskUserQuestion", tool_input={"question": "Hi?"})
+    )
+    await asyncio.sleep(0)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/sessions/ses_t/approvals/r_ans",
+            json={"approved": True, "answer": "Hello there"},
+        )
+        assert response.status_code == 204
+    # The Future result is plain True (approved bool); the answer is
+    # consumed by the SDK callback via the broker's _answers side-channel.
+    # We verify the broker resolved successfully here:
+    assert await open_task is True

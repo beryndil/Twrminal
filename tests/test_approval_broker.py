@@ -218,6 +218,40 @@ async def test_no_timeout_in_v1() -> None:
     await open_task
 
 
+async def test_resolve_with_answer_sets_updated_input_for_ask_user_question() -> None:
+    """When ``resolve(answer=...)`` is called the SDK callback receives
+    ``PermissionResultAllow.updated_input`` containing the answer text
+    merged into the original tool input."""
+    runner = _runner()
+    broker = ApprovalBroker(runner)
+    callback = broker.callback()
+    original_input = {"question": "Which approach?"}
+    task = asyncio.create_task(callback("AskUserQuestion", original_input, _ctx()))
+    await asyncio.sleep(0)
+    events = [e for _, e in runner._buffer if isinstance(e, ApprovalRequest)]
+    request_id = events[0].request_id
+    await broker.resolve(request_id, approved=True, answer="Approach A")
+    result = await task
+    assert isinstance(result, PermissionResultAllow)
+    assert result.updated_input == {"question": "Which approach?", "answer": "Approach A"}
+
+
+async def test_resolve_without_answer_leaves_updated_input_none() -> None:
+    """A plain Allow (no answer) keeps ``updated_input=None`` so the SDK
+    uses the original tool input unchanged."""
+    runner = _runner()
+    broker = ApprovalBroker(runner)
+    callback = broker.callback()
+    task = asyncio.create_task(callback("Read", {"path": "/x"}, _ctx()))
+    await asyncio.sleep(0)
+    events = [e for _, e in runner._buffer if isinstance(e, ApprovalRequest)]
+    request_id = events[0].request_id
+    await broker.resolve(request_id, approved=True)
+    result = await task
+    assert isinstance(result, PermissionResultAllow)
+    assert result.updated_input is None
+
+
 async def test_fresh_request_id_collisions_are_unlikely() -> None:
     """The internal id generator uses ``secrets.token_hex(16)`` — 32
     hex chars = 128 bits. Two fresh ids never collide in a short

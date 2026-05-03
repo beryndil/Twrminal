@@ -81,6 +81,14 @@ export const sessionPromptEndpoint = (sessionId: string): string =>
   `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/prompt`;
 
 /**
+ * ``POST /api/sessions/{id}/approvals/{request_id}`` — resolve a
+ * pending ``can_use_tool`` approval (Slice A4). Body shape:
+ * ``{ approved: bool, answer?: str }``. 204 No Content on success.
+ */
+export const sessionApprovalEndpoint = (sessionId: string, requestId: string): string =>
+  `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/approvals/${encodeURIComponent(requestId)}`;
+
+/**
  * Hard cap on a single prompt submission, mirroring the backend's
  * :data:`bearings.config.constants.PROMPT_CONTENT_MAX_CHARS` (64 000).
  * The Composer enforces this client-side so the user gets immediate
@@ -1684,6 +1692,28 @@ export const CONTEXT_MENU_STRINGS = {
     [MENU_ACTION_PENDING_OPERATION_COPY_COMMAND]: "Copy command",
     [MENU_ACTION_PENDING_OPERATION_OPEN_IN_EDITOR]: "Open directory in editor",
   } as const,
+} as const;
+
+/**
+ * UI strings for the approval modals (ApprovalModal + AskUserQuestionModal).
+ * Pulled out of components per coding-standards "i18n-ready string tables".
+ *
+ * Behavior anchor: ``docs/behavior/chat.md`` §"Approval modal".
+ */
+export const APPROVAL_STRINGS = {
+  /** Generic tool-approval dialog. */
+  dialogAriaLabel: "Tool approval required",
+  dialogTitle: "Allow tool use?",
+  toolNameLabel: "Tool",
+  toolInputLabel: "Input",
+  allowLabel: "Allow",
+  denyLabel: "Deny",
+  /** AskUserQuestion variant. */
+  askDialogAriaLabel: "Agent question",
+  askDialogTitle: "Agent is asking:",
+  answerLabel: "Your answer",
+  answerPlaceholder: "Type your answer…",
+  submitLabel: "Submit",
 } as const;
 
 // ---- Derivations -----------------------------------------------------------
