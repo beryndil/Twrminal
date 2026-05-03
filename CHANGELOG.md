@@ -9,6 +9,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **conversation transcript hit `each_key_duplicate` on every page load**
+  (`stores/conversation.svelte.ts:applyEvent`). `resetConversation`
+  zeroes `lastSeq`, hydrate seeds turns from the REST `/messages`
+  history but doesn't bump `lastSeq`, and the WS subscription opens
+  without a `since_seq` cursor — so the server replays every event
+  from seq 0 and the reducer blindly appended `user_message` /
+  `message_start` turns whose ids were already on the page. Svelte's
+  `{#each (id)}` rejected the duplicate key and refused subsequent
+  appends, so newly-arrived events couldn't render either (Dave's
+  "text disappears, never shows up in the conversation"). Make the
+  two create-events idempotent: skip the append when a turn with
+  that id already exists.
 - **`fallback_model == model` crashed the SDK CLI** for `haiku` sessions
   (`agent/sdk_loop.py:_to_sdk_options`). The bearings
   `EXECUTOR_FALLBACK_MODEL` table maps `haiku → haiku` to encode "no

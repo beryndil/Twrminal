@@ -154,6 +154,11 @@ export function applyEvent(
 ): MessageTurnView[] {
   switch (event.type) {
     case "user_message":
+      // Idempotent on replay: hydrate seeds turns from the DB before
+      // the WS subscribes, and the WS replays from seq 0 if no
+      // ``since_seq`` cursor is sent. Skip the append when a turn
+      // with this id already exists.
+      if (turns.some((t) => t.id === event.message_id)) return turns as MessageTurnView[];
       return [
         ...turns,
         {
@@ -169,6 +174,7 @@ export function applyEvent(
         },
       ];
     case "message_start":
+      if (turns.some((t) => t.id === event.message_id)) return turns as MessageTurnView[];
       return [
         ...turns,
         {
