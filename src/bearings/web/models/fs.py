@@ -39,4 +39,26 @@ class FsReadOut(BaseModel):
     truncated: bool
 
 
-__all__ = ["FsEntryOut", "FsListOut", "FsReadOut"]
+class FsPickIn(BaseModel):
+    """Request body for ``POST /api/fs/pick``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    root: str = ""
+    """Absolute path to list.  Empty string → server defaults to home dir."""
+
+
+class FsPickOut(BaseModel):
+    """Response shape for ``POST /api/fs/pick``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    token: str
+    """Opaque UUID identifying this picker session (reserved for future
+    server-side state; clients may ignore it for now)."""
+    path: str
+    entries: list[FsEntryOut]
+    capped: bool
+
+
+__all__ = ["FsEntryOut", "FsListOut", "FsPickIn", "FsPickOut", "FsReadOut"]

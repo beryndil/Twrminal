@@ -19,15 +19,15 @@ import { WS_SESSIONS_PATH } from "../config";
 import type { SessionOut } from "./sessions";
 
 /** Union of all message types the sessions-broadcast channel emits. */
-export type SessionsBroadcastEvent =
+type SessionsBroadcastEvent =
   | { type: "session_upsert"; session: SessionOut }
   | { type: "session_delete"; session_id: string }
   | { type: "runner_state"; session_id: string; is_running: boolean; is_awaiting_user: boolean };
 
-export type SessionsBroadcastHandler = (event: SessionsBroadcastEvent) => void;
+type SessionsBroadcastHandler = (event: SessionsBroadcastEvent) => void;
 
 /** Remove the subscription and close the WebSocket. */
-export type Unsubscribe = () => void;
+type Unsubscribe = () => void;
 
 // Reconnect backoff: start at 500 ms, double on each attempt, cap at 30 s.
 const _BACKOFF_INITIAL_MS = 500;

@@ -5,8 +5,10 @@
    * Behavior contract
    * -----------------
    *
-   * 1. Renders an inline tags multiselect + working-dir input above
-   *    :class:`NewSessionForm`. The form itself owns the routing axes
+   * 1. Renders an inline tags multiselect + working-dir folder picker
+   *    above :class:`NewSessionForm`.  The folder picker (item 3.1)
+   *    replaces the former plain text input with an interactive
+   *    filesystem browser.  The form itself owns the routing axes
    *    selectors, the routing preview, the quota bars, and the
    *    first-message textarea (per its own docstring); this parent
    *    supplies the two fields the form leaves to its host (``tagIds``
@@ -42,6 +44,7 @@
   import NewSessionForm, {
     type NewSessionSubmission,
   } from "$lib/components/new_session/NewSessionForm.svelte";
+  import FolderPicker from "$lib/components/new_session/FolderPicker.svelte";
 
   /** Title is derived from the first message — single line, ≤80 chars. */
   const TITLE_MAX_FROM_MESSAGE = 80;
@@ -208,15 +211,15 @@
     {/if}
   </fieldset>
 
-  <label class="new-session-page__field">
+  <div class="new-session-page__field">
     <span>Working directory</span>
-    <input
-      type="text"
-      data-testid="new-session-working-dir"
-      placeholder="/home/you/Projects/example"
-      bind:value={workingDir}
+    <FolderPicker
+      value={workingDir}
+      onchange={(path) => {
+        workingDir = path;
+      }}
     />
-  </label>
+  </div>
 
   <NewSessionForm
     tagIds={selectedTagIds}
@@ -300,14 +303,6 @@
   }
   .new-session-page__field span {
     color: rgb(var(--bearings-fg-muted));
-  }
-  .new-session-page__field input {
-    background: rgb(var(--bearings-surface-2));
-    color: inherit;
-    border: 1px solid rgb(var(--bearings-border));
-    border-radius: 0.25rem;
-    padding: 0.375rem 0.5rem;
-    font: inherit;
   }
   .new-session-page__hint {
     font-size: 0.8125rem;

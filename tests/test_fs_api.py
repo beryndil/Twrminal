@@ -121,3 +121,57 @@ def test_get_list_no_allow_roots_403() -> None:
     with TestClient(app) as client:
         response = client.get("/api/fs/list", params={"path": "/tmp"})
         assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# POST /api/fs/pick  (item 3.1 — folder picker)
+# ---------------------------------------------------------------------------
+
+
+def test_post_pick_returns_listing(app_client: TestClient, fs_root: Path) -> None:
+    """Happy-path: list a configured allow-root via the pick endpoint."""
+    response = app_client.post("/api/fs/pick", json={"root": str(fs_root)})
+    assert response.status_code == 200
+    body = response.json()
+    assert "token" in body and len(body["token"]) > 0
+    assert body["path"] == str(fs_root)
+    names = {e["name"] for e in body["entries"]}
+    assert names == {"hello.txt", "subdir"}
+    assert body["capped"] is False
+
+
+def test_post_pick_token_is_unique_per_call(app_client: TestClient, fs_root: Path) -> None:
+    """Each POST /api/fs/pick call issues a fresh token UUID."""
+    r1 = app_client.post("/api/fs/pick", json={"root": str(fs_root)})
+    r2 = app_client.post("/api/fs/pick", json={"root": str(fs_root)})
+    assert r1.json()["token"] != r2.json()["token"]
+
+
+def test_post_pick_403_outside_configured_roots(app_client: TestClient, tmp_path: Path) -> None:
+    """A path outside the configured allow-roots is rejected."""
+    # ``tmp_path`` is the parent of ``fs-root`` and not itself in the roots.
+    response = app_client.post("/api/fs/pick", json={"root": str(tmp_path)})
+    assert response.status_code == 403
+
+
+def test_post_pick_empty_root_defaults_to_home() -> None:
+    """With empty allow_roots, omitting root falls back to home dir without error."""
+    import os
+
+    app = create_app(heartbeat_interval_s=_HEARTBEAT_S, fs_cfg=FsCfg())
+    with TestClient(app) as client:
+        response = client.post("/api/fs/pick", json={})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["path"] == os.path.expanduser("~")
+
+
+def test_post_pick_navigates_subdirectory(app_client: TestClient, fs_root: Path) -> None:
+    """Navigating into a subdir returns its listing."""
+    subdir = fs_root / "subdir"
+    response = app_client.post("/api/fs/pick", json={"root": str(subdir)})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["path"] == str(subdir)
+    names = {e["name"] for e in body["entries"]}
+    assert "nested.txt" in names

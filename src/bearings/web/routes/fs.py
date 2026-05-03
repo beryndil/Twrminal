@@ -1,4 +1,4 @@
-"""Filesystem-walk routes (item 1.10).
+"""Filesystem-walk routes (item 1.10 + item 3.1).
 
 Per ``docs/architecture-v1.md`` §1.1.5 ``web/routes/fs.py`` is the
 general-purpose FS picker (distinct from the plan/todo-only vault
@@ -6,16 +6,20 @@ index per ``docs/behavior/vault.md``):
 
 * ``GET /api/fs/list?path=<abs>`` — directory entries.
 * ``GET /api/fs/read?path=<abs>`` — utf-8 text body.
+* ``POST /api/fs/pick`` — bootstrap a folder-picker session (item 3.1).
 
-Both endpoints validate paths through
+``list`` and ``read`` validate paths through
 :func:`bearings.agent.fs.validate_path` (realpath resolution +
-allow-roots boundary check) before opening anything. The contract
-rejects relative paths at the boundary; ``..`` and symlink escapes
-collapse during ``Path.resolve`` and are caught by the allow-roots
-check.
+allow-roots boundary check) before opening anything.  ``pick``
+applies the same validation but falls back to the user's home
+directory as the effective root when ``allow_roots`` is empty — so
+the picker works on default installations that have no TOML config.
 """
 
 from __future__ import annotations
+
+import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
@@ -26,7 +30,7 @@ from bearings.agent.fs import (
     validate_path,
 )
 from bearings.config.settings import FsCfg
-from bearings.web.models.fs import FsEntryOut, FsListOut, FsReadOut
+from bearings.web.models.fs import FsEntryOut, FsListOut, FsPickIn, FsPickOut, FsReadOut
 
 router = APIRouter()
 
@@ -89,6 +93,63 @@ async def get_read(
         content=result.content,
         size=result.size,
         truncated=result.truncated,
+    )
+
+
+def _pick_roots(cfg: FsCfg) -> tuple[Path, ...]:
+    """Effective allow-roots for the folder picker.
+
+    When ``allow_roots`` is explicitly configured, honour it.  When the
+    list is empty (fresh :class:`~bearings.config.settings.FsCfg` with
+    no TOML config), fall back to the user's home directory so the
+    picker is usable on default local installations.  This fallback
+    only applies to ``POST /api/fs/pick``; ``GET /api/fs/list`` and
+    ``GET /api/fs/read`` remain strict.
+    """
+    if cfg.allow_roots:
+        return cfg.allow_roots
+    return (Path.home(),)
+
+
+@router.post("/api/fs/pick", response_model=FsPickOut, status_code=status.HTTP_200_OK)
+async def post_pick(
+    request: Request,
+    body: FsPickIn,
+) -> FsPickOut:
+    """Bootstrap a folder-picker session.
+
+    Validates ``body.root`` (or ``$HOME`` when omitted), returns the
+    directory listing, and issues a fresh ``token`` UUID the client
+    uses to identify the picker session.  Subsequent navigation steps
+    repeat this endpoint with the new path — no separate traversal
+    endpoint is needed.
+
+    When ``fs.allow_roots`` is empty the endpoint accepts any path
+    under the user's home directory so the picker is usable on
+    default installations.
+    """
+    cfg = _cfg(request)
+    roots = _pick_roots(cfg)
+    raw = body.root if body.root else str(Path.home())
+    try:
+        resolved = validate_path(raw, roots)
+        listing = list_dir(resolved, cfg.list_max_entries)
+    except FsValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return FsPickOut(
+        token=str(uuid.uuid4()),
+        path=listing.path,
+        entries=[
+            FsEntryOut(
+                name=e.name,
+                kind=e.kind,
+                size=e.size,
+                mtime=e.mtime,
+                is_readable=e.is_readable,
+            )
+            for e in listing.entries
+        ],
+        capped=listing.capped,
     )
 
 

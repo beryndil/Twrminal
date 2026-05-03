@@ -3589,6 +3589,48 @@
         }
       }
     },
+    "/api/fs/pick": {
+      "post": {
+        "tags": [
+          "fs"
+        ],
+        "summary": "Post Pick",
+        "description": "Bootstrap a folder-picker session.\n\nValidates ``body.root`` (or ``$HOME`` when omitted), returns the\ndirectory listing, and issues a fresh ``token`` UUID the client\nuses to identify the picker session.  Subsequent navigation steps\nrepeat this endpoint with the new path \u2014 no separate traversal\nendpoint is needed.\n\nWhen ``fs.allow_roots`` is empty the endpoint accepts any path\nunder the user's home directory so the picker is usable on\ndefault installations.",
+        "operationId": "post_pick_api_fs_pick_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FsPickIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FsPickOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/shell/exec": {
       "post": {
         "tags": [
@@ -4326,6 +4368,52 @@
         ],
         "title": "FsListOut",
         "description": "Response shape for ``GET /api/fs/list``."
+      },
+      "FsPickIn": {
+        "properties": {
+          "root": {
+            "type": "string",
+            "title": "Root",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "FsPickIn",
+        "description": "Request body for ``POST /api/fs/pick``."
+      },
+      "FsPickOut": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/FsEntryOut"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "capped": {
+            "type": "boolean",
+            "title": "Capped"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "token",
+          "path",
+          "entries",
+          "capped"
+        ],
+        "title": "FsPickOut",
+        "description": "Response shape for ``POST /api/fs/pick``."
       },
       "FsReadOut": {
         "properties": {

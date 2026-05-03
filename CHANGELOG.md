@@ -9,6 +9,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Folder picker for new-session form** (wiring-v1-daily-driver item 3.1).
+  - `src/bearings/web/routes/fs.py` — `POST /api/fs/pick` endpoint. Validates
+    the requested root against configured `allow_roots`; falls back to the
+    user's home directory when `allow_roots` is empty so the picker works on
+    default installations. Returns `{token, path, entries, capped}`. Each call
+    issues a fresh UUID token (reserved for future server-side session
+    tracking). Traversal reuses the same endpoint — no separate navigation
+    route needed.
+  - `src/bearings/web/models/fs.py` — `FsPickIn` (request body; `root: str`)
+    and `FsPickOut` (response; adds `token: str` to the listing shape).
+  - `frontend/src/lib/api/fs.ts` — new `pickDir(root?)` client function.
+  - `frontend/src/lib/components/new_session/FolderPicker.svelte` — new
+    interactive directory browser. Renders as a compact field (current value +
+    "Browse…" button). Opening the overlay calls `POST /api/fs/pick` at the
+    current value (or home dir). Keyboard: ArrowDown/Up navigate the list;
+    Enter on a highlighted directory descends into it; Enter with no highlight
+    selects the currently displayed path; Tab auto-completes the filter to the
+    first match; Backspace on an empty filter goes up one level; Esc closes
+    without changing the value.
+  - `frontend/src/routes/sessions/new/+page.svelte` — plain text input for
+    working directory replaced with `FolderPicker`.
+  - `docs/openapi.json` — regenerated (adds `POST /api/fs/pick`).
+
 - **Sessions-broadcast WS channel** (wiring-v1-daily-driver item 2.6).
   - `src/bearings/web/routes/ws_sessions.py` — new `SessionsBroadcaster`
     class (fan-out hub) + `GET /ws/sessions` WebSocket endpoint. Three
