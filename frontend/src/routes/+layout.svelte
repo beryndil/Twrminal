@@ -399,7 +399,7 @@
             {/if}
           </section>
           <footer
-            class="app-shell__main-composer border-t border-border bg-surface-1 p-3"
+            class="app-shell__main-composer border-t border-border bg-surface-2 p-3"
             data-testid="app-shell-main-composer"
           >
             {#if selectedSessionId !== null && activeSession?.kind !== SESSION_KIND_CHECKLIST}
