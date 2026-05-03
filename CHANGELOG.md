@@ -9,6 +9,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **agent loop never spawned — every posted prompt queued forever**
+  (`bearings/cli/serve.py`, stopgap `~/.local/share/bearings-v1/launch.py`).
+  Both boot paths called `create_app()` *without* `db_connection`,
+  then set `app.state.db_connection` in a FastAPI startup hook. But
+  `create_app` (`web/app.py:149`) checks `db_connection` at construction
+  time to wire `session_setup` on the runner factory; with `None` it
+  falls into the test-only branch (`build_in_process_factory()` with
+  no setup callable). Every `POST /api/sessions/{id}/prompt` queued
+  on the runner but no supervisor task was ever spawned — `is_running:
+  false`, `queue_length: N`, `ring_buffer_size: 0`, no SDK subprocess
+  child. Open the DB synchronously *before* `create_app` so the
+  factory ships with `session_setup` from the start.
+- **composer footer invisible in paper-light** — wrapper used
+  `bg-surface-1` (244,240,230), only 6 RGB units off the conversation
+  body's `bg-surface-0` (250,247,240). Switched to `bg-surface-2`
+  (234,228,213) for clearly distinct elevation in paper-light;
+  evergreen / midnight-glass still have ample contrast at the new
+  token. The textarea below it picks up `bg-surface-0` and reads as a
+  proper inset.
+- **`~`-prefixed `working_dir` would crash the SDK** if the agent loop
+  ever reached chdir (`agent/session_bootstrap.py`). Expand `~` at the
+  SDK boundary so a session row stored as `~/Projects/...` (the
+  inspector's display form) resolves to an absolute path the SDK can
+  chdir into. Defensive — masked by the agent-loop bug above, but
+  would surface as soon as that was fixed.
 - **theme contrast on light themes** — scoped style blocks across
   `routes/sessions/new`, `routes/tags`, `routes/settings`,
   `routes/analytics`, `lib/components/new_session/*`, and

@@ -24,6 +24,8 @@ landed.
 
 from __future__ import annotations
 
+import os.path
+
 import aiosqlite
 
 from bearings.agent.approval import ApprovalBroker
@@ -44,6 +46,17 @@ from bearings.config.constants import (
     DEFAULT_TEMPLATE_PERMISSION_PROFILE,
 )
 from bearings.db import sessions as sessions_db
+
+
+def _expand_cwd(working_dir: str) -> str:
+    """Expand ``~`` in a session row's stored ``working_dir``.
+
+    Pure string manipulation; not real I/O despite the ``os.path``
+    surface. Pulled out of the async ``setup`` closure below so the
+    blocking-call lint rule (ASYNC240) isn't tripped on the
+    expanduser call inside an ``async def``.
+    """
+    return os.path.expanduser(working_dir) if working_dir else working_dir
 
 
 def build_session_setup(
@@ -91,9 +104,16 @@ def build_session_setup(
             reason=f"session {session_id} bootstrap",
             matched_rule_id=None,
         )
+        # The session row stores the user-typed `working_dir` verbatim
+        # (the inspector displays the literal `~/Projects/...` form).
+        # Expand it here, at the SDK boundary, so the worker's chdir
+        # target is an absolute path the OS can resolve. Without this,
+        # the SDK client constructor crashes with ENOENT and the
+        # supervisor task ends silently with an unprocessable queue.
+        sdk_cwd = _expand_cwd(row.working_dir)
         config = SessionConfig(
             session_id=session_id,
-            working_dir=row.working_dir,
+            working_dir=sdk_cwd,
             decision=decision,
             db=db_connection,
             permission_mode=row.permission_mode,
@@ -110,7 +130,7 @@ def build_session_setup(
         options = compose_session_options(
             decision=decision,
             session_instructions=row.session_instructions,
-            working_dir=row.working_dir,
+            working_dir=sdk_cwd,
             permission_profile=PermissionProfile.STANDARD.value
             if row.permission_mode is None
             else DEFAULT_TEMPLATE_PERMISSION_PROFILE,

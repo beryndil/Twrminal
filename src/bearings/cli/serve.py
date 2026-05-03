@@ -20,6 +20,8 @@ from :mod:`bearings.web.app`.
 from __future__ import annotations
 
 import argparse
+import asyncio
+from pathlib import Path
 
 import aiosqlite
 import uvicorn
@@ -65,26 +67,36 @@ def _run(args: argparse.Namespace) -> int:
 
     Returns :data:`CLI_EXIT_OK` once uvicorn exits cleanly; any
     exception bubbles up as a non-zero exit per the CLI alphabet.
+
+    The DB connection opens *synchronously before* :func:`create_app`
+    so the runner factory is constructed with ``session_setup`` wired
+    (`web/app.py:149`). Without this, ``create_app`` falls into the
+    no-db branch, the factory ships with ``_session_setup=None``, and
+    every posted prompt queues forever because no supervisor task is
+    ever spawned. The shutdown hook stays in the FastAPI lifecycle so
+    uvicorn closes the connection on graceful exit.
     """
     settings = Settings()
-    app = create_app()
-
-    @app.on_event("startup")
-    async def _open_db() -> None:
-        db = await aiosqlite.connect(settings.db_path)
-        db.row_factory = aiosqlite.Row
-        app.state.db_connection = db
+    db = asyncio.run(_connect_db(settings.db_path))
+    app = create_app(db_connection=db)
 
     @app.on_event("shutdown")
     async def _close_db() -> None:
-        db = getattr(app.state, "db_connection", None)
-        if db is not None:
-            await db.close()
+        live = getattr(app.state, "db_connection", None)
+        if live is not None:
+            await live.close()
 
     host = args.host if args.host is not None else settings.host
     port = args.port if args.port is not None else settings.port
     uvicorn.run(app, host=host, port=port, log_level=args.log_level)
     return CLI_EXIT_OK
+
+
+async def _connect_db(db_path: Path) -> aiosqlite.Connection:
+    """Open the long-lived sqlite connection before app construction."""
+    db = await aiosqlite.connect(db_path)
+    db.row_factory = aiosqlite.Row
+    return db
 
 
 __all__ = ["build_subparser"]
