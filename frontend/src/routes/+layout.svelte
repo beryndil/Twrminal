@@ -496,24 +496,6 @@
           aria-label="Status bar"
         >
           <span class="text-fg-muted">{SIDEBAR_STRINGS.heading} {SIDEBAR_STRINGS.versionTag}</span>
-          <span class="ml-auto flex items-center gap-4">
-            <span class="flex items-center gap-1.5 text-fg-muted">
-              <span class="inline-block h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true"
-              ></span>
-              Recovery: Idle
-            </span>
-            <span class="flex items-center gap-1.5 text-fg-muted">
-              <span class="inline-block h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true"
-              ></span>
-              Auto-save: Idle
-            </span>
-            <span
-              class="rounded bg-surface-2 px-2 py-0.5 text-xs font-medium text-fg-muted"
-              data-testid="status-bar-connection"
-            >
-              IDLE
-            </span>
-          </span>
         </footer>
       </div>
     </ContextMenuProvider>

@@ -9,6 +9,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **Status-bar decorative pills removed** (wiring-v1-daily-driver item 4.2):
+  "Recovery: Idle", "Auto-save: Idle", and "IDLE" pills had no backing stores
+  in v1 and were removed from `+layout.svelte`. No functionality was lost.
+
 - **Keyboard bindings hygiene** (wiring-v1-daily-driver item 4.1): strip
   unbound chords from the cheat sheet; wire simple navigation/create chords.
   - **Stripped** (surface absent): `T` (template picker), `Ctrl+Shift+P`
