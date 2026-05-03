@@ -1467,6 +1467,18 @@ export const THEME_STORAGE_KEY = "bearings-theme-v1";
 export const THEME_META_NAME = "theme-color";
 
 /**
+ * localStorage key prefix for per-session composer drafts.
+ *
+ * Full key: ``${COMPOSER_DRAFT_KEY_PREFIX}${sessionId}``.
+ *
+ * The ``bearings-v1:`` namespace keeps Bearings keys grouped and
+ * separated from other apps that may share the same origin; the
+ * ``draft:`` infix identifies the subsystem. Plain UTF-8 value —
+ * no JSON wrapper, the draft is always a plain string.
+ */
+export const COMPOSER_DRAFT_KEY_PREFIX = "bearings-v1:draft:";
+
+/**
  * Theme picker + Appearance section UI strings. Anchors to
  * ``docs/behavior/themes.md`` §"Theme picker UI" (option labels +
  * caption) + §"Failure modes" (toast copy).

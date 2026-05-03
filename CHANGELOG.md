@@ -9,6 +9,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Composer essentials** (wiring-v1-daily-driver item 2.5).
+  - `frontend/src/lib/composer/draftStore.svelte.ts` — per-session draft
+    persistence to `localStorage` under `bearings-v1:draft:{sessionId}`.
+    Degrades silently in private-browsing / quota-full contexts.
+  - `frontend/src/lib/composer/inputHistory.ts` — `InputHistory` class;
+    shell-readline-style Up/Down walk through sent messages (in-memory,
+    per page-load); deduplicates consecutive identical sends; restores the
+    live draft when Down is pressed past the newest entry.
+  - `frontend/src/lib/config.ts` — `COMPOSER_DRAFT_KEY_PREFIX` constant.
+  - `frontend/src/lib/components/composer/Composer.svelte` — auto-grow
+    textarea (height tracks `scrollHeight`, capped at `max-h-64`); loads
+    persisted draft on mount and on session switch; saves draft on every
+    keystroke; clears draft + records history on successful send;
+    `ArrowUp` at cursor position 0 walks back through history, `ArrowDown`
+    at cursor end walks forward; modified arrow keys (Shift/Ctrl/etc.)
+    pass through unmodified.
+
 - **Sidebar search** (wiring-v1-daily-driver item 2.4).
   - `src/bearings/web/routes/history.py` — `GET /api/history/search?q=`
     performs case-insensitive LIKE search over `sessions.title`,

@@ -16,6 +16,9 @@
    * - Item 2.3 slash-command palette — typing ``/`` at the start of the
    *   draft opens the :component:`CommandMenu` typeahead; arrow keys +
    *   Tab/Enter select; Escape dismisses.
+   * - Item 2.5 composer essentials — auto-grow textarea; Up/Down history
+   *   walk through prior user messages; per-session draft persistence in
+   *   ``localStorage`` via :mod:`lib/composer/draftStore.svelte`.
    *
    * The component is presentational: it owns its own draft state +
    * inflight flag, calls :func:`sendPrompt` directly, and reports
@@ -26,6 +29,8 @@
   import { ApiError } from "../../api/client";
   import { sendPrompt } from "../../api/prompt";
   import { COMPOSER_STRINGS, PROMPT_CONTENT_MAX_CHARS } from "../../config";
+  import { clearDraft, loadDraft, saveDraft } from "../../composer/draftStore.svelte";
+  import { InputHistory } from "../../composer/inputHistory";
   import CommandMenu from "./CommandMenu.svelte";
 
   interface Props {
@@ -49,9 +54,51 @@
   // Ref to the CommandMenu component instance for keyboard delegation.
   let menuRef = $state<CommandMenu | null>(null);
 
+  // In-memory history ring for Up/Down navigation (per page-load, not
+  // cross-session — see inputHistory.ts for the design rationale).
+  const history = new InputHistory();
+
   const overCap = $derived(draft.length > PROMPT_CONTENT_MAX_CHARS);
   const trimmed = $derived(draft.trim());
   const canSend = $derived(!disabled && !inflight && !overCap && trimmed.length > 0);
+
+  // ---------------------------------------------------------------------------
+  // Draft persistence (item 2.5)
+  //
+  // Load the persisted draft whenever ``sessionId`` changes (including the
+  // initial mount). The history walker is also reset on session switch —
+  // the in-memory ring is per-page-load and should not bleed across sessions.
+  // ---------------------------------------------------------------------------
+
+  $effect(() => {
+    draft = loadDraft(sessionId);
+    history.reset();
+  });
+
+  // Persist every draft change. ``saveDraft`` removes the key on empty
+  // string, so a successful send (draft = "") tidies storage automatically.
+  $effect(() => {
+    saveDraft(sessionId, draft);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Auto-grow textarea (item 2.5)
+  //
+  // Resets height to ``auto`` so the scrollHeight measurement reflects the
+  // true content height (not the previous explicit pixel value), then sets
+  // it to scrollHeight. Capped at ``max-h-64`` (16 rem) via CSS; beyond
+  // that the textarea scrolls instead of expanding.
+  // ---------------------------------------------------------------------------
+
+  $effect(() => {
+    // Reading ``draft`` here registers it as a dependency so the effect
+    // re-runs on every keystroke. ``textareaEl`` is also tracked.
+    draft;
+    if (textareaEl !== null) {
+      textareaEl.style.height = "auto";
+      textareaEl.style.height = `${textareaEl.scrollHeight}px`;
+    }
+  });
 
   // ---------------------------------------------------------------------------
   // Slash-command palette logic (item 2.3)
@@ -130,7 +177,13 @@
     const payload = draft;
     try {
       await sendPrompt(sessionId, payload);
+      // Record before clearing — push deduplicates consecutive identical sends.
+      history.push(payload);
       draft = "";
+      // ``saveDraft`` effect fires on ``draft = ""`` and removes the key,
+      // but call ``clearDraft`` explicitly here as a belt-and-braces guard
+      // in case the effect batches after a potential component unmount.
+      clearDraft(sessionId);
       // Refocus so a quick "send + keep typing" loop stays on the
       // keyboard. The textarea reference may be ``null`` if the parent
       // unmounts the composer mid-send — guarded.
@@ -152,6 +205,46 @@
     // consumed the event, so we stop here.
     if (menuOpen && menuRef !== null) {
       if (menuRef.handleKey(event)) return;
+    }
+
+    // ---------------------------------------------------------------------------
+    // History walk (item 2.5)
+    //
+    // ArrowUp when the cursor is at the very start of the textarea walks back
+    // through sent messages (oldest-first).  ArrowDown when the cursor is at
+    // the very end (and we're already in history mode) walks forward.  Modified
+    // arrow keys (Shift/Ctrl/Alt/Meta) are left for the browser / OS.
+    // ---------------------------------------------------------------------------
+    if (!event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      if (event.key === "ArrowUp" && textareaEl !== null) {
+        if (textareaEl.selectionStart === 0 && textareaEl.selectionEnd === 0) {
+          const previous = history.up(draft);
+          if (previous !== null) {
+            event.preventDefault();
+            draft = previous;
+            // Move cursor to end after Svelte flushes the DOM update.
+            requestAnimationFrame(() => {
+              if (textareaEl !== null) {
+                textareaEl.setSelectionRange(textareaEl.value.length, textareaEl.value.length);
+              }
+            });
+            return;
+          }
+        }
+      }
+
+      if (event.key === "ArrowDown" && history.inHistory && textareaEl !== null) {
+        if (textareaEl.selectionStart === textareaEl.value.length) {
+          event.preventDefault();
+          draft = history.down();
+          requestAnimationFrame(() => {
+            if (textareaEl !== null) {
+              textareaEl.setSelectionRange(textareaEl.value.length, textareaEl.value.length);
+            }
+          });
+          return;
+        }
+      }
     }
 
     // Enter without modifiers submits; Shift+Enter inserts a newline
@@ -190,7 +283,7 @@
     <textarea
       bind:this={textareaEl}
       bind:value={draft}
-      class="composer__textarea min-h-12 resize-y rounded border border-border bg-surface-0 px-2 py-1 text-sm text-fg-strong focus:border-accent focus:outline-none disabled:opacity-60"
+      class="composer__textarea min-h-12 max-h-64 overflow-y-hidden resize-none rounded border border-border bg-surface-0 px-2 py-1 text-sm text-fg-strong focus:border-accent focus:outline-none disabled:opacity-60"
       data-testid="composer-textarea"
       aria-label={COMPOSER_STRINGS.textareaAriaLabel}
       placeholder={COMPOSER_STRINGS.textareaPlaceholder}
