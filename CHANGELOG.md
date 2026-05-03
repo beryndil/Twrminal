@@ -38,6 +38,33 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   - `src/bearings/web/routes/approvals.py` — passes `answer=payload.answer`
     to `broker.resolve`.
 
+- **Stop / cancel turn** (wiring-v1-daily-driver item 1.2).
+  - `src/bearings/agent/runner.py` — added `_stop_event: asyncio.Event`,
+    `stop_event` property, and `request_stop()` method to `SessionRunner`.
+    Calling `request_stop()` sets the event; the SDK loop's watcher
+    clears it at the start of each new turn.
+  - `src/bearings/agent/sdk_loop.py` — `_run_one_turn` now spawns a
+    `_stop_watcher` background task that awaits `runner.stop_event` and
+    forwards `session.interrupt()` → `client.interrupt()` when the user
+    clicks Stop. The watcher is always cancelled in the turn's `finally`
+    block; `_do_run_one_turn` holds the former body.
+  - `src/bearings/web/routes/sessions.py` — new `POST
+    /api/sessions/{id}/stop` endpoint; 204 on success (even when no
+    runner is live), 404 for unknown session, 503 if the registry is
+    not the `InProcessRunnerRegistry`.
+  - `frontend/src/lib/api/sessions.ts` — added `stopSession()` helper
+    (raw fetch, handles 204 No Content like `postApproval`).
+  - `frontend/src/lib/components/conversation/StopUndoInline.svelte` —
+    new inline Stop button; visible while any assistant turn is
+    incomplete; disables itself after the first click to prevent double-
+    submission; re-enables on error so the user can retry.
+  - `frontend/src/lib/components/conversation/Conversation.svelte` —
+    mounts `StopUndoInline` when `hasInFlightTurn && sessionId !== null`.
+  - `frontend/src/lib/config.ts` — added `sessionStopEndpoint` URL
+    helper and `stopTurnLabel` / `stopTurnAriaLabel` to
+    `CONVERSATION_STRINGS`.
+  - `docs/openapi.json` — regenerated to include the new stop endpoint.
+
 ### Fixed
 
 - **conversation transcript hit `each_key_duplicate` on every page load**

@@ -14,8 +14,8 @@
  * job is to project the ``Iterable<number>`` of selected tag ids onto
  * the wire shape.
  */
-import { API_SESSIONS_ENDPOINT } from "../config";
-import { getJson, postJson, type RequestOptions } from "./client";
+import { API_SESSIONS_ENDPOINT, sessionStopEndpoint } from "../config";
+import { ApiError, getJson, postJson, type RequestOptions } from "./client";
 
 /**
  * Wire shape for one session row — one-to-one with
@@ -131,6 +131,43 @@ export async function createSession(
   options: RequestOptions = {},
 ): Promise<SessionOut> {
   return await postJson<SessionOut>(API_SESSIONS_ENDPOINT, body, options);
+}
+
+/**
+ * Request the runner to interrupt the current in-flight turn via
+ * ``POST /api/sessions/{id}/stop``. The server returns 204 No Content;
+ * this function returns ``void`` on success.
+ *
+ * Idempotent: safe to call when no turn is running — the server
+ * no-ops and still returns 204.
+ *
+ * @throws :class:`ApiError` on 404 (session not found) or 5xx.
+ */
+export async function stopSession(sessionId: string): Promise<void> {
+  const HTTP_OK_MIN = 200;
+  const HTTP_OK_MAX = 300;
+  const response = await fetch(sessionStopEndpoint(sessionId), {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+  if (response.status < HTTP_OK_MIN || response.status >= HTTP_OK_MAX) {
+    let errorBody: unknown = null;
+    try {
+      errorBody = await response.json();
+    } catch {
+      try {
+        errorBody = await response.text();
+      } catch {
+        // ignore
+      }
+    }
+    throw new ApiError(
+      response.status,
+      errorBody,
+      `POST stop ${sessionId} → ${response.status} ${response.statusText}`,
+    );
+  }
+  // 204 No Content — nothing to parse.
 }
 
 export async function listSessions(params: ListSessionsParams = {}): Promise<SessionOut[]> {

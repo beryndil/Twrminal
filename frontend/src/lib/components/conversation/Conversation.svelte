@@ -34,6 +34,7 @@
   import ApprovalModal from "./ApprovalModal.svelte";
   import AskUserQuestionModal from "./AskUserQuestionModal.svelte";
   import MessageTurn from "./MessageTurn.svelte";
+  import StopUndoInline from "./StopUndoInline.svelte";
 
   interface Props {
     sessionId: string | null;
@@ -44,6 +45,12 @@
   let bodyEl: HTMLDivElement | null = $state(null);
   let atBottom = $state(true);
   let showJumpAffordance = $state(false);
+
+  // ``true`` while the most recent assistant turn is still in-flight
+  // (no ``message_complete`` yet). Drives the Stop button visibility.
+  const hasInFlightTurn = $derived(
+    conversationStore.turns.some((t) => t.role === "assistant" && !t.complete),
+  );
 
   $effect(() => {
     const sid = sessionId;
@@ -137,6 +144,10 @@
       {/each}
     {/if}
   </div>
+
+  {#if hasInFlightTurn && sessionId !== null}
+    <StopUndoInline {sessionId} />
+  {/if}
 
   {#if showJumpAffordance}
     <button

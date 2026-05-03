@@ -194,6 +194,11 @@ class SessionRunner:
         # on construction, refreshed on every emit / enqueue / subscribe
         # so an active session never trips the idle-reap threshold.
         self._last_active_ns: int = _monotonic_ns()
+        # Edge-triggered signal set by :meth:`request_stop`. The SDK
+        # loop watches this during an in-flight turn and calls
+        # :meth:`AgentSession.interrupt` when it fires, then clears it
+        # so the next turn starts clean.
+        self._stop_event: asyncio.Event = asyncio.Event()
 
     # -- properties --------------------------------------------------
 
@@ -249,6 +254,27 @@ class SessionRunner:
         decide which sessions to tear down.
         """
         return self._last_active_ns
+
+    @property
+    def stop_event(self) -> asyncio.Event:
+        """Edge-triggered signal the SDK loop watches during a turn.
+
+        Set by :meth:`request_stop`; the SDK loop clears it at the
+        start of each turn so repeated stop presses on back-to-back
+        turns each get a fresh edge.
+        """
+        return self._stop_event
+
+    def request_stop(self) -> None:
+        """Signal the SDK loop to interrupt the current in-flight turn.
+
+        Sets :attr:`stop_event`; the SDK loop's watcher coroutine
+        detects the edge and calls :meth:`AgentSession.interrupt`,
+        which forwards to :meth:`ClaudeSDKClient.interrupt`. Idempotent
+        when no turn is running (the event stays set until the next
+        turn clears it at the start).
+        """
+        self._stop_event.set()
 
     def enqueue_prompt(self, *, message_id: str, content: str) -> None:
         """Append ``content`` to the FIFO prompt queue.

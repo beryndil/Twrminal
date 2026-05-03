@@ -61,6 +61,7 @@ from bearings.web.models.sessions import (
     SessionOut,
     SessionTitleUpdate,
 )
+from bearings.web.runner_factory import InProcessRunnerRegistry
 
 router = APIRouter()
 
@@ -437,6 +438,50 @@ async def regenerate_session(session_id: str, request: Request) -> Response:
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail=f"unhandled regenerate dispatch outcome {outcome.value!r}",
     )
+
+
+# ---- stop / cancel turn ----------------------------------------------------
+
+
+@router.post(
+    "/api/sessions/{session_id}/stop",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def stop_session_turn(session_id: str, request: Request) -> None:
+    """Ask the runner to interrupt the current in-flight turn.
+
+    Calls :meth:`SessionRunner.request_stop`, which sets the runner's
+    stop event. The SDK loop's watcher coroutine detects the edge and
+    forwards an interrupt to :meth:`AgentSession.interrupt` →
+    :meth:`ClaudeSDKClient.interrupt`.
+
+    Idempotent: returns 204 even when no turn is running (the stop
+    signal will be picked up at the start of the next turn and cleared
+    immediately, or ignored if the queue is empty).
+
+    Failure modes:
+
+    * ``404`` — no session row found (prevents spurious stop on a
+      typo'd session id that has never existed).
+    * ``503`` — the runner registry is not wired (misconfigured app).
+    """
+    db = _db(request)
+    if not await sessions_db.exists(db, session_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no session matches {session_id!r}",
+        )
+    factory = getattr(request.app.state, "runner_factory", None)
+    if not isinstance(factory, InProcessRunnerRegistry):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="stop requires the in-process runner registry",
+        )
+    runner = factory.get(session_id)
+    if runner is not None:
+        runner.request_stop()
+    # Runner absent means the session has no live worker (idle-reaped or
+    # never materialised) — no-op; the turn is not running.
 
 
 # ---- prompt endpoint -------------------------------------------------------

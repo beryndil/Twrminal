@@ -1869,6 +1869,46 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Create Session",
+        "description": "Create a session row + attach tags atomically.\n\nPer arch \u00a71.1.5 the v1 session-create surface \u2014 the closing-sweep\naudit (2026-05-02) found this endpoint missing despite the master\nchecklist marking the item DONE.\n\nValidation precedence:\n\n* ``kind`` must be in :data:`KNOWN_SESSION_KINDS` \u2192 422 otherwise.\n* Every id in ``tag_ids`` must reference an existing tag row \u2192 404\n  with the missing list otherwise. Tag existence is checked BEFORE\n  :func:`sessions_db.create` so a bad tag id never leaves an\n  orphaned session.\n* Deeper field invariants (model name format, permission-mode enum,\n  title bounds beyond Pydantic's) raise ``ValueError`` from\n  :class:`Session.__post_init__` and surface as 422.\n\nReturns 201 with ``Location: /api/sessions/<id>``.",
+        "operationId": "create_session_api_sessions_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/sessions/{session_id}": {
@@ -2042,6 +2082,59 @@
         }
       }
     },
+    "/api/sessions/{session_id}/model": {
+      "patch": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Patch Session Model",
+        "description": "Swap the session's executor model (spec \u00a77; arch \u00a71.1.5).\n\nDB-only today: persists the new model name on the session row so\nthe next session boot picks it up. The live-runner forward to\n:meth:`AgentSession.set_model` is deferred \u2014 see TODO.md \"PATCH\nmodel: live runner forward (deferred)\" for the resolution sketch\n(route the swap through the runner's prompt queue or expose a\ndistinct control queue per arch \u00a73.2).\n\n422 on unknown model names; the validator delegates to\n:func:`sessions_db._is_known_model_name` so the alphabet stays in\none place.",
+        "operationId": "patch_session_model_api_sessions__session_id__model_patch",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionModelUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{session_id}/reopen": {
       "post": {
         "tags": [
@@ -2071,6 +2164,83 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{session_id}/regenerate": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Regenerate Session",
+        "description": "Re-enqueue the latest user prompt for ``session_id``.\n\nPer arch \u00a71.1.5 the v1 regenerate surface \u2014 landed in the v1.1\nclosing-sweep. Semantics: the latest user-role message is replayed\nthrough :func:`dispatch_prompt`, which queues it behind any\nin-flight turn. The previous assistant turn is left in the\ntranscript; \"regenerate\" produces a new assistant turn alongside\nrather than replacing the old one.\n\nFailure modes mirror the prompt endpoint:\n\n* 404 \u2014 session missing OR session has no user messages yet to\n  regenerate from.\n* 409 \u2014 session closed (the prompt queue rejects).\n* 429 \u2014 rate limit (per-session window enforced by the same\n  limiter the prompt endpoint uses).\n\nReturns 202 with a JSON envelope echoing the queued state, mirror\nof the prompt endpoint's ack shape.",
+        "operationId": "regenerate_session_api_sessions__session_id__regenerate_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{session_id}/stop": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Stop Session Turn",
+        "description": "Ask the runner to interrupt the current in-flight turn.\n\nCalls :meth:`SessionRunner.request_stop`, which sets the runner's\nstop event. The SDK loop's watcher coroutine detects the edge and\nforwards an interrupt to :meth:`AgentSession.interrupt` \u2192\n:meth:`ClaudeSDKClient.interrupt`.\n\nIdempotent: returns 204 even when no turn is running (the stop\nsignal will be picked up at the start of the next turn and cleared\nimmediately, or ignored if the queue is empty).\n\nFailure modes:\n\n* ``404`` \u2014 no session row found (prevents spurious stop on a\n  typo'd session id that has never existed).\n* ``503`` \u2014 the runner registry is not wired (misconfigured app).",
+        "operationId": "stop_session_turn_api_sessions__session_id__stop_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -3509,6 +3679,17 @@
           "approved": {
             "type": "boolean",
             "title": "Approved"
+          },
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
           }
         },
         "additionalProperties": false,
@@ -3517,7 +3698,7 @@
           "approved"
         ],
         "title": "ApprovalResolution",
-        "description": "Request body for ``POST /api/sessions/{id}/approvals/{request_id}``.\n\nA single boolean carrying the user's choice. The route resolves\nthe matching broker future with this value; the SDK callback\ntranslates it into a ``PermissionResultAllow`` /\n``PermissionResultDeny`` SDK return."
+        "description": "Request body for ``POST /api/sessions/{id}/approvals/{request_id}``.\n\n``approved`` carries the user's allow/deny choice. ``answer`` is an\noptional text payload used exclusively for ``AskUserQuestion`` tool\napprovals \u2014 the frontend sends the user's typed answer and the\nbroker threads it back to the SDK callback as\n``PermissionResultAllow.updated_input``, giving the agent the text\nit asked for."
       },
       "AutoDriverRunOut": {
         "properties": {
@@ -5079,6 +5260,108 @@
         ],
         "title": "ServerDiagOut",
         "description": "Response shape for ``GET /api/diag/server``."
+      },
+      "SessionCreate": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "working_dir": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Working Dir"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Model"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 30000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "session_instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Instructions"
+          },
+          "permission_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Mode"
+          },
+          "max_budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Budget Usd"
+          },
+          "tag_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Tag Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "title",
+          "working_dir",
+          "model"
+        ],
+        "title": "SessionCreate",
+        "description": "Request shape for ``POST /api/sessions``.\n\nPer arch \u00a71.1.5 the v1 session-create surface. The Pydantic shape\nenforces field shape; the route handler enforces ``kind`` membership\nin :data:`KNOWN_SESSION_KINDS`, that ``tag_ids`` references existing\nrows, and the deeper dataclass invariants (model name format,\npermission-mode enum, etc.) via :class:`Session.__post_init__`.\n\n``tag_ids`` defaults to the empty list \u2014 the new-session form\nenforces \"\u22651 tag\" at the UI layer; the API accepts zero so a CLI\nor test caller can create an untagged session without first\ncreating a tag."
+      },
+      "SessionModelUpdate": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Model"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "title": "SessionModelUpdate",
+        "description": "Request shape for ``PATCH /api/sessions/{id}/model`` (spec \u00a77\nmid-session model swap; arch \u00a71.1.5).\n\nThe wire field name matches the column name (``model``); v1.1 ships\nthe DB-only swap (next session boot reads the new value). The\nlive-runner forward to :meth:`AgentSession.set_model` is deferred\nper TODO.md."
       },
       "SessionOut": {
         "properties": {

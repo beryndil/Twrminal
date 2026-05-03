@@ -89,6 +89,13 @@ export const sessionApprovalEndpoint = (sessionId: string, requestId: string): s
   `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/approvals/${encodeURIComponent(requestId)}`;
 
 /**
+ * ``POST /api/sessions/{id}/stop`` — cancel the current in-flight turn.
+ * Returns 204 No Content on success.
+ */
+export const sessionStopEndpoint = (sessionId: string): string =>
+  `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/stop`;
+
+/**
  * Hard cap on a single prompt submission, mirroring the backend's
  * :data:`bearings.config.constants.PROMPT_CONTENT_MAX_CHARS` (64 000).
  * The Composer enforces this client-side so the user gets immediate
@@ -279,6 +286,8 @@ export const CONVERSATION_STRINGS = {
   pairedChatBreadcrumbAriaLabel: "Paired checklist breadcrumb",
   errorBubbleLabel: "Error",
   scrollToBottomLabel: "↓ Jump to bottom",
+  stopTurnLabel: "■ Stop",
+  stopTurnAriaLabel: "Stop the current turn",
 } as const;
 
 /**

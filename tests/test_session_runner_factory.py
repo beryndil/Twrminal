@@ -310,3 +310,27 @@ def test_runner_factory_protocol_resolvable() -> None:
         "SessionSetupFn",
         "StreamEntry",
     }
+
+
+def test_request_stop_sets_event() -> None:
+    """request_stop() sets the stop_event; idempotent on double-call."""
+    from bearings.agent.runner import SessionRunner
+
+    runner = SessionRunner("ses_test_stop")
+    assert not runner.stop_event.is_set()
+    runner.request_stop()
+    assert runner.stop_event.is_set()
+    # Idempotent
+    runner.request_stop()
+    assert runner.stop_event.is_set()
+
+
+def test_stop_event_cleared_between_turns() -> None:
+    """stop_event starts clear on a fresh runner; can be cleared manually."""
+    from bearings.agent.runner import SessionRunner
+
+    runner = SessionRunner("ses_test_stop2")
+    runner.request_stop()
+    assert runner.stop_event.is_set()
+    runner.stop_event.clear()
+    assert not runner.stop_event.is_set()

@@ -481,3 +481,75 @@ async def test_delete_session_404(
     with TestClient(app) as client:
         response = client.delete("/api/sessions/ses_missing")
     assert response.status_code == 404
+
+
+# ---- stop endpoint --------------------------------------------------------
+
+
+async def test_stop_session_no_runner_204(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Stop on a session with no live runner returns 204 (no-op — turn not running)."""
+    from bearings.web.runner_factory import InProcessRunnerRegistry
+
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    # Wire a registry with no spawned supervisor (session_setup=None).
+    registry = InProcessRunnerRegistry()
+    app.state.runner_factory = registry
+    with TestClient(app) as client:
+        response = client.post(f"/api/sessions/{sid}/stop")
+    assert response.status_code == 204
+
+
+async def test_stop_session_with_runner_calls_request_stop(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Stop on a session whose runner is registered calls runner.request_stop()."""
+    from bearings.agent.runner import SessionRunner
+    from bearings.web.runner_factory import InProcessRunnerRegistry
+
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    registry = InProcessRunnerRegistry()
+    runner = SessionRunner(sid)
+    # Manually register the runner without spawning a supervisor.
+    registry._runners[sid] = runner
+    app.state.runner_factory = registry
+    assert not runner.stop_event.is_set()
+    with TestClient(app) as client:
+        response = client.post(f"/api/sessions/{sid}/stop")
+    assert response.status_code == 204
+    assert runner.stop_event.is_set()
+
+
+async def test_stop_session_404_unknown(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Stop on an unknown session id returns 404."""
+    from bearings.web.runner_factory import InProcessRunnerRegistry
+
+    app, _ = app_and_db
+    app.state.runner_factory = InProcessRunnerRegistry()
+    with TestClient(app) as client:
+        response = client.post("/api/sessions/ses_missing/stop")
+    assert response.status_code == 404
+
+
+async def test_stop_session_503_without_registry(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Stop returns 503 when a non-registry runner factory is wired."""
+    from bearings.agent.runner import SessionRunner
+
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+
+    # Wire a plain RunnerFactory Protocol impl (not InProcessRunnerRegistry).
+    async def plain_factory(session_id: str) -> SessionRunner:
+        return SessionRunner(session_id)
+
+    app.state.runner_factory = plain_factory
+    with TestClient(app) as client:
+        response = client.post(f"/api/sessions/{sid}/stop")
+    assert response.status_code == 503

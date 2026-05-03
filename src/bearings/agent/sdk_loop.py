@@ -52,6 +52,7 @@ References:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from typing import Any
 
@@ -161,6 +162,22 @@ async def _drain_prompt_queue(
         await _run_one_turn(runner, session, client, translator, persist_fn, prompt)
 
 
+async def _stop_watcher(runner: SessionRunner, session: AgentSession) -> None:
+    """Await the runner's stop event and forward an interrupt to the SDK.
+
+    Spawned as a background task at the start of each turn by
+    :func:`_run_one_turn`. Cancelled (and awaited) in the turn's
+    ``finally`` block so it does not outlive the turn.
+
+    :class:`SessionStateError` is suppressed: the session may have
+    already transitioned to CLOSED or ERROR by the time the interrupt
+    fires (e.g. the SDK error raced the user's stop click).
+    """
+    await runner.stop_event.wait()
+    with contextlib.suppress(SessionStateError):
+        await session.interrupt()
+
+
 async def _run_one_turn(
     runner: SessionRunner,
     session: AgentSession,
@@ -170,6 +187,34 @@ async def _run_one_turn(
     prompt: QueuedPrompt,
 ) -> None:
     """Drive one full SDK turn end-to-end."""
+    # Clear any residual stop signal from a prior turn (e.g. the user
+    # clicked Stop just after the previous turn ended; we do not want
+    # that edge to interrupt this brand-new turn).
+    runner.stop_event.clear()
+    # Watchdog: fires client.interrupt() if request_stop() is called
+    # while the turn is running. Cancelled in the finally block so it
+    # never outlives the turn regardless of how the turn exits.
+    stop_task: asyncio.Task[None] = asyncio.create_task(
+        _stop_watcher(runner, session),
+        name=f"stop_watcher:{runner.session_id}",
+    )
+    try:
+        await _do_run_one_turn(runner, session, client, translator, persist_fn, prompt)
+    finally:
+        stop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await stop_task
+
+
+async def _do_run_one_turn(
+    runner: SessionRunner,
+    session: AgentSession,
+    client: ClaudeSDKClient,
+    translator: SDKEventTranslator,
+    persist_fn: MessagePersistence,
+    prompt: QueuedPrompt,
+) -> None:
+    """Inner body of a turn (extracted so the stop_watcher wrapper stays clean)."""
     translator.begin_turn()
     runner.set_status(
         RunnerStatus(
