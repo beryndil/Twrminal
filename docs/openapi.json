@@ -3218,6 +3218,81 @@
         }
       }
     },
+    "/api/commands": {
+      "get": {
+        "tags": [
+          "commands"
+        ],
+        "summary": "List Commands",
+        "description": "Return all discovered slash-commands from user + project locations.",
+        "operationId": "list_commands_api_commands_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CommandOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Commands Api Commands Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/search": {
+      "get": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Search History",
+        "description": "Search sessions and messages for ``q``.\n\nReturns up to :data:`~bearings.config.constants.HISTORY_SEARCH_RESULT_CAP`\nresults, sessions first. An empty or whitespace-only ``q`` returns ``[]``\nimmediately.",
+        "operationId": "search_history_api_history_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Search term (case-insensitive substring match).",
+              "title": "Q"
+            },
+            "description": "Search term (case-insensitive substring match)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HistorySearchResult"
+                  },
+                  "title": "Response Search History Api History Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/uploads": {
       "post": {
         "tags": [
@@ -4084,6 +4159,31 @@
         "title": "ChecklistOverviewOut",
         "description": "Response shape for ``GET /api/checklists/{id}``.\n\nBundles the items list + the active-run row (if any) into one\npayload so the client renders the pane without two roundtrips."
       },
+      "CommandOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "source"
+        ],
+        "title": "CommandOut",
+        "description": "One slash-command entry returned by ``GET /api/commands``."
+      },
       "DriverDiagListOut": {
         "properties": {
           "drivers": {
@@ -4299,6 +4399,52 @@
         ],
         "title": "HealthOut",
         "description": "Response shape for ``GET /api/health``."
+      },
+      "HistorySearchResult": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "session",
+              "message"
+            ],
+            "title": "Kind"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "session_title": {
+            "type": "string",
+            "title": "Session Title"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id"
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "session_id",
+          "session_title",
+          "message_id",
+          "snippet"
+        ],
+        "title": "HistorySearchResult",
+        "description": "One search hit returned by ``GET /api/history/search``."
       },
       "LinkChatIn": {
         "properties": {
