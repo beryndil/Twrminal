@@ -328,51 +328,90 @@ describe("ingestFrame — pendingApproval", () => {
 
 describe("hydrateTurns", () => {
   it("loads persisted MessageOut rows into typed MessageTurnView", () => {
-    hydrateTurns("ses_a", [
-      {
-        id: "u1",
-        session_id: "ses_a",
-        role: "user",
-        content: "hi",
-        created_at: "2026-01-01T00:00:00Z",
-        executor_model: null,
-        advisor_model: null,
-        effort_level: null,
-        routing_source: null,
-        routing_reason: null,
-        matched_rule_id: null,
-        executor_input_tokens: null,
-        executor_output_tokens: null,
-        advisor_input_tokens: null,
-        advisor_output_tokens: null,
-        advisor_calls_count: null,
-        cache_read_tokens: null,
-        input_tokens: null,
-        output_tokens: null,
-      },
-      {
-        id: "a1",
-        session_id: "ses_a",
-        role: "assistant",
-        content: "hello",
-        created_at: "2026-01-01T00:00:01Z",
-        executor_model: "sonnet",
-        advisor_model: null,
-        effort_level: "med",
-        routing_source: "tag_rule",
-        routing_reason: "matched bearings/architect",
-        matched_rule_id: 1,
-        executor_input_tokens: 10,
-        executor_output_tokens: 20,
-        advisor_input_tokens: null,
-        advisor_output_tokens: null,
-        advisor_calls_count: 0,
-        cache_read_tokens: null,
-        input_tokens: null,
-        output_tokens: null,
-      },
-    ]);
+    hydrateTurns("ses_a", {
+      items: [
+        {
+          id: "u1",
+          session_id: "ses_a",
+          role: "user",
+          content: "hi",
+          created_at: "2026-01-01T00:00:00Z",
+          executor_model: null,
+          advisor_model: null,
+          effort_level: null,
+          routing_source: null,
+          routing_reason: null,
+          matched_rule_id: null,
+          executor_input_tokens: null,
+          executor_output_tokens: null,
+          advisor_input_tokens: null,
+          advisor_output_tokens: null,
+          advisor_calls_count: null,
+          cache_read_tokens: null,
+          input_tokens: null,
+          output_tokens: null,
+          seq: 1,
+        },
+        {
+          id: "a1",
+          session_id: "ses_a",
+          role: "assistant",
+          content: "hello",
+          created_at: "2026-01-01T00:00:01Z",
+          executor_model: "sonnet",
+          advisor_model: null,
+          effort_level: "med",
+          routing_source: "tag_rule",
+          routing_reason: "matched bearings/architect",
+          matched_rule_id: 1,
+          executor_input_tokens: 10,
+          executor_output_tokens: 20,
+          advisor_input_tokens: null,
+          advisor_output_tokens: null,
+          advisor_calls_count: 0,
+          cache_read_tokens: null,
+          input_tokens: null,
+          output_tokens: null,
+          seq: 2,
+        },
+      ],
+      has_more: false,
+    });
     expect(conversationStore.turns).toHaveLength(2);
     expect(conversationStore.turns[1].routing?.executorModel).toBe("sonnet");
+    expect(conversationStore.hasMore).toBe(false);
+    expect(conversationStore.oldestSeq).toBe(1);
+  });
+
+  it("sets hasMore and oldestSeq from the page", () => {
+    hydrateTurns("ses_b", {
+      items: [
+        {
+          id: "u2",
+          session_id: "ses_b",
+          role: "user",
+          content: "x",
+          created_at: "2026-01-01T00:00:00Z",
+          executor_model: null,
+          advisor_model: null,
+          effort_level: null,
+          routing_source: null,
+          routing_reason: null,
+          matched_rule_id: null,
+          executor_input_tokens: null,
+          executor_output_tokens: null,
+          advisor_input_tokens: null,
+          advisor_output_tokens: null,
+          advisor_calls_count: null,
+          cache_read_tokens: null,
+          input_tokens: null,
+          output_tokens: null,
+          seq: 7,
+        },
+      ],
+      has_more: true,
+    });
+    expect(conversationStore.hasMore).toBe(true);
+    expect(conversationStore.oldestSeq).toBe(7);
   });
 });

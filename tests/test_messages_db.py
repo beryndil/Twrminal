@@ -73,6 +73,29 @@ async def test_list_for_session_with_limit_returns_tail(conn: aiosqlite.Connecti
     assert [row.id for row in rows] == [b.id, c.id]
 
 
+async def test_list_for_session_before_cursor(conn: aiosqlite.Connection) -> None:
+    """``before=`` filters to rows with rowid < cursor (item 1.3)."""
+    sid = await _new_session(conn)
+    a = await messages_db.insert_user(conn, session_id=sid, content="first")
+    b = await messages_db.insert_user(conn, session_id=sid, content="second")
+    c = await messages_db.insert_user(conn, session_id=sid, content="third")
+    # seq of ``b`` — should exclude b and c.
+    rows = await messages_db.list_for_session(conn, sid, before=b.seq)
+    assert [row.id for row in rows] == [a.id]
+    # Combine with limit.
+    rows2 = await messages_db.list_for_session(conn, sid, limit=10, before=c.seq)
+    assert [row.id for row in rows2] == [a.id, b.id]
+
+
+async def test_list_for_session_seq_increases(conn: aiosqlite.Connection) -> None:
+    """``seq`` is the SQLite rowid — strictly increasing per insert order."""
+    sid = await _new_session(conn)
+    a = await messages_db.insert_user(conn, session_id=sid, content="x")
+    b = await messages_db.insert_user(conn, session_id=sid, content="y")
+    assert a.seq > 0
+    assert b.seq > a.seq
+
+
 async def test_count_for_session(conn: aiosqlite.Connection) -> None:
     sid = await _new_session(conn)
     await messages_db.insert_user(conn, session_id=sid, content="x")
@@ -111,4 +134,5 @@ async def test_invalid_role_rejected_at_dataclass(
             cache_read_tokens=None,
             input_tokens=None,
             output_tokens=None,
+            seq=1,
         )

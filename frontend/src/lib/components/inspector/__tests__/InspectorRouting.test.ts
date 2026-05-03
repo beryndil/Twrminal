@@ -10,7 +10,7 @@ import { fireEvent, render, waitFor } from "@testing-library/svelte";
 import { describe, expect, it } from "vitest";
 
 import InspectorRouting from "../InspectorRouting.svelte";
-import type { MessageOut } from "../../../api/messages";
+import type { MessageOut, MessagePage } from "../../../api/messages";
 import type { SessionOut } from "../../../api/sessions";
 import {
   INSPECTOR_STRINGS,
@@ -68,22 +68,24 @@ function msg(overrides: Partial<MessageOut> = {}): MessageOut {
     cache_read_tokens: 10,
     input_tokens: null,
     output_tokens: null,
+    seq: 1,
     ...overrides,
   };
 }
 
+/** Wrap rows in a full-transcript MessagePage (has_more always false). */
 function fixtureFetcher(
   rows: MessageOut[],
-): (sessionId: string, opts?: { signal?: AbortSignal }) => Promise<MessageOut[]> {
-  return async (_sessionId, _opts) => rows;
+): (sessionId: string, opts?: { signal?: AbortSignal }) => Promise<MessagePage> {
+  return async (_sessionId, _opts) => ({ items: rows, has_more: false });
 }
 
 describe("InspectorRouting — loading + empty branches", () => {
   it("renders the documented loading copy before the fetch resolves", () => {
-    type ResolveFn = (rows: MessageOut[]) => void;
+    type ResolveFn = (page: MessagePage) => void;
     let resolveFn: ResolveFn | null = null;
-    const pendingFetch = (): Promise<MessageOut[]> =>
-      new Promise<MessageOut[]>((resolve) => {
+    const pendingFetch = (): Promise<MessagePage> =>
+      new Promise<MessagePage>((resolve) => {
         resolveFn = resolve as ResolveFn;
       });
     const { getByTestId } = render(InspectorRouting, {
@@ -93,7 +95,7 @@ describe("InspectorRouting — loading + empty branches", () => {
       INSPECTOR_STRINGS.routingLoading,
     );
     // Resolve so the test doesn't leak the dangling promise.
-    (resolveFn as ResolveFn | null)?.([]);
+    (resolveFn as ResolveFn | null)?.({ items: [], has_more: false });
   });
 
   it("renders the empty-state copy when no assistant rows exist", async () => {
@@ -120,7 +122,7 @@ describe("InspectorRouting — loading + empty branches", () => {
   });
 
   it("renders the error copy when the fetch rejects", async () => {
-    const failing = (): Promise<MessageOut[]> => Promise.reject(new Error("boom"));
+    const failing = (): Promise<MessagePage> => Promise.reject(new Error("boom"));
     const { findByTestId } = render(InspectorRouting, {
       props: { session: fakeSession(), fetchMessages: failing },
     });

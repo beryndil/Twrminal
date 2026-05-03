@@ -288,6 +288,9 @@ export const CONVERSATION_STRINGS = {
   scrollToBottomLabel: "↓ Jump to bottom",
   stopTurnLabel: "■ Stop",
   stopTurnAriaLabel: "Stop the current turn",
+  // Item 1.3 pagination affordance.
+  loadOlderLabel: "Load older messages",
+  loadingOlder: "Loading…",
 } as const;
 
 /**
@@ -302,6 +305,16 @@ export const CONVERSATION_STRINGS = {
  * body itself is truncated.
  */
 export const CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS = 8000;
+
+/**
+ * Page size for cursor-based message pagination (item 1.3).
+ *
+ * Mirrors :data:`bearings.config.constants.MESSAGE_PAGE_SIZE` (100).
+ * Session-open fetches the last N messages; each ``loadOlder()`` call
+ * walks back N more. 100 rows keeps the initial payload well under the
+ * OOM threshold for long-running sessions.
+ */
+export const MESSAGE_PAGE_SIZE = 100;
 
 /**
  * ``rel`` attribute for outbound anchors per chat.md §"Conversation

@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getMessage, listMessages, type MessageOut } from "../messages";
+import { getMessage, listMessages, type MessageOut, type MessagePage } from "../messages";
 
 const sampleRow: MessageOut = {
   id: "msg_1",
@@ -26,6 +26,12 @@ const sampleRow: MessageOut = {
   cache_read_tokens: 50,
   input_tokens: 300,
   output_tokens: 200,
+  seq: 42,
+};
+
+const samplePage: MessagePage = {
+  items: [sampleRow],
+  has_more: false,
 };
 
 describe("listMessages", () => {
@@ -39,14 +45,15 @@ describe("listMessages", () => {
     vi.unstubAllGlobals();
   });
 
-  it("hits the per-session messages endpoint without query when no limit", async () => {
+  it("returns a MessagePage envelope", async () => {
     fetchMock.mockResolvedValueOnce({
       status: 200,
       statusText: "OK",
-      json: async () => [sampleRow],
+      json: async () => samplePage,
     });
-    const rows = await listMessages("ses_a");
-    expect(rows).toEqual([sampleRow]);
+    const page = await listMessages("ses_a");
+    expect(page).toEqual(samplePage);
+    expect(page.items[0].seq).toBe(42);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toBe("/api/sessions/ses_a/messages");
@@ -56,18 +63,41 @@ describe("listMessages", () => {
     fetchMock.mockResolvedValueOnce({
       status: 200,
       statusText: "OK",
-      json: async () => [],
+      json: async () => ({ items: [], has_more: false }),
     });
     await listMessages("ses_a", { limit: 50 });
     const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toContain("limit=50");
   });
 
+  it("adds a ``before`` query param when supplied", async () => {
+    fetchMock.mockResolvedValueOnce({
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ items: [], has_more: false }),
+    });
+    await listMessages("ses_a", { before: 99 });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("before=99");
+  });
+
+  it("adds both ``limit`` and ``before`` when supplied together", async () => {
+    fetchMock.mockResolvedValueOnce({
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ items: [], has_more: false }),
+    });
+    await listMessages("ses_a", { limit: 100, before: 55 });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("limit=100");
+    expect(url).toContain("before=55");
+  });
+
   it("URL-encodes the session id", async () => {
     fetchMock.mockResolvedValueOnce({
       status: 200,
       statusText: "OK",
-      json: async () => [],
+      json: async () => ({ items: [], has_more: false }),
     });
     await listMessages("a/b");
     const url = fetchMock.mock.calls[0][0] as string;
@@ -94,6 +124,7 @@ describe("getMessage", () => {
     });
     const row = await getMessage("msg_1");
     expect(row.id).toBe("msg_1");
+    expect(row.seq).toBe(42);
     const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toBe("/api/messages/msg_1");
   });

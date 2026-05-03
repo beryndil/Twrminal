@@ -38,6 +38,38 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   - `src/bearings/web/routes/approvals.py` — passes `answer=payload.answer`
     to `broker.resolve`.
 
+- **Message pagination cursor** (wiring-v1-daily-driver item 1.3).
+  - `src/bearings/db/messages.py` — added `seq: int` field to `Message`
+    (SQLite `rowid` alias); `list_for_session` now accepts `before: int | None`
+    which filters `WHERE rowid < before` for backward pagination; pre-INSERT
+    validation calls use `seq=0` placeholder since the rowid is DB-assigned.
+  - `src/bearings/config/constants.py` — added `MESSAGE_PAGE_SIZE = 100` for
+    the session-open tail fetch and each `loadOlder()` page.
+  - `src/bearings/web/models/messages.py` — added `seq: int` to `MessageOut`;
+    added `MessagePage` model (`items: list[MessageOut]`, `has_more: bool`).
+  - `src/bearings/web/routes/messages.py` — `GET /api/sessions/{id}/messages`
+    now returns `MessagePage` instead of `list[MessageOut]`; accepts `before:
+    int | None` query param; fetches `limit+1` rows and trims from the front
+    to detect `has_more` without a separate `COUNT` query.
+  - `docs/openapi.json` — regenerated to reflect the new endpoint shape.
+  - `frontend/src/lib/api/messages.ts` — added `seq: number` to `MessageOut`;
+    added `MessagePage` interface; updated `listMessages` params to include
+    `before?: number`; return type changed to `Promise<MessagePage>`.
+  - `frontend/src/lib/config.ts` — added `MESSAGE_PAGE_SIZE = 100` and two
+    new `CONVERSATION_STRINGS` entries (`loadOlderLabel`, `loadingOlder`).
+  - `frontend/src/lib/stores/conversation.svelte.ts` — added `hasMore`,
+    `loadingOlder`, `oldestSeq` state; `hydrateTurns` now accepts `MessagePage`
+    and seeds `hasMore`/`oldestSeq` from the response; added `prependTurns`
+    for prepend-to-front on `loadOlder`; added async `loadOlder(sessionId)`
+    action that no-ops when already loading or `hasMore` is false.
+  - `frontend/src/lib/components/conversation/Conversation.svelte` — session-
+    open fetch uses `limit: MESSAGE_PAGE_SIZE` instead of unbounded; wires
+    `loadOlder` to a "Load older messages" button rendered at the top of the
+    conversation body when `hasMore` is true.
+  - `frontend/src/lib/components/inspector/InspectorRouting.svelte` — updated
+    `fetchMessages` result accessor to `page.items` (full-transcript fetch,
+    `has_more` is always false for the inspector).
+
 - **Stop / cancel turn** (wiring-v1-daily-driver item 1.2).
   - `src/bearings/agent/runner.py` — added `_stop_event: asyncio.Event`,
     `stop_event` property, and `request_stop()` method to `SessionRunner`.

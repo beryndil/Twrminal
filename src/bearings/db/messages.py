@@ -90,6 +90,9 @@ class Message:
     cache_read_tokens: int | None
     input_tokens: int | None
     output_tokens: int | None
+    # SQLite implicit rowid — monotonically increasing per insertion order.
+    # Exposed as the cursor integer for ``before=`` pagination (item 1.3).
+    seq: int
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -182,6 +185,7 @@ async def _insert(
         cache_read_tokens=None,
         input_tokens=None,
         output_tokens=None,
+        seq=0,  # placeholder — rowid assigned by DB; actual value via get()
     )
     await connection.execute(
         "INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -243,6 +247,9 @@ async def insert_assistant(
     # Construct + validate the dataclass first; surfaces shape errors
     # before any DB write occurs (atomicity holds because the entire
     # method runs inside one connection's implicit transaction).
+    # ``seq=0`` is a placeholder — the real rowid is assigned by SQLite
+    # and returned via ``get()`` below; validation only needs to catch
+    # business-rule violations (role, token sign, etc.).
     Message(
         id=message_id,
         session_id=session_id,
@@ -263,6 +270,7 @@ async def insert_assistant(
         cache_read_tokens=cache_read_tokens,
         input_tokens=None,
         output_tokens=None,
+        seq=0,
     )
     await connection.execute(
         "INSERT INTO messages ("
@@ -352,27 +360,35 @@ async def list_for_session(
     session_id: str,
     *,
     limit: int | None = None,
+    before: int | None = None,
 ) -> list[Message]:
-    """Every message under ``session_id``, oldest-first.
+    """Messages under ``session_id``, oldest-first.
 
-    Optional ``limit`` returns the **last** N rows (most recent N) —
-    used by the WS reconnect path which only needs the tail of the
-    transcript on first paint.
+    ``limit`` returns the **last** N rows (most recent N) — used by the
+    session-open tail fetch and ``loadOlder()`` cursor pages (item 1.3).
+
+    ``before`` (SQLite rowid) restricts to rows inserted before that
+    cursor, enabling backward pagination: the caller passes the lowest
+    ``seq`` it has seen so far to walk further into the past.
     """
     if limit is not None and limit <= 0:
         raise ValueError(f"list_for_session: limit must be > 0 if set (got {limit})")
+    conditions = ["session_id = ?"]
+    params: list[object] = [session_id]
+    if before is not None:
+        conditions.append("rowid < ?")
+        params.append(before)
+    where = " WHERE " + " AND ".join(conditions)
     if limit is None:
         cursor = await connection.execute(
-            _SELECT_MESSAGE_COLUMNS + " WHERE session_id = ? ORDER BY created_at ASC, id ASC",
-            (session_id,),
+            _SELECT_MESSAGE_COLUMNS + where + " ORDER BY created_at ASC, id ASC",
+            tuple(params),
         )
     else:
-        # Last N — order by created_at DESC, take limit, then reverse
-        # for chronological order at the call site.
+        # Tail-N: DESC + limit, reversed to chronological at the call site.
         cursor = await connection.execute(
-            _SELECT_MESSAGE_COLUMNS + " WHERE session_id = ? "
-            "ORDER BY created_at DESC, id DESC LIMIT ?",
-            (session_id, limit),
+            _SELECT_MESSAGE_COLUMNS + where + " ORDER BY created_at DESC, id DESC LIMIT ?",
+            (*tuple(params), limit),
         )
     try:
         rows = await cursor.fetchall()
@@ -406,7 +422,7 @@ _SELECT_MESSAGE_COLUMNS = (
     "matched_rule_id, "
     "executor_input_tokens, executor_output_tokens, advisor_input_tokens, "
     "advisor_output_tokens, advisor_calls_count, cache_read_tokens, "
-    "input_tokens, output_tokens FROM messages"
+    "input_tokens, output_tokens, rowid AS seq FROM messages"
 )
 
 
@@ -432,6 +448,7 @@ def _row_to_message(row: aiosqlite.Row | tuple[object, ...]) -> Message:
         cache_read_tokens=None if row[16] is None else int(str(row[16])),
         input_tokens=None if row[17] is None else int(str(row[17])),
         output_tokens=None if row[18] is None else int(str(row[18])),
+        seq=int(str(row[19])),
     )
 
 

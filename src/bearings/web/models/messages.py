@@ -69,6 +69,27 @@ class MessageOut(BaseModel):
     # routing layer still have *something* to report.
     input_tokens: int | None
     output_tokens: int | None
+    # SQLite rowid — monotonically increasing cursor for backward
+    # pagination (item 1.3 ``before=`` query param). Frontend passes
+    # the lowest ``seq`` it currently holds to walk further into the
+    # past via ``loadOlder()``.
+    seq: int
 
 
-__all__ = ["MessageOut"]
+class MessagePage(BaseModel):
+    """Paginated response for ``GET /api/sessions/{id}/messages`` (item 1.3).
+
+    Wraps the per-page item list with a ``has_more`` flag so the
+    frontend knows whether to show the "Load older" affordance.
+    ``has_more`` is ``False`` when the backend returned fewer rows than
+    the requested ``limit``, or when no ``limit`` was given (full
+    transcript fetch).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[MessageOut]
+    has_more: bool
+
+
+__all__ = ["MessageOut", "MessagePage"]

@@ -73,7 +73,7 @@ async def test_list_messages_returns_404_for_missing_session(
     assert response.status_code == 404
 
 
-async def test_list_messages_empty_session_returns_empty_array(
+async def test_list_messages_empty_session_returns_empty_page(
     app_and_db: tuple[FastAPI, aiosqlite.Connection],
 ) -> None:
     app, conn = app_and_db
@@ -81,7 +81,9 @@ async def test_list_messages_empty_session_returns_empty_array(
     with TestClient(app) as client:
         response = client.get(f"/api/sessions/{sid}/messages")
     assert response.status_code == 200
-    assert response.json() == []
+    body = response.json()
+    assert body["items"] == []
+    assert body["has_more"] is False
 
 
 async def test_list_messages_returns_routing_and_usage_fields(
@@ -113,8 +115,9 @@ async def test_list_messages_returns_routing_and_usage_fields(
         response = client.get(f"/api/sessions/{sid}/messages")
     assert response.status_code == 200
     body = response.json()
-    assert len(body) == 2
-    user_row, assistant_row = body
+    assert len(body["items"]) == 2
+    assert body["has_more"] is False
+    user_row, assistant_row = body["items"]
     assert user_row["role"] == "user"
     # User row leaves routing fields NULL per item 1.7 + spec §5.
     assert user_row["executor_model"] is None
@@ -146,8 +149,11 @@ async def test_list_messages_with_limit_returns_tail(
     with TestClient(app) as client:
         response = client.get(f"/api/sessions/{sid}/messages", params={"limit": 2})
     assert response.status_code == 200
-    contents = [row["content"] for row in response.json()]
+    body = response.json()
+    # Three messages inserted; limit=2 returns the last 2 + has_more=True.
+    contents = [row["content"] for row in body["items"]]
     assert contents == ["second", "third"]
+    assert body["has_more"] is True
 
 
 async def test_list_messages_rejects_invalid_limit(
@@ -164,6 +170,63 @@ async def test_list_messages_rejects_invalid_limit(
         )
     assert zero.status_code == 422
     assert too_big.status_code == 422
+
+
+async def test_list_messages_seq_field_present(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Every item in the page carries a non-zero ``seq`` (rowid) cursor."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    await messages_db.insert_user(conn, session_id=sid, content="a")
+    await messages_db.insert_user(conn, session_id=sid, content="b")
+    with TestClient(app) as client:
+        response = client.get(f"/api/sessions/{sid}/messages")
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert all(isinstance(row["seq"], int) and row["seq"] > 0 for row in items)
+    # seq is strictly increasing (chronological order).
+    seqs = [row["seq"] for row in items]
+    assert seqs == sorted(seqs)
+    assert seqs[0] < seqs[1]
+
+
+async def test_list_messages_before_cursor_walks_backward(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """``before=`` returns only messages older than the given seq cursor."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    await messages_db.insert_user(conn, session_id=sid, content="msg1")
+    await messages_db.insert_user(conn, session_id=sid, content="msg2")
+    await messages_db.insert_user(conn, session_id=sid, content="msg3")
+    with TestClient(app) as client:
+        # Fetch the tail (last 2).
+        tail = client.get(f"/api/sessions/{sid}/messages", params={"limit": 2}).json()
+        assert [r["content"] for r in tail["items"]] == ["msg2", "msg3"]
+        assert tail["has_more"] is True
+        # Walk back using before = seq of oldest item in the tail.
+        oldest_seq = tail["items"][0]["seq"]
+        older = client.get(
+            f"/api/sessions/{sid}/messages",
+            params={"before": oldest_seq},
+        ).json()
+    assert [r["content"] for r in older["items"]] == ["msg1"]
+    assert older["has_more"] is False
+
+
+async def test_list_messages_limit_covers_all_has_more_false(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """When limit >= total messages, ``has_more`` is False."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    await messages_db.insert_user(conn, session_id=sid, content="only")
+    with TestClient(app) as client:
+        response = client.get(f"/api/sessions/{sid}/messages", params={"limit": 10})
+    body = response.json()
+    assert len(body["items"]) == 1
+    assert body["has_more"] is False
 
 
 async def test_get_message_404_for_missing_id(

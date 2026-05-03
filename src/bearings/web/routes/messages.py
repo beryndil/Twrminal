@@ -38,7 +38,7 @@ from bearings.config.constants import MESSAGES_LIST_MAX_LIMIT
 from bearings.db import messages as messages_db
 from bearings.db import sessions as sessions_db
 from bearings.db.messages import Message
-from bearings.web.models.messages import MessageOut
+from bearings.web.models.messages import MessageOut, MessagePage
 
 router = APIRouter()
 
@@ -76,12 +76,13 @@ def _to_out(message: Message) -> MessageOut:
         cache_read_tokens=message.cache_read_tokens,
         input_tokens=message.input_tokens,
         output_tokens=message.output_tokens,
+        seq=message.seq,
     )
 
 
 @router.get(
     "/api/sessions/{session_id}/messages",
-    response_model=list[MessageOut],
+    response_model=MessagePage,
 )
 async def list_messages(
     session_id: str,
@@ -90,15 +91,40 @@ async def list_messages(
         default=None,
         gt=0,
         le=MESSAGES_LIST_MAX_LIMIT,
-        description="If set, return the last N messages (most recent N) of the session.",
+        description=(
+            "If set, return the last N messages (most recent N). "
+            "Omit for the full transcript (``has_more`` is always ``False``)."
+        ),
     ),
-) -> list[MessageOut]:
-    """List messages for ``session_id``, oldest first.
+    before: int | None = Query(
+        default=None,
+        gt=0,
+        description=(
+            "Cursor for backward pagination (item 1.3). Pass the ``seq`` "
+            "(SQLite rowid) of the oldest message currently held to fetch "
+            "the page that precedes it. Combine with ``limit`` for bounded "
+            "pages; omit ``limit`` to fetch everything older than the cursor."
+        ),
+    ),
+) -> MessagePage:
+    """List messages for ``session_id``, oldest first, with pagination.
 
-    The list endpoint 404s if no session matches ``session_id`` to
-    distinguish "session does not exist" from "session has no
-    messages" (an empty list is a valid response for a freshly-
-    created session).
+    Returns a :class:`MessagePage` envelope: ``items`` in chronological
+    order + ``has_more: bool`` indicating whether an older page exists.
+
+    Pagination contract (item 1.3):
+
+    * Session-open: call with ``limit=N`` (no ``before``). Response
+      carries the *tail* N messages + ``has_more`` flag.
+    * Load-older: call with ``limit=N`` + ``before=<seq>`` where
+      ``seq`` is the lowest ``seq`` value in the current view.
+      Each call walks one page further into the past.
+    * Full-transcript (e.g. Inspector panel): omit both params.
+      ``has_more`` is always ``False`` in this case.
+
+    404s if no session matches ``session_id``, distinguishing "session
+    does not exist" from "session has no messages" (empty ``items`` is
+    a valid response for a freshly-created session).
     """
     db = _db(request)
     session = await sessions_db.get(db, session_id)
@@ -107,8 +133,18 @@ async def list_messages(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no session matches {session_id!r}",
         )
-    rows = await messages_db.list_for_session(db, session_id, limit=limit)
-    return [_to_out(row) for row in rows]
+    # Fetch one extra row to detect has_more without a separate COUNT.
+    # The DB layer returns rows in chronological order (oldest first) after
+    # DESC + LIMIT + reverse. Fetching N+1 means if we get N+1 rows, the
+    # extra one is at index 0 (the oldest, outside the actual page window),
+    # so we trim from the front with ``rows[-limit:]``.
+    fetch_limit = None if limit is None else limit + 1
+    rows = await messages_db.list_for_session(db, session_id, limit=fetch_limit, before=before)
+    has_more = False
+    if limit is not None and len(rows) > limit:
+        has_more = True
+        rows = rows[-limit:]
+    return MessagePage(items=[_to_out(row) for row in rows], has_more=has_more)
 
 
 @router.get("/api/messages/{message_id}", response_model=MessageOut)

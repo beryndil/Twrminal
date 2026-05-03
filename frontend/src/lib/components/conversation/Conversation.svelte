@@ -14,6 +14,8 @@
    * - ``docs/behavior/tool-output-streaming.md`` §"Reconnect / replay" —
    *   the WS subscription resumes via ``since_seq`` from the
    *   conversation store's ``lastSeq``.
+   * - Item 1.3 cursor pagination — session-open fetches the tail
+   *   (``MESSAGE_PAGE_SIZE``); "Load older" walks backward by ``before=``.
    *
    * The pane is presentational + lifecycle: hydrate history on mount
    * + on session-id change, subscribe/disconnect via the agent WS
@@ -23,10 +25,11 @@
 
   import { connectSession, disconnectSession } from "../../agent.svelte";
   import { listMessages } from "../../api/messages";
-  import { CONVERSATION_STRINGS } from "../../config";
+  import { CONVERSATION_STRINGS, MESSAGE_PAGE_SIZE } from "../../config";
   import {
     conversationStore,
     hydrateTurns,
+    loadOlder,
     resetConversation,
     setError,
     setLoading,
@@ -64,9 +67,11 @@
     setLoading(true);
     void (async () => {
       try {
-        const rows = await listMessages(sid);
+        // Fetch only the tail on session-open (item 1.3) — keeps long
+        // sessions from OOMing the tab. ``loadOlder()`` walks further back.
+        const page = await listMessages(sid, { limit: MESSAGE_PAGE_SIZE });
         if (cancelled) return;
-        hydrateTurns(sid, rows);
+        hydrateTurns(sid, page);
       } catch (error) {
         if (cancelled) return;
         setError(error instanceof Error ? error : new Error(String(error)));
@@ -112,6 +117,12 @@
     showJumpAffordance = false;
   }
 
+  function handleLoadOlder(): void {
+    if (sessionId !== null) {
+      void loadOlder(sessionId);
+    }
+  }
+
   onMount(() => {
     if (bodyEl !== null) {
       bodyEl.scrollTop = bodyEl.scrollHeight;
@@ -126,6 +137,22 @@
     data-testid="conversation-body"
     onscroll={handleScroll}
   >
+    {#if conversationStore.hasMore}
+      <div class="flex justify-center py-2">
+        <button
+          type="button"
+          class="rounded bg-surface-2 px-3 py-1 text-xs text-fg-muted hover:text-fg-strong disabled:opacity-50"
+          data-testid="conversation-load-older"
+          disabled={conversationStore.loadingOlder}
+          onclick={handleLoadOlder}
+        >
+          {conversationStore.loadingOlder
+            ? CONVERSATION_STRINGS.loadingOlder
+            : CONVERSATION_STRINGS.loadOlderLabel}
+        </button>
+      </div>
+    {/if}
+
     {#if conversationStore.loading && conversationStore.turns.length === 0}
       <p class="px-4 py-3 text-sm text-fg-muted" data-testid="conversation-loading">
         {CONVERSATION_STRINGS.loadingTranscript}

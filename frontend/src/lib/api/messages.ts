@@ -2,11 +2,10 @@
  * Typed client for ``GET /api/sessions/{id}/messages`` and
  * ``GET /api/messages/{id}`` (item 1.9; ``src/bearings/web/routes/messages.py``).
  *
- * Mirrors :class:`bearings.web.models.messages.MessageOut` field for
- * field. The conversation pane fetches the full transcript on
- * session-select to hydrate the persisted history; live deltas
- * arrive over the per-session WebSocket plumbed in
- * ``src/bearings/web/streaming.py``.
+ * Mirrors :class:`bearings.web.models.messages.MessageOut` /
+ * :class:`bearings.web.models.messages.MessagePage` field for field.
+ * The conversation pane fetches the tail on session-select and walks
+ * backward via ``loadOlder()`` (item 1.3 cursor pagination).
  */
 import { messageEndpoint, sessionMessagesEndpoint } from "../config";
 import { getJson, type RequestOptions } from "./client";
@@ -16,6 +15,10 @@ import { getJson, type RequestOptions } from "./client";
  * :class:`bearings.web.models.messages.MessageOut`. Routing/usage
  * fields are nullable across all rows: only assistant rows persisted
  * by item 1.9's ``persist_assistant_turn`` carry real values.
+ *
+ * ``seq`` is the SQLite rowid — monotonically increasing per insertion
+ * order. Pass the lowest ``seq`` in the current view as ``before`` to
+ * walk further into the past via ``loadOlder()`` (item 1.3).
  */
 export interface MessageOut {
   id: string;
@@ -40,30 +43,54 @@ export interface MessageOut {
   // Legacy flat carriers per spec §5 "Backfill for legacy data".
   input_tokens: number | null;
   output_tokens: number | null;
+  // Cursor for backward pagination (item 1.3).
+  seq: number;
+}
+
+/**
+ * Paginated response envelope — mirrors
+ * :class:`bearings.web.models.messages.MessagePage`.
+ */
+export interface MessagePage {
+  items: MessageOut[];
+  has_more: boolean;
 }
 
 interface ListMessagesParams {
   /** Tail-window — return the last N messages. Omit for full transcript. */
   limit?: number;
+  /**
+   * Backward-pagination cursor (item 1.3). Pass the ``seq`` of the
+   * oldest message currently held to fetch the preceding page.
+   */
+  before?: number;
   signal?: AbortSignal;
 }
 
 /**
  * List messages for ``sessionId`` in chronological order (oldest
- * first). 404 is surfaced via :class:`ApiError`.
+ * first). Returns a :class:`MessagePage` with ``has_more`` flag.
+ * 404 is surfaced via :class:`ApiError`.
  */
 export async function listMessages(
   sessionId: string,
   params: ListMessagesParams = {},
-): Promise<MessageOut[]> {
+): Promise<MessagePage> {
   const options: RequestOptions = {};
+  const query: [string, string][] = [];
   if (params.limit !== undefined) {
-    options.query = [["limit", String(params.limit)]];
+    query.push(["limit", String(params.limit)]);
+  }
+  if (params.before !== undefined) {
+    query.push(["before", String(params.before)]);
+  }
+  if (query.length > 0) {
+    options.query = query;
   }
   if (params.signal !== undefined) {
     options.signal = params.signal;
   }
-  return await getJson<MessageOut[]>(sessionMessagesEndpoint(sessionId), options);
+  return await getJson<MessagePage>(sessionMessagesEndpoint(sessionId), options);
 }
 
 /**

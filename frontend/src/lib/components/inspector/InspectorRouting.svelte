@@ -105,11 +105,13 @@
     activeAbort = controller;
     loadState = "loading";
     fetchMessages(sessionId, { signal: controller.signal })
-      .then((rows) => {
+      .then((page) => {
         if (controller.signal.aborted) {
           return;
         }
-        messages = [...rows];
+        // Inspector fetches all messages (no limit) so has_more is always
+        // false; we only need the items array.
+        messages = [...page.items];
         loadState = "ready";
       })
       .catch((error: unknown) => {

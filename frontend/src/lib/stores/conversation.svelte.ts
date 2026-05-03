@@ -23,9 +23,9 @@
  * functions outside of the conversation cluster.
  */
 import type { AgentEvent } from "../api/events";
-import type { MessageOut } from "../api/messages";
+import { listMessages, type MessageOut, type MessagePage } from "../api/messages";
 import type { StreamFrame } from "../api/streaming";
-import { CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS, WS_FRAME_KIND_EVENT } from "../config";
+import { CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS, MESSAGE_PAGE_SIZE, WS_FRAME_KIND_EVENT } from "../config";
 
 /** A single tool-call drawer row inside an assistant turn. */
 export interface ToolCallView {
@@ -93,6 +93,8 @@ interface ConversationState {
   lastSeq: number;
   /** ``true`` while ``hydrate`` is in flight. */
   loading: boolean;
+  /** ``true`` while a ``loadOlder()`` fetch is in flight (item 1.3). */
+  loadingOlder: boolean;
   /** Last hydrate / WS error. */
   error: Error | null;
   /**
@@ -100,6 +102,17 @@ interface ConversationState {
    * (request_id match) or session reset. Drives the approval modals.
    */
   pendingApproval: PendingApproval | null;
+  /**
+   * ``true`` when the backend reported more messages exist before the
+   * current page (item 1.3). Drives the "Load older" affordance.
+   */
+  hasMore: boolean;
+  /**
+   * The lowest ``seq`` (SQLite rowid) among the currently loaded
+   * turns. Passed as ``before=`` on the next ``loadOlder()`` call.
+   * ``null`` when no turns are loaded or pagination is not in use.
+   */
+  oldestSeq: number | null;
 }
 
 const state: ConversationState = $state({
@@ -107,19 +120,41 @@ const state: ConversationState = $state({
   turns: [],
   lastSeq: 0,
   loading: false,
+  loadingOlder: false,
   error: null,
   pendingApproval: null,
+  hasMore: false,
+  oldestSeq: null,
 });
 
 export const conversationStore = state;
 
-/** Replace the transcript with a freshly-fetched history (oldest first). */
-export function hydrateTurns(sessionId: string, rows: readonly MessageOut[]): void {
+/**
+ * Replace the transcript with a freshly-fetched page (oldest first).
+ *
+ * ``page.has_more`` seeds the "Load older" affordance; ``oldestSeq``
+ * is derived from the minimum ``seq`` in the returned items so that
+ * the next ``loadOlder()`` call can pass the right ``before=`` cursor.
+ */
+export function hydrateTurns(sessionId: string, page: MessagePage): void {
   state.sessionId = sessionId;
-  state.turns = rows.map(rowToTurn);
+  state.turns = page.items.map(rowToTurn);
+  state.hasMore = page.has_more;
+  state.oldestSeq = page.items.length > 0 ? page.items[0].seq : null;
   // Hydrate doesn't reset ``lastSeq`` on its own — the caller resets
   // before subscribing so the cursor matches the just-loaded snapshot.
   state.error = null;
+}
+
+/**
+ * Prepend an older page in front of the current turns (item 1.3
+ * ``loadOlder()``). Called after a successful ``before=`` fetch;
+ * updates ``hasMore`` + ``oldestSeq`` for the next call.
+ */
+function prependTurns(page: MessagePage): void {
+  state.turns = [...page.items.map(rowToTurn), ...state.turns];
+  state.hasMore = page.has_more;
+  state.oldestSeq = page.items.length > 0 ? page.items[0].seq : null;
 }
 
 /** Reset the store; called when the active session changes. */
@@ -128,8 +163,41 @@ export function resetConversation(sessionId: string | null): void {
   state.turns = [];
   state.lastSeq = 0;
   state.loading = false;
+  state.loadingOlder = false;
   state.error = null;
   state.pendingApproval = null;
+  state.hasMore = false;
+  state.oldestSeq = null;
+}
+
+/**
+ * Load the page of messages that precedes the current view (item 1.3).
+ *
+ * No-ops when: a fetch is already in flight, there are no older
+ * messages (``hasMore`` is false), or no cursor is available.
+ * Prepends the result to the current turns array so the UI stays
+ * scroll-anchored at the "Load older" button position.
+ */
+export async function loadOlder(sessionId: string): Promise<void> {
+  if (state.loadingOlder || !state.hasMore || state.oldestSeq === null) {
+    return;
+  }
+  state.loadingOlder = true;
+  try {
+    const page = await listMessages(sessionId, {
+      limit: MESSAGE_PAGE_SIZE,
+      before: state.oldestSeq,
+    });
+    // Guard against a session switch arriving while the fetch was in flight.
+    if (state.sessionId !== sessionId) return;
+    prependTurns(page);
+  } catch {
+    // loadOlder errors are non-fatal — the user can retry by clicking
+    // the affordance again. Don't overwrite the main ``error`` field,
+    // which is reserved for the initial hydration failure.
+  } finally {
+    state.loadingOlder = false;
+  }
 }
 
 export function setLoading(loading: boolean): void {

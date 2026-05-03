@@ -778,6 +778,12 @@ MODEL_USAGE_KEY_CACHE_READ_TOKENS: Final[str] = "cache_read_input_tokens"
 MESSAGES_LIST_DEFAULT_LIMIT: Final[int | None] = None
 MESSAGES_LIST_MAX_LIMIT: Final[int] = 1000
 
+# Page size for cursor-based message pagination (item 1.3). The
+# session-open fetch uses this as the tail limit; each ``loadOlder()``
+# call walks back by the same window. 100 rows is well under the ~5 MB
+# payload threshold for a typical Bearings session.
+MESSAGE_PAGE_SIZE: Final[int] = 100
+
 # The TODO.md filename the walker recognises. Pinned constant so a
 # future per-project rename touches one symbol.
 BEARINGS_TODO_FILENAME: Final[str] = "TODO.md"
@@ -1258,6 +1264,7 @@ __all__ = [
     "MESSAGES_LIST_DEFAULT_LIMIT",
     "MESSAGES_LIST_MAX_LIMIT",
     "MESSAGE_ID_PREFIX",
+    "MESSAGE_PAGE_SIZE",
     "METRICS_CONTENT_TYPE",
     "METRIC_NAME_ACTIVE_DRIVERS",
     "METRIC_NAME_ACTIVE_RUNNERS",
