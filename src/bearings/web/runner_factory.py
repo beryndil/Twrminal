@@ -41,6 +41,7 @@ import time
 
 from bearings.agent.runner import (
     RunnerFactory,
+    RunnerStatus,
     SessionRunner,
     SessionSetup,
     SessionSetupFn,
@@ -50,6 +51,7 @@ from bearings.config.constants import (
     IDLE_REAP_POLL_INTERVAL_S,
     IDLE_REAP_THRESHOLD_S,
 )
+from bearings.web.routes.ws_sessions import SessionsBroadcaster
 
 
 class InProcessRunnerRegistry:
@@ -80,6 +82,7 @@ class InProcessRunnerRegistry:
         *,
         idle_reap_threshold_s: float = IDLE_REAP_THRESHOLD_S,
         idle_reap_poll_interval_s: float = IDLE_REAP_POLL_INTERVAL_S,
+        sessions_broadcaster: SessionsBroadcaster | None = None,
     ) -> None:
         self._runners: dict[str, SessionRunner] = {}
         self._supervisors: dict[str, asyncio.Task[None]] = {}
@@ -95,6 +98,10 @@ class InProcessRunnerRegistry:
         self._idle_reap_threshold_s = idle_reap_threshold_s
         self._idle_reap_poll_interval_s = idle_reap_poll_interval_s
         self._reaper_task: asyncio.Task[None] | None = None
+        # Optional broadcaster for item 2.6: runner state changes fan
+        # out to ``/ws/sessions`` subscribers so all open tabs see
+        # the "live" badge update without polling.
+        self._sessions_broadcaster = sessions_broadcaster
 
     async def __call__(self, session_id: str) -> SessionRunner:
         """Return the sticky runner for ``session_id``, creating one
@@ -129,9 +136,31 @@ class InProcessRunnerRegistry:
                 return runner
             runner = SessionRunner(session_id)
             self._runners[session_id] = runner
+            self._wire_status_hook(session_id, runner)
             if self._session_setup is not None:
                 await self._spawn_supervisor(session_id, runner)
         return runner
+
+    def _wire_status_hook(self, session_id: str, runner: SessionRunner) -> None:
+        """Attach the sessions-broadcaster status hook to ``runner``.
+
+        Called immediately after a new runner is materialised so every
+        ``set_status`` call in the SDK loop fans a ``runner_state``
+        frame to all ``/ws/sessions`` subscribers. No-ops when no
+        broadcaster is wired (test-only paths without a DB).
+
+        The closure captures ``session_id`` by value (default-arg
+        pattern) so the lambda always refers to this session's id even
+        though it is created inside a loop-like first-touch path.
+        """
+        if self._sessions_broadcaster is None:
+            return
+        broadcaster = self._sessions_broadcaster
+
+        def _hook(status: RunnerStatus, _sid: str = session_id) -> None:
+            broadcaster.publish_runner_state(_sid, status)
+
+        runner.wire_status_hook(_hook)
 
     async def _spawn_supervisor(
         self,
@@ -307,18 +336,23 @@ class InProcessRunnerRegistry:
 
 def build_in_process_factory(
     session_setup: SessionSetupFn | None = None,
+    *,
+    sessions_broadcaster: SessionsBroadcaster | None = None,
 ) -> RunnerFactory:
     """Construct a fresh :class:`InProcessRunnerRegistry` typed at
     the :class:`RunnerFactory` Protocol so call sites pass it through
     parameters typed against the Protocol.
 
-    Equivalent to ``InProcessRunnerRegistry(session_setup)`` but the
-    explicit return-type annotation forces mypy to verify the
-    structural typing — if the registry's ``__call__`` signature
-    drifts from the Protocol the project fails type-check at this
-    function rather than at the consumer.
+    Equivalent to ``InProcessRunnerRegistry(session_setup,
+    sessions_broadcaster=…)`` but the explicit return-type annotation
+    forces mypy to verify the structural typing — if the registry's
+    ``__call__`` signature drifts from the Protocol the project fails
+    type-check at this function rather than at the consumer.
     """
-    return InProcessRunnerRegistry(session_setup=session_setup)
+    return InProcessRunnerRegistry(
+        session_setup=session_setup,
+        sessions_broadcaster=sessions_broadcaster,
+    )
 
 
 __all__ = [

@@ -11,6 +11,9 @@
  * - a single in-flight ``AbortController`` so a rapid filter toggle
  *   (or a tab refocus while the previous request is pending) cancels
  *   the older fetch.
+ * - a ``/ws/sessions`` WebSocket subscription (item 2.6) that merges
+ *   upserts and deletes into the local session list so all open tabs
+ *   update without a full re-fetch.
  *
  * The store deliberately does NOT subscribe to the tags store —
  * components own the wiring. The pattern is:
@@ -27,6 +30,7 @@
  */
 import { listSessions, type SessionOut } from "../api/sessions";
 import { listSessionTags, type TagOut } from "../api/tags";
+import { connectSessionsBroadcast } from "../api/wsSessions";
 
 interface SessionsState {
   /** Last successful list response. */
@@ -49,6 +53,53 @@ const state: SessionsState = $state({
 export const sessionsStore = state;
 
 let refreshController: AbortController | null = null;
+
+// ---- sessions-broadcast subscription (item 2.6) ----------------------------
+
+/**
+ * Apply a ``session_upsert`` message to the local sessions list.
+ *
+ * If a row with the same ``id`` is already present, replace it
+ * in-place so the sidebar re-renders with the new data (title
+ * change, closed_at stamp, etc.). If it is new (created in another
+ * tab), prepend it so it appears at the top — matching the sort order
+ * the ``GET /api/sessions`` endpoint uses (newest first).
+ *
+ * Tag chips for the new row are NOT updated: the sidebar only shows
+ * chips after the full ``refreshSessions`` cycle, and a cross-tab
+ * upsert is typically a title/status change, not a tag change. A
+ * later ``refreshSessions()`` call restores full tag accuracy.
+ */
+function _applyUpsert(session: SessionOut): void {
+  const idx = state.sessions.findIndex((s) => s.id === session.id);
+  if (idx >= 0) {
+    state.sessions[idx] = session;
+  } else {
+    state.sessions = [session, ...state.sessions];
+  }
+}
+
+/**
+ * Apply a ``session_delete`` message by removing the matching row.
+ * No-ops when the id is not in the current list.
+ */
+function _applyDelete(sessionId: string): void {
+  state.sessions = state.sessions.filter((s) => s.id !== sessionId);
+}
+
+// Start the broadcast subscription immediately when the module loads.
+// ``connectSessionsBroadcast`` auto-reconnects so the subscription
+// survives server restarts.  The returned ``Unsubscribe`` is not
+// stored because this singleton lives for the page's lifetime.
+connectSessionsBroadcast((event) => {
+  if (event.type === "session_upsert") {
+    _applyUpsert(event.session);
+  } else if (event.type === "session_delete") {
+    _applyDelete(event.session_id);
+  }
+  // runner_state events are informational for now — a future item
+  // can surface a "live" badge on sidebar rows by reading this.
+});
 
 /**
  * Refresh the sidebar list. ``tagFilter`` is the OR-semantics filter

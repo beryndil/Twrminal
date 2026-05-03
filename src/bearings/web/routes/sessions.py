@@ -61,6 +61,7 @@ from bearings.web.models.sessions import (
     SessionOut,
     SessionTitleUpdate,
 )
+from bearings.web.routes.ws_sessions import SessionsBroadcaster
 from bearings.web.runner_factory import InProcessRunnerRegistry
 
 router = APIRouter()
@@ -107,6 +108,19 @@ def _rate_limiter(request: Request) -> RateLimiter:
             detail="prompt_rate_limiter on app.state is not a RateLimiter",
         )
     return limiter
+
+
+def _sessions_broadcaster(request: Request) -> SessionsBroadcaster | None:
+    """Pull the optional sessions broadcaster off ``app.state``.
+
+    Returns ``None`` when no broadcaster is wired (test-only paths
+    that construct a minimal app without a DB); callers guard on
+    ``if broadcaster is not None`` before publishing.
+    """
+    return cast(
+        SessionsBroadcaster | None,
+        getattr(request.app.state, "sessions_broadcaster", None),
+    )
 
 
 def _to_out(session: Session) -> SessionOut:
@@ -241,8 +255,12 @@ async def create_session(
         ) from exc
     if tag_ids:
         await tags_db.set_for_session(db, session_id=row.id, tag_ids=tag_ids)
+    out = _to_out(row)
+    broadcaster = _sessions_broadcaster(request)
+    if broadcaster is not None:
+        broadcaster.publish_upsert(out)
     response.headers["Location"] = f"/api/sessions/{row.id}"
-    return _to_out(row)
+    return out
 
 
 @router.get("/api/sessions/{session_id}", response_model=SessionOut)
@@ -277,7 +295,11 @@ async def patch_session(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no session matches {session_id!r}",
         )
-    return _to_out(row)
+    out = _to_out(row)
+    broadcaster = _sessions_broadcaster(request)
+    if broadcaster is not None:
+        broadcaster.publish_upsert(out)
+    return out
 
 
 @router.delete(
@@ -293,6 +315,9 @@ async def delete_session(session_id: str, request: Request) -> None:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no session matches {session_id!r}",
         )
+    broadcaster = _sessions_broadcaster(request)
+    if broadcaster is not None:
+        broadcaster.publish_delete(session_id)
 
 
 @router.post("/api/sessions/{session_id}/close", response_model=SessionOut)
@@ -305,7 +330,11 @@ async def close_session(session_id: str, request: Request) -> SessionOut:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no session matches {session_id!r}",
         )
-    return _to_out(row)
+    out = _to_out(row)
+    broadcaster = _sessions_broadcaster(request)
+    if broadcaster is not None:
+        broadcaster.publish_upsert(out)
+    return out
 
 
 @router.patch("/api/sessions/{session_id}/model", response_model=SessionOut)
@@ -339,7 +368,11 @@ async def patch_session_model(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no session matches {session_id!r}",
         )
-    return _to_out(row)
+    out = _to_out(row)
+    broadcaster = _sessions_broadcaster(request)
+    if broadcaster is not None:
+        broadcaster.publish_upsert(out)
+    return out
 
 
 @router.post("/api/sessions/{session_id}/reopen", response_model=SessionOut)
@@ -352,7 +385,11 @@ async def reopen_session(session_id: str, request: Request) -> SessionOut:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no session matches {session_id!r}",
         )
-    return _to_out(row)
+    out = _to_out(row)
+    broadcaster = _sessions_broadcaster(request)
+    if broadcaster is not None:
+        broadcaster.publish_upsert(out)
+    return out
 
 
 # ---- regenerate ------------------------------------------------------------

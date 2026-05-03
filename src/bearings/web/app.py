@@ -61,6 +61,7 @@ from bearings.config.constants import (
     ROUTE_TAG_UPLOADS,
     ROUTE_TAG_USAGE,
     ROUTE_TAG_VAULT,
+    ROUTE_TAG_WS_SESSIONS,
     STREAM_HEARTBEAT_INTERVAL_S,
 )
 from bearings.config.settings import FsCfg, ShellCfg, UploadsCfg, VaultCfg
@@ -84,6 +85,8 @@ from bearings.web.routes.tags import router as tags_router
 from bearings.web.routes.uploads import router as uploads_router
 from bearings.web.routes.usage import router as usage_router
 from bearings.web.routes.vault import router as vault_router
+from bearings.web.routes.ws_sessions import SessionsBroadcaster
+from bearings.web.routes.ws_sessions import router as ws_sessions_router
 from bearings.web.runner_factory import (
     InProcessRunnerRegistry,
     build_in_process_factory,
@@ -147,21 +150,31 @@ def create_app(
     # ``run_session_loop`` as the worker. Per Slice A1.3 of
     # ``~/.claude/plans/wiring-agent-loop.md`` this is the seam that
     # makes POST /api/sessions/<id>/prompt actually run a turn.
+    # Sessions-broadcast hub (item 2.6). Created unconditionally so the
+    # ``/ws/sessions`` endpoint is always available; route handlers call
+    # ``broadcaster.publish_*`` after every session mutation to fan
+    # updates to all open sidebar tabs.
+    sessions_broadcaster = SessionsBroadcaster()
+
     factory: RunnerFactory
     if runner_factory is not None:
         factory = runner_factory
     elif db_connection is not None:
         factory = build_in_process_factory(
             session_setup=build_session_setup(db_connection),
+            sessions_broadcaster=sessions_broadcaster,
         )
     else:
-        factory = build_in_process_factory()
+        factory = build_in_process_factory(
+            sessions_broadcaster=sessions_broadcaster,
+        )
     app = FastAPI(
         title=OPENAPI_TITLE,
         description=OPENAPI_DESCRIPTION,
         version=__version__,
     )
     app.state.runner_factory = factory
+    app.state.sessions_broadcaster = sessions_broadcaster
     app.state.heartbeat_interval_s = heartbeat_interval_s
     app.state.db_connection = db_connection
     app.state.vault_cfg = vault_cfg if vault_cfg is not None else VaultCfg()
@@ -234,6 +247,8 @@ def create_app(
     app.include_router(commands_router, tags=[ROUTE_TAG_COMMANDS])
     # Item 2.4 — history search.
     app.include_router(history_router, tags=[ROUTE_TAG_HISTORY])
+    # Item 2.6 — sessions-broadcast WS channel.
+    app.include_router(ws_sessions_router, tags=[ROUTE_TAG_WS_SESSIONS])
     # Item 1.10 — misc-API surfaces.
     app.include_router(uploads_router, tags=[ROUTE_TAG_UPLOADS])
     app.include_router(fs_router, tags=[ROUTE_TAG_FS])

@@ -261,6 +261,13 @@ export const WS_SINCE_SEQ_QUERY_PARAM = "since_seq";
 export const WS_FRAME_KIND_EVENT = "event";
 export const WS_FRAME_KIND_HEARTBEAT = "heartbeat";
 
+/**
+ * Sessions-broadcast WebSocket path (item 2.6).
+ * Mirrors ``/ws/sessions`` in
+ * :func:`bearings.web.routes.ws_sessions.sessions_broadcast_ws`.
+ */
+export const WS_SESSIONS_PATH = "/ws/sessions";
+
 // ---- Session-kind alphabet (mirrors backend ``KNOWN_SESSION_KINDS``) ------
 
 /** Chat-kind session — composer + transcript per ``docs/behavior/chat.md``. */

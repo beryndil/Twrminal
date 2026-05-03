@@ -9,6 +9,39 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Sessions-broadcast WS channel** (wiring-v1-daily-driver item 2.6).
+  - `src/bearings/web/routes/ws_sessions.py` — new `SessionsBroadcaster`
+    class (fan-out hub) + `GET /ws/sessions` WebSocket endpoint. Three
+    message types: `session_upsert` (full `SessionOut` JSON), `session_delete`
+    (session_id only), `runner_state` (is_running + is_awaiting_user flags).
+    Heartbeat sent on idle to keep connections alive. Auto-reconnect with
+    capped exponential backoff handled on the frontend side.
+  - `src/bearings/config/constants.py` — `ROUTE_TAG_WS_SESSIONS` constant.
+  - `src/bearings/agent/runner.py` — `wire_status_hook()` method +
+    `_status_hook` callback field; `set_status()` now calls the hook
+    synchronously after updating so the broadcast is immediate.
+  - `src/bearings/web/runner_factory.py` — `InProcessRunnerRegistry`
+    and `build_in_process_factory` accept optional `sessions_broadcaster`;
+    `_wire_status_hook()` attaches a closure to each new runner on first
+    touch so runner-state changes fan out to all `/ws/sessions` subscribers.
+  - `src/bearings/web/routes/sessions.py` — `create_session`, `patch_session`,
+    `patch_session_model`, `close_session`, `reopen_session` each call
+    `broadcaster.publish_upsert(out)` after the mutation; `delete_session`
+    calls `broadcaster.publish_delete(session_id)`.
+  - `src/bearings/web/app.py` — creates `SessionsBroadcaster`, stores it on
+    `app.state.sessions_broadcaster`, threads it through
+    `build_in_process_factory`, mounts `ws_sessions_router`.
+  - `frontend/src/lib/config.ts` — `WS_SESSIONS_PATH` constant.
+  - `frontend/src/lib/api/wsSessions.ts` — `connectSessionsBroadcast()`
+    opens `/ws/sessions`, parses frames into typed
+    `SessionsBroadcastEvent` union, auto-reconnects with exponential
+    backoff (500 ms initial, ×2, cap 30 s).
+  - `frontend/src/lib/stores/sessions.svelte.ts` — calls
+    `connectSessionsBroadcast` at module load; `session_upsert` merges
+    into the session list (replace in-place or prepend if new);
+    `session_delete` removes the matching row. All open tabs update
+    without reload or polling.
+
 - **Composer essentials** (wiring-v1-daily-driver item 2.5).
   - `frontend/src/lib/composer/draftStore.svelte.ts` — per-session draft
     persistence to `localStorage` under `bearings-v1:draft:{sessionId}`.

@@ -205,6 +205,13 @@ class SessionRunner:
         # :meth:`AgentSession.interrupt` when it fires, then clears it
         # so the next turn starts clean.
         self._stop_event: asyncio.Event = asyncio.Event()
+        # Optional synchronous callback invoked on every
+        # :meth:`set_status` call. Wired by the runner factory (item
+        # 2.6) to fan runner-state changes to ``/ws/sessions``
+        # subscribers. Kept as a plain Callable (not async) so
+        # ``set_status`` stays synchronous — the factory wraps any
+        # async side-effect in ``asyncio.get_event_loop().call_soon``.
+        self._status_hook: Callable[[RunnerStatus], None] | None = None
 
     # -- properties --------------------------------------------------
 
@@ -334,11 +341,30 @@ class SessionRunner:
 
     # -- mutation ----------------------------------------------------
 
+    def wire_status_hook(self, hook: Callable[[RunnerStatus], None]) -> None:
+        """Register a synchronous callback invoked on every :meth:`set_status`
+        call. Replaces any previously registered hook — only one hook
+        is supported (the runner factory is the sole caller).
+
+        The hook is called with the **new** status value after
+        ``_status`` has been updated, so the hook observes a consistent
+        snapshot. Injected by
+        :class:`bearings.web.runner_factory.InProcessRunnerRegistry`
+        to fan state changes to :class:`SessionsBroadcaster`.
+        """
+        self._status_hook = hook
+
     def set_status(self, status: RunnerStatus) -> None:
-        """Replace the status snapshot. Future subscribers see the new
-        snapshot; existing subscribers are not notified — status
-        changes ride alongside the next emitted event in v1."""
+        """Replace the status snapshot and notify the optional hook.
+
+        Future subscribers see the new snapshot. The optional
+        ``_status_hook`` (wired by the runner factory for item 2.6)
+        is called synchronously so the sessions-broadcast channel
+        reflects the change without an extra event-loop tick.
+        """
         self._status = status
+        if self._status_hook is not None:
+            self._status_hook(status)
 
     def get_status_event(self) -> RunnerStatusEvent:
         """Synthesise a :class:`RunnerStatusEvent` from current status.
