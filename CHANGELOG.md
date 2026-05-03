@@ -9,6 +9,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Slash-command palette** (wiring-v1-daily-driver item 2.3).
+  - `src/bearings/web/routes/commands.py` — `GET /api/commands` scans
+    `~/.claude/commands/**/*.md` (user commands), `~/.claude/skills/*/SKILL.md`
+    (skills), and `<working_dir>/.claude/commands/**/*.md` (project commands).
+    Parses YAML frontmatter for `name` + `description`; falls back to filename
+    stem / first body line. Returns `[{name, description, source}]`.
+  - `src/bearings/web/models/commands.py` — `CommandOut` Pydantic model.
+  - `src/bearings/config/constants.py` — `ROUTE_TAG_COMMANDS` constant.
+  - `src/bearings/web/app.py` — mounts commands router.
+  - `frontend/src/lib/config.ts` — `API_COMMANDS_ENDPOINT` + `COMMAND_MENU_STRINGS`.
+  - `frontend/src/lib/api/commands.ts` — `listCommands()` client; gracefully
+    returns empty list on network/server error.
+  - `frontend/src/lib/components/composer/CommandMenu.svelte` — typeahead
+    listbox; shows all commands on bare `/`; filters by name + description
+    substring; ArrowUp/Down navigate; Tab/Enter confirm; Escape dismisses;
+    source badge (User / Skill / Project); scroll-into-view on active change.
+  - `frontend/src/lib/components/composer/Composer.svelte` — opens
+    `CommandMenu` when draft starts with `/`; closes once a space follows
+    the command token (selection done); keyboard events delegated to
+    `CommandMenu.handleKey` before normal submit logic.
+
 - **Context/token meter in header** (wiring-v1-daily-driver item 2.2).
   - `src/bearings/agent/events.py` — re-added `model: str | None`,
     `is_auto_compact_enabled: bool | None`, and `auto_compact_threshold: int | None`
