@@ -139,6 +139,19 @@ class SessionModelUpdate(BaseModel):
     model: str = Field(min_length=1)
 
 
+class SessionPermissionModeUpdate(BaseModel):
+    """Request shape for ``PATCH /api/sessions/{id}/permission_mode`` (item 3.3).
+
+    ``None`` clears the column — the runner falls back to the profile default
+    on the next boot. Non-``None`` values are validated by the DB layer against
+    :data:`KNOWN_SDK_PERMISSION_MODES`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    permission_mode: str | None = None
+
+
 class SessionDescriptionUpdate(BaseModel):  # pragma: no cover — reserved for v1 PATCH expansion
     """Reserved request shape for the description (plug) PATCH path.
 
@@ -159,5 +172,6 @@ __all__ = [
     "SessionDescriptionUpdate",
     "SessionModelUpdate",
     "SessionOut",
+    "SessionPermissionModeUpdate",
     "SessionTitleUpdate",
 ]

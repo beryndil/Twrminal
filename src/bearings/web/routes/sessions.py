@@ -59,6 +59,7 @@ from bearings.web.models.sessions import (
     SessionCreate,
     SessionModelUpdate,
     SessionOut,
+    SessionPermissionModeUpdate,
     SessionTitleUpdate,
 )
 from bearings.web.routes.ws_sessions import SessionsBroadcaster
@@ -359,6 +360,42 @@ async def patch_session_model(
     db = _db(request)
     try:
         row = await sessions_db.update_model(db, session_id, model=payload.model)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no session matches {session_id!r}",
+        )
+    out = _to_out(row)
+    broadcaster = _sessions_broadcaster(request)
+    if broadcaster is not None:
+        broadcaster.publish_upsert(out)
+    return out
+
+
+@router.patch("/api/sessions/{session_id}/permission_mode", response_model=SessionOut)
+async def patch_session_permission_mode(
+    session_id: str,
+    payload: SessionPermissionModeUpdate,
+    request: Request,
+) -> SessionOut:
+    """Swap the session's permission mode mid-session (item 3.3).
+
+    DB-only today: persists the new mode on the session row so the
+    runner picks it up on the next turn. ``None`` clears the column,
+    letting the runner fall back to the profile default.
+
+    422 on unknown mode strings (validated against
+    :data:`KNOWN_SDK_PERMISSION_MODES`); 404 when the session is absent.
+    """
+    db = _db(request)
+    try:
+        row = await sessions_db.update_permission_mode(
+            db, session_id, permission_mode=payload.permission_mode
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)

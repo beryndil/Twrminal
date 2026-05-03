@@ -379,6 +379,76 @@ async def test_patch_model_404(
     assert response.status_code == 404
 
 
+async def test_patch_permission_mode_swap(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Happy path — PATCH /permission_mode updates the row's permission_mode column."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    with TestClient(app) as client:
+        response = client.patch(
+            f"/api/sessions/{sid}/permission_mode",
+            json={"permission_mode": "bypassPermissions"},
+        )
+    assert response.status_code == 200
+    assert response.json()["permission_mode"] == "bypassPermissions"
+    refreshed = await sessions_db.get(conn, sid)
+    assert refreshed is not None
+    assert refreshed.permission_mode == "bypassPermissions"
+
+
+async def test_patch_permission_mode_clear(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """``None`` payload clears permission_mode (runner uses profile default)."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    with TestClient(app) as client:
+        # First set a mode ...
+        client.patch(
+            f"/api/sessions/{sid}/permission_mode",
+            json={"permission_mode": "acceptEdits"},
+        )
+        # ... then clear it.
+        response = client.patch(
+            f"/api/sessions/{sid}/permission_mode",
+            json={"permission_mode": None},
+        )
+    assert response.status_code == 200
+    assert response.json()["permission_mode"] is None
+    refreshed = await sessions_db.get(conn, sid)
+    assert refreshed is not None
+    assert refreshed.permission_mode is None
+
+
+async def test_patch_permission_mode_unknown_422(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    with TestClient(app) as client:
+        response = client.patch(
+            f"/api/sessions/{sid}/permission_mode",
+            json={"permission_mode": "bogus-mode"},
+        )
+    assert response.status_code == 422
+    refreshed = await sessions_db.get(conn, sid)
+    assert refreshed is not None
+    assert refreshed.permission_mode is None
+
+
+async def test_patch_permission_mode_404(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    app, _ = app_and_db
+    with TestClient(app) as client:
+        response = client.patch(
+            "/api/sessions/ses_missing/permission_mode",
+            json={"permission_mode": "default"},
+        )
+    assert response.status_code == 404
+
+
 async def test_regenerate_no_messages_404(
     app_and_db: tuple[FastAPI, aiosqlite.Connection],
 ) -> None:

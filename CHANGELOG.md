@@ -9,6 +9,26 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Permission-mode toggle** (wiring-v1-daily-driver item 3.3).
+  - `src/bearings/db/sessions.py` — `update_permission_mode` DB helper.
+    Validates non-`None` values against `KNOWN_SDK_PERMISSION_MODES`; `None`
+    clears the column so the runner uses the profile default on next boot.
+  - `src/bearings/web/models/sessions.py` — `SessionPermissionModeUpdate`
+    Pydantic shape (`permission_mode: str | None`).
+  - `src/bearings/web/routes/sessions.py` — `PATCH /api/sessions/{id}/permission_mode`
+    endpoint. 422 on unknown mode; 404 on missing session; broadcasts upsert
+    via sessions WS channel.
+  - `frontend/src/lib/api/sessions.ts` — `patchSessionPermissionMode` helper.
+  - `frontend/src/lib/config.ts` — `PERMISSION_MODE_SELECTOR_STRINGS`.
+  - `frontend/src/lib/components/conversation/PermissionModeSelector.svelte` —
+    header dropdown (Default / Accept edits / Bypass permissions / Plan only).
+    Reads current mode from `sessionsStore`; PATCHes on change; disables
+    during in-flight request; shows inline error on failure.
+  - `frontend/src/lib/components/conversation/Conversation.svelte` — mounts
+    `PermissionModeSelector` in a header bar at top of conversation pane.
+  - `tests/test_sessions_api.py` — four new tests: happy-path swap,
+    clear-to-null, unknown-mode 422, missing-session 404.
+
 - **Preferences API + settings Defaults section** (wiring-v1-daily-driver item 3.2).
   - `src/bearings/db/schema.sql` — `preferences` singleton table
     (`id=1 CHECK`, `theme TEXT NOT NULL DEFAULT 'default'`, `default_model`,

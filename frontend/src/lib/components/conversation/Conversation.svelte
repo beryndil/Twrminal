@@ -38,6 +38,7 @@
   import AskUserQuestionModal from "./AskUserQuestionModal.svelte";
   import LiveTodos from "./LiveTodos.svelte";
   import MessageTurn from "./MessageTurn.svelte";
+  import PermissionModeSelector from "./PermissionModeSelector.svelte";
   import StopUndoInline from "./StopUndoInline.svelte";
 
   interface Props {
@@ -136,6 +137,10 @@
 </script>
 
 <section class="conversation flex h-full flex-col" data-testid="conversation">
+  <!-- Permission-mode selector — header bar; hidden when no session active -->
+  <div class="flex items-center justify-end border-b border-border px-3 py-1">
+    <PermissionModeSelector {sessionId} />
+  </div>
   <!-- Live todos strip — sticky above the scroll body; hidden when empty -->
   <LiveTodos />
   <div

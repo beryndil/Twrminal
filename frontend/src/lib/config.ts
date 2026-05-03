@@ -1555,6 +1555,13 @@ export const PREFERENCES_STRINGS = {
   workingDirPlaceholder: "/path/to/project",
 } as const;
 
+/** UI strings for the PermissionModeSelector header dropdown (item 3.3). */
+export const PERMISSION_MODE_SELECTOR_STRINGS = {
+  ariaLabel: "Permission mode",
+  labelPrefix: "Mode:",
+  saveError: "Couldn't update permission mode.",
+} as const;
+
 // ---- Keyboard shortcuts (item 2.9; mirrors ``docs/behavior/keyboard-shortcuts.md``) ----
 
 /**

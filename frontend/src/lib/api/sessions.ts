@@ -15,7 +15,7 @@
  * the wire shape.
  */
 import { API_SESSIONS_ENDPOINT, sessionStopEndpoint } from "../config";
-import { ApiError, getJson, postJson, type RequestOptions } from "./client";
+import { ApiError, getJson, patchJson, postJson, type RequestOptions } from "./client";
 
 /**
  * Wire shape for one session row — one-to-one with
@@ -191,4 +191,23 @@ export async function listSessions(params: ListSessionsParams = {}): Promise<Ses
     options.signal = params.signal;
   }
   return await getJson<SessionOut[]>(API_SESSIONS_ENDPOINT, options);
+}
+
+/**
+ * Swap the session's permission mode via
+ * ``PATCH /api/sessions/{id}/permission_mode`` (item 3.3).
+ *
+ * ``null`` clears the column — the runner uses the profile default on the
+ * next boot. The server returns the full updated :class:`SessionOut` row.
+ *
+ * @throws :class:`ApiError` on 404 (session not found), 422 (unknown mode),
+ *   or 5xx.
+ */
+export async function patchSessionPermissionMode(
+  sessionId: string,
+  permissionMode: string | null,
+  options: RequestOptions = {},
+): Promise<SessionOut> {
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}/permission_mode`;
+  return await patchJson<SessionOut>(path, { permission_mode: permissionMode }, options);
 }

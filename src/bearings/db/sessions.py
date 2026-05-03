@@ -396,6 +396,37 @@ async def update_model(
     return await get(connection, session_id)
 
 
+async def update_permission_mode(
+    connection: aiosqlite.Connection,
+    session_id: str,
+    *,
+    permission_mode: str | None,
+) -> Session | None:
+    """Replace ``permission_mode``; returns the new row or ``None`` if absent.
+
+    Backs ``PATCH /api/sessions/{id}/permission_mode`` (item 3.3).
+    ``None`` clears the column — the runner falls back to the profile
+    default on the next boot. Any non-``None`` value is validated against
+    :data:`KNOWN_SDK_PERMISSION_MODES`; an unknown value raises
+    ``ValueError`` so the route layer surfaces a 422.
+    """
+    if permission_mode is not None and permission_mode not in KNOWN_SDK_PERMISSION_MODES:
+        raise ValueError(
+            f"update_permission_mode: permission_mode {permission_mode!r} not in "
+            f"{sorted(KNOWN_SDK_PERMISSION_MODES)}"
+        )
+    existing = await get(connection, session_id)
+    if existing is None:
+        return None
+    timestamp = now_iso()
+    await connection.execute(
+        "UPDATE sessions SET permission_mode = ?, updated_at = ? WHERE id = ?",
+        (permission_mode, timestamp, session_id),
+    )
+    await connection.commit()
+    return await get(connection, session_id)
+
+
 async def close(
     connection: aiosqlite.Connection,
     session_id: str,
