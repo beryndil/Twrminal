@@ -1,0 +1,1 @@
+import{U as i,A as r,a as e}from"./BvEq9j-8.js";import{g as n}from"./BMHhGPaV.js";async function u(a={}){const s={};return a.signal!==void 0&&(s.signal=a.signal),await n(r,s)}async function O(a={}){const s=a.days??i,t={query:[["days",String(s)]]};return a.signal!==void 0&&(t.signal=a.signal),await n(e,t)}export{u as a,O as g};

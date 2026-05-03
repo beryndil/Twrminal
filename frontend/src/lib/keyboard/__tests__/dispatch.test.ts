@@ -6,8 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   KEYBINDING_ACTION_NEW_CHAT_DEFAULTS,
+  KEYBINDING_ACTION_SIDEBAR_DOWN_FORCE,
+  KEYBINDING_ACTION_SIDEBAR_JUMP_PREFIX,
   KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET,
-  KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE,
   KEYBINDING_SECTION_CREATE,
 } from "../../config";
 import {
@@ -97,15 +98,10 @@ describe("lookupBindingForEvent", () => {
     expect(spec?.id).toBe(KEYBINDING_ACTION_NEW_CHAT_DEFAULTS);
   });
 
-  it("matches Ctrl+Shift+P regardless of layout (event.code wins)", () => {
-    const event = new KeyboardEvent("keydown", {
-      code: "KeyP",
-      key: "P",
-      ctrlKey: true,
-      shiftKey: true,
-    });
+  it("matches Alt+1 slot-jump via event.code", () => {
+    const event = new KeyboardEvent("keydown", { code: "Digit1", key: "1", altKey: true });
     const spec = lookupBindingForEvent(event);
-    expect(spec?.id).toBe(KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE);
+    expect(spec?.id).toBe(`${KEYBINDING_ACTION_SIDEBAR_JUMP_PREFIX}1`);
   });
 
   it("matches the cheat-sheet chord when ? is produced with Shift held", () => {
@@ -181,15 +177,10 @@ describe("dispatchKeyEvent", () => {
 
   it("does invoke a global handler with composer focused", () => {
     const handler = vi.fn();
-    bindHandler(KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE, handler);
+    bindHandler(KEYBINDING_ACTION_SIDEBAR_DOWN_FORCE, handler);
     setComposerFocused(true);
-    const event = new KeyboardEvent("keydown", {
-      code: "KeyP",
-      key: "P",
-      ctrlKey: true,
-      shiftKey: true,
-    });
-    expect(dispatchKeyEvent(event)).toBe(KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE);
+    const event = new KeyboardEvent("keydown", { key: "]", altKey: true });
+    expect(dispatchKeyEvent(event)).toBe(KEYBINDING_ACTION_SIDEBAR_DOWN_FORCE);
     expect(handler).toHaveBeenCalledOnce();
   });
 

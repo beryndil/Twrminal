@@ -7,6 +7,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **Keyboard bindings hygiene** (wiring-v1-daily-driver item 4.1): strip
+  unbound chords from the cheat sheet; wire simple navigation/create chords.
+  - **Stripped** (surface absent): `T` (template picker), `Ctrl+Shift+P`
+    (command palette), `Ctrl+Shift+O` (pending-ops card) — removed from
+    `bindings.ts` and their constants/labels from `config.ts`.
+  - **Wired** in `+layout.svelte` via `bindHandler` on `onMount`:
+    `C` → `goto("/sessions/new")`, `Shift+C` →
+    `goto("/sessions/new?bare=1")`, `J`/`K`/`Alt+]`/`Alt+[` → sidebar
+    selection step through `sessionsStore.sessions`, `Alt+1`–`Alt+9` →
+    jump to sidebar slot _n_.
+  - `frontend/src/routes/sessions/new/+page.svelte` — skips
+    `hydrateDefaults()` (last-session pre-fill) when `?bare=1` is present,
+    giving `Shift+C` a clean form.
+  - Tests in `dispatch.test.ts` + `CheatSheet.test.ts` updated to match the
+    trimmed binding table.
+
 ### Added
 
 - **Default-from-last-session auto-fill** (wiring-v1-daily-driver item 3.4).

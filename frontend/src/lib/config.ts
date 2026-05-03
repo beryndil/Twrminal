@@ -1572,7 +1572,6 @@ export const PERMISSION_MODE_SELECTOR_STRINGS = {
  */
 export const KEYBINDING_ACTION_NEW_CHAT_DEFAULTS = "create.new_chat_with_defaults";
 export const KEYBINDING_ACTION_NEW_CHAT_BARE = "create.new_chat_bare";
-export const KEYBINDING_ACTION_TEMPLATE_PICKER = "create.template_picker";
 export const KEYBINDING_ACTION_SIDEBAR_DOWN = "navigate.sidebar_down";
 export const KEYBINDING_ACTION_SIDEBAR_UP = "navigate.sidebar_up";
 export const KEYBINDING_ACTION_SIDEBAR_DOWN_FORCE = "navigate.sidebar_down_force";
@@ -1580,8 +1579,6 @@ export const KEYBINDING_ACTION_SIDEBAR_UP_FORCE = "navigate.sidebar_up_force";
 export const KEYBINDING_ACTION_SIDEBAR_JUMP_PREFIX = "navigate.sidebar_jump_";
 export const KEYBINDING_ACTION_ESC_CASCADE = "focus.esc_cascade";
 export const KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET = "help.toggle_cheat_sheet";
-export const KEYBINDING_ACTION_TOGGLE_PENDING_OPS = "help.toggle_pending_ops";
-export const KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE = "palette.toggle";
 export const KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH = "palette.focus_sidebar_search";
 
 /**
@@ -1628,15 +1625,12 @@ export const KEYBOARD_SHORTCUT_STRINGS = {
   actionLabels: {
     [KEYBINDING_ACTION_NEW_CHAT_DEFAULTS]: "Open the new-chat dialog",
     [KEYBINDING_ACTION_NEW_CHAT_BARE]: "Open the new-chat dialog (no defaults)",
-    [KEYBINDING_ACTION_TEMPLATE_PICKER]: "Open the template picker",
     [KEYBINDING_ACTION_SIDEBAR_DOWN]: "Move sidebar selection down",
     [KEYBINDING_ACTION_SIDEBAR_UP]: "Move sidebar selection up",
     [KEYBINDING_ACTION_SIDEBAR_DOWN_FORCE]: "Move sidebar selection down (works in inputs)",
     [KEYBINDING_ACTION_SIDEBAR_UP_FORCE]: "Move sidebar selection up (works in inputs)",
     [KEYBINDING_ACTION_ESC_CASCADE]: "Close overlay / blur input",
     [KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET]: "Toggle this cheat sheet",
-    [KEYBINDING_ACTION_TOGGLE_PENDING_OPS]: "Toggle pending-operations card",
-    [KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE]: "Toggle the command palette",
     [KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH]: "Focus the sidebar search field",
   } as const,
   jumpToSlotLabelTemplate: "Jump to sidebar slot {n}",

@@ -25,10 +25,7 @@ import {
   KEYBINDING_ACTION_SIDEBAR_JUMP_PREFIX,
   KEYBINDING_ACTION_SIDEBAR_UP,
   KEYBINDING_ACTION_SIDEBAR_UP_FORCE,
-  KEYBINDING_ACTION_TEMPLATE_PICKER,
   KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET,
-  KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE,
-  KEYBINDING_ACTION_TOGGLE_PENDING_OPS,
   KEYBINDING_SECTION_COMMAND_PALETTE,
   KEYBINDING_SECTION_CREATE,
   KEYBINDING_SECTION_FOCUS,
@@ -107,12 +104,6 @@ export const KEYBINDINGS: readonly KeybindingSpec[] = [
     section: KEYBINDING_SECTION_CREATE,
     global: false,
   },
-  {
-    id: KEYBINDING_ACTION_TEMPLATE_PICKER,
-    chord: { code: "KeyT", display: ["T"] },
-    section: KEYBINDING_SECTION_CREATE,
-    global: false,
-  },
   // ---- Navigate (sidebar) ------------------------------------------
   {
     id: KEYBINDING_ACTION_SIDEBAR_DOWN,
@@ -157,19 +148,7 @@ export const KEYBINDINGS: readonly KeybindingSpec[] = [
     section: KEYBINDING_SECTION_HELP,
     global: false,
   },
-  {
-    id: KEYBINDING_ACTION_TOGGLE_PENDING_OPS,
-    chord: { code: "KeyO", ctrl: true, shift: true, display: ["Ctrl", "Shift", "O"] },
-    section: KEYBINDING_SECTION_HELP,
-    global: true,
-  },
   // ---- Command palette ---------------------------------------------
-  {
-    id: KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE,
-    chord: { code: "KeyP", ctrl: true, shift: true, display: ["Ctrl", "Shift", "P"] },
-    section: KEYBINDING_SECTION_COMMAND_PALETTE,
-    global: true,
-  },
   {
     id: KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH,
     chord: { code: "KeyK", ctrl: true, display: ["Ctrl", "K"] },

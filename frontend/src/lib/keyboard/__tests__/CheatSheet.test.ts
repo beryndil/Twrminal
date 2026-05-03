@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   KEYBINDING_ACTION_NEW_CHAT_DEFAULTS,
   KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET,
-  KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE,
   KEYBOARD_SHORTCUT_STRINGS,
 } from "../../config";
 import { _resetForTests as resetEsc } from "../escCascade";
@@ -50,7 +49,6 @@ describe("CheatSheet", () => {
     const ids = rows.map((r) => r.getAttribute("data-action"));
     expect(ids).toContain(KEYBINDING_ACTION_NEW_CHAT_DEFAULTS);
     expect(ids).toContain(KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET);
-    expect(ids).toContain(KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE);
   });
 
   it("close button fires onClose", async () => {

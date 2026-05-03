@@ -25,11 +25,23 @@
    */
   import "../app.css";
   import type { Snippet } from "svelte";
+  import { onMount } from "svelte";
 
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
 
-  import { SESSION_KIND_CHECKLIST, SIDEBAR_STRINGS } from "$lib/config";
+  import {
+    KEYBINDING_ACTION_NEW_CHAT_BARE,
+    KEYBINDING_ACTION_NEW_CHAT_DEFAULTS,
+    KEYBINDING_ACTION_SIDEBAR_DOWN,
+    KEYBINDING_ACTION_SIDEBAR_DOWN_FORCE,
+    KEYBINDING_ACTION_SIDEBAR_JUMP_PREFIX,
+    KEYBINDING_ACTION_SIDEBAR_UP,
+    KEYBINDING_ACTION_SIDEBAR_UP_FORCE,
+    SESSION_KIND_CHECKLIST,
+    SIDEBAR_STRINGS,
+  } from "$lib/config";
+  import { bindHandler } from "$lib/keyboard/store.svelte";
   import SessionList from "$lib/components/sidebar/SessionList.svelte";
   import Conversation from "$lib/components/conversation/Conversation.svelte";
   import Composer from "$lib/components/composer/Composer.svelte";
@@ -105,6 +117,59 @@
 
   /** Current URL path as a plain string for nav-active comparisons. */
   const currentPath: string = $derived(page.url.pathname as string);
+
+  // ---- Keyboard handler wiring (item 4.1) ---------------------------
+
+  function sidebarMoveDown(): void {
+    const sessions = sessionsStore.sessions;
+    if (sessions.length === 0) return;
+    const current = inspectorStore.activeSessionId;
+    if (current === null) {
+      void goto(`/sessions/${encodeURIComponent(sessions[0].id)}`);
+      return;
+    }
+    const idx = sessions.findIndex((s) => s.id === current);
+    if (idx < 0 || idx >= sessions.length - 1) return;
+    void goto(`/sessions/${encodeURIComponent(sessions[idx + 1].id)}`);
+  }
+
+  function sidebarMoveUp(): void {
+    const sessions = sessionsStore.sessions;
+    if (sessions.length === 0) return;
+    const current = inspectorStore.activeSessionId;
+    if (current === null) {
+      void goto(`/sessions/${encodeURIComponent(sessions[sessions.length - 1].id)}`);
+      return;
+    }
+    const idx = sessions.findIndex((s) => s.id === current);
+    if (idx <= 0) return;
+    void goto(`/sessions/${encodeURIComponent(sessions[idx - 1].id)}`);
+  }
+
+  onMount(() => {
+    const releases: Array<() => void> = [
+      bindHandler(KEYBINDING_ACTION_NEW_CHAT_DEFAULTS, () => void goto("/sessions/new")),
+      bindHandler(KEYBINDING_ACTION_NEW_CHAT_BARE, () => void goto("/sessions/new?bare=1")),
+      bindHandler(KEYBINDING_ACTION_SIDEBAR_DOWN, sidebarMoveDown),
+      bindHandler(KEYBINDING_ACTION_SIDEBAR_UP, sidebarMoveUp),
+      bindHandler(KEYBINDING_ACTION_SIDEBAR_DOWN_FORCE, sidebarMoveDown),
+      bindHandler(KEYBINDING_ACTION_SIDEBAR_UP_FORCE, sidebarMoveUp),
+    ];
+    for (let n = 1; n <= 9; n += 1) {
+      const slot = n;
+      releases.push(
+        bindHandler(`${KEYBINDING_ACTION_SIDEBAR_JUMP_PREFIX}${slot}`, () => {
+          const session = sessionsStore.sessions[slot - 1];
+          if (session !== undefined) {
+            void goto(`/sessions/${encodeURIComponent(session.id)}`);
+          }
+        }),
+      );
+    }
+    return () => {
+      for (const release of releases) release();
+    };
+  });
 </script>
 
 <ThemeProvider>

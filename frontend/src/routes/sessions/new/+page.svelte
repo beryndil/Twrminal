@@ -41,6 +41,7 @@
    * overridable before the user submits.
    */
   import { goto } from "$app/navigation";
+  import { page } from "$app/state";
 
   import { createSession, getMostRecentSession } from "$lib/api/sessions";
   import { listTags, type TagOut } from "$lib/api/tags";
@@ -74,11 +75,13 @@
   let submitError = $state<string | null>(null);
   let submitting = $state(false);
 
-  // Hydrate tags + session defaults once on mount. All failures are
-  // non-fatal — the form still works with its hardcoded fallbacks.
+  // Hydrate tags on mount. Session defaults are skipped when the caller
+  // passed ``?bare=1`` (Shift+C chord) — the user gets a clean form.
   $effect(() => {
     void hydrateTags();
-    void hydrateDefaults();
+    if (page.url.searchParams.get("bare") !== "1") {
+      void hydrateDefaults();
+    }
   });
 
   /**
