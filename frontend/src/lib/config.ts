@@ -96,6 +96,13 @@ export const sessionStopEndpoint = (sessionId: string): string =>
   `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/stop`;
 
 /**
+ * ``GET /api/commands`` — slash-command list for the composer typeahead
+ * (item 2.3). No session scoping — the scanner merges user + project
+ * locations server-side.
+ */
+export const API_COMMANDS_ENDPOINT = `${API_BASE}/commands`;
+
+/**
  * Hard cap on a single prompt submission, mirroring the backend's
  * :data:`bearings.config.constants.PROMPT_CONTENT_MAX_CHARS` (64 000).
  * The Composer enforces this client-side so the user gets immediate
@@ -382,6 +389,17 @@ export const COMPOSER_STRINGS = {
   sending: "Sending…",
   sendFailed: "Couldn't send the message.",
   sessionClosedHint: "This session is closed — reopen it to send a message.",
+} as const;
+
+/** String table for the slash-command typeahead palette (item 2.3). */
+export const COMMAND_MENU_STRINGS = {
+  ariaLabel: "Slash command menu",
+  noResults: "No matching commands",
+  sourceLabels: {
+    user_commands: "User",
+    user_skills: "Skill",
+    project_commands: "Project",
+  } as Record<string, string>,
 } as const;
 
 export const SIDEBAR_STRINGS = {

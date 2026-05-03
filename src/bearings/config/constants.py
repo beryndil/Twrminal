@@ -1131,6 +1131,7 @@ ROUTE_TAG_SHELL: Final[str] = "shell"
 ROUTE_TAG_DIAG: Final[str] = "diag"
 ROUTE_TAG_HEALTH: Final[str] = "health"
 ROUTE_TAG_METRICS: Final[str] = "metrics"
+ROUTE_TAG_COMMANDS: Final[str] = "commands"
 
 
 # Self-consistency: every profile that appears in the resolution tables
@@ -1304,6 +1305,7 @@ __all__ = [
     "RING_BUFFER_MAX",
     "ROUTE_TAG_APPROVALS",
     "ROUTE_TAG_CHECKLISTS",
+    "ROUTE_TAG_COMMANDS",
     "ROUTE_TAG_DIAG",
     "ROUTE_TAG_FS",
     "ROUTE_TAG_HEALTH",

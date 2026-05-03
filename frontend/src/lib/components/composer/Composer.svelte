@@ -13,6 +13,9 @@
    *   clearing the draft. Failure modes (404 / 409 / 413 / 422 / 429)
    *   surface inline as the ``sendFailed`` notice; the textarea retains
    *   its draft so the user can retry without retyping.
+   * - Item 2.3 slash-command palette — typing ``/`` at the start of the
+   *   draft opens the :component:`CommandMenu` typeahead; arrow keys +
+   *   Tab/Enter select; Escape dismisses.
    *
    * The component is presentational: it owns its own draft state +
    * inflight flag, calls :func:`sendPrompt` directly, and reports
@@ -23,6 +26,7 @@
   import { ApiError } from "../../api/client";
   import { sendPrompt } from "../../api/prompt";
   import { COMPOSER_STRINGS, PROMPT_CONTENT_MAX_CHARS } from "../../config";
+  import CommandMenu from "./CommandMenu.svelte";
 
   interface Props {
     /** Active chat session id; the composer submits prompts against this row. */
@@ -42,10 +46,82 @@
   let inflight = $state(false);
   let errorMessage = $state<string | null>(null);
   let textareaEl = $state<HTMLTextAreaElement | null>(null);
+  // Ref to the CommandMenu component instance for keyboard delegation.
+  let menuRef = $state<CommandMenu | null>(null);
 
   const overCap = $derived(draft.length > PROMPT_CONTENT_MAX_CHARS);
   const trimmed = $derived(draft.trim());
   const canSend = $derived(!disabled && !inflight && !overCap && trimmed.length > 0);
+
+  // ---------------------------------------------------------------------------
+  // Slash-command palette logic (item 2.3)
+  //
+  // The menu is active when the draft starts with ``/`` (leading whitespace
+  // is ignored).  The query is the text between the ``/`` and the first
+  // whitespace or newline — this matches the "single-word at start"
+  // convention used by Slack / Discord.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * True when the draft starts with ``/`` AND the command token has not
+   * yet been followed by a space/newline.  A trailing space means the
+   * user has confirmed a selection and is now typing arguments — the
+   * palette should be closed at that point.
+   */
+  const menuOpen = $derived.by(() => {
+    if (disabled) return false;
+    const t = draft.trimStart();
+    if (!t.startsWith("/")) return false;
+    // Once the first token after ``/`` contains whitespace the command
+    // word is complete — close the menu.
+    return !/\s/.test(t.slice(1));
+  });
+
+  /** The text typed after the leading ``/``, used to filter the list. */
+  const menuQuery = $derived.by(() => {
+    if (!menuOpen) return "";
+    const afterSlash = draft.trimStart().slice(1);
+    // Query is everything up to (but not including) the first whitespace.
+    const spaceIdx = afterSlash.search(/\s/);
+    return spaceIdx === -1 ? afterSlash : afterSlash.slice(0, spaceIdx);
+  });
+
+  /**
+   * Called by :component:`CommandMenu` when the user confirms a command.
+   *
+   * Replaces the ``/<query>`` prefix with ``/<name> `` and moves focus
+   * back to the textarea so the user can continue typing the rest of the
+   * prompt after the command.
+   */
+  function handleCommandSelect(insertion: string): void {
+    // Find where the ``/`` appears and splice in the selected name.
+    const slashPos = draft.indexOf("/");
+    if (slashPos === -1) {
+      draft = insertion + " ";
+    } else {
+      // Replace from the slash up to the end of the current word
+      // (first whitespace after the slash, or end of string).
+      const afterSlash = draft.slice(slashPos + 1);
+      const spaceIdx = afterSlash.search(/\s/);
+      const endOfWord = spaceIdx === -1 ? draft.length : slashPos + 1 + spaceIdx;
+      draft = draft.slice(0, slashPos) + insertion + " " + draft.slice(endOfWord);
+    }
+    textareaEl?.focus();
+  }
+
+  function handleCommandClose(): void {
+    // Remove the leading slash so the menu closes, leaving the rest of
+    // the draft intact (user may have been exploring before deciding).
+    const slashPos = draft.indexOf("/");
+    if (slashPos !== -1) {
+      draft = draft.slice(0, slashPos) + draft.slice(slashPos + 1);
+    }
+    textareaEl?.focus();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Submit + keydown
+  // ---------------------------------------------------------------------------
 
   async function submit(): Promise<void> {
     if (!canSend) return;
@@ -71,6 +147,13 @@
   }
 
   function handleKeydown(event: KeyboardEvent): void {
+    // When the command palette is open, delegate navigation + confirm
+    // keys to the menu.  The menu's handleKey returns true when it
+    // consumed the event, so we stop here.
+    if (menuOpen && menuRef !== null) {
+      if (menuRef.handleKey(event)) return;
+    }
+
     // Enter without modifiers submits; Shift+Enter inserts a newline
     // (browser default). Ctrl/Alt/Meta + Enter falls through to the
     // browser default — the OS-keybind layer (Hyprland, etc.) might be
@@ -90,12 +173,20 @@
   }
 </script>
 
-<div class="composer flex flex-col gap-1" data-testid="composer">
+<div class="composer relative flex flex-col gap-1" data-testid="composer">
   {#if disabled}
     <p class="px-1 text-xs text-fg-muted" data-testid="composer-disabled-hint">
       {COMPOSER_STRINGS.sessionClosedHint}
     </p>
   {:else}
+    {#if menuOpen}
+      <CommandMenu
+        bind:this={menuRef}
+        query={menuQuery}
+        onselect={handleCommandSelect}
+        onclose={handleCommandClose}
+      />
+    {/if}
     <textarea
       bind:this={textareaEl}
       bind:value={draft}

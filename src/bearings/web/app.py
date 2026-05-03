@@ -44,6 +44,7 @@ from bearings.config.constants import (
     OPENAPI_TITLE,
     ROUTE_TAG_APPROVALS,
     ROUTE_TAG_CHECKLISTS,
+    ROUTE_TAG_COMMANDS,
     ROUTE_TAG_DIAG,
     ROUTE_TAG_FS,
     ROUTE_TAG_HEALTH,
@@ -65,6 +66,7 @@ from bearings.config.settings import FsCfg, ShellCfg, UploadsCfg, VaultCfg
 from bearings.metrics import BearingsMetrics
 from bearings.web.routes.approvals import router as approvals_router
 from bearings.web.routes.checklists import router as checklists_router
+from bearings.web.routes.commands import router as commands_router
 from bearings.web.routes.diag import router as diag_router
 from bearings.web.routes.fs import router as fs_router
 from bearings.web.routes.health import router as health_router
@@ -226,6 +228,8 @@ def create_app(
     app.include_router(routing_router, tags=[ROUTE_TAG_ROUTING])
     app.include_router(quota_router, tags=[ROUTE_TAG_QUOTA])
     app.include_router(usage_router, tags=[ROUTE_TAG_USAGE])
+    # Item 2.3 — slash-command scanner.
+    app.include_router(commands_router, tags=[ROUTE_TAG_COMMANDS])
     # Item 1.10 — misc-API surfaces.
     app.include_router(uploads_router, tags=[ROUTE_TAG_UPLOADS])
     app.include_router(fs_router, tags=[ROUTE_TAG_FS])

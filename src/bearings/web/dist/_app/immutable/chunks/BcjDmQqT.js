@@ -1,0 +1,1 @@
+import{h as e}from"./Db1060tB.js";import{D as o,K as a}from"./CWPyELoE.js";const t=e({activeTabId:o,activeSessionId:null}),c=t;function r(s){a.includes(s)&&(t.activeTabId=s)}function T(s){t.activeSessionId=s}export{r as a,c as i,T as s};
