@@ -296,6 +296,25 @@ export const CONVERSATION_STRINGS = {
 } as const;
 
 /**
+ * String table for the live todos panel (item 2.1).
+ *
+ * Centralised here so the component stays logic-only and any
+ * copy changes happen in one place.
+ */
+export const LIVE_TODOS_STRINGS = {
+  panelLabel: "Todos",
+  panelCollapseAriaLabel: "Collapse todos panel",
+  panelExpandAriaLabel: "Expand todos panel",
+  emptyLabel: "No active todos",
+  statusCompleted: "completed",
+  statusInProgress: "in progress",
+  statusPending: "pending",
+  priorityHigh: "high",
+  priorityMedium: "medium",
+  priorityLow: "low",
+} as const;
+
+/**
  * Soft display cap on a single tool-call's body. Behavior doc
  * (``docs/behavior/tool-output-streaming.md`` §"Very-long-output
  * truncation rules") prescribes a soft cap that folds the middle

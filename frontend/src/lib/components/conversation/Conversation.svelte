@@ -36,6 +36,7 @@
   } from "../../stores/conversation.svelte";
   import ApprovalModal from "./ApprovalModal.svelte";
   import AskUserQuestionModal from "./AskUserQuestionModal.svelte";
+  import LiveTodos from "./LiveTodos.svelte";
   import MessageTurn from "./MessageTurn.svelte";
   import StopUndoInline from "./StopUndoInline.svelte";
 
@@ -135,6 +136,8 @@
 </script>
 
 <section class="conversation flex h-full flex-col" data-testid="conversation">
+  <!-- Live todos strip — sticky above the scroll body; hidden when empty -->
+  <LiveTodos />
   <div
     bind:this={bodyEl}
     class="conversation__body flex-1 overflow-y-auto"

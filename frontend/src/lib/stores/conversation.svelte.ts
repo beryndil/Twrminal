@@ -85,6 +85,28 @@ export interface TurnRouting {
   routingReason: string;
 }
 
+/**
+ * A single todo item from the agent's most recent ``TodoWrite`` call.
+ * Shape matches the SDK's TodoWrite tool input schema.
+ */
+/**
+ * A single todo item from the agent's most recent ``TodoWrite`` call.
+ *
+ * ``id`` and ``priority`` are optional — the SDK's built-in TodoWrite
+ * tool emits only ``content`` + ``status`` (plus an optional
+ * ``activeForm`` annotation); the interface is flexible so both the
+ * minimal schema and any richer custom TodoWrite variant work without
+ * a parse error.
+ */
+export interface LiveTodoItem {
+  id?: string;
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  priority?: "high" | "medium" | "low";
+  /** Active description emitted by the built-in SDK TodoWrite. */
+  activeForm?: string;
+}
+
 /** Live pending approval request; ``null`` when no modal is shown. */
 export interface PendingApproval {
   requestId: string;
@@ -120,6 +142,13 @@ interface ConversationState {
    */
   oldestSeq: number | null;
   /**
+   * Latest todo list from the agent's most recent ``TodoWrite`` call.
+   * Empty array when no ``todo_write_update`` has arrived in this
+   * session. Reset to ``[]`` on session-switch so a new session never
+   * inherits a previous session's todo state.
+   */
+  liveTodos: LiveTodoItem[];
+  /**
    * ``true`` while the runner is actively streaming a turn. Set by
    * ``message_start``, cleared by ``message_complete`` / ``error``,
    * and reconciled on reconnect via ``runner_status`` (item 1.4).
@@ -145,6 +174,7 @@ const state: ConversationState = $state({
   pendingApproval: null,
   hasMore: false,
   oldestSeq: null,
+  liveTodos: [],
   streamingActive: false,
   currentTurnId: null,
 });
@@ -190,6 +220,7 @@ export function resetConversation(sessionId: string | null): void {
   state.pendingApproval = null;
   state.hasMore = false;
   state.oldestSeq = null;
+  state.liveTodos = [];
   state.streamingActive = false;
   state.currentTurnId = null;
 }
@@ -258,6 +289,8 @@ export function ingestFrame(frame: StreamFrame): void {
   // Update pendingApproval for out-of-turn approval events BEFORE
   // the pure turns reducer runs (which is a no-op for these events).
   applyApprovalState(frame.event);
+  // Update liveTodos for todo_write_update events.
+  applyTodoState(frame.event);
   state.turns = applyEvent(state.turns, frame.event);
   state.lastSeq = frame.seq;
 }
@@ -304,6 +337,21 @@ function applyApprovalState(event: AgentEvent): void {
     state.pendingApproval?.requestId === event.request_id
   ) {
     state.pendingApproval = null;
+  }
+}
+
+/**
+ * Imperative reducer arm for live todo state. Parses ``todos_json``
+ * from a ``todo_write_update`` event and replaces ``liveTodos``.
+ * Malformed JSON is silently ignored — the panel retains whatever was
+ * last successfully parsed rather than clearing mid-session.
+ */
+function applyTodoState(event: AgentEvent): void {
+  if (event.type !== "todo_write_update") return;
+  try {
+    state.liveTodos = JSON.parse(event.todos_json) as LiveTodoItem[];
+  } catch {
+    // leave liveTodos intact on parse failure
   }
 }
 

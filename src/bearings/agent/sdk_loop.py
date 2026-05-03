@@ -54,11 +54,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, ResultMessage
 
-from bearings.agent.events import ErrorEvent, UserMessage
+from bearings.agent.events import ErrorEvent, TodoWriteUpdate, ToolCallStart, UserMessage
 from bearings.agent.options import OptionsKwargs
 from bearings.agent.persistence import (
     MessagePersistence,
@@ -242,6 +243,8 @@ async def _do_run_one_turn(
             last_result = sdk_msg
         for event in translator.feed(sdk_msg):
             await runner.emit(event)
+            if isinstance(event, ToolCallStart) and event.tool_name == "TodoWrite":
+                await runner.emit(_make_todo_update(event))
     # Persist the assistant row. Skipped when the turn produced no
     # body (rare: would mean a tool-only turn that the SDK terminated
     # without an assistant message — already surfaced as ErrorEvent
@@ -256,6 +259,27 @@ async def _do_run_one_turn(
             decision=session.config.decision,
             model_usage=last_result.model_usage if last_result is not None else None,
         )
+
+
+def _make_todo_update(event: ToolCallStart) -> TodoWriteUpdate:
+    """Extract the todos list from a TodoWrite ToolCallStart and wrap it.
+
+    The TodoWrite tool input is ``{"todos": [{id, content, status,
+    priority}, ...]}``. We forward just the array so the frontend
+    doesn't have to unpack the outer dict.  Malformed JSON is treated
+    as an empty list — the UI still renders (empty panel) rather than
+    crashing the render path.
+    """
+    try:
+        parsed = json.loads(event.tool_input_json)
+        todos = parsed.get("todos", [])
+        todos_json = json.dumps(todos)
+    except (json.JSONDecodeError, AttributeError):
+        todos_json = "[]"
+    return TodoWriteUpdate(
+        session_id=event.session_id,
+        todos_json=todos_json,
+    )
 
 
 async def _enter_error_state(

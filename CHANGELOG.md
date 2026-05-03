@@ -9,6 +9,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Live todos panel** (wiring-v1-daily-driver item 2.1).
+  - `src/bearings/agent/sdk_loop.py` — after emitting a `ToolCallStart` for
+    `TodoWrite`, immediately emits a `TodoWriteUpdate` event carrying the parsed
+    todos array as `todos_json`. Added `_make_todo_update()` helper; imports
+    `json`, `TodoWriteUpdate`, `ToolCallStart`.
+  - `frontend/src/lib/stores/conversation.svelte.ts` — added `LiveTodoItem`
+    interface (flexible schema: `id?`, `content`, `status`, `priority?`,
+    `activeForm?`); added `liveTodos: LiveTodoItem[]` to `ConversationState`;
+    resets to `[]` in `resetConversation` (session-switch clears the panel);
+    new `applyTodoState()` imperative arm parses `todos_json` and updates
+    `liveTodos`; wired into `ingestFrame` alongside `applyApprovalState`.
+  - `frontend/src/lib/components/conversation/LiveTodos.svelte` — new
+    collapsible panel; hidden when `liveTodos` is empty; header shows
+    completed/total count; each item shows status icon (✓/●/○) and optional
+    priority badge (H/M/L); completed items rendered muted + strikethrough;
+    uses `todo.id ?? todo.content ?? index` as stable Svelte key to handle the
+    SDK's built-in TodoWrite schema (which omits `id`).
+  - `frontend/src/lib/components/conversation/Conversation.svelte` — mounts
+    `<LiveTodos />` above the scroll body as a sticky strip.
+  - `frontend/src/lib/config.ts` — added `LIVE_TODOS_STRINGS` string table.
+
 - **`runner_status` event + `turn_replayed` reducer** (wiring-v1-daily-driver item 1.4).
   - `src/bearings/agent/events.py` — added `RunnerStatusEvent` (`type:
     "runner_status"`, `streaming_active: bool`, `current_turn_id: str | None`)
