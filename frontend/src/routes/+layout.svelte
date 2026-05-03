@@ -40,6 +40,7 @@
   import ContextMenuProvider from "$lib/context-menu/ContextMenuProvider.svelte";
   import { sessionsStore } from "$lib/stores/sessions.svelte";
   import { inspectorStore, setActiveSession } from "$lib/stores/inspector.svelte";
+  import ContextMeter from "$lib/components/conversation/ContextMeter.svelte";
 
   interface Props {
     children?: Snippet;
@@ -377,6 +378,8 @@
               {/if}
             {/if}
           </header>
+          <!-- Context/token meter strip — hidden until first context_usage arrives -->
+          <ContextMeter />
           <section
             class="app-shell__main-body text-fg"
             data-testid="app-shell-main-body"

@@ -107,6 +107,20 @@ export interface LiveTodoItem {
   activeForm?: string;
 }
 
+/**
+ * Snapshot of the most recent ``context_usage`` event (item 2.2).
+ * ``null`` until the first ``ContextUsage`` frame arrives.
+ */
+interface ContextUsageSnapshot {
+  percentage: number;
+  totalTokens: number;
+  maxTokens: number;
+  model: string | null;
+  isAutoCompactEnabled: boolean | null;
+  /** Absolute token threshold at which the SDK triggers auto-compact. */
+  autoCompactThreshold: number | null;
+}
+
 /** Live pending approval request; ``null`` when no modal is shown. */
 export interface PendingApproval {
   requestId: string;
@@ -162,6 +176,19 @@ interface ConversationState {
    * ``message_start`` / ``message_complete``.
    */
   currentTurnId: string | null;
+  /**
+   * Most recent ``context_usage`` snapshot (item 2.2). ``null`` until
+   * the first ``ContextUsage`` frame arrives; reset on session-switch.
+   * Drives the ``ContextMeter`` header strip.
+   */
+  contextUsage: ContextUsageSnapshot | null;
+  /**
+   * Cache-hit ratio derived from the most recent ``message_complete``
+   * frame: ``cache_read_tokens / (executor_input_tokens +
+   * cache_read_tokens)``. ``null`` when either token count is absent.
+   * Reset on session-switch.
+   */
+  cacheHitRatio: number | null;
 }
 
 const state: ConversationState = $state({
@@ -177,6 +204,8 @@ const state: ConversationState = $state({
   liveTodos: [],
   streamingActive: false,
   currentTurnId: null,
+  contextUsage: null,
+  cacheHitRatio: null,
 });
 
 export const conversationStore = state;
@@ -223,6 +252,8 @@ export function resetConversation(sessionId: string | null): void {
   state.liveTodos = [];
   state.streamingActive = false;
   state.currentTurnId = null;
+  state.contextUsage = null;
+  state.cacheHitRatio = null;
 }
 
 /**
@@ -291,6 +322,9 @@ export function ingestFrame(frame: StreamFrame): void {
   applyApprovalState(frame.event);
   // Update liveTodos for todo_write_update events.
   applyTodoState(frame.event);
+  // Update context-usage snapshot and cache-hit ratio (item 2.2).
+  applyContextUsage(frame.event);
+  applyCacheHit(frame.event);
   state.turns = applyEvent(state.turns, frame.event);
   state.lastSeq = frame.seq;
 }
@@ -353,6 +387,43 @@ function applyTodoState(event: AgentEvent): void {
   } catch {
     // leave liveTodos intact on parse failure
   }
+}
+
+/**
+ * Imperative reducer arm for context-usage state (item 2.2).
+ * Overwrites ``contextUsage`` on every ``context_usage`` frame so the
+ * ``ContextMeter`` always shows the latest tick.
+ */
+function applyContextUsage(event: AgentEvent): void {
+  if (event.type !== "context_usage") return;
+  state.contextUsage = {
+    percentage: event.percentage,
+    totalTokens: event.total_tokens,
+    maxTokens: event.max_tokens,
+    model: event.model,
+    isAutoCompactEnabled: event.is_auto_compact_enabled,
+    autoCompactThreshold: event.auto_compact_threshold,
+  };
+}
+
+/**
+ * Imperative reducer arm for cache-hit ratio (item 2.2).
+ *
+ * ``cache_hit_ratio = cache_read_tokens / (executor_input_tokens +
+ * cache_read_tokens)``. Set ``null`` when either required token count
+ * is absent — avoids showing a 0% ratio when the SDK just didn't report
+ * cache data (rather than truly having zero cache hits).
+ */
+function applyCacheHit(event: AgentEvent): void {
+  if (event.type !== "message_complete") return;
+  const cacheRead = event.cache_read_tokens;
+  const execInput = event.executor_input_tokens;
+  if (cacheRead === null || execInput === null) {
+    state.cacheHitRatio = null;
+    return;
+  }
+  const total = execInput + cacheRead;
+  state.cacheHitRatio = total > 0 ? cacheRead / total : 0;
 }
 
 /**

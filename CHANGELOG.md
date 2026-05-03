@@ -9,6 +9,40 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Context/token meter in header** (wiring-v1-daily-driver item 2.2).
+  - `src/bearings/agent/events.py` — re-added `model: str | None`,
+    `is_auto_compact_enabled: bool | None`, and `auto_compact_threshold: int | None`
+    to `ContextUsage`. All three default to `None` so older SDK builds that omit
+    the fields remain wire-compatible.
+  - `src/bearings/agent/translate.py` — `_project_context_usage` return type
+    widened to a six-tuple; extracts `model` / `isAutoCompactEnabled` /
+    `autoCompactThreshold` from the SDK camelCase usage dict (snake_case fallback
+    for forward-compat). `_feed_result` propagates all six fields to the emitted
+    `ContextUsage` event.
+  - `frontend/src/lib/api/events.ts` — `ContextUsageEvent` extended with the
+    three new optional fields.
+  - `frontend/src/lib/stores/conversation.svelte.ts` — added `ContextUsageSnapshot`
+    interface; added `contextUsage: ContextUsageSnapshot | null` and
+    `cacheHitRatio: number | null` to `ConversationState`; reset in
+    `resetConversation`; two new imperative reducer arms: `applyContextUsage`
+    (overwrites snapshot on every `context_usage` frame) and `applyCacheHit`
+    (computes `cache_read_tokens / (executor_input_tokens + cache_read_tokens)`
+    from `message_complete`).
+  - `frontend/src/lib/config.ts` — added `CONTEXT_METER_STRINGS` string table
+    and `CONTEXT_METER_WARN_BAND_PCT = 15` constant.
+  - `frontend/src/lib/components/conversation/ContextMeter.svelte` — new header
+    strip: thin progress bar (% context used), percentage label, total-token count
+    (formatted as 3.2k / 1.4M), cache-hit ratio from the last turn's
+    `message_complete`. Warn band (amber tint + "⚠ compact" badge) fires when
+    `percentage` is within 15 % of the auto-compact threshold; falls back to
+    warning above 85 % when auto-compact is enabled but the threshold token count
+    is not present. Hidden (no DOM node) until the first `context_usage` frame
+    arrives. A vertical marker line on the bar shows the threshold position when
+    `autoCompactThreshold` is set.
+  - `frontend/src/routes/+layout.svelte` — imports and mounts `<ContextMeter />`
+    immediately after the `<header>` closing tag so it renders as a slim strip
+    between the session header and the conversation body.
+
 - **Live todos panel** (wiring-v1-daily-driver item 2.1).
   - `src/bearings/agent/sdk_loop.py` — after emitting a `ToolCallStart` for
     `TodoWrite`, immediately emits a `TodoWriteUpdate` event carrying the parsed

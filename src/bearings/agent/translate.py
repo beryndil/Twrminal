@@ -388,12 +388,15 @@ class SDKEventTranslator:
         if isinstance(usage, dict):
             ctx = _project_context_usage(usage)
             if ctx is not None:
-                pct, total, max_tokens = ctx
+                pct, total, max_tokens, model, is_auto_compact, threshold = ctx
                 yield ContextUsage(
                     session_id=self._session_id,
                     percentage=pct,
                     total_tokens=total,
                     max_tokens=max_tokens,
+                    model=model,
+                    is_auto_compact_enabled=is_auto_compact,
+                    auto_compact_threshold=threshold,
                 )
 
 
@@ -456,15 +459,19 @@ def _project_usage(
 
 def _project_context_usage(
     usage: dict[str, Any],
-) -> tuple[float, int, int] | None:
-    """Project the SDK's ``usage`` dict onto the spec's percentage/total/max
-    triple. Returns ``None`` if any required field is absent so the
-    caller can omit the :class:`ContextUsage` event rather than emit
-    a partially-populated one.
+) -> tuple[float, int, int, str | None, bool | None, int | None] | None:
+    """Project the SDK's ``usage`` dict onto the six-tuple the
+    :class:`ContextUsage` event carries.
 
-    The SDK exposes ``percentage`` / ``totalTokens`` / ``maxTokens``
-    in camelCase per arch §5 #10; this projection accepts either
-    camelCase or snake_case for forward-compat.
+    Returns ``None`` if any required field (``percentage`` /
+    ``totalTokens`` / ``maxTokens``) is absent so the caller can omit
+    the event rather than emit a partially-populated one.
+
+    The SDK exposes ``percentage`` / ``totalTokens`` / ``maxTokens`` /
+    ``model`` / ``isAutoCompactEnabled`` / ``autoCompactThreshold`` in
+    camelCase per arch §5 #10; this projection accepts either camelCase
+    or snake_case for forward-compat. The three optional fields degrade
+    to ``None`` when absent (older SDK builds).
     """
     pct = usage.get("percentage")
     total = usage.get("totalTokens", usage.get("total_tokens"))
@@ -473,7 +480,13 @@ def _project_context_usage(
         return None
     if not isinstance(total, int) or not isinstance(max_tokens, int):
         return None
-    return float(pct), total, max_tokens
+    raw_model = usage.get("model")
+    model: str | None = raw_model if isinstance(raw_model, str) else None
+    raw_iac = usage.get("isAutoCompactEnabled", usage.get("is_auto_compact_enabled"))
+    is_auto_compact: bool | None = bool(raw_iac) if raw_iac is not None else None
+    raw_thresh = usage.get("autoCompactThreshold", usage.get("auto_compact_threshold"))
+    threshold: int | None = raw_thresh if isinstance(raw_thresh, int) else None
+    return float(pct), total, max_tokens, model, is_auto_compact, threshold
 
 
 __all__ = [

@@ -102,6 +102,16 @@ export interface ContextUsageEvent extends BaseEvent {
   percentage: number;
   total_tokens: number;
   max_tokens: number;
+  /** Model name the context is calculated for (null on older SDK builds). */
+  model: string | null;
+  /** Whether auto-compact is enabled for this session. */
+  is_auto_compact_enabled: boolean | null;
+  /**
+   * Absolute token threshold at which auto-compact triggers.
+   * Present only when ``is_auto_compact_enabled`` is true and the SDK
+   * version exposes the field.
+   */
+  auto_compact_threshold: number | null;
 }
 
 export interface ErrorEvent extends BaseEvent {

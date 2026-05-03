@@ -338,6 +338,29 @@ export const CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS = 8000;
 export const MESSAGE_PAGE_SIZE = 100;
 
 /**
+ * String table for the context/token meter header strip (item 2.2).
+ */
+export const CONTEXT_METER_STRINGS = {
+  ariaLabel: "Context usage meter",
+  /** Percentage label suffix shown next to the number. */
+  pctSuffix: "%",
+  tokensLabel: "tokens",
+  cacheLabel: "cache",
+  /** Aria label for the warn band that appears near the auto-compact threshold. */
+  warnAriaLabel: "Approaching auto-compact threshold",
+} as const;
+
+/**
+ * Auto-compact warn band: show warning when context is within this many
+ * percentage-points of the auto-compact threshold (item 2.2).
+ *
+ * Example: threshold at 80% capacity → warn when percentage > 65%.
+ * When no threshold is set, falls back to warning above
+ * ``(100 - CONTEXT_METER_WARN_BAND_PCT)``%.
+ */
+export const CONTEXT_METER_WARN_BAND_PCT = 15;
+
+/**
  * ``rel`` attribute for outbound anchors per chat.md §"Conversation
  * rendering" — "rendered as anchors that open in a new tab with
  * ``noopener noreferrer``". Pulled out of the linkifier so a future

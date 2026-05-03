@@ -188,12 +188,25 @@ class ContextUsage(_BaseEvent):
     snake-cased shape after ``agent/translate.py`` adapts the SDK's
     camelCase keys ``percentage`` / ``totalTokens`` / ``maxTokens``
     (arch §5 #10).
+
+    The three optional fields (``model``, ``is_auto_compact_enabled``,
+    ``auto_compact_threshold``) are re-added in item 2.2 so the header
+    :class:`ContextMeter` can paint the auto-compact warn band and the
+    model badge without a separate fetch. All three are ``None`` when the
+    SDK omits them from the usage dict (e.g. older SDK builds that
+    pre-date the ``autoCompactThreshold`` field).
     """
 
     type: Literal["context_usage"] = "context_usage"
     percentage: float
     total_tokens: int
     max_tokens: int
+    model: str | None = None
+    is_auto_compact_enabled: bool | None = None
+    # Absolute-token threshold at which the SDK triggers auto-compact.
+    # Present only when ``is_auto_compact_enabled`` is ``True`` and the
+    # SDK version exposes the field.
+    auto_compact_threshold: int | None = None
 
 
 class ErrorEvent(_BaseEvent):
