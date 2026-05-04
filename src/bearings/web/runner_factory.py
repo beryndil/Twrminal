@@ -121,10 +121,20 @@ class InProcessRunnerRegistry:
             raise ValueError("runner-factory session_id must be non-empty")
         runner = self._runners.get(session_id)
         if runner is not None:
-            # Re-spawn supervisor if it was reaped.
-            if self._session_setup is not None and session_id not in self._supervisors:
+            # Re-spawn supervisor if it was reaped OR if the prior task
+            # ended on its own (e.g. fatal SDK init timeout — sdk_loop
+            # ``_enter_error_state`` returns cleanly so the task lands
+            # ``done()`` without being popped). Without the ``done()``
+            # check the dead task entry blocks reap-recovery and every
+            # subsequent POST silently queues with no live drain.
+            if self._session_setup is not None and self._needs_respawn(session_id):
                 async with self._spawn_lock:
-                    if session_id not in self._supervisors:
+                    if self._needs_respawn(session_id):
+                        # Drop the corpse so _spawn_supervisor's assignment
+                        # is unambiguous and the approval-broker entry from
+                        # the prior life is cleared.
+                        self._supervisors.pop(session_id, None)
+                        self._approval_brokers.pop(session_id, None)
                         await self._spawn_supervisor(session_id, runner)
             return runner
         # First-touch path. Hold the spawn-lock so concurrent
@@ -180,6 +190,15 @@ class InProcessRunnerRegistry:
             name=f"sdk_loop:{session_id}",
         )
         self._supervisors[session_id] = task
+
+    def _needs_respawn(self, session_id: str) -> bool:
+        """A supervisor needs respawn when no entry exists OR the entry's
+        task has already completed. Completion covers both cooperative
+        cancellation (idle reap) and the sdk_loop's fatal-error return
+        path; treating both as 'gone' restores reap-recovery for ERROR.
+        """
+        existing = self._supervisors.get(session_id)
+        return existing is None or existing.done()
 
     def get(self, session_id: str) -> SessionRunner | None:
         """Return the runner for ``session_id`` if registered, else

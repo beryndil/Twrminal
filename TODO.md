@@ -80,6 +80,48 @@ The ledger entries below were swept on the cutover-smoke commit (item
   `::test_empty_title_backfills_to_sentinel`, and
   `::test_long_title_truncated` cover the three branches.
 
+## Open follow-ups from the 2026-05-03 stuck-session diagnosis
+
+A live session (`ses_8f8aa4d947df670b2cc57d0dfacb2bb1`) ran into the
+SDK control-request init timeout, after which every subsequent prompt
+POST silently queued without a reply. Fix landed in this commit:
+`web/runner_factory.py` now treats `task.done()` as 'supervisor gone'
+so reap-recovery actually fires after a fatal SDK error, and
+`agent/sdk_loop._enter_error_state` logs the traceback to journald
+so future failures are operator-visible. Two pieces remain.
+
+### Root cause of the original initialize timeout — unknown
+
+The SDK's `_send_control_request("initialize")` timed out at 60s once
+in a long-running bearings python process. Direct out-of-process
+probes with the same bearings options (in-process MCP server,
+`bypassPermissions`, full `compose_session_options` output) spawn the
+`claude` CLI and complete `initialize` in <2s. So whatever made the
+live process hang was **process-state-dependent**, not a config or
+SDK-version issue. Plausible angles before the next occurrence:
+
+* Long-running python with many WS subscribers — investigate whether
+  fd / stdio inheritance into the spawned CLI is sensitive to parent
+  state.
+* Concurrent supervisor spawn lock — check whether two near-simultaneous
+  POSTs across distinct sessions can lock `_send_control_request`.
+* SDK ↔ `claude` CLI version skew (pin `~=0.1.69` vs CLI 2.1.126) —
+  pin the CLI version somewhere reproducible (npm shrinkwrap or
+  documented version floor).
+
+When this recurs, the new `_log.warning` in `sdk_loop` will surface
+the traceback in journald — capture it before doing anything else.
+
+### `POST /api/sessions/{id}/recover` HTTP route — missing
+
+`AgentSession.recover()` exists at `agent/session.py:326` and the
+behavior doc + sign-off Q7 both reference a "Recover" UX path, but no
+FastAPI route exposes it. Today the only way back from ERROR is to
+send a new prompt and rely on reap-recovery (now actually working
+after the supervisor-liveness fix). A user-driven recover surface is
+still the documented model. Add `web/routes/sessions.py::recover` +
+the frontend button per `docs/behavior/chat.md` §"Error states".
+
 ## Remaining deferrals (post-v1 scope)
 
 ### Theme picker silently flips to OS scheme on first paint — 2026-05-02

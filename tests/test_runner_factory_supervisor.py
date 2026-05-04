@@ -384,6 +384,66 @@ async def test_recycle_re_call_respawns_supervisor(
         await factory.aclose()
 
 
+async def test_dead_supervisor_is_respawned_on_next_call(
+    conn: aiosqlite.Connection,
+) -> None:
+    """When the supervisor task ends on its own (e.g. ``sdk_loop``'s
+    fatal-error return path after a ``Control request timeout:
+    initialize``), the task lands in ``self._supervisors`` with
+    ``done() is True``. The next ``__call__`` MUST treat that as
+    'gone' and re-spawn — without this, every subsequent prompt
+    POST silently queues against a dead worker that never drains.
+
+    Regression: 2026-05-03 incident on ``ses_8f8aa4d947df...``. The
+    old guard used ``session_id not in self._supervisors`` which the
+    dead-but-present task entry made False, blocking reap-recovery.
+    """
+    session_row = await sessions_db.create(
+        conn, kind=SESSION_KIND_CHAT, title="t", working_dir="/tmp/wd", model="sonnet"
+    )
+    setup_calls: list[str] = []
+
+    async def setup(session_id: str, runner: object) -> SessionSetup | None:
+        setup_calls.append(session_id)
+        return _build_setup_for(conn, session_id) if session_id == session_row.id else None
+
+    import bearings.web.runner_factory as factory_mod
+
+    original = factory_mod.run_session_loop  # type: ignore[attr-defined]
+
+    # Simulate the sdk_loop fatal-error return path: the loop logs +
+    # marks ERROR + returns, leaving the task done() with no exception
+    # raised out of the task itself.
+    async def fatal_run_session_loop(
+        runner: object,
+        session: object,
+        options_kwargs: object,
+    ) -> None:
+        return None
+
+    factory_mod.run_session_loop = fatal_run_session_loop  # type: ignore[assignment, attr-defined]
+    try:
+        factory = InProcessRunnerRegistry(session_setup=setup)
+        await factory(session_row.id)
+        # First supervisor task runs to completion.
+        first_task = factory.get_supervisor(session_row.id)
+        assert first_task is not None
+        await first_task
+        assert first_task.done()
+        assert setup_calls == [session_row.id]
+
+        # Subsequent call must see the dead task and respawn.
+        await factory(session_row.id)
+        await asyncio.sleep(0)
+        second_task = factory.get_supervisor(session_row.id)
+        assert second_task is not None
+        assert second_task is not first_task
+        assert setup_calls == [session_row.id, session_row.id]
+    finally:
+        factory_mod.run_session_loop = original  # type: ignore[attr-defined]
+        await factory.aclose()
+
+
 # ---------------------------------------------------------------------------
 # Build helper
 # ---------------------------------------------------------------------------

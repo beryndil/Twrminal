@@ -55,6 +55,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, ResultMessage
@@ -76,6 +77,8 @@ from bearings.agent.session import (
     SessionStateError,
 )
 from bearings.agent.translate import SDKEventTranslator
+
+_log = logging.getLogger(__name__)
 
 
 async def run_session_loop(
@@ -294,6 +297,17 @@ async def _enter_error_state(
     SessionStateError so we still emit the wire frame for any live
     subscriber.
     """
+    # Log the traceback so the operator sees fatal SDK errors in
+    # journald instead of only on the WS stream the user happens to
+    # have open. Without this, errors like "Control request timeout:
+    # initialize" leave zero server-side trace.
+    _log.warning(
+        "session %s: agent loop fatal — %s: %s",
+        session.config.session_id,
+        type(exc).__name__,
+        exc,
+        exc_info=exc,
+    )
     with contextlib.suppress(SessionStateError):
         await session.mark_error(str(exc))
     await runner.emit(
