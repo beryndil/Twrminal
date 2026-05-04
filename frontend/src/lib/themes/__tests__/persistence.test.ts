@@ -112,7 +112,20 @@ describe("resolveBootTheme", () => {
   it("falls back to OS scheme when no value is persisted", () => {
     setMatchMedia(true);
     expect(resolveBootTheme()).toBe(THEME_PAPER_LIGHT);
+  });
+
+  it("persists the OS fallback on first boot so subsequent loads skip the fallback", () => {
+    setMatchMedia(true); // light
+    // No stored value yet.
+    expect(loadStoredTheme()).toBeNull();
+    resolveBootTheme();
+    // After first boot the OS choice is written to storage.
+    expect(loadStoredTheme()).toBe(THEME_PAPER_LIGHT);
+  });
+
+  it("returns evergreen OS fallback when OS scheme is dark and nothing is persisted", () => {
     setMatchMedia(false);
     expect(resolveBootTheme()).toBe(THEME_EVERGREEN);
+    expect(loadStoredTheme()).toBe(THEME_EVERGREEN);
   });
 });

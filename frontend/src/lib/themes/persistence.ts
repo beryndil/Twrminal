@@ -91,11 +91,28 @@ export function saveStoredTheme(theme: ThemeId): boolean {
 
 /**
  * Boot-time resolver — the single function the runtime store calls
- * once at construction to settle on an initial value. Persisted →
- * persisted; absent → OS fallback. Order matters: the persisted
- * value beats the OS fallback so a user who picked ``default`` on a
- * Linux laptop running a dark color scheme keeps the explicit choice.
+ * once at construction to settle on an initial value.
+ *
+ * If a persisted choice exists it is returned as-is. If none exists
+ * the OS fallback is computed **and immediately persisted** so that
+ * subsequent page loads read the stored value and the ``app.html``
+ * boot-time static attribute stays consistent. Without this write the
+ * static ``data-theme="evergreen"`` flashes to the OS fallback on the
+ * first ``ThemeProvider`` mount for users who never explicitly picked
+ * a theme (the "silent flip" bug logged in ``TODO.md`` 2026-05-02).
+ *
+ * The persist call is best-effort — private mode / quota failures are
+ * silently ignored (the fallback still applies in-memory for this page
+ * load, and the flash recurs on the next boot).
  */
 export function resolveBootTheme(): ThemeId {
-  return loadStoredTheme() ?? resolveOsFallbackTheme();
+  const stored = loadStoredTheme();
+  if (stored !== null) {
+    return stored;
+  }
+  const osFallback = resolveOsFallbackTheme();
+  // Persist so the next page load reads the stored value and the
+  // static HTML boot attribute stays in sync (no flash on reload).
+  saveStoredTheme(osFallback);
+  return osFallback;
 }
