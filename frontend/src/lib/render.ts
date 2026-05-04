@@ -16,14 +16,48 @@
  *   caches the singleton. Item 2.3 will swap the static theme list
  *   for a theme-aware one tied to `data-theme` (per
  *   `docs/behavior/themes.md` §"What gets re-themed live").
+ *
+ * G5 — context-menu data attributes:
+ *
+ * `BearingsRenderer` extends the default marked `Renderer` to inject
+ * ``data-cm-target`` attributes on fenced code blocks and links so the
+ * delegating action in ``MessageTurn.svelte`` can open the correct
+ * per-target context menu:
+ *
+ * - ``<pre data-cm-target="code_block" [data-cm-lang="<lang>"]>``
+ * - ``<a data-cm-target="link" …>``
  */
-import { marked, type MarkedOptions } from "marked";
+import { marked, Renderer, type MarkedOptions, type Tokens } from "marked";
 import { createHighlighter, type Highlighter } from "shiki";
+
+/**
+ * Extends the default marked Renderer to stamp ``data-cm-target``
+ * attributes on rendered code blocks and links.  The attributes are
+ * read by the delegating ``markdownContextMenu`` Svelte action so
+ * right-clicking those elements opens the correct Bearings menu.
+ */
+class BearingsRenderer extends Renderer {
+  override code(token: Tokens.Code): string {
+    const base = super.code(token);
+    const lang = token.lang?.match(/^\S*/)?.[0] ?? "";
+    const dataLang = lang ? ` data-cm-lang="${lang}"` : "";
+    return base.replace(/^<pre>/, `<pre data-cm-target="code_block"${dataLang}>`);
+  }
+
+  override link(token: Tokens.Link): string {
+    const base = super.link(token);
+    // base returns bare text when cleanUrl returns null; only patch real anchors.
+    return base.startsWith("<a ") ? base.replace(/^<a /, '<a data-cm-target="link" ') : base;
+  }
+}
+
+const BEARINGS_RENDERER = new BearingsRenderer();
 
 const DEFAULT_MARKED_OPTIONS: MarkedOptions = {
   // CommonMark + GFM per behavior/chat.md §"Conversation rendering".
   gfm: true,
   breaks: false,
+  renderer: BEARINGS_RENDERER,
 };
 
 /**

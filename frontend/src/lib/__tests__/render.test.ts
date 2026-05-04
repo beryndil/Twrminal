@@ -18,10 +18,22 @@ describe("renderMarkdown", () => {
     expect(html).toContain("<strong>world</strong>");
   });
 
-  it("renders fenced code blocks", async () => {
+  it("renders fenced code blocks with data-cm-target", async () => {
     const html = await renderMarkdown("```\nhi\n```");
-    expect(html).toContain("<pre>");
+    expect(html).toContain('data-cm-target="code_block"');
     expect(html).toContain("hi");
+  });
+
+  it("adds data-cm-lang on fenced blocks with a language identifier", async () => {
+    const html = await renderMarkdown("```python\nprint(1)\n```");
+    expect(html).toContain('data-cm-target="code_block"');
+    expect(html).toContain('data-cm-lang="python"');
+  });
+
+  it("adds data-cm-target on Markdown links", async () => {
+    const html = await renderMarkdown("[click](https://example.com)");
+    expect(html).toContain('data-cm-target="link"');
+    expect(html).toContain('href="https://example.com"');
   });
 });
 

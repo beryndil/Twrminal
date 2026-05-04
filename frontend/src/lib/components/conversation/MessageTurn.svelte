@@ -41,6 +41,7 @@
     MENU_TARGET_MESSAGE,
   } from "../../config";
   import { contextMenu } from "../../actions/contextMenu";
+  import { markdownContextMenu } from "../../actions/markdownContextMenu";
   import {
     deleteMessage,
     moveMessage,
@@ -277,7 +278,7 @@
         </details>
       {/if}
       {#if bodyHtml.length > 0}
-        <div class="message-turn__body" data-testid="message-turn-body">
+        <div class="message-turn__body" data-testid="message-turn-body" use:markdownContextMenu>
           <!-- eslint-disable-next-line svelte/no-at-html-tags -->
           {@html bodyHtml}
         </div>

@@ -21,8 +21,19 @@
    * - §"Long-tool keepalive" — keepalive ticks update
    *   ``liveElapsedMs``; the readout uses it during in-flight, then
    *   freezes on ``durationMs`` once ``done``.
+   * - ``docs/behavior/context-menus.md`` §"Tool call" — right-click
+   *   opens ``MENU_TARGET_TOOL_CALL`` with copy-name / copy-input /
+   *   copy-output / copy-id handlers (G5).
    */
-  import { CONVERSATION_STRINGS } from "../../config";
+  import {
+    CONVERSATION_STRINGS,
+    MENU_ACTION_TOOL_CALL_COPY_ID,
+    MENU_ACTION_TOOL_CALL_COPY_INPUT,
+    MENU_ACTION_TOOL_CALL_COPY_NAME,
+    MENU_ACTION_TOOL_CALL_COPY_OUTPUT,
+    MENU_TARGET_TOOL_CALL,
+  } from "../../config";
+  import { contextMenu } from "../../actions/contextMenu";
   import type { ToolCallView } from "../../stores/conversation.svelte";
 
   interface Props {
@@ -30,6 +41,33 @@
   }
 
   const { call }: Props = $props();
+
+  // ---- context-menu handlers -------------------------------------------------
+
+  const menuHandlers = $derived({
+    /** Copy the tool name (e.g. ``Bash``, ``Read``) to the clipboard. */
+    [MENU_ACTION_TOOL_CALL_COPY_NAME]: () => {
+      void navigator.clipboard.writeText(call.name);
+    },
+
+    /** Copy the raw tool-input JSON to the clipboard. */
+    [MENU_ACTION_TOOL_CALL_COPY_INPUT]: () => {
+      void navigator.clipboard.writeText(call.inputJson);
+    },
+
+    /** Copy the streamed / truncated output text to the clipboard. */
+    [MENU_ACTION_TOOL_CALL_COPY_OUTPUT]: () => {
+      void navigator.clipboard.writeText(call.output);
+    },
+
+    /** Copy the tool-call ID.  Advanced action. */
+    [MENU_ACTION_TOOL_CALL_COPY_ID]: () => {
+      void navigator.clipboard.writeText(call.id);
+    },
+
+    // MENU_ACTION_TOOL_CALL_RETRY — advanced; no backend endpoint in v1.
+    // Omitting the handler renders the entry disabled in the menu.
+  });
 
   const elapsedMs = $derived(
     call.done && call.durationMs !== null ? call.durationMs : call.liveElapsedMs,
@@ -62,6 +100,11 @@
 <details
   class="tool-output mb-2 rounded border border-border bg-surface-0"
   data-testid="tool-output"
+  use:contextMenu={{
+    target: MENU_TARGET_TOOL_CALL,
+    handlers: menuHandlers,
+    data: { toolCallId: call.id },
+  }}
 >
   <summary
     class="flex cursor-pointer items-center gap-2 px-2 py-1.5 font-mono text-xs"
