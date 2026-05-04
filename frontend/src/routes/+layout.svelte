@@ -215,7 +215,7 @@
 </script>
 
 <ThemeProvider>
-  <KeybindingsProvider>
+  <KeybindingsProvider sessionId={selectedSessionId}>
     <ContextMenuProvider>
       <div class="app-shell" data-testid="app-shell">
         <aside

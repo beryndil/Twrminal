@@ -19,28 +19,42 @@
   import type { Snippet } from "svelte";
   import { onMount } from "svelte";
 
-  import { KEYBINDING_ACTION_ESC_CASCADE, KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET } from "../config";
+  import {
+    KEYBINDING_ACTION_ESC_CASCADE,
+    KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET,
+    KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE,
+  } from "../config";
   import { dispatchKeyEvent } from "./dispatch";
   import { runEscCascade } from "./escCascade";
   import { bindHandler, setComposerFocused, setModalOpen } from "./store.svelte";
   import CheatSheet from "./CheatSheet.svelte";
+  import CommandPalette from "./CommandPalette.svelte";
 
   interface Props {
     children?: Snippet;
+    /** Active session id forwarded to CommandPalette for composer insertion. */
+    sessionId?: string | null;
   }
 
-  const { children }: Props = $props();
+  const { children, sessionId = null }: Props = $props();
 
   let cheatSheetOpen = $state(false);
+  let commandPaletteOpen = $state(false);
 
-  // Re-export the modal flag to the dispatch layer so cheat-sheet open
-  // counts as "modal context" for chord gating.
+  // Re-export the modal flag to the dispatch layer so overlays
+  // count as "modal context" for chord gating.
   $effect(() => {
-    setModalOpen(cheatSheetOpen);
+    setModalOpen(cheatSheetOpen || commandPaletteOpen);
   });
 
   function toggleCheatSheet(): void {
     cheatSheetOpen = !cheatSheetOpen;
+    if (cheatSheetOpen) commandPaletteOpen = false;
+  }
+
+  function toggleCommandPalette(): void {
+    commandPaletteOpen = !commandPaletteOpen;
+    if (commandPaletteOpen) cheatSheetOpen = false;
   }
 
   function handleEsc(): void {
@@ -59,6 +73,7 @@
     // Bind the actions the provider owns.
     const releases = [
       bindHandler(KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET, toggleCheatSheet),
+      bindHandler(KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE, toggleCommandPalette),
       bindHandler(KEYBINDING_ACTION_ESC_CASCADE, handleEsc),
     ];
 
@@ -95,3 +110,8 @@
 {/if}
 
 <CheatSheet open={cheatSheetOpen} onClose={() => (cheatSheetOpen = false)} />
+<CommandPalette
+  open={commandPaletteOpen}
+  {sessionId}
+  onClose={() => (commandPaletteOpen = false)}
+/>

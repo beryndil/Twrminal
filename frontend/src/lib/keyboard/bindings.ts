@@ -26,6 +26,7 @@ import {
   KEYBINDING_ACTION_SIDEBAR_UP,
   KEYBINDING_ACTION_SIDEBAR_UP_FORCE,
   KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET,
+  KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE,
   KEYBINDING_SECTION_COMMAND_PALETTE,
   KEYBINDING_SECTION_CREATE,
   KEYBINDING_SECTION_FOCUS,
@@ -149,6 +150,12 @@ export const KEYBINDINGS: readonly KeybindingSpec[] = [
     global: false,
   },
   // ---- Command palette ---------------------------------------------
+  {
+    id: KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE,
+    chord: { code: "KeyP", ctrl: true, shift: true, display: ["Ctrl", "Shift", "P"] },
+    section: KEYBINDING_SECTION_COMMAND_PALETTE,
+    global: true,
+  },
   {
     id: KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH,
     chord: { code: "KeyK", ctrl: true, display: ["Ctrl", "K"] },

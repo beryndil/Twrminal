@@ -364,6 +364,23 @@ export const CONVERSATION_STRINGS = {
 } as const;
 
 /**
+ * Global command palette strings (Phase 5).
+ * Anchored to ``docs/behavior/keyboard-shortcuts.md`` §"Command palette".
+ */
+export const COMMAND_PALETTE_STRINGS = {
+  title: "Command palette",
+  ariaLabel: "Global command palette",
+  searchPlaceholder: "Search slash commands…",
+  closeLabel: "Close",
+  noResults: "No commands match",
+  sourceLabels: {
+    user_commands: "User",
+    user_skills: "Skills",
+    project_commands: "Project",
+  } as Record<string, string>,
+} as const;
+
+/**
  * String table for the live todos panel (item 2.1).
  *
  * Centralised here so the component stays logic-only and any
@@ -1655,6 +1672,7 @@ export const KEYBINDING_ACTION_SIDEBAR_UP_FORCE = "navigate.sidebar_up_force";
 export const KEYBINDING_ACTION_SIDEBAR_JUMP_PREFIX = "navigate.sidebar_jump_";
 export const KEYBINDING_ACTION_ESC_CASCADE = "focus.esc_cascade";
 export const KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET = "help.toggle_cheat_sheet";
+export const KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE = "palette.toggle_command_palette";
 export const KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH = "palette.focus_sidebar_search";
 
 /**
@@ -1707,6 +1725,7 @@ export const KEYBOARD_SHORTCUT_STRINGS = {
     [KEYBINDING_ACTION_SIDEBAR_UP_FORCE]: "Move sidebar selection up (works in inputs)",
     [KEYBINDING_ACTION_ESC_CASCADE]: "Close overlay / blur input",
     [KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET]: "Toggle this cheat sheet",
+    [KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE]: "Toggle the command palette",
     [KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH]: "Focus the sidebar search field",
   } as const,
   jumpToSlotLabelTemplate: "Jump to sidebar slot {n}",
