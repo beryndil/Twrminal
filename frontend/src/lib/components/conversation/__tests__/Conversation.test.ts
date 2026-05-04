@@ -44,7 +44,7 @@ describe("Conversation — hydration", () => {
     fetchMock.mockResolvedValueOnce({
       status: 200,
       statusText: "OK",
-      json: async () => [],
+      json: async () => ({ items: [], has_more: false }),
     });
     render(Conversation, { props: { sessionId: "ses_a" } });
     await waitFor(() => {
@@ -58,7 +58,7 @@ describe("Conversation — hydration", () => {
     fetchMock.mockResolvedValueOnce({
       status: 200,
       statusText: "OK",
-      json: async () => [],
+      json: async () => ({ items: [], has_more: false }),
     });
     const { findByTestId } = render(Conversation, { props: { sessionId: "ses_a" } });
     expect(await findByTestId("conversation-empty")).toBeTruthy();
@@ -68,29 +68,33 @@ describe("Conversation — hydration", () => {
     fetchMock.mockResolvedValueOnce({
       status: 200,
       statusText: "OK",
-      json: async () => [
-        {
-          id: "u1",
-          session_id: "ses_a",
-          role: "user",
-          content: "hi",
-          created_at: "2026-04-29T00:00:00Z",
-          executor_model: null,
-          advisor_model: null,
-          effort_level: null,
-          routing_source: null,
-          routing_reason: null,
-          matched_rule_id: null,
-          executor_input_tokens: null,
-          executor_output_tokens: null,
-          advisor_input_tokens: null,
-          advisor_output_tokens: null,
-          advisor_calls_count: null,
-          cache_read_tokens: null,
-          input_tokens: null,
-          output_tokens: null,
-        },
-      ],
+      json: async () => ({
+        has_more: false,
+        items: [
+          {
+            id: "u1",
+            seq: 1,
+            session_id: "ses_a",
+            role: "user",
+            content: "hi",
+            created_at: "2026-04-29T00:00:00Z",
+            executor_model: null,
+            advisor_model: null,
+            effort_level: null,
+            routing_source: null,
+            routing_reason: null,
+            matched_rule_id: null,
+            executor_input_tokens: null,
+            executor_output_tokens: null,
+            advisor_input_tokens: null,
+            advisor_output_tokens: null,
+            advisor_calls_count: null,
+            cache_read_tokens: null,
+            input_tokens: null,
+            output_tokens: null,
+          },
+        ],
+      }),
     });
     const { findAllByTestId } = render(Conversation, { props: { sessionId: "ses_a" } });
     const turns = await findAllByTestId("message-turn");
