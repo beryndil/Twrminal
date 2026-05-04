@@ -2231,6 +2231,100 @@
         }
       }
     },
+    "/api/sessions/{session_id}/recover": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Resume Session",
+        "description": "User-driven recovery from ERROR state.\n\nClears the ``error_pending`` flag in the DB and triggers a runner\nrespawn so the next user prompt can proceed. Per\n``docs/behavior/chat.md`` \u00a7\"Error states\" and ``TODO.md`` \u00a7\"POST\n/api/sessions/{id}/recover HTTP route\".\n\n- ``404`` \u2014 session not found.\n- ``200`` \u2014 session row returned with ``error_pending=False``; the\n  runner respawn is a side-effect (transparent to the caller).",
+        "operationId": "resume_session_api_sessions__session_id__recover_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{session_id}/paired-chat-info": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Get Paired Chat Info Route",
+        "description": "Fetch paired-chat metadata for a chat session.\n\nPer ``docs/behavior/paired-chats.md`` \u00a7\"From the chat side\" \u2014 when a\nchat session is paired to a checklist item, the breadcrumb shows\n``<parent checklist title> > <item label>``. This endpoint returns\nthose two fields when a pairing exists, or ``None`` when the chat is\nunpaired.\n\nReturns 200 with ``{parent_title, item_label}`` when paired, or\n200 with ``null`` when unpaired or the session is absent. (Returning\n200 for both cases avoids the cognitive overhead of decoding a 404\nas \"not paired\" vs \"session missing\" \u2014 the UI reads the None value\nand hides the breadcrumb.)",
+        "operationId": "get_paired_chat_info_route_api_sessions__session_id__paired_chat_info_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PairedChatInfo"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Paired Chat Info Route Api Sessions  Session Id  Paired Chat Info Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{session_id}/regenerate": {
       "post": {
         "tags": [
@@ -5099,6 +5193,26 @@
         "title": "OverrideRateOut",
         "description": "One row of ``GET /api/usage/override_rates?days=14`` per spec \u00a79."
       },
+      "PairedChatInfo": {
+        "properties": {
+          "parent_title": {
+            "type": "string",
+            "title": "Parent Title"
+          },
+          "item_label": {
+            "type": "string",
+            "title": "Item Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "parent_title",
+          "item_label"
+        ],
+        "title": "PairedChatInfo",
+        "description": "Response shape for ``GET /api/sessions/{id}/paired-chat-info``.\n\nPer ``docs/behavior/paired-chats.md`` \u00a7\"From the chat side\" \u2014 when a\nchat session is paired to a checklist item, the breadcrumb shows\n``<parent checklist title> > <item label>``. This endpoint returns\nthose two fields when a pairing exists, or ``None`` when the chat is\nunpaired."
+      },
       "PairedChatLegOut": {
         "properties": {
           "id": {
@@ -5933,6 +6047,28 @@
             },
             "type": "array",
             "title": "Tag Ids"
+          },
+          "routing_advisor_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing Advisor Model"
+          },
+          "routing_advisor_max_uses": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Routing Advisor Max Uses",
+            "default": 5
+          },
+          "routing_effort_level": {
+            "type": "string",
+            "title": "Routing Effort Level",
+            "default": "auto"
           }
         },
         "additionalProperties": false,
@@ -5944,7 +6080,7 @@
           "model"
         ],
         "title": "SessionCreate",
-        "description": "Request shape for ``POST /api/sessions``.\n\nPer arch \u00a71.1.5 the v1 session-create surface. The Pydantic shape\nenforces field shape; the route handler enforces ``kind`` membership\nin :data:`KNOWN_SESSION_KINDS`, that ``tag_ids`` references existing\nrows, and the deeper dataclass invariants (model name format,\npermission-mode enum, etc.) via :class:`Session.__post_init__`.\n\n``tag_ids`` defaults to the empty list \u2014 the new-session form\nenforces \"\u22651 tag\" at the UI layer; the API accepts zero so a CLI\nor test caller can create an untagged session without first\ncreating a tag."
+        "description": "Request shape for ``POST /api/sessions``.\n\nPer arch \u00a71.1.5 the v1 session-create surface. The Pydantic shape\nenforces field shape; the route handler enforces ``kind`` membership\nin :data:`KNOWN_SESSION_KINDS`, that ``tag_ids`` references existing\nrows, and the deeper dataclass invariants (model name format,\npermission-mode enum, etc.) via :class:`Session.__post_init__`.\n\n``tag_ids`` defaults to the empty list \u2014 the new-session form\nenforces \"\u22651 tag\" at the UI layer; the API accepts zero so a CLI\nor test caller can create an untagged session without first\ncreating a tag.\n\nThe three ``routing_*`` fields carry the routing-decision projection\nso the supervisor respawn path can reconstruct the full\n:class:`bearings.agent.routing.RoutingDecision` without falling\nback to template defaults. ``routing_advisor_model=None`` means \"no\nadvisor\"; omitting these fields uses the same defaults as the\nsession-bootstrap fallback."
       },
       "SessionModelUpdate": {
         "properties": {
@@ -6139,6 +6275,17 @@
               }
             ],
             "title": "Closing Summary"
+          },
+          "paired_parent_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paired Parent Title"
           }
         },
         "additionalProperties": false,

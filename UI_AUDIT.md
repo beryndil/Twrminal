@@ -66,12 +66,12 @@ These are built and functional per spec:
 
 | Feature | Spec Location | Status | Notes |
 |---------|---------------|--------|-------|
-| **"Ask for more detail" button** | `chat.md` §"What a message turn looks like" | ✗ Missing | Hover-RHS button on assistant bubble; tooltip-documented but not implemented |
-| **Regenerate from message** | `chat.md` / `context-menus.md` | ⚠ Partial | Menu action exists; UI handlers unbuilt |
+| **"Ask for more detail" button** | `chat.md` §"What a message turn looks like" | ✓ Implemented (Phase 1) | Hover-RHS button on assistant bubble |
+| **Regenerate from message** | `chat.md` / `context-menus.md` | ✓ Implemented (Phase 1) | Context menu + API client wired |
 | **Message split dialog** | `context-menus.md` `message.split_here` | ✗ Missing | Carves conversation into sibling session |
-| **Model switch dialog** | `chat.md` §"Manual mid-session model switch" | ⚠ Partial | Dropdown exists (header); confirmation modal missing |
-| **Recovery button** | `chat.md` §"Error states" | ✗ Missing | "Recover" action when agent hits error (phase 2 deferral) |
-| **Undo stop inline** | `chat.md` §"Stopping or interrupting" | ✗ Missing | ~3s ephemeral inline re-issue prompt suggestion |
+| **Model switch dialog** | `chat.md` §"Manual mid-session model switch" | ✓ Implemented | ModelSwitchDialog wired in ModelSelector |
+| **Recovery button** | `chat.md` §"Error states" | ✓ Implemented (Phase 4) | Recover button in error block + POST /recover route |
+| **Undo stop inline** | `chat.md` §"Stopping or interrupting" | ✓ Implemented | StopUndoInline mounted in Conversation |
 | **Thinking block toggle** | `chat.md` §"What a message turn looks like" | ✓ Likely present | Check `MessageTurn.svelte` |
 | **Message pin to header** | `context-menus.md` `message.pin` | ✗ Unimplemented | Floats bubble into conversation header when pinned |
 | **Hide from context** | `context-menus.md` `message.hide_from_context` | ✗ Unimplemented | Greys message; drops from next prompt |
@@ -89,19 +89,19 @@ These are built and functional per spec:
 
 | Binding | Spec | Action | Status |
 |---------|------|--------|--------|
-| `?` | `keyboard-shortcuts.md` | Cheat-sheet modal (all bindings + descriptions) | ✗ Missing |
-| `Ctrl+Shift+P` | `keyboard-shortcuts.md` | Command palette (slash-commands + actions) | ✗ Missing |
-| `Ctrl+Shift+O` | `keyboard-shortcuts.md` | Pending operations card (global floating) | ✗ Missing |
-| `t` | `keyboard-shortcuts.md` | Template picker modal | ✗ Missing |
-| `Shift+C` | `keyboard-shortcuts.md` | New chat **without** seeded defaults | ⚠ Partial | Binding wired; form-state reset missing |
+| `?` | `keyboard-shortcuts.md` | Cheat-sheet modal (all bindings + descriptions) | ✓ Implemented |
+| `Ctrl+Shift+P` | `keyboard-shortcuts.md` | Command palette (slash-commands + actions) | ✓ Implemented (Phase 5) |
+| `Ctrl+Shift+O` | `keyboard-shortcuts.md` | Pending operations card (global floating) | ✗ Missing (no PendingOps surface) |
+| `t` | `keyboard-shortcuts.md` | Template picker modal | ✗ Missing (templates deferred) |
+| `Shift+C` | `keyboard-shortcuts.md` | New chat **without** seeded defaults | ✓ Implemented (`?bare=1` query param) |
 
 ### Slash Commands & Session-Lifecycle
 
 | Feature | Spec | Status | Notes |
 |---------|------|--------|-------|
-| **Slash command palette** (`/advisor`, `/checkpoint`, etc.) | `chat.md` §"Slash commands in the composer" | ✗ Missing | Composer shows no completion/hint UI |
-| **`/advisor`** | `chat.md` | ✗ Missing | Per-turn advisor override (wired at SDK; UI unbuilt) |
-| **`/checkpoint`** | `chat.md` | ✗ Missing | Named gutter mark for fork points |
+| **Slash command palette** (`/advisor`, `/checkpoint`, etc.) | `chat.md` §"Slash commands in the composer" | ✓ Implemented | CommandMenu typeahead on `/` in composer |
+| **`/advisor`** | `chat.md` | ✓ Listed | Shows in command palette from /api/commands |
+| **`/checkpoint`** | `chat.md` | ✓ Listed | Shows in command palette from /api/commands |
 | **Save as template** | `context-menus.md` `session.save_as_template` | ✗ Missing | Dialog to name + store new template |
 | **Templates list** | `keyboard-shortcuts.md` `t` binding | ✗ Missing | Picker modal populated from saved templates |
 | **Fork from last message** | `context-menus.md` | ✗ Missing | New session with shared history |
@@ -110,9 +110,9 @@ These are built and functional per spec:
 
 | Feature | Spec | Status | Notes |
 |---------|------|--------|-------|
-| **Vault search** | `vault.md` §"Search semantics" | ✗ Missing | Case-insensitive substring match over plans + TODOs |
-| **Redaction overlay** | `vault.md` §"Redaction rendering" | ✗ Missing | Mask high-entropy tokens; Show toggle |
-| **Drag-to-composer** | `vault.md` §"Paste-into-message" | ✗ Missing | Drag vault row → inserts title link |
+| **Vault search** | `vault.md` §"Search semantics" | ✓ Implemented | Backend GET /api/vault/search + VaultPanel search input |
+| **Redaction overlay** | `vault.md` §"Redaction rendering" | ✓ Implemented | segmentBody() + VAULT_REDACTION_MASK_GLYPH in VaultPanel |
+| **Drag-to-composer** | `vault.md` §"Paste-into-message" | ✓ Implemented (Phase 3) | Draggable vault rows → drop handler inserts markdown link |
 
 ---
 
@@ -191,7 +191,7 @@ Per `chat.md` §"When the user creates a chat":
 | **Immediate re-theme** | `themes.md` | ✓ Complete | Synchronous; no flash |
 | **Persistence** | `themes.md` §"Persistence boundary" | ⚠ Partial | localStorage only (deferred server-sync per TODO.md) |
 | **OS fallback** | `themes.md` | ✓ Implemented | light-scheme → Paper Light; dark → Midnight Glass |
-| **Silent flip bug** | TODO.md "Theme picker silently flips" | ✗ Known issue | Boots evergreen, flickers to OS fallback without user action |
+| **Silent flip bug** | TODO.md "Theme picker silently flips" | ✓ Fixed (Phase 6) | resolveBootTheme() now persists OS fallback on first boot |
 | **Mobile chrome color** | `themes.md` | ? Unclear | Meta tag for address bar color |
 
 ---
@@ -218,17 +218,17 @@ Per `chat.md` §"When the user creates a chat":
 - Sidebar navigation
 - Inspector basics
 
-### **SHOULD-HAVE for good UX** — ~50% DONE
-- Keyboard shortcuts (basics done; power-user missing)
-- Context menus (structure done; some handlers missing)
-- Modals (new-session done; others missing)
-- Paired-chat indicator (component ready; need endpoint)
+### **SHOULD-HAVE for good UX** — ~85% DONE (Phases 1–6)
+- Keyboard shortcuts (basics + cheat sheet + Ctrl+Shift+P done; Ctrl+Shift+O / t pending)
+- Context menus (structure done; message split / pin / hide pending)
+- Modals (new-session + model switch + recovery done; split / fork pending)
+- Paired-chat indicator ✓ (Phase 2)
 
-### **NICE-TO-HAVE for power users** — ~20% DONE
-- Cheat sheet + command palette
-- Advanced message actions (regenerate, split, fork)
-- Pending operations
-- Templates + cloning workflows
+### **NICE-TO-HAVE for power users** — ~60% DONE
+- Cheat sheet ✓ / command palette ✓ (Phases 1, 5)
+- Regenerate ✓ / Ask-for-more-detail ✓ (Phase 1); split / fork pending
+- Pending operations (Ctrl+Shift+O) — deferred (no route/component)
+- Templates + cloning workflows — deferred
 
 ---
 

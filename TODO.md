@@ -112,30 +112,23 @@ SDK-version issue. Plausible angles before the next occurrence:
 When this recurs, the new `_log.warning` in `sdk_loop` will surface
 the traceback in journald — capture it before doing anything else.
 
-### `POST /api/sessions/{id}/recover` HTTP route — missing
+~~### `POST /api/sessions/{id}/recover` HTTP route — missing~~
 
-`AgentSession.recover()` exists at `agent/session.py:326` and the
-behavior doc + sign-off Q7 both reference a "Recover" UX path, but no
-FastAPI route exposes it. Today the only way back from ERROR is to
-send a new prompt and rely on reap-recovery (now actually working
-after the supervisor-liveness fix). A user-driven recover surface is
-still the documented model. Add `web/routes/sessions.py::recover` +
-the frontend button per `docs/behavior/chat.md` §"Error states".
+~~Resolved by commit `cc4ea35` (Phase 4 of the UI/UX gap sweep). Route
+`POST /api/sessions/{id}/recover` (handler `resume_session`) added to
+`web/routes/sessions.py`; DB `set_error_pending()` added; frontend
+Recover button wired in `Conversation.svelte`; `is_error` field added
+to `RunnerStatus` + `runner_state` WS frame + sessions store handler
+so the sidebar pip lights immediately on error without a page reload.~~
 
 ## Remaining deferrals (post-v1 scope)
 
-### Theme picker silently flips to OS scheme on first paint — 2026-05-02
+~~### Theme picker silently flips to OS scheme on first paint — 2026-05-02~~
 
-`frontend/src/lib/themes/persistence.ts:resolveBootTheme()` returns
-`loadStoredTheme() ?? resolveOsFallbackTheme()`, and
-`resolveOsFallbackTheme()` returns `THEME_PAPER_LIGHT` when
-`(prefers-color-scheme: light)` matches. `index.html` paints
-`data-theme="evergreen"` on first frame, then `ThemeProvider`'s
-`onMount` re-applies `themeStore.theme` and the OS fallback overrides
-the static-HTML choice. Net effect for a user on a light-scheme OS who
-hasn't explicitly clicked the picker: the page boots evergreen,
-flickers, and lands on paper-light without telling them. Dave hit this
-during the `/sessions/new` contrast-bug investigation 2026-05-02.
+~~Resolved by commit `c730cba` (Phase 6 of the UI/UX gap sweep).
+`resolveBootTheme()` now persists the OS-fallback choice to localStorage
+on first boot so subsequent loads skip the OS check and the static
+`data-theme="evergreen"` in `app.html` stays consistent across reloads.~~
 
 **Action**: either (a) drop the OS fallback so the static-HTML default
 (`evergreen`) is the sole "no persisted choice" path, or (b) make the
