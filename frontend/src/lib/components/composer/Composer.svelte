@@ -178,6 +178,28 @@
   // ---------------------------------------------------------------------------
 
   /**
+   * Detect ``/advisor`` as the first token (G9). When matched, the
+   * prompt is submitted normally but with ``force_advisor: true``
+   * attached to the POST body so the SDK loop prepends the advisor-
+   * override instruction to the content it sends to the executor.
+   * The command token (and any trailing whitespace) is stripped before
+   * submission so the executor sees only the user's actual message.
+   *
+   * Returns the content to submit (stripped), or ``null`` when the
+   * token is not ``/advisor``.
+   */
+  function tryParseAdvisorCommand(value: string): { matched: true; content: string } | null {
+    const t = value.trimStart();
+    if (!t.startsWith("/advisor")) return null;
+    const rest = t.slice("/advisor".length);
+    if (rest.length > 0 && !/^\s/.test(rest)) {
+      // ``/advisors`` or similar — not the same command.
+      return null;
+    }
+    return { matched: true, content: rest.trim() };
+  }
+
+  /**
    * Detect ``/checkpoint`` as the first token. When matched, intercept
    * submit and POST a checkpoint instead of a prompt. The optional
    * argument is the label (everything after the command word and a
@@ -235,11 +257,22 @@
       await handleCheckpointCommand(checkpointCmd.label);
       return;
     }
+    // ``/advisor`` per-turn override (G9): strip the command token and
+    // attach ``force_advisor: true`` to the POST body.
+    const advisorCmd = tryParseAdvisorCommand(draft);
+    const content = advisorCmd !== null ? advisorCmd.content : draft;
+    const forceAdvisor = advisorCmd !== null;
+    // Guard: if /advisor was the entire message and there is no body
+    // after stripping, treat as empty — canSend already checks
+    // ``trimmed.length > 0`` for the raw draft, but the stripped
+    // content could become empty (e.g. the user typed only ``/advisor``
+    // with no following text).
+    if (content.trim().length === 0) return;
     inflight = true;
     errorMessage = null;
-    const payload = draft;
+    const payload = content;
     try {
-      await sendPrompt(sessionId, payload);
+      await sendPrompt(sessionId, payload, { forceAdvisor });
       // Record before clearing — push deduplicates consecutive identical sends.
       history.push(payload);
       draft = "";

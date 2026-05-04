@@ -105,10 +105,19 @@ class QueuedPrompt:
     time." The frozen dataclass carries the persisted message id (for
     correlation with the WS ``message_start`` frame the runner emits
     when it picks the prompt up) plus the user-facing content.
+
+    :attr:`force_advisor` is ``True`` when the user prefixed the
+    prompt with the ``/advisor`` slash-command (G9). The SDK loop
+    honours this flag by prepending
+    :data:`bearings.config.constants.FORCE_ADVISOR_INSTRUCTION` to the
+    content it sends to ``client.query`` — but only when the session's
+    routing decision has an ``advisor_model`` configured (graceful
+    degradation otherwise).
     """
 
     message_id: str
     content: str
+    force_advisor: bool = False
 
 
 # A buffered (seq, event) pair — sequence number for ``since_seq``
@@ -290,7 +299,13 @@ class SessionRunner:
         """
         self._stop_event.set()
 
-    def enqueue_prompt(self, *, message_id: str, content: str) -> None:
+    def enqueue_prompt(
+        self,
+        *,
+        message_id: str,
+        content: str,
+        force_advisor: bool = False,
+    ) -> None:
         """Append ``content`` to the FIFO prompt queue.
 
         Per ``docs/behavior/prompt-endpoint.md`` §"What the user sees in
@@ -304,12 +319,18 @@ class SessionRunner:
         loop's job (item 1.3+ wiring). This method is intentionally
         synchronous + cheap so the prompt-endpoint route handler
         returns 202 in O(1) once persistence has succeeded.
+
+        ``force_advisor`` is forwarded from the ``/advisor`` slash-
+        command (G9) so the SDK loop can prepend the advisor-override
+        instruction when the session has an advisor model registered.
         """
         if not message_id:
             raise ValueError("enqueue_prompt: message_id must be non-empty")
         if not content:
             raise ValueError("enqueue_prompt: content must be non-empty")
-        self._prompt_queue.append(QueuedPrompt(message_id=message_id, content=content))
+        self._prompt_queue.append(
+            QueuedPrompt(message_id=message_id, content=content, force_advisor=force_advisor)
+        )
         self._new_prompt_event.set()
         self._last_active_ns = _monotonic_ns()
 

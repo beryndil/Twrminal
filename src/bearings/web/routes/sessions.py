@@ -710,6 +710,7 @@ async def prompt_session(
         limiter,
         session_id=session_id,
         content=payload.content,
+        force_advisor=payload.force_advisor,
     )
     outcome = result.outcome
     if outcome is PromptDispatchOutcome.QUEUED:

@@ -159,6 +159,7 @@ async def dispatch_prompt(
     *,
     session_id: str,
     content: str,
+    force_advisor: bool = False,
 ) -> PromptDispatchResult:
     """Apply the full prompt-endpoint pipeline.
 
@@ -182,6 +183,11 @@ async def dispatch_prompt(
             ``app.state``.
         session_id: Target session id.
         content: User-role prompt text (raw — this function strips).
+        force_advisor: When ``True``, the SDK loop prepends
+            :data:`bearings.config.constants.FORCE_ADVISOR_INSTRUCTION`
+            to the content it sends to ``client.query`` — but only
+            when the session's routing decision has an advisor model
+            configured (G9 ``/advisor`` per-turn override).
 
     Returns:
         :class:`PromptDispatchResult` carrying the outcome enum + the
@@ -228,7 +234,7 @@ async def dispatch_prompt(
         )
     message = await messages_db.insert_user(connection, session_id=session_id, content=stripped)
     runner = await runner_factory(session_id)
-    runner.enqueue_prompt(message_id=message.id, content=stripped)
+    runner.enqueue_prompt(message_id=message.id, content=stripped, force_advisor=force_advisor)
     return PromptDispatchResult(
         outcome=PromptDispatchOutcome.QUEUED,
         message_id=message.id,

@@ -643,6 +643,16 @@ PROMPT_CONTENT_MAX_CHARS: Final[int] = 64_000
 PROMPT_ACK_QUEUED_KEY: Final[str] = "queued"
 PROMPT_ACK_SESSION_ID_KEY: Final[str] = "session_id"
 
+# Per-turn ``/advisor`` override instruction (G9). Prepended to the
+# prompt content when ``force_advisor=True`` and the session's routing
+# decision has an advisor model configured. For advisor-less sessions
+# the flag is a no-op — the advisor tool is not registered in the SDK
+# session, so the instruction would be meaningless.
+FORCE_ADVISOR_INSTRUCTION: Final[str] = (
+    "[/advisor] The user has invoked the per-turn advisor override. "
+    "You MUST call the advisor tool before composing your response.\n\n"
+)
+
 # ---------------------------------------------------------------------------
 # Sessions (item 1.7; arch §1.1.3 ``db/sessions.py``; behavior surface
 # in ``docs/behavior/chat.md`` + ``docs/behavior/paired-chats.md``).
@@ -1251,6 +1261,7 @@ __all__ = [
     "EFFORT_LEVEL_TO_SDK",
     "EXECUTOR_FALLBACK_MODEL",
     "EXECUTOR_MODEL_FULL_ID_PREFIX",
+    "FORCE_ADVISOR_INSTRUCTION",
     "FS_ENTRY_KIND_DIR",
     "FS_ENTRY_KIND_FILE",
     "FS_ENTRY_KIND_OTHER",

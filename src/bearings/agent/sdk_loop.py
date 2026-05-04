@@ -78,6 +78,7 @@ from bearings.agent.session import (
     SessionStateError,
 )
 from bearings.agent.translate import SDKEventTranslator
+from bearings.config.constants import FORCE_ADVISOR_INSTRUCTION
 
 _log = logging.getLogger(__name__)
 
@@ -251,7 +252,15 @@ async def _do_run_one_turn(
             content=prompt.content,
         )
     )
-    await client.query(prompt.content, session_id=session.config.session_id)
+    # Per-turn advisor override (G9 ``/advisor`` slash-command).
+    # Prepend the force-advisor instruction when the user requested it
+    # AND the session's routing decision has an advisor model configured
+    # (graceful degradation: if the advisor beta was not registered at
+    # session start, the executor has no advisor tool to call anyway).
+    query_content = prompt.content
+    if prompt.force_advisor and session.config.decision.advisor_model is not None:
+        query_content = FORCE_ADVISOR_INSTRUCTION + prompt.content
+    await client.query(query_content, session_id=session.config.session_id)
     last_result: ResultMessage | None = None
     async for sdk_msg in client.receive_response():
         if isinstance(sdk_msg, ResultMessage):

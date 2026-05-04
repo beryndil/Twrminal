@@ -28,10 +28,21 @@ class PromptIn(BaseModel):
     """Request shape for ``POST /api/sessions/{id}/prompt``.
 
     Per ``docs/behavior/prompt-endpoint.md`` §"Request shape" only
-    ``content`` is read; additional fields are ignored at the boundary.
-    Pydantic's ``extra="ignore"`` realises that — clients can send a
-    body with ``role`` / ``attachments`` keys (defensive against future
-    additions) without rejection, but the values are dropped.
+    ``content`` is read by default; additional unknown fields are
+    ignored at the boundary.  Pydantic's ``extra="ignore"`` realises
+    that — clients can send a body with ``role`` / ``attachments``
+    keys (defensive against future additions) without rejection, but
+    the values are dropped.
+
+    ``force_advisor`` is the G9 per-turn advisor override: when
+    ``true``, the SDK loop prepends
+    :data:`bearings.config.constants.FORCE_ADVISOR_INSTRUCTION` to the
+    content it sends to ``client.query``, directing the executor to
+    call the advisor tool for this turn only.  Sessions without an
+    advisor model configured treat the flag as a no-op (graceful
+    degradation — the advisor tool is not registered in those SDK
+    sessions).  The ``/advisor`` composer slash-command sets this flag
+    automatically after stripping the command token from the draft.
 
     The ``min_length=1`` guard is on the Pydantic shape; the deeper
     "non-empty after stripping whitespace" rule lives in
@@ -43,6 +54,7 @@ class PromptIn(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     content: str = Field(min_length=1, max_length=PROMPT_CONTENT_MAX_CHARS)
+    force_advisor: bool = False
 
 
 class PromptAck(BaseModel):

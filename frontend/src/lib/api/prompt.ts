@@ -30,7 +30,20 @@ interface PromptAck {
  * underlying :class:`ApiError` is rethrown so the caller can branch on
  * ``error.status`` (404 missing, 409 closed, 413 too large, 422
  * validation, 429 rate limited).
+ *
+ * ``forceAdvisor`` is the G9 per-turn advisor override: when ``true``,
+ * the backend prepends the advisor-override instruction to the content
+ * it sends to the SDK executor, directing it to call the advisor tool
+ * for this turn only.  Set by the ``/advisor`` composer slash-command.
  */
-export async function sendPrompt(sessionId: string, content: string): Promise<PromptAck> {
-  return await postJson<PromptAck>(sessionPromptEndpoint(sessionId), { content });
+export async function sendPrompt(
+  sessionId: string,
+  content: string,
+  { forceAdvisor = false }: { forceAdvisor?: boolean } = {},
+): Promise<PromptAck> {
+  const body: Record<string, unknown> = { content };
+  if (forceAdvisor) {
+    body["force_advisor"] = true;
+  }
+  return await postJson<PromptAck>(sessionPromptEndpoint(sessionId), body);
 }

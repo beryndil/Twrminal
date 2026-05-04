@@ -7,6 +7,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **`/advisor` per-turn override (G9):** The composer slash-command
+  `/advisor <message>` attaches `force_advisor=true` to the prompt
+  payload.  The backend SDK loop honours the flag by prepending
+  `FORCE_ADVISOR_INSTRUCTION` to the content sent to `client.query`,
+  directing the executor to call the advisor tool for that turn only.
+  Sessions without an advisor model configured treat the flag as a
+  no-op (graceful degradation).  OpenAPI spec regenerated;
+  `docs/openapi.json` updated.
+
 ### Changed
 
 - **Status-bar decorative pills removed** (wiring-v1-daily-driver item 4.2):

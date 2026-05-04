@@ -6197,6 +6197,11 @@
             "maxLength": 64000,
             "minLength": 1,
             "title": "Content"
+          },
+          "force_advisor": {
+            "type": "boolean",
+            "title": "Force Advisor",
+            "default": false
           }
         },
         "type": "object",
@@ -6204,7 +6209,7 @@
           "content"
         ],
         "title": "PromptIn",
-        "description": "Request shape for ``POST /api/sessions/{id}/prompt``.\n\nPer ``docs/behavior/prompt-endpoint.md`` \u00a7\"Request shape\" only\n``content`` is read; additional fields are ignored at the boundary.\nPydantic's ``extra=\"ignore\"`` realises that \u2014 clients can send a\nbody with ``role`` / ``attachments`` keys (defensive against future\nadditions) without rejection, but the values are dropped.\n\nThe ``min_length=1`` guard is on the Pydantic shape; the deeper\n\"non-empty after stripping whitespace\" rule lives in\n:func:`bearings.agent.prompt_dispatch.dispatch_prompt` so a client\nsending a string of pure whitespace surfaces the doc-mandated\ndetail message rather than a Pydantic validation error."
+        "description": "Request shape for ``POST /api/sessions/{id}/prompt``.\n\nPer ``docs/behavior/prompt-endpoint.md`` \u00a7\"Request shape\" only\n``content`` is read by default; additional unknown fields are\nignored at the boundary.  Pydantic's ``extra=\"ignore\"`` realises\nthat \u2014 clients can send a body with ``role`` / ``attachments``\nkeys (defensive against future additions) without rejection, but\nthe values are dropped.\n\n``force_advisor`` is the G9 per-turn advisor override: when\n``true``, the SDK loop prepends\n:data:`bearings.config.constants.FORCE_ADVISOR_INSTRUCTION` to the\ncontent it sends to ``client.query``, directing the executor to\ncall the advisor tool for this turn only.  Sessions without an\nadvisor model configured treat the flag as a no-op (graceful\ndegradation \u2014 the advisor tool is not registered in those SDK\nsessions).  The ``/advisor`` composer slash-command sets this flag\nautomatically after stripping the command token from the draft.\n\nThe ``min_length=1`` guard is on the Pydantic shape; the deeper\n\"non-empty after stripping whitespace\" rule lives in\n:func:`bearings.agent.prompt_dispatch.dispatch_prompt` so a client\nsending a string of pure whitespace surfaces the doc-mandated\ndetail message rather than a Pydantic validation error."
       },
       "QuotaDiagOut": {
         "properties": {
