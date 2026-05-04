@@ -277,11 +277,24 @@ class Driver:
                 self._skip_current.clear()
                 await self._record_skip(item, reason="skip-current requested")
                 return None
-            leg_session_id = await self._runtime.spawn_leg(
-                item_id=item.id,
-                leg_number=leg_number,
-                plug=plug,
-            )
+            # When ``visit_existing`` is set and the item already has a
+            # paired chat session, reuse it for the first leg instead of
+            # spawning a new one. Subsequent legs (after a handoff) always
+            # spawn fresh sessions because the handoff boundary implies the
+            # prior leg's context is exhausted.
+            if self._config.visit_existing and leg_number == 1 and item.chat_session_id:
+                leg_session_id = item.chat_session_id
+                _LOG.debug(
+                    "visit_existing: reusing session %r for item %d",
+                    leg_session_id,
+                    item.id,
+                )
+            else:
+                leg_session_id = await self._runtime.spawn_leg(
+                    item_id=item.id,
+                    leg_number=leg_number,
+                    plug=plug,
+                )
             self._leg_session_ids.append(leg_session_id)
             self._legs_spawned += 1
             await checklists_db.record_leg(

@@ -45,10 +45,16 @@ domain call, response formatting.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+from typing import cast
+
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Request, status
 
-from bearings.agent.auto_driver_runtime import AutoDriverRegistry
+from bearings.agent.auto_driver import Driver
+from bearings.agent.auto_driver_runtime import AutoDriverRegistry, build_driver
+from bearings.agent.auto_driver_types import DriverConfig, DriverRuntime
 from bearings.config.constants import (
     AUTO_DRIVER_STATE_PAUSED,
     AUTO_DRIVER_STATE_RUNNING,
@@ -76,6 +82,8 @@ from bearings.web.models.checklists import (
 
 router = APIRouter()
 
+_LOG = logging.getLogger(__name__)
+
 
 def _db(request: Request) -> aiosqlite.Connection:
     """Pull the long-lived DB connection off ``app.state``."""
@@ -99,6 +107,16 @@ def _registry(request: Request) -> AutoDriverRegistry | None:
             detail="auto_driver_registry on app.state is not an AutoDriverRegistry",
         )
     return reg
+
+
+def _runtime(request: Request) -> DriverRuntime | None:
+    """Pull the optional :class:`DriverRuntime` off ``app.state``.
+
+    Returns ``None`` when no runtime is wired (test-only apps that omit
+    a DB connection). ``start_run`` guards on it being non-``None``
+    before dispatching a live driver task.
+    """
+    return cast(DriverRuntime | None, getattr(request.app.state, "driver_runtime", None))
 
 
 def _to_item_out(item: ChecklistItem) -> ChecklistItemOut:
@@ -498,6 +516,41 @@ async def start_run(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+
+    # Dispatch the live driver task when both the registry and the
+    # runtime are wired (production). Tests that omit ``db_connection``
+    # on app creation get ``driver_runtime=None`` and fall through to
+    # the durable-row-only path, which is sufficient for route-layer
+    # unit tests.
+    registry = _registry(request)
+    runtime = _runtime(request)
+    if registry is not None and runtime is not None:
+        config = DriverConfig(
+            failure_policy=payload.failure_policy,
+            visit_existing=payload.visit_existing,
+        )
+        driver: Driver = build_driver(
+            run_id=run.id,
+            checklist_id=checklist_id,
+            config=config,
+            runtime=runtime,
+            connection=db,
+        )
+        registry.register(driver)
+        task = asyncio.create_task(
+            driver.drive(),
+            name=f"auto_driver:{checklist_id}",
+        )
+        # Unregister on completion so a subsequent Start can re-register
+        # a fresh driver. The done-callback fires whether drive() returns
+        # normally, raises, or is cancelled.
+        task.add_done_callback(lambda _: registry.unregister(checklist_id))
+        _LOG.info(
+            "start_run: dispatched driver task for checklist %r run_id=%d",
+            checklist_id,
+            run.id,
+        )
+
     return _to_run_out(run)
 
 

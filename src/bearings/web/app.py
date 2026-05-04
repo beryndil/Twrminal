@@ -27,18 +27,20 @@ References:
 
 from __future__ import annotations
 
+import logging
 import time
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 
 import aiosqlite
 from fastapi import APIRouter, FastAPI, WebSocket
 
 from bearings import __version__
-from bearings.agent.auto_driver_runtime import AutoDriverRegistry, build_registry
+from bearings.agent.auto_driver_runtime import AutoDriverRegistry, build_registry, build_runtime
 from bearings.agent.prompt_dispatch import RateLimiter
 from bearings.agent.quota import QuotaPoller
 from bearings.agent.runner import RunnerFactory
 from bearings.agent.session_bootstrap import build_session_setup
+from bearings.agent.turn_driver import build_turn_driver
 from bearings.config.constants import (
     OPENAPI_DESCRIPTION,
     OPENAPI_TITLE,
@@ -67,6 +69,9 @@ from bearings.config.constants import (
     STREAM_HEARTBEAT_INTERVAL_S,
 )
 from bearings.config.settings import FsCfg, ShellCfg, UploadsCfg, VaultCfg
+from bearings.db import checklists as checklists_db
+from bearings.db import sessions as sessions_db
+from bearings.db import tags as tags_db
 from bearings.metrics import BearingsMetrics
 from bearings.web.routes.approvals import router as approvals_router
 from bearings.web.routes.checklists import router as checklists_router
@@ -98,6 +103,89 @@ from bearings.web.runner_factory import (
 from bearings.web.static import mount_static_bundle
 from bearings.web.streaming import SINCE_SEQ_QUERY_PARAM, serve_session_stream
 
+_LOG = logging.getLogger(__name__)
+
+
+def _build_leg_session_factory(
+    *,
+    db: aiosqlite.Connection,
+    sessions_broadcaster: SessionsBroadcaster,
+) -> Callable[[int, int, str | None], Awaitable[str]]:
+    """Return the :data:`LegSessionFactory` closure for the auto-driver runtime.
+
+    The closure is called by :class:`bearings.agent.auto_driver_runtime.AgentRunnerDriverRuntime`
+    when the driver needs to materialise a new chat session for a
+    checklist item leg. It lives here (``web/`` layer) because it
+    needs :class:`SessionsBroadcaster` from
+    :mod:`bearings.web.routes.ws_sessions`, which the ``agent/`` layer
+    must not import.
+
+    Steps performed on each call:
+
+    1. Look up the :class:`bearings.db.checklists.ChecklistItem` to get
+       ``checklist_id`` and ``label``.
+    2. Look up the parent checklist session to inherit ``working_dir``,
+       ``model``, and routing fields.
+    3. Inherit the parent's tag set via
+       :func:`bearings.db.tags.list_for_session`.
+    4. Create a new ``kind="chat"`` session with ``checklist_item_id``
+       set (back-pointer used by ``GET /api/sessions/{id}/paired-chat-info``).
+    5. Attach the inherited tags.
+    6. Commit + broadcast the new session so the sidebar refreshes
+       immediately.
+    7. Return the new session id.
+
+    Note: the :class:`bearings.agent.auto_driver.Driver` calls
+    ``checklists_db.set_paired_chat`` *after* this factory returns, so
+    the factory must NOT also call it (would double-write; the driver's
+    write wins because it runs immediately after).
+    """
+    from bearings.web.routes.sessions import _to_out  # local import — avoids circularity
+
+    async def _leg_session_factory(
+        item_id: int,
+        leg_number: int,
+        plug: str | None,  # reserved for future prompt injection
+    ) -> str:
+        item = await checklists_db.get(db, item_id)
+        if item is None:
+            raise RuntimeError(f"leg_session_factory: checklist item {item_id} not found")
+        checklist = await sessions_db.get(db, item.checklist_id)
+        if checklist is None:
+            raise RuntimeError(
+                f"leg_session_factory: parent checklist session {item.checklist_id!r} not found"
+            )
+        tags = await tags_db.list_for_session(db, item.checklist_id)
+        title = item.label if leg_number == 1 else f"{item.label} (leg {leg_number})"
+        new_session = await sessions_db.create(
+            db,
+            kind="chat",
+            title=title,
+            working_dir=checklist.working_dir,
+            model=checklist.model,
+            checklist_item_id=item.id,
+            routing_advisor_model=checklist.routing_advisor_model,
+            routing_advisor_max_uses=checklist.routing_advisor_max_uses,
+            routing_effort_level=checklist.routing_effort_level,
+        )
+        if tags:
+            await tags_db.set_for_session(
+                db,
+                session_id=new_session.id,
+                tag_ids=tuple(t.id for t in tags),
+            )
+        await db.commit()
+        _LOG.info(
+            "leg_session_factory: created leg session %r for item %d leg %d",
+            new_session.id,
+            item_id,
+            leg_number,
+        )
+        sessions_broadcaster.publish_upsert(_to_out(new_session))
+        return new_session.id
+
+    return _leg_session_factory
+
 
 def create_app(
     *,
@@ -112,6 +200,7 @@ def create_app(
     fs_cfg: FsCfg | None = None,
     shell_cfg: ShellCfg | None = None,
     extra_routers: Iterable[APIRouter] | None = None,
+    enable_driver_dispatch: bool = False,
 ) -> FastAPI:
     """Construct the FastAPI app.
 
@@ -185,6 +274,25 @@ def create_app(
     app.state.auto_driver_registry = (
         auto_driver_registry if auto_driver_registry is not None else build_registry()
     )
+    # Auto-driver runtime (plan wiring-autodriver-dispatch). Built only
+    # when both a DB connection is wired AND ``enable_driver_dispatch=True``
+    # is passed. The flag defaults to ``False`` so test harnesses that
+    # inject a DB connection (but do not want an autonomous driver running
+    # in the background) are unaffected. Production callers (CLI, launch.py)
+    # pass ``enable_driver_dispatch=True`` to activate the dispatch wire.
+    if db_connection is not None and enable_driver_dispatch:
+        _turn_driver = build_turn_driver(db_connection=db_connection)
+        _leg_factory = _build_leg_session_factory(
+            db=db_connection,
+            sessions_broadcaster=sessions_broadcaster,
+        )
+        app.state.driver_runtime = build_runtime(
+            runner_factory=factory,
+            turn_driver=_turn_driver,
+            leg_session_factory=_leg_factory,
+        )
+    else:
+        app.state.driver_runtime = None
     # Misc-API sub-configurations (item 1.10; arch §1.1.5).
     app.state.uploads_cfg = uploads_cfg if uploads_cfg is not None else UploadsCfg()
     app.state.fs_cfg = fs_cfg if fs_cfg is not None else FsCfg()
