@@ -89,6 +89,7 @@ ROUTE_HANDLER_VERB_VOCAB: Final[frozenset[str]] = frozenset(
         "create",
         "delete",
         "detach",
+        "fork",
         "get",
         "indent",
         "link",

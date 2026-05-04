@@ -88,6 +88,26 @@ export const messageMoveEndpoint = (messageId: string): string =>
   `${messageEndpoint(messageId)}/move`;
 
 /**
+ * ``POST /api/checkpoints`` / ``GET /api/checkpoints?session_id=...`` (G6).
+ * Per ``docs/behavior/chat.md`` §"Slash commands" — the user creates
+ * checkpoints intentionally; the gutter chip renders the list.
+ */
+export const API_CHECKPOINTS_ENDPOINT = `${API_BASE}/checkpoints`;
+
+/** ``DELETE /api/checkpoints/{id}`` — delete one checkpoint (G6). */
+export const checkpointEndpoint = (checkpointId: string): string =>
+  `${API_BASE}/checkpoints/${encodeURIComponent(checkpointId)}`;
+
+/**
+ * ``POST /api/checkpoints/{id}/fork`` — clone the source session +
+ * copy messages up to & including the anchor into a new session (G6).
+ * Per ``docs/behavior/context-menus.md`` §"Checkpoint (gutter chip)"
+ * the primary action on a checkpoint is ``checkpoint.fork``.
+ */
+export const checkpointForkEndpoint = (checkpointId: string): string =>
+  `${checkpointEndpoint(checkpointId)}/fork`;
+
+/**
  * ``POST /api/sessions/{id}/prompt`` — composer submit surface per
  * ``docs/behavior/prompt-endpoint.md``. Body shape: ``{ content: str }``;
  * 202 Accepted ack body: ``{ queued: bool, session_id: str }``.
@@ -482,6 +502,21 @@ export const COMPOSER_STRINGS = {
   sending: "Sending…",
   sendFailed: "Couldn't send the message.",
   sessionClosedHint: "This session is closed — reopen it to send a message.",
+} as const;
+
+/**
+ * Checkpoint gutter copy (G6) — surfaced by ``CheckpointGutter.svelte``.
+ * Behaviour doc anchor: ``docs/behavior/context-menus.md``
+ * §"Checkpoint (gutter chip)".
+ */
+export const CHECKPOINT_GUTTER_STRINGS = {
+  gutterAriaLabel: "Checkpoints",
+  /** Synthesised label echo when /checkpoint is typed without an argument. */
+  defaultLabelHint: "Checkpoint",
+  /** Toast / inline status when the checkpoint create call fails. */
+  createFailed: "Couldn't create checkpoint.",
+  /** Toast when there is no message to anchor a checkpoint at. */
+  createNoAnchor: "Checkpoint needs at least one message to anchor.",
 } as const;
 
 /** String table for the slash-command typeahead palette (item 2.3). */

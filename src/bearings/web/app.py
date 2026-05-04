@@ -46,6 +46,7 @@ from bearings.config.constants import (
     OPENAPI_TITLE,
     ROUTE_TAG_APPROVALS,
     ROUTE_TAG_CHECKLISTS,
+    ROUTE_TAG_CHECKPOINTS,
     ROUTE_TAG_COMMANDS,
     ROUTE_TAG_DIAG,
     ROUTE_TAG_FS,
@@ -75,6 +76,7 @@ from bearings.db import tags as tags_db
 from bearings.metrics import BearingsMetrics
 from bearings.web.routes.approvals import router as approvals_router
 from bearings.web.routes.checklists import router as checklists_router
+from bearings.web.routes.checkpoints import router as checkpoints_router
 from bearings.web.routes.commands import router as commands_router
 from bearings.web.routes.diag import router as diag_router
 from bearings.web.routes.fs import router as fs_router
@@ -348,6 +350,8 @@ def create_app(
     app.include_router(memories_router, tags=[ROUTE_TAG_MEMORIES])
     app.include_router(vault_router, tags=[ROUTE_TAG_VAULT])
     app.include_router(checklists_router, tags=[ROUTE_TAG_CHECKLISTS])
+    # G6 — checkpoints surface (gutter chips + /checkpoint slash command + fork).
+    app.include_router(checkpoints_router, tags=[ROUTE_TAG_CHECKPOINTS])
     app.include_router(sessions_router, tags=[ROUTE_TAG_SESSIONS])
     app.include_router(approvals_router, tags=[ROUTE_TAG_APPROVALS])
     app.include_router(messages_router, tags=[ROUTE_TAG_MESSAGES])

@@ -254,6 +254,59 @@
         }
       }
     },
+    "/api/tags/{tag_id}/pinned": {
+      "patch": {
+        "tags": [
+          "tags"
+        ],
+        "summary": "Patch Tag Pinned",
+        "description": "Pin or unpin a tag via ``PATCH /api/tags/{id}/pinned``.\n\n``{pinned: true}`` pins the tag in the sidebar filter panel;\n``{pinned: false}`` unpins it. 404 if absent.",
+        "operationId": "patch_tag_pinned_api_tags__tag_id__pinned_patch",
+        "parameters": [
+          {
+            "name": "tag_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tag Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagPinnedUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{session_id}/tags": {
       "get": {
         "tags": [
@@ -1771,6 +1824,175 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AutoDriverRunOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checkpoints": {
+      "post": {
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Create Checkpoint",
+        "description": "Create a checkpoint anchored at ``payload.message_id``.\n\nWhen ``payload.label`` is omitted the route synthesises one from\n:data:`DEFAULT_CHECKPOINT_LABEL_TEMPLATE` using the next ordinal for\nthe session (\"Checkpoint 1\", \"Checkpoint 2\", \u2026).\n\n404 when the session or message is absent (FK violation in the DB\nlayer surfaces as ``IntegrityError``).\n409 when the per-session cap from\n:data:`MAX_CHECKPOINTS_PER_SESSION` is exceeded.",
+        "operationId": "create_checkpoint_api_checkpoints_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckpointIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckpointOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "List Checkpoints",
+        "description": "Every checkpoint for ``session_id``, newest-first.\n\nReturns ``[]`` for an unknown session (matches the zero-row case for\na session that exists but has no checkpoints \u2014 the gutter renders\nempty either way).",
+        "operationId": "list_checkpoints_api_checkpoints_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Restrict to checkpoints for this session.",
+              "title": "Session Id"
+            },
+            "description": "Restrict to checkpoints for this session."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CheckpointOut"
+                  },
+                  "title": "Response List Checkpoints Api Checkpoints Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checkpoints/{checkpoint_id}": {
+      "delete": {
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Delete Checkpoint",
+        "description": "Delete one checkpoint; 204 on success, 404 when absent.",
+        "operationId": "delete_checkpoint_api_checkpoints__checkpoint_id__delete",
+        "parameters": [
+          {
+            "name": "checkpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Checkpoint Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checkpoints/{checkpoint_id}/fork": {
+      "post": {
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Fork Checkpoint",
+        "description": "Fork the source session at ``checkpoint_id``.\n\nClones the source session row + copies every message up to & including\nthe checkpoint anchor into a new session. The new session inherits\nthe source's ``working_dir`` / ``model`` / routing fields and gets\na derivative title (``\"<source.title> (fork)\"``).\n\nPer the SDK-primitives memory: Bearings owns this branching primitive\nrather than the SDK's ``fork_session`` because Bearings stores its own\ntranscript and needs DB-level cloning to keep replay deterministic.\n\n404 when the checkpoint or its source session has gone away.",
+        "operationId": "fork_checkpoint_api_checkpoints__checkpoint_id__fork_post",
+        "parameters": [
+          {
+            "name": "checkpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Checkpoint Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckpointForkResult"
                 }
               }
             }
@@ -4678,6 +4900,106 @@
         "title": "ChecklistOverviewOut",
         "description": "Response shape for ``GET /api/checklists/{id}``.\n\nBundles the items list + the active-run row (if any) into one\npayload so the client renders the pane without two roundtrips."
       },
+      "CheckpointForkResult": {
+        "properties": {
+          "new_session_id": {
+            "type": "string",
+            "title": "New Session Id"
+          },
+          "source_session_id": {
+            "type": "string",
+            "title": "Source Session Id"
+          },
+          "checkpoint_id": {
+            "type": "string",
+            "title": "Checkpoint Id"
+          },
+          "message_count": {
+            "type": "integer",
+            "title": "Message Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "new_session_id",
+          "source_session_id",
+          "checkpoint_id",
+          "message_count"
+        ],
+        "title": "CheckpointForkResult",
+        "description": "Response body for ``POST /api/checkpoints/{id}/fork``.\n\nThe fork action clones the source session row + replays messages up\nto and including the checkpoint anchor into a new session. The wire\nenvelope carries both pieces so the frontend can navigate to the\nnew session without a follow-up fetch."
+      },
+      "CheckpointIn": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Session Id"
+          },
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Message Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label",
+            "description": "User-visible chip text. When omitted the route layer synthesises a default per :data:`bearings.config.constants.DEFAULT_CHECKPOINT_LABEL_TEMPLATE`."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session_id",
+          "message_id"
+        ],
+        "title": "CheckpointIn",
+        "description": "Request body for ``POST /api/checkpoints``.\n\nValidators mirror :class:`bearings.db.checkpoints.Checkpoint.__post_init__`\nso a bad payload fails at the wire boundary with a 422 rather than\nsurfacing a 500 from the dataclass downstream. ``model_config``\nforbids extra fields so a typo (e.g. ``messageId`` instead of\n``message_id``) is rejected loudly."
+      },
+      "CheckpointOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "session_id",
+          "message_id",
+          "label",
+          "created_at"
+        ],
+        "title": "CheckpointOut",
+        "description": "Response body for checkpoint endpoints.\n\nOne-to-one with :class:`bearings.db.checkpoints.Checkpoint`."
+      },
       "CommandOut": {
         "properties": {
           "name": {
@@ -7112,6 +7434,10 @@
             ],
             "title": "Working Dir"
           },
+          "pinned": {
+            "type": "boolean",
+            "title": "Pinned"
+          },
           "group": {
             "anyOf": [
               {
@@ -7140,12 +7466,28 @@
           "color",
           "default_model",
           "working_dir",
+          "pinned",
           "group",
           "created_at",
           "updated_at"
         ],
         "title": "TagOut",
-        "description": "Response body for tag endpoints.\n\n``group`` is computed from ``name`` (slash-namespace convention per\n:data:`bearings.config.constants.TAG_GROUP_SEPARATOR`) and exposed\nso the frontend filter panel doesn't have to re-parse it."
+        "description": "Response body for tag endpoints.\n\n``group`` is computed from ``name`` (slash-namespace convention per\n:data:`bearings.config.constants.TAG_GROUP_SEPARATOR`) and exposed\nso the frontend filter panel doesn't have to re-parse it.\n``pinned`` controls sidebar sort order \u2014 pinned tags float to the\ntop of the filter panel per context-menus \u00a7\"Tag\"."
+      },
+      "TagPinnedUpdate": {
+        "properties": {
+          "pinned": {
+            "type": "boolean",
+            "title": "Pinned"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pinned"
+        ],
+        "title": "TagPinnedUpdate",
+        "description": "Request body for ``PATCH /api/tags/{id}/pinned``.\n\n``pinned=true`` pins the tag in the sidebar filter panel;\n``pinned=false`` unpins it. Mirrors :class:`SessionPinnedUpdate`."
       },
       "UploadListOut": {
         "properties": {

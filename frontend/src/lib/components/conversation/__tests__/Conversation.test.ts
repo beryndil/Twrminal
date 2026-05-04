@@ -20,8 +20,38 @@ import { _resetForTests } from "../../../stores/conversation.svelte";
 
 const fetchMock = vi.fn();
 
+interface MockResponse {
+  status: number;
+  statusText: string;
+  json: () => Promise<unknown>;
+}
+
+/**
+ * Per-test URL → response routing. Each test populates this map with
+ * the messages-fetch payload it cares about; the gutter (G6) fetches
+ * ``/api/checkpoints?session_id=…`` and gets an empty list by default.
+ */
+let routes: Record<string, MockResponse> = {};
+
+function setMessagesResponse(sessionId: string, payload: MockResponse): void {
+  routes[`/api/sessions/${sessionId}/messages?limit=100`] = payload;
+}
+
 beforeEach(() => {
   fetchMock.mockReset();
+  routes = {};
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url.includes("/api/checkpoints")) {
+      return { status: 200, statusText: "OK", json: async () => [] };
+    }
+    const route = routes[url];
+    if (route !== undefined) return route;
+    return {
+      status: 500,
+      statusText: "no mock",
+      json: async () => ({ detail: `unmocked URL ${url}` }),
+    };
+  });
   vi.stubGlobal("fetch", fetchMock);
   _resetForTests();
 });
@@ -41,21 +71,27 @@ describe("Conversation — empty / null session", () => {
 
 describe("Conversation — hydration", () => {
   it("hits /api/sessions/<id>/messages on mount with a session id", async () => {
-    fetchMock.mockResolvedValueOnce({
+    setMessagesResponse("ses_a", {
       status: 200,
       statusText: "OK",
       json: async () => ({ items: [], has_more: false }),
     });
     render(Conversation, { props: { sessionId: "ses_a" } });
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      const url = fetchMock.mock.calls[0][0] as string;
-      expect(url).toBe("/api/sessions/ses_a/messages?limit=100");
+      // The conversation hydrates via /api/sessions/<id>/messages AND
+      // the gutter fetches /api/checkpoints?session_id=<id> (G6) — both
+      // fire on session-id change.
+      const calls = fetchMock.mock.calls;
+      const messageUrls = calls.map((c) => c[0] as string);
+      expect(messageUrls.some((url) => url === "/api/sessions/ses_a/messages?limit=100")).toBe(
+        true,
+      );
+      expect(messageUrls.some((url) => url.startsWith("/api/checkpoints?session_id="))).toBe(true);
     });
   });
 
   it("renders the empty-transcript copy when the history is empty", async () => {
-    fetchMock.mockResolvedValueOnce({
+    setMessagesResponse("ses_a", {
       status: 200,
       statusText: "OK",
       json: async () => ({ items: [], has_more: false }),
@@ -65,7 +101,7 @@ describe("Conversation — hydration", () => {
   });
 
   it("renders one MessageTurn per persisted row", async () => {
-    fetchMock.mockResolvedValueOnce({
+    setMessagesResponse("ses_a", {
       status: 200,
       statusText: "OK",
       json: async () => ({
@@ -102,7 +138,7 @@ describe("Conversation — hydration", () => {
   });
 
   it("surfaces the error banner on a non-2xx history fetch", async () => {
-    fetchMock.mockResolvedValueOnce({
+    setMessagesResponse("ses_a", {
       status: 500,
       statusText: "Server Error",
       json: async () => ({}),

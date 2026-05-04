@@ -1136,6 +1136,7 @@ ROUTE_TAG_HISTORY: Final[str] = "history"
 ROUTE_TAG_WS_SESSIONS: Final[str] = "ws-sessions"
 ROUTE_TAG_PREFERENCES: Final[str] = "preferences"
 ROUTE_TAG_IMPORT: Final[str] = "import"
+ROUTE_TAG_CHECKPOINTS: Final[str] = "checkpoints"
 
 # History search result hard cap. The search endpoint returns at most this
 # many hits (sessions + messages combined) per query to keep response sizes
@@ -1326,6 +1327,7 @@ __all__ = [
     "RING_BUFFER_MAX",
     "ROUTE_TAG_APPROVALS",
     "ROUTE_TAG_CHECKLISTS",
+    "ROUTE_TAG_CHECKPOINTS",
     "ROUTE_TAG_COMMANDS",
     "ROUTE_TAG_DIAG",
     "ROUTE_TAG_FS",

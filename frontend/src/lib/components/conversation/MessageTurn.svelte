@@ -40,8 +40,10 @@
     MENU_ACTION_MESSAGE_SPLIT_HERE,
     MENU_TARGET_MESSAGE,
   } from "../../config";
+  import { goto } from "$app/navigation";
   import { contextMenu } from "../../actions/contextMenu";
   import { markdownContextMenu } from "../../actions/markdownContextMenu";
+  import { createCheckpoint, forkCheckpoint } from "../../api/checkpoints";
   import {
     deleteMessage,
     moveMessage,
@@ -52,6 +54,7 @@
   import { linkifyToHtml } from "../../linkify";
   import { renderMarkdown } from "../../render";
   import { sanitizeHtml } from "../../sanitize";
+  import { bumpCheckpointRefresh } from "../../stores/checkpointBus.svelte";
   import type { MessageTurnView } from "../../stores/conversation.svelte";
   import ConfirmDialog from "../sidebar/ConfirmDialog.svelte";
   import RoutingBadge from "./RoutingBadge.svelte";
@@ -142,23 +145,41 @@
     },
 
     /**
-     * Split the conversation at this message into a new sibling session.
-     * TODO: backend endpoint lands in G6 (checkpoints). Wired here so the
-     * menu entry appears; the action logs a warning until the endpoint exists.
+     * Split the conversation at this message — drop a checkpoint at
+     * this anchor (G6). Per ``docs/behavior/context-menus.md``
+     * §"Message bubble" split-here records the boundary; the user can
+     * fork from the gutter chip later if they decide to branch.
      */
     [MENU_ACTION_MESSAGE_SPLIT_HERE]: () => {
-      // TODO(G6): wire POST /api/messages/{id}/split once checkpoints land.
-      console.warn("split-here: backend not yet implemented (G6)");
+      if (sessionId === null || sessionId === undefined) return;
+      void (async () => {
+        try {
+          await createCheckpoint({ sessionId, messageId: turn.id });
+          bumpCheckpointRefresh();
+        } catch (err) {
+          console.error("split-here failed:", err);
+        }
+      })();
     },
 
     /**
-     * Fork a new session from this message onward.
-     * TODO: backend endpoint lands in G6 (checkpoints). Wired here so the
-     * menu entry appears; the action logs a warning until the endpoint exists.
+     * Fork a new session from this message onward (G6) — create a
+     * checkpoint here, then immediately fork it. Navigates to the new
+     * session on success. Per ``docs/behavior/context-menus.md``
+     * §"Message bubble" + §"Checkpoint (gutter chip)".
      */
     [MENU_ACTION_MESSAGE_FORK_FROM_HERE]: () => {
-      // TODO(G6): wire POST /api/messages/{id}/fork once checkpoints land.
-      console.warn("fork-from-here: backend not yet implemented (G6)");
+      if (sessionId === null || sessionId === undefined) return;
+      void (async () => {
+        try {
+          const cp = await createCheckpoint({ sessionId, messageId: turn.id });
+          bumpCheckpointRefresh();
+          const result = await forkCheckpoint(cp.id);
+          await goto(`/sessions/${encodeURIComponent(result.new_session_id)}`);
+        } catch (err) {
+          console.error("fork-from-here failed:", err);
+        }
+      })();
     },
 
     [MENU_ACTION_MESSAGE_REGENERATE]: () => void handleRegenerate(),

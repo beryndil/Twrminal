@@ -27,10 +27,17 @@
    * there is no event-bus contract to honor.
    */
   import { ApiError } from "../../api/client";
+  import { createCheckpoint } from "../../api/checkpoints";
   import { sendPrompt } from "../../api/prompt";
-  import { COMPOSER_STRINGS, PROMPT_CONTENT_MAX_CHARS } from "../../config";
+  import {
+    CHECKPOINT_GUTTER_STRINGS,
+    COMPOSER_STRINGS,
+    PROMPT_CONTENT_MAX_CHARS,
+  } from "../../config";
   import { clearDraft, loadDraft, saveDraft } from "../../composer/draftStore.svelte";
   import { InputHistory } from "../../composer/inputHistory";
+  import { bumpCheckpointRefresh } from "../../stores/checkpointBus.svelte";
+  import { conversationStore } from "../../stores/conversation.svelte";
   import CommandMenu from "./CommandMenu.svelte";
 
   interface Props {
@@ -170,8 +177,64 @@
   // Submit + keydown
   // ---------------------------------------------------------------------------
 
+  /**
+   * Detect ``/checkpoint`` as the first token. When matched, intercept
+   * submit and POST a checkpoint instead of a prompt. The optional
+   * argument is the label (everything after the command word and a
+   * single space). G6 — ``docs/behavior/chat.md`` §"Slash commands in
+   * the composer".
+   */
+  function tryParseCheckpointCommand(value: string): { matched: true; label: string } | null {
+    const trimmed = value.trimStart();
+    if (!trimmed.startsWith("/checkpoint")) return null;
+    const rest = trimmed.slice("/checkpoint".length);
+    if (rest.length > 0 && !/^\s/.test(rest)) {
+      // ``/checkpointer`` or similar — not the same command.
+      return null;
+    }
+    return { matched: true, label: rest.trim() };
+  }
+
+  async function handleCheckpointCommand(label: string): Promise<void> {
+    // The anchor is the most recent message turn. If the conversation
+    // is empty, surface an inline error and leave the draft intact so
+    // the user can edit and retry.
+    const turns = conversationStore.turns;
+    if (turns.length === 0) {
+      errorMessage = CHECKPOINT_GUTTER_STRINGS.createNoAnchor;
+      return;
+    }
+    const anchor = turns[turns.length - 1];
+    inflight = true;
+    errorMessage = null;
+    try {
+      await createCheckpoint({
+        sessionId,
+        messageId: anchor.id,
+        label: label.length > 0 ? label : undefined,
+      });
+      bumpCheckpointRefresh();
+      draft = "";
+      clearDraft(sessionId);
+      textareaEl?.focus();
+    } catch (error) {
+      const detail =
+        error instanceof ApiError
+          ? (extractDetail(error.body) ?? CHECKPOINT_GUTTER_STRINGS.createFailed)
+          : CHECKPOINT_GUTTER_STRINGS.createFailed;
+      errorMessage = detail;
+    } finally {
+      inflight = false;
+    }
+  }
+
   async function submit(): Promise<void> {
     if (!canSend) return;
+    const checkpointCmd = tryParseCheckpointCommand(draft);
+    if (checkpointCmd !== null) {
+      await handleCheckpointCommand(checkpointCmd.label);
+      return;
+    }
     inflight = true;
     errorMessage = null;
     const payload = draft;

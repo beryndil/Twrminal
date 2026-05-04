@@ -36,11 +36,13 @@
   } from "../../stores/conversation.svelte";
   import ApprovalModal from "./ApprovalModal.svelte";
   import AskUserQuestionModal from "./AskUserQuestionModal.svelte";
+  import CheckpointGutter from "./CheckpointGutter.svelte";
   import LiveTodos from "./LiveTodos.svelte";
   import MessageTurn from "./MessageTurn.svelte";
   import ModelSelector from "./ModelSelector.svelte";
   import PermissionModeSelector from "./PermissionModeSelector.svelte";
   import StopUndoInline from "./StopUndoInline.svelte";
+  import { checkpointBus } from "../../stores/checkpointBus.svelte";
   import { recoverSession } from "../../api/sessions";
   import { pasteIntoComposer } from "../../stores/composerBridge.svelte";
 
@@ -171,62 +173,69 @@
   </div>
   <!-- Live todos strip — sticky above the scroll body; hidden when empty -->
   <LiveTodos />
-  <div
-    bind:this={bodyEl}
-    class="conversation__body flex-1 overflow-y-auto"
-    data-testid="conversation-body"
-    onscroll={handleScroll}
-  >
-    {#if conversationStore.hasMore}
-      <div class="flex justify-center py-2">
-        <button
-          type="button"
-          class="rounded bg-surface-2 px-3 py-1 text-xs text-fg-muted hover:text-fg-strong disabled:opacity-50"
-          data-testid="conversation-load-older"
-          disabled={conversationStore.loadingOlder}
-          onclick={handleLoadOlder}
-        >
-          {conversationStore.loadingOlder
-            ? CONVERSATION_STRINGS.loadingOlder
-            : CONVERSATION_STRINGS.loadOlderLabel}
-        </button>
-      </div>
-    {/if}
-
-    {#if conversationStore.loading && conversationStore.turns.length === 0}
-      <p class="px-4 py-3 text-sm text-fg-muted" data-testid="conversation-loading">
-        {CONVERSATION_STRINGS.loadingTranscript}
-      </p>
-    {:else if conversationStore.error !== null}
-      <div
-        class="flex flex-col gap-2 border-l-4 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300"
-        data-testid="conversation-error"
-        role="alert"
-      >
-        <p class="font-medium">{CONVERSATION_STRINGS.errorBubbleLabel}</p>
-        <p class="text-xs">{conversationStore.error.message}</p>
-        <p class="text-xs text-red-600 dark:text-red-400">{CONVERSATION_STRINGS.errorHintLabel}</p>
-        {#if sessionId !== null}
+  <div class="relative flex-1 overflow-hidden">
+    <div
+      bind:this={bodyEl}
+      class="conversation__body h-full overflow-y-auto"
+      data-testid="conversation-body"
+      onscroll={handleScroll}
+    >
+      {#if conversationStore.hasMore}
+        <div class="flex justify-center py-2">
           <button
             type="button"
-            class="mt-1 self-start rounded bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
-            disabled={recovering}
-            onclick={handleRecover}
-            data-testid="conversation-recover-btn"
+            class="rounded bg-surface-2 px-3 py-1 text-xs text-fg-muted hover:text-fg-strong disabled:opacity-50"
+            data-testid="conversation-load-older"
+            disabled={conversationStore.loadingOlder}
+            onclick={handleLoadOlder}
           >
-            {recovering ? CONVERSATION_STRINGS.recoveringLabel : CONVERSATION_STRINGS.recoverLabel}
+            {conversationStore.loadingOlder
+              ? CONVERSATION_STRINGS.loadingOlder
+              : CONVERSATION_STRINGS.loadOlderLabel}
           </button>
-        {/if}
-      </div>
-    {:else if conversationStore.turns.length === 0}
-      <p class="px-4 py-3 text-sm text-fg-muted" data-testid="conversation-empty">
-        {CONVERSATION_STRINGS.emptyTranscript}
-      </p>
-    {:else}
-      {#each conversationStore.turns as turn (turn.id)}
-        <MessageTurn {turn} {sessionId} onAskForMoreDetail={handleAskForMoreDetail} />
-      {/each}
-    {/if}
+        </div>
+      {/if}
+
+      {#if conversationStore.loading && conversationStore.turns.length === 0}
+        <p class="px-4 py-3 text-sm text-fg-muted" data-testid="conversation-loading">
+          {CONVERSATION_STRINGS.loadingTranscript}
+        </p>
+      {:else if conversationStore.error !== null}
+        <div
+          class="flex flex-col gap-2 border-l-4 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300"
+          data-testid="conversation-error"
+          role="alert"
+        >
+          <p class="font-medium">{CONVERSATION_STRINGS.errorBubbleLabel}</p>
+          <p class="text-xs">{conversationStore.error.message}</p>
+          <p class="text-xs text-red-600 dark:text-red-400">
+            {CONVERSATION_STRINGS.errorHintLabel}
+          </p>
+          {#if sessionId !== null}
+            <button
+              type="button"
+              class="mt-1 self-start rounded bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              disabled={recovering}
+              onclick={handleRecover}
+              data-testid="conversation-recover-btn"
+            >
+              {recovering
+                ? CONVERSATION_STRINGS.recoveringLabel
+                : CONVERSATION_STRINGS.recoverLabel}
+            </button>
+          {/if}
+        </div>
+      {:else if conversationStore.turns.length === 0}
+        <p class="px-4 py-3 text-sm text-fg-muted" data-testid="conversation-empty">
+          {CONVERSATION_STRINGS.emptyTranscript}
+        </p>
+      {:else}
+        {#each conversationStore.turns as turn (turn.id)}
+          <MessageTurn {turn} {sessionId} onAskForMoreDetail={handleAskForMoreDetail} />
+        {/each}
+      {/if}
+    </div>
+    <CheckpointGutter {sessionId} {bodyEl} refreshKey={checkpointBus.refreshKey} />
   </div>
 
   {#if hasInFlightTurn && sessionId !== null}
