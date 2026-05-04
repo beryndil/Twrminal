@@ -40,9 +40,7 @@ from bearings.agent.routing import RoutingDecision
 from bearings.agent.runner import SessionRunner, SessionSetup, SessionSetupFn
 from bearings.agent.session import AgentSession, PermissionProfile, SessionConfig
 from bearings.config.constants import (
-    DEFAULT_TEMPLATE_ADVISOR_MAX_USES,
     DEFAULT_TEMPLATE_ADVISOR_MODEL,
-    DEFAULT_TEMPLATE_EFFORT_LEVEL,
     DEFAULT_TEMPLATE_PERMISSION_PROFILE,
 )
 from bearings.db import sessions as sessions_db
@@ -88,18 +86,31 @@ def build_session_setup(
         row = await sessions_db.get(db_connection, session_id)
         if row is None:
             return None
-        # Reconstruct the routing decision from the stored model +
-        # constants-module defaults. Per sign-off Q6 this is the
-        # same decision a session-create flow pinned at row
-        # creation; the row doesn't yet store the full projection
-        # (the per-message persistence layer in
-        # ``agent/persistence.py`` writes it onto each message row,
-        # not the session row).
+        # Reconstruct the routing decision from the persisted routing
+        # columns on the session row. These columns are written at
+        # session-create time (``POST /api/sessions``) so the decision
+        # survives supervisor respawns and mid-session model swaps
+        # without drifting to template-wide defaults.
+        #
+        # Backward-compat: rows that predate the routing columns carry
+        # NULL for ``routing_advisor_model`` and the schema defaults (5,
+        # 'auto') for the integer/text columns. NULL advisor is treated
+        # as "unknown — fall back to the template default" so old
+        # sessions keep the advisor they would have had under the prior
+        # bootstrap logic. New rows with a positively stored NULL (i.e.
+        # advisor_model=None was explicitly persisted) carry the same
+        # value, so the distinction is transparent to the bootstrap: both
+        # fall back to DEFAULT_TEMPLATE_ADVISOR_MODEL.
+        advisor_model: str | None = (
+            row.routing_advisor_model
+            if row.routing_advisor_model is not None
+            else DEFAULT_TEMPLATE_ADVISOR_MODEL
+        )
         decision = RoutingDecision(
             executor_model=row.model,
-            advisor_model=DEFAULT_TEMPLATE_ADVISOR_MODEL,
-            advisor_max_uses=DEFAULT_TEMPLATE_ADVISOR_MAX_USES,
-            effort_level=DEFAULT_TEMPLATE_EFFORT_LEVEL,
+            advisor_model=advisor_model,
+            advisor_max_uses=row.routing_advisor_max_uses,
+            effort_level=row.routing_effort_level,
             source="default",
             reason=f"session {session_id} bootstrap",
             matched_rule_id=None,

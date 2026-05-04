@@ -206,6 +206,11 @@
         working_dir: trimmedWd,
         model: pickModel(payload.routing.executor),
         tag_ids: payload.tagIds,
+        // Persist the full routing decision so supervisor respawns and
+        // mid-session model swaps reconstruct it exactly.
+        routing_advisor_model: payload.routing.advisor === "" ? null : payload.routing.advisor,
+        routing_advisor_max_uses: payload.routing.advisorMaxUses,
+        routing_effort_level: payload.routing.effort,
       });
       // Queue the kick-off prompt against the new session so the
       // first turn is already in flight by the time the URL flips.

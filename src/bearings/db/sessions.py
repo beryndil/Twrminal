@@ -38,6 +38,7 @@ import aiosqlite
 
 from bearings.config.constants import (
     EXECUTOR_MODEL_FULL_ID_PREFIX,
+    KNOWN_EFFORT_LEVELS,
     KNOWN_EXECUTOR_MODELS,
     KNOWN_SDK_PERMISSION_MODES,
     KNOWN_SESSION_KINDS,
@@ -61,7 +62,9 @@ class Session:
     ``last_context_*`` triple, ``pinned``, ``error_pending``,
     ``checklist_item_id`` (chat-side paired pointer),
     ``created_at`` / ``updated_at`` / ``last_viewed_at`` /
-    ``last_completed_at`` / ``closed_at``.
+    ``last_completed_at`` / ``closed_at``, and the routing-decision
+    projection ``routing_advisor_model`` / ``routing_advisor_max_uses``
+    / ``routing_effort_level``.
 
     Validation (``__post_init__``) catches:
 
@@ -75,6 +78,10 @@ class Session:
       SDK ID.
     * Negative ``max_budget_usd`` / ``total_cost_usd`` /
       ``message_count``.
+    * ``routing_advisor_model`` outside :data:`KNOWN_EXECUTOR_MODELS`
+      when not ``None`` and not a full SDK ID.
+    * ``routing_advisor_max_uses`` negative.
+    * ``routing_effort_level`` outside :data:`KNOWN_EFFORT_LEVELS`.
     """
 
     id: str
@@ -100,6 +107,15 @@ class Session:
     last_completed_at: str | None
     closed_at: str | None
     closing_summary: str | None
+    # Routing-decision projection — persisted at session-create time so
+    # the supervisor respawn (``agent/session_bootstrap.py``) reconstructs
+    # the exact :class:`RoutingDecision` without falling back to template
+    # defaults. NULL ``routing_advisor_model`` means "no advisor" for rows
+    # created after this column landed and "unknown" (legacy fallback) for
+    # rows that predate the column.
+    routing_advisor_model: str | None
+    routing_advisor_max_uses: int
+    routing_effort_level: str
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -163,6 +179,24 @@ class Session:
                     f"Session.closing_summary must be ≤ "
                     f"{SESSION_CLOSING_SUMMARY_MAX_LENGTH} chars (got {length})"
                 )
+        if self.routing_advisor_model is not None and not _is_known_model(
+            self.routing_advisor_model
+        ):
+            raise ValueError(
+                f"Session.routing_advisor_model {self.routing_advisor_model!r} "
+                f"is neither a known short name {sorted(KNOWN_EXECUTOR_MODELS)} "
+                f"nor a full SDK ID prefixed with {EXECUTOR_MODEL_FULL_ID_PREFIX!r}"
+            )
+        if self.routing_advisor_max_uses < 0:
+            raise ValueError(
+                f"Session.routing_advisor_max_uses must be ≥ 0 "
+                f"(got {self.routing_advisor_max_uses})"
+            )
+        if self.routing_effort_level not in KNOWN_EFFORT_LEVELS:
+            raise ValueError(
+                f"Session.routing_effort_level {self.routing_effort_level!r} "
+                f"not in {sorted(KNOWN_EFFORT_LEVELS)}"
+            )
 
 
 def _is_known_model(name: str) -> bool:
@@ -182,12 +216,20 @@ async def create(
     permission_mode: str | None = None,
     max_budget_usd: float | None = None,
     checklist_item_id: int | None = None,
+    routing_advisor_model: str | None = None,
+    routing_advisor_max_uses: int = 5,
+    routing_effort_level: str = "auto",
 ) -> Session:
     """Insert a fresh session row.
 
     The id is generated as ``ses_<32-hex>`` per the ``new_id`` prefix
     convention. Validation runs in :class:`Session.__post_init__` against
     a pre-INSERT phantom instance so a bad shape never touches the DB.
+
+    The three ``routing_*`` keyword arguments persist the
+    :class:`bearings.agent.routing.RoutingDecision` projection so that
+    supervisor respawns (``agent/session_bootstrap.py``) reconstruct the
+    exact decision without falling back to template-wide defaults.
     """
     timestamp = now_iso()
     session_id = new_id(SESSION_ID_PREFIX)
@@ -217,12 +259,17 @@ async def create(
         last_completed_at=None,
         closed_at=None,
         closing_summary=None,
+        routing_advisor_model=routing_advisor_model,
+        routing_advisor_max_uses=routing_advisor_max_uses,
+        routing_effort_level=routing_effort_level,
     )
     await connection.execute(
         "INSERT INTO sessions "
         "(id, kind, title, description, session_instructions, working_dir, model, "
-        "permission_mode, max_budget_usd, checklist_item_id, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "permission_mode, max_budget_usd, checklist_item_id, "
+        "routing_advisor_model, routing_advisor_max_uses, routing_effort_level, "
+        "created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             session_id,
             kind,
@@ -234,6 +281,9 @@ async def create(
             permission_mode,
             max_budget_usd,
             checklist_item_id,
+            routing_advisor_model,
+            routing_advisor_max_uses,
+            routing_effort_level,
             timestamp,
             timestamp,
         ),
@@ -391,6 +441,57 @@ async def update_model(
     await connection.execute(
         "UPDATE sessions SET model = ?, updated_at = ? WHERE id = ?",
         (model, timestamp, session_id),
+    )
+    await connection.commit()
+    return await get(connection, session_id)
+
+
+async def update_routing_decision(
+    connection: aiosqlite.Connection,
+    session_id: str,
+    *,
+    routing_advisor_model: str | None,
+    routing_advisor_max_uses: int,
+    routing_effort_level: str,
+) -> Session | None:
+    """Replace the routing-decision projection; returns the new row or ``None`` if absent.
+
+    Called after session create (persists the full :class:`RoutingDecision`
+    evaluated at session-create time) and after ``PATCH
+    /api/sessions/{id}/model`` (updates to reflect the new executor's
+    routing context). Validation mirrors the :class:`Session` field
+    invariants; ``ValueError`` bubbles to the route layer as a 422.
+    """
+    if routing_advisor_model is not None and not _is_known_model(routing_advisor_model):
+        raise ValueError(
+            f"update_routing_decision: routing_advisor_model "
+            f"{routing_advisor_model!r} not recognised"
+        )
+    if routing_advisor_max_uses < 0:
+        raise ValueError(
+            f"update_routing_decision: routing_advisor_max_uses must be ≥ 0 "
+            f"(got {routing_advisor_max_uses})"
+        )
+    if routing_effort_level not in KNOWN_EFFORT_LEVELS:
+        raise ValueError(
+            f"update_routing_decision: routing_effort_level "
+            f"{routing_effort_level!r} not in {sorted(KNOWN_EFFORT_LEVELS)}"
+        )
+    existing = await get(connection, session_id)
+    if existing is None:
+        return None
+    timestamp = now_iso()
+    await connection.execute(
+        "UPDATE sessions SET "
+        "routing_advisor_model = ?, routing_advisor_max_uses = ?, "
+        "routing_effort_level = ?, updated_at = ? WHERE id = ?",
+        (
+            routing_advisor_model,
+            routing_advisor_max_uses,
+            routing_effort_level,
+            timestamp,
+            session_id,
+        ),
     )
     await connection.commit()
     return await get(connection, session_id)
@@ -623,7 +724,9 @@ _SELECT_SESSION_COLUMNS = (
     "permission_mode, max_budget_usd, total_cost_usd, message_count, "
     "last_context_pct, last_context_tokens, last_context_max, pinned, error_pending, "
     "checklist_item_id, created_at, updated_at, last_viewed_at, last_completed_at, "
-    "closed_at, closing_summary FROM sessions"
+    "closed_at, closing_summary, "
+    "routing_advisor_model, routing_advisor_max_uses, routing_effort_level "
+    "FROM sessions"
 )
 
 
@@ -642,7 +745,9 @@ _SELECT_SESSION_COLUMNS_DISTINCT = (
     "sessions.last_context_max, sessions.pinned, sessions.error_pending, "
     "sessions.checklist_item_id, sessions.created_at, sessions.updated_at, "
     "sessions.last_viewed_at, sessions.last_completed_at, sessions.closed_at, "
-    "sessions.closing_summary FROM sessions"
+    "sessions.closing_summary, "
+    "sessions.routing_advisor_model, sessions.routing_advisor_max_uses, "
+    "sessions.routing_effort_level FROM sessions"
 )
 
 
@@ -672,6 +777,9 @@ def _row_to_session(row: aiosqlite.Row | tuple[object, ...]) -> Session:
         last_completed_at=None if row[20] is None else str(row[20]),
         closed_at=None if row[21] is None else str(row[21]),
         closing_summary=None if row[22] is None else str(row[22]),
+        routing_advisor_model=None if row[23] is None else str(row[23]),
+        routing_advisor_max_uses=int(str(row[24])),
+        routing_effort_level=str(row[25]),
     )
 
 
@@ -688,5 +796,6 @@ __all__ = [
     "is_closed",
     "list_all",
     "reopen",
+    "update_routing_decision",
     "update_title",
 ]

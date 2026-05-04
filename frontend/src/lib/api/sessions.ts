@@ -121,6 +121,12 @@ interface SessionCreateBody {
   permission_mode?: string | null;
   max_budget_usd?: number | null;
   tag_ids?: number[];
+  /** Routing-decision projection — persisted so supervisor respawns and
+   *  mid-session model swaps reconstruct the full RoutingDecision without
+   *  falling back to template defaults. ``null`` means "no advisor". */
+  routing_advisor_model?: string | null;
+  routing_advisor_max_uses?: number;
+  routing_effort_level?: string;
 }
 
 /**

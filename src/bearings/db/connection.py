@@ -89,7 +89,15 @@ async def load_schema(connection: aiosqlite.Connection) -> None:
 # install — that predate the column. SQLite's ``ALTER TABLE ... ADD
 # COLUMN`` is not idempotent on its own, so we gate each ALTER on
 # ``PRAGMA table_info``.
-_ADDED_COLUMNS: Final[tuple[tuple[str, str, str], ...]] = (("sessions", "closing_summary", "TEXT"),)
+_ADDED_COLUMNS: Final[tuple[tuple[str, str, str], ...]] = (
+    ("sessions", "closing_summary", "TEXT"),
+    # Routing-decision projection — landed after initial schema.sql ship.
+    # Existing rows get NULL advisor (= unknown / use legacy behaviour),
+    # and the safe numeric defaults so bootstrap always reads a valid row.
+    ("sessions", "routing_advisor_model", "TEXT"),
+    ("sessions", "routing_advisor_max_uses", "INTEGER NOT NULL DEFAULT 5"),
+    ("sessions", "routing_effort_level", "TEXT NOT NULL DEFAULT 'auto'"),
+)
 
 
 async def _ensure_added_columns(connection: aiosqlite.Connection) -> None:

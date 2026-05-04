@@ -16,6 +16,8 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from bearings.config.constants import (
+    DEFAULT_TEMPLATE_ADVISOR_MAX_USES,
+    DEFAULT_TEMPLATE_EFFORT_LEVEL,
     PROMPT_CONTENT_MAX_CHARS,
     SESSION_DESCRIPTION_MAX_LENGTH,
     SESSION_TITLE_MAX_LENGTH,
@@ -110,6 +112,13 @@ class SessionCreate(BaseModel):
     enforces "≥1 tag" at the UI layer; the API accepts zero so a CLI
     or test caller can create an untagged session without first
     creating a tag.
+
+    The three ``routing_*`` fields carry the routing-decision projection
+    so the supervisor respawn path can reconstruct the full
+    :class:`bearings.agent.routing.RoutingDecision` without falling
+    back to template defaults. ``routing_advisor_model=None`` means "no
+    advisor"; omitting these fields uses the same defaults as the
+    session-bootstrap fallback.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -123,6 +132,9 @@ class SessionCreate(BaseModel):
     permission_mode: str | None = None
     max_budget_usd: float | None = None
     tag_ids: list[int] = Field(default_factory=list)
+    routing_advisor_model: str | None = None
+    routing_advisor_max_uses: int = Field(default=DEFAULT_TEMPLATE_ADVISOR_MAX_USES, ge=0)
+    routing_effort_level: str = DEFAULT_TEMPLATE_EFFORT_LEVEL
 
 
 class SessionModelUpdate(BaseModel):
@@ -172,7 +184,7 @@ class PairedChatInfo(BaseModel):
 
     Per ``docs/behavior/paired-chats.md`` §"From the chat side" — when a
     chat session is paired to a checklist item, the breadcrumb shows
-    ``<parent checklist title> › <item label>``. This endpoint returns
+    ``<parent checklist title> > <item label>``. This endpoint returns
     those two fields when a pairing exists, or ``None`` when the chat is
     unpaired.
     """

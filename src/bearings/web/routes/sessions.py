@@ -259,6 +259,9 @@ async def create_session(
             session_instructions=payload.session_instructions,
             permission_mode=payload.permission_mode,
             max_budget_usd=payload.max_budget_usd,
+            routing_advisor_model=payload.routing_advisor_model,
+            routing_advisor_max_uses=payload.routing_advisor_max_uses,
+            routing_effort_level=payload.routing_effort_level,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -465,7 +468,7 @@ async def get_paired_chat_info_route(session_id: str, request: Request) -> Paire
 
     Per ``docs/behavior/paired-chats.md`` §"From the chat side" — when a
     chat session is paired to a checklist item, the breadcrumb shows
-    ``<parent checklist title> › <item label>``. This endpoint returns
+    ``<parent checklist title> > <item label>``. This endpoint returns
     those two fields when a pairing exists, or ``None`` when the chat is
     unpaired.
 

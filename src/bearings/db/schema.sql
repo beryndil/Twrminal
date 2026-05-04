@@ -75,6 +75,15 @@ CREATE TABLE IF NOT EXISTS sessions (
     -- surfaces it as the closed-row tooltip and preserves it across
     -- reopens. NULL on every row that was never closed by the agent.
     closing_summary          TEXT,
+    -- Routing-decision projection persisted at session-create time so
+    -- the supervisor respawn path (``agent/session_bootstrap.py``) can
+    -- reconstruct the full :class:`RoutingDecision` without falling
+    -- back to template-wide defaults. NULL ``routing_advisor_model``
+    -- means "no advisor" for newly-created sessions and "unknown /
+    -- use legacy behaviour" for rows that predate this column.
+    routing_advisor_model    TEXT,
+    routing_advisor_max_uses INTEGER NOT NULL DEFAULT 5,
+    routing_effort_level     TEXT    NOT NULL DEFAULT 'auto',
     FOREIGN KEY (checklist_item_id) REFERENCES checklist_items(id) ON DELETE SET NULL
 );
 
