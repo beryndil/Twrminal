@@ -419,6 +419,62 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     `CONVERSATION_STRINGS`.
   - `docs/openapi.json` — regenerated to include the new stop endpoint.
 
+- **UI/UX gap sweep — Phases 1–7** (commits `d2387ff`–`0e42f9f`). Filled
+  the gaps identified by `UI_AUDIT.md` (2026-05-03 audit against spec).
+
+  *Phase 1 — Conversation UX:*
+  - Reopen-session button in closed-session footer.
+  - Error block styling: left red border, label, hint text.
+  - "Ask for more detail" button on assistant bubbles (inserts a
+    canned prompt via `composerBridge`).
+  - Regenerate context-menu handler wired to `POST /api/sessions/{id}/regenerate`.
+
+  *Phase 2 — Paired-chat wiring:*
+  - `GET /api/sessions/{id}/paired-chat-info` backend route +
+    `get_paired_chat_info()` DB query.
+  - `PairedChatIndicator` mounted in conversation header (parent
+    checklist breadcrumb).
+  - `↳ <parent>` annotation on `SessionRow` sidebar rows.
+
+  *Phase 3 — Vault drag-to-composer:*
+  - `VaultPanel` rows are draggable; `Composer` accepts drops and
+    inserts the vault entry's markdown link at cursor position.
+  - CLI subprocess stderr now routed to journald with session prefix
+    via `ClaudeAgentOptions.stderr` callback (helps diagnose init stalls).
+
+  *Phase 4 — Error state recovery:*
+  - `RunnerStatus.is_error` flag; `_enter_error_state` sets it so
+    `runner_state` WS frames carry the error signal immediately.
+  - Sessions store: `runner_state.is_error=true` flips local
+    `session.error_pending` without waiting for a page reload.
+  - `set_error_pending(db, session_id, value)` DB helper.
+  - `POST /api/sessions/{id}/recover` (handler `resume_session`) — clears
+    `error_pending`, triggers runner reap-recovery respawn, broadcasts
+    the updated session row.
+  - `recoverSession()` API client + Recover button in the error block
+    with loading state.
+  - Sidebar error pip gains `animate-pulse` (spec: "red flashing pip").
+
+  *Phase 5 — Global command palette:*
+  - `Ctrl+Shift+P` keybinding (global) wired in `bindings.ts`.
+  - `CommandPalette.svelte` modal: search filter, arrow-key + Enter
+    navigation, click/hover, backdrop/Escape to close; selection inserts
+    `/command` into the active composer.
+  - `KeybindingsProvider` mounts palette alongside cheat sheet; opening
+    one closes the other.
+
+  *Phase 6 — Theme silent-flip fix:*
+  - `resolveBootTheme()` now persists the OS-fallback choice to
+    localStorage on first boot so the `app.html` static
+    `data-theme="evergreen"` matches subsequent loads (no more
+    evergreen → paper-light flash for light-scheme OS users).
+
+  *Phase 7 — Documentation:*
+  - `UI_AUDIT.md` updated to reflect resolved gaps.
+  - `TODO.md` resolved entries struck: `POST /recover` route and
+    theme-flicker entries.
+  - `docs/openapi.json` regenerated to include `POST /recover`.
+
 ### Fixed
 
 - **conversation transcript hit `each_key_duplicate` on every page load**
