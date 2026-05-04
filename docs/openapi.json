@@ -2088,7 +2088,7 @@
           "sessions"
         ],
         "summary": "Patch Session Model",
-        "description": "Swap the session's executor model (spec \u00a77; arch \u00a71.1.5).\n\nDB-only today: persists the new model name on the session row so\nthe next session boot picks it up. The live-runner forward to\n:meth:`AgentSession.set_model` is deferred \u2014 see TODO.md \"PATCH\nmodel: live runner forward (deferred)\" for the resolution sketch\n(route the swap through the runner's prompt queue or expose a\ndistinct control queue per arch \u00a73.2).\n\n422 on unknown model names; the validator delegates to\n:func:`sessions_db._is_known_model_name` so the alphabet stays in\none place.",
+        "description": "Swap the session's executor model (spec \u00a77; arch \u00a71.1.5).\n\nPersists the new model name on the session row, then recycles the\nlive SDK supervisor for that session via\n:meth:`InProcessRunnerRegistry.recycle`. The Claude CLI bakes\n``--model`` in at process spawn \u2014 there is no in-band control\nmessage to swap models on a running subprocess \u2014 so the live\nforward reduces to \"tear the subprocess down and let the next\nprompt respawn it.\" The ring buffer survives the recycle (the\nrunner stays in ``_runners``), so the prior turn's deltas remain\navailable for replay; only the SDK worker bound to the old model\nis torn down. The next prompt arriving at this session triggers\nthe registry's reap-recovery branch, which re-spawns\n``run_session_loop`` with a freshly-bootstrapped\n:class:`AgentSession` reading the just-updated ``model`` column.\n\n422 on unknown model names; the validator delegates to\n:func:`sessions_db._is_known_model_name` so the alphabet stays in\none place.",
         "operationId": "patch_session_model_api_sessions__session_id__model_patch",
         "parameters": [
           {
@@ -2107,6 +2107,59 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/SessionModelUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{session_id}/permission_mode": {
+      "patch": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Patch Session Permission Mode",
+        "description": "Swap the session's permission mode mid-session (item 3.3).\n\nDB-only today: persists the new mode on the session row so the\nrunner picks it up on the next turn. ``None`` clears the column,\nletting the runner fall back to the profile default.\n\n422 on unknown mode strings (validated against\n:data:`KNOWN_SDK_PERMISSION_MODES`); 404 when the session is absent.",
+        "operationId": "patch_session_permission_mode_api_sessions__session_id__permission_mode_patch",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionPermissionModeUpdate"
               }
             }
           }
@@ -3864,6 +3917,28 @@
           }
         }
       }
+    },
+    "/api/import/bearings": {
+      "post": {
+        "tags": [
+          "import"
+        ],
+        "summary": "Post Import Bearings",
+        "description": "Import all data from the original Bearings database.\n\nReads from ~/.local/share/bearings/db.sqlite and copies all sessions,\nmessages, tags, and related data into the current Bearings-v1 database.\n\nRows with duplicate IDs are silently skipped (INSERT OR IGNORE).\nThe entire operation is wrapped in a transaction \u2014 on any error,\nthe import rolls back completely.\n\nReturns:\n    ImportResultOut with counts of imported/skipped rows per table.\n    If errors occurred, they are listed in the errors field (but\n    the operation was rolled back, so no partial state persists).\n\nRaises:\n    404: If the source database file does not exist\n    503: If db_connection is not configured on app.state",
+        "operationId": "post_import_bearings_api_import_bearings_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResultOut"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4595,6 +4670,83 @@
         ],
         "title": "HistorySearchResult",
         "description": "One search hit returned by ``GET /api/history/search``."
+      },
+      "ImportResultOut": {
+        "properties": {
+          "tags_imported": {
+            "type": "integer",
+            "title": "Tags Imported"
+          },
+          "sessions_imported": {
+            "type": "integer",
+            "title": "Sessions Imported"
+          },
+          "messages_imported": {
+            "type": "integer",
+            "title": "Messages Imported"
+          },
+          "session_tags_imported": {
+            "type": "integer",
+            "title": "Session Tags Imported"
+          },
+          "tag_memories_imported": {
+            "type": "integer",
+            "title": "Tag Memories Imported"
+          },
+          "checklist_items_imported": {
+            "type": "integer",
+            "title": "Checklist Items Imported"
+          },
+          "tags_skipped": {
+            "type": "integer",
+            "title": "Tags Skipped"
+          },
+          "sessions_skipped": {
+            "type": "integer",
+            "title": "Sessions Skipped"
+          },
+          "messages_skipped": {
+            "type": "integer",
+            "title": "Messages Skipped"
+          },
+          "session_tags_skipped": {
+            "type": "integer",
+            "title": "Session Tags Skipped"
+          },
+          "tag_memories_skipped": {
+            "type": "integer",
+            "title": "Tag Memories Skipped"
+          },
+          "checklist_items_skipped": {
+            "type": "integer",
+            "title": "Checklist Items Skipped"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tags_imported",
+          "sessions_imported",
+          "messages_imported",
+          "session_tags_imported",
+          "tag_memories_imported",
+          "checklist_items_imported",
+          "tags_skipped",
+          "sessions_skipped",
+          "messages_skipped",
+          "session_tags_skipped",
+          "tag_memories_skipped",
+          "checklist_items_skipped",
+          "errors"
+        ],
+        "title": "ImportResultOut",
+        "description": "Response model for import operation."
       },
       "LinkChatIn": {
         "properties": {
@@ -5808,7 +5960,7 @@
           "model"
         ],
         "title": "SessionModelUpdate",
-        "description": "Request shape for ``PATCH /api/sessions/{id}/model`` (spec \u00a77\nmid-session model swap; arch \u00a71.1.5).\n\nThe wire field name matches the column name (``model``); v1.1 ships\nthe DB-only swap (next session boot reads the new value). The\nlive-runner forward to :meth:`AgentSession.set_model` is deferred\nper TODO.md."
+        "description": "Request shape for ``PATCH /api/sessions/{id}/model`` (spec \u00a77\nmid-session model swap; arch \u00a71.1.5).\n\nThe wire field name matches the column name (``model``). The route\npersists the new value AND recycles the live SDK supervisor for\nthe session so the next prompt respawns the subprocess with\n``--model <new>``; full transcript replay is handled by the\nstandard spawn path (``--resume <uuid>``)."
       },
       "SessionOut": {
         "properties": {
@@ -6018,6 +6170,25 @@
         ],
         "title": "SessionOut",
         "description": "Response shape for ``GET /api/sessions/{id}`` and the row list."
+      },
+      "SessionPermissionModeUpdate": {
+        "properties": {
+          "permission_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Mode"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SessionPermissionModeUpdate",
+        "description": "Request shape for ``PATCH /api/sessions/{id}/permission_mode`` (item 3.3).\n\n``None`` clears the column \u2014 the runner falls back to the profile default\non the next boot. Non-``None`` values are validated by the DB layer against\n:data:`KNOWN_SDK_PERMISSION_MODES`."
       },
       "SessionTitleUpdate": {
         "properties": {

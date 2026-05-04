@@ -262,6 +262,35 @@ class InProcessRunnerRegistry:
         worker handles directly."""
         return self._supervisors.get(session_id)
 
+    async def recycle(self, session_id: str) -> bool:
+        """Tear down the live SDK supervisor for ``session_id``.
+
+        Used by mutation routes that need the next turn to spawn a
+        fresh SDK subprocess so a session-row change (model swap,
+        permission-mode swap, instructions edit) takes effect without
+        requiring the user to close-and-reopen the session.
+
+        Mechanically: cancel + await the supervisor task and clear its
+        approval broker. The runner itself is left in ``_runners`` so
+        the ring buffer survives — clients reading replays still see
+        the prior turn's deltas. The next ``__call__`` (driven by the
+        next prompt or WS reconnect) sees the runner exists but the
+        supervisor is gone, and re-spawns ``run_session_loop`` via the
+        existing reap-recovery branch — the freshly-spawned supervisor
+        re-runs ``session_setup``, which reads the DB row anew and
+        therefore picks up whatever the route just persisted.
+
+        Returns ``True`` when a live supervisor was torn down,
+        ``False`` when the session had no live worker (idle-reaped or
+        never materialised) — the caller treats both as "after this
+        call, no live SDK process is bound to the old row state."
+
+        Idempotent: a no-op when nothing is running.
+        """
+        had_supervisor = session_id in self._supervisors
+        await self._reap_one(session_id)
+        return had_supervisor
+
     def get_approval_broker(self, session_id: str) -> object | None:
         """Return the per-session ApprovalBroker if one is wired.
 

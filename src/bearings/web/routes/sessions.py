@@ -346,12 +346,19 @@ async def patch_session_model(
 ) -> SessionOut:
     """Swap the session's executor model (spec §7; arch §1.1.5).
 
-    DB-only today: persists the new model name on the session row so
-    the next session boot picks it up. The live-runner forward to
-    :meth:`AgentSession.set_model` is deferred — see TODO.md "PATCH
-    model: live runner forward (deferred)" for the resolution sketch
-    (route the swap through the runner's prompt queue or expose a
-    distinct control queue per arch §3.2).
+    Persists the new model name on the session row, then recycles the
+    live SDK supervisor for that session via
+    :meth:`InProcessRunnerRegistry.recycle`. The Claude CLI bakes
+    ``--model`` in at process spawn — there is no in-band control
+    message to swap models on a running subprocess — so the live
+    forward reduces to "tear the subprocess down and let the next
+    prompt respawn it." The ring buffer survives the recycle (the
+    runner stays in ``_runners``), so the prior turn's deltas remain
+    available for replay; only the SDK worker bound to the old model
+    is torn down. The next prompt arriving at this session triggers
+    the registry's reap-recovery branch, which re-spawns
+    ``run_session_loop`` with a freshly-bootstrapped
+    :class:`AgentSession` reading the just-updated ``model`` column.
 
     422 on unknown model names; the validator delegates to
     :func:`sessions_db._is_known_model_name` so the alphabet stays in
@@ -369,6 +376,14 @@ async def patch_session_model(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no session matches {session_id!r}",
         )
+    # Live-runner forward: tear down the supervisor so the next prompt
+    # respawns the SDK subprocess with ``--model <new>``. Narrow to
+    # the in-process registry concretely (mirrors ``stop_session_turn``
+    # at the same module) — the ``RunnerFactory`` Protocol intentionally
+    # exposes only ``__call__``; lifecycle controls are concrete-only.
+    factory = getattr(request.app.state, "runner_factory", None)
+    if isinstance(factory, InProcessRunnerRegistry):
+        await factory.recycle(session_id)
     out = _to_out(row)
     broadcaster = _sessions_broadcaster(request)
     if broadcaster is not None:

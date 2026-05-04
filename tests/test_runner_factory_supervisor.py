@@ -268,6 +268,122 @@ async def test_aclose_is_idempotent() -> None:
     await factory.aclose()
 
 
+async def test_recycle_cancels_supervisor_keeps_runner(
+    conn: aiosqlite.Connection,
+) -> None:
+    """``recycle()`` cancels + reaps the live supervisor but leaves
+    the runner registered so the ring buffer (and any in-flight
+    subscribers) survive — exactly the semantic the
+    ``PATCH /api/sessions/{id}/model`` route needs so the next prompt
+    respawns with the freshly-persisted model.
+    """
+    session_row = await sessions_db.create(
+        conn, kind=SESSION_KIND_CHAT, title="t", working_dir="/tmp/wd", model="sonnet"
+    )
+
+    async def setup(session_id: str, runner: object) -> SessionSetup | None:
+        return _build_setup_for(conn, session_id) if session_id == session_row.id else None
+
+    import bearings.web.runner_factory as factory_mod
+
+    original = factory_mod.run_session_loop  # type: ignore[attr-defined]
+    cleanup_recorded = asyncio.Event()
+
+    async def stub_run_session_loop(
+        runner: object,
+        session: object,
+        options_kwargs: object,
+    ) -> None:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cleanup_recorded.set()
+            raise
+
+    factory_mod.run_session_loop = stub_run_session_loop  # type: ignore[assignment, attr-defined]
+    try:
+        factory = InProcessRunnerRegistry(session_setup=setup)
+        await factory(session_row.id)
+        await asyncio.sleep(0)  # let supervisor task start
+        assert factory.get_supervisor(session_row.id) is not None
+
+        had_supervisor = await factory.recycle(session_row.id)
+        assert had_supervisor is True
+        # The supervisor task observed cancellation and exited.
+        assert cleanup_recorded.is_set()
+        # Supervisor handle gone, runner remains so ring-buffer reads
+        # (replays for clients that were subscribed before the
+        # recycle) keep working.
+        assert factory.get_supervisor(session_row.id) is None
+        assert factory.get(session_row.id) is not None
+    finally:
+        factory_mod.run_session_loop = original  # type: ignore[attr-defined]
+        await factory.aclose()
+
+
+async def test_recycle_no_supervisor_returns_false() -> None:
+    """``recycle()`` is a no-op + returns ``False`` when the session
+    has no live supervisor — covers the "model swapped before any
+    prompt has spawned the worker" path."""
+    factory = InProcessRunnerRegistry()
+    had_supervisor = await factory.recycle("ses_never_spawned")
+    assert had_supervisor is False
+    await factory.aclose()
+
+
+async def test_recycle_re_call_respawns_supervisor(
+    conn: aiosqlite.Connection,
+) -> None:
+    """After ``recycle()``, the next ``__call__`` re-spawns the
+    supervisor via the existing reap-recovery branch — proves that
+    "next prompt respawns with the freshly-persisted row state" is
+    actually wired and not just theory.
+    """
+    session_row = await sessions_db.create(
+        conn, kind=SESSION_KIND_CHAT, title="t", working_dir="/tmp/wd", model="sonnet"
+    )
+    setup_calls: list[str] = []
+
+    async def setup(session_id: str, runner: object) -> SessionSetup | None:
+        setup_calls.append(session_id)
+        return _build_setup_for(conn, session_id) if session_id == session_row.id else None
+
+    import bearings.web.runner_factory as factory_mod
+
+    original = factory_mod.run_session_loop  # type: ignore[attr-defined]
+
+    async def stub_run_session_loop(
+        runner: object,
+        session: object,
+        options_kwargs: object,
+    ) -> None:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            raise
+
+    factory_mod.run_session_loop = stub_run_session_loop  # type: ignore[assignment, attr-defined]
+    try:
+        factory = InProcessRunnerRegistry(session_setup=setup)
+        await factory(session_row.id)
+        await asyncio.sleep(0)
+        assert setup_calls == [session_row.id]
+
+        await factory.recycle(session_row.id)
+        assert factory.get_supervisor(session_row.id) is None
+
+        # Next call sees the runner registered + supervisor reaped →
+        # re-spawns. session_setup runs a SECOND time, which is exactly
+        # how the new model gets read from the DB row.
+        await factory(session_row.id)
+        await asyncio.sleep(0)
+        assert factory.get_supervisor(session_row.id) is not None
+        assert setup_calls == [session_row.id, session_row.id]
+    finally:
+        factory_mod.run_session_loop = original  # type: ignore[attr-defined]
+        await factory.aclose()
+
+
 # ---------------------------------------------------------------------------
 # Build helper
 # ---------------------------------------------------------------------------

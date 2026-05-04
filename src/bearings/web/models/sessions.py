@@ -128,10 +128,11 @@ class SessionModelUpdate(BaseModel):
     """Request shape for ``PATCH /api/sessions/{id}/model`` (spec §7
     mid-session model swap; arch §1.1.5).
 
-    The wire field name matches the column name (``model``); v1.1 ships
-    the DB-only swap (next session boot reads the new value). The
-    live-runner forward to :meth:`AgentSession.set_model` is deferred
-    per TODO.md.
+    The wire field name matches the column name (``model``). The route
+    persists the new value AND recycles the live SDK supervisor for
+    the session so the next prompt respawns the subprocess with
+    ``--model <new>``; full transcript replay is handled by the
+    standard spawn path (``--resume <uuid>``).
     """
 
     model_config = ConfigDict(extra="forbid")

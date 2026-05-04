@@ -379,6 +379,66 @@ async def test_patch_model_404(
     assert response.status_code == 404
 
 
+async def test_patch_model_recycles_runner_supervisor(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """A successful PATCH /model recycles the live SDK supervisor so
+    the next prompt respawns the subprocess with ``--model <new>``.
+    Spies on the registry's ``recycle`` so the test does not have to
+    spawn a real subprocess to observe the behavior."""
+    from bearings.web.runner_factory import InProcessRunnerRegistry
+
+    app, conn = app_and_db
+    factory = app.state.runner_factory
+    assert isinstance(factory, InProcessRunnerRegistry)
+    sid = await _new_chat(conn)
+
+    recycled: list[str] = []
+    original_recycle = factory.recycle
+
+    async def spy_recycle(session_id: str) -> bool:
+        recycled.append(session_id)
+        return await original_recycle(session_id)
+
+    factory.recycle = spy_recycle  # type: ignore[method-assign]
+    try:
+        with TestClient(app) as client:
+            response = client.patch(f"/api/sessions/{sid}/model", json={"model": "opus"})
+        assert response.status_code == 200
+        assert recycled == [sid]
+    finally:
+        factory.recycle = original_recycle  # type: ignore[method-assign]
+
+
+async def test_patch_model_404_skips_recycle(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """A 404 on PATCH /model must NOT call recycle — there is no
+    session to recycle and recycle on a phantom id would race with
+    a future genuine session creation reusing the same id."""
+    from bearings.web.runner_factory import InProcessRunnerRegistry
+
+    app, _ = app_and_db
+    factory = app.state.runner_factory
+    assert isinstance(factory, InProcessRunnerRegistry)
+
+    recycled: list[str] = []
+    original_recycle = factory.recycle
+
+    async def spy_recycle(session_id: str) -> bool:
+        recycled.append(session_id)
+        return await original_recycle(session_id)
+
+    factory.recycle = spy_recycle  # type: ignore[method-assign]
+    try:
+        with TestClient(app) as client:
+            response = client.patch("/api/sessions/ses_missing/model", json={"model": "opus"})
+        assert response.status_code == 404
+        assert recycled == []
+    finally:
+        factory.recycle = original_recycle  # type: ignore[method-assign]
+
+
 async def test_patch_permission_mode_swap(
     app_and_db: tuple[FastAPI, aiosqlite.Connection],
 ) -> None:

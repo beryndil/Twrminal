@@ -26,14 +26,14 @@ What v1.1 ships:
 * **Phase 1.** RoutingRuleEditor mounted in ``/settings`` (system) +
   ``/tags`` (per-tag); ``/tags`` and ``/analytics`` stub pages
   replaced with real management surfaces; ChecklistChat orphan deleted.
-* **Phase 2.** ``PATCH /api/sessions/{id}/model`` (DB-only swap; live
-  runner forward deferred per "PATCH model" entry below) +
+* **Phase 2.** ``PATCH /api/sessions/{id}/model`` (full live swap —
+  persists the new model AND recycles the SDK supervisor so the next
+  prompt respawns with ``--model <new>``) +
   ``POST /api/sessions/{id}/regenerate``.
 
 What v1.1 defers (logged below):
 
 * PairedChatIndicator wiring.
-* PATCH model live runner forward.
 * The 12 spec'd route modules from arch §1.1.5 — all absent in v1.0
   AND with zero v1 frontend consumers; deferred per the plan's
   "KEEP only modules with a v1 frontend consumer" rule.
@@ -229,23 +229,6 @@ backend module from arch §1.1.5 in the same commit that lands the
 frontend caller. The arch doc is the source of truth for the route
 shape; the per-module test patterns in
 ``tests/test_*_api.py`` are the reference for the integration tests.
-
-#### PATCH model: live runner forward (deferred)
-
-The v1.1 closing-sweep ships ``PATCH /api/sessions/{id}/model`` as a
-DB-only swap. Spec §7 calls for the live forward to
-:meth:`AgentSession.set_model` so the swap takes effect mid-turn —
-that requires routing the swap through the runner's prompt queue (or
-a dedicated control queue per arch §3.2) since the route layer holds
-a :class:`SessionRunner`, not the inner :class:`AgentSession`.
-
-**Action when the live forward lands**: extend
-:meth:`SessionRunner.enqueue_set_model` (or a similar dedicated queue
-if mixing control + data on one queue is too messy), have the
-worker loop drain it before the next prompt, then call
-``await self._client.set_model(model)`` from the worker. Drop the
-"DB-only" caveat from :func:`update_model`'s docstring and from the
-``patch_session_model`` route's docstring.
 
 #### ChecklistChat — deleted (no documented role)
 
