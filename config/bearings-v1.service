@@ -13,17 +13,18 @@
 #   * v1 (this unit) lives at /home/beryndil/Projects/Bearings-v1, port 8788,
 #     DB ~/.local/share/bearings-v1/, unit `bearings-v1.service`.
 #
-# 2026-05-01 — dogfood cutover: ExecStart points at the launch.py
-# stopgap because the planned `bearings serve` CLI still hasn't landed
-# (see TODO.md "stopgap launcher" entry). When that CLI ships, swap
-# the ExecStart back to the original `uv run uvicorn bearings.api.app:app`
-# shape and drop launch.py.
+# 2026-05-04 — G1 gap-fill: ExecStart now calls `bearings serve` via the
+# project venv.  The launch.py stopgap (see TODO.md "Stopgap launcher"
+# entry, now resolved) has been deleted.  `bearings serve` mirrors the
+# boot-time wiring launch.py performed: Settings → load_schema → create_app
+# → uvicorn.run.  The DB startup hook (aiosqlite + load_schema) is in
+# bearings.cli.serve._connect_db; the shutdown hook is registered via
+# app.on_event("shutdown") inside _run.
 #
 # Historical note: at item 0.1 the FastAPI app didn't exist; this unit
 # was a verifiable shape (`systemd-analyze verify` passed) until item
-# 1.10. The real app lives at `bearings.web.app:create_app` (NOT
-# `bearings.api.app:app`) and needs the DB-startup hooks launch.py
-# wires up — hence the launcher detour.
+# 1.10.  The real app lives at `bearings.web.app:create_app` (NOT
+# `bearings.api.app:app`).
 
 [Unit]
 Description=Bearings v1 (localhost web UI for Claude Code agent sessions)
@@ -36,7 +37,7 @@ WorkingDirectory=/home/beryndil/Projects/Bearings-v1
 # Bind explicitly to localhost — Bearings is single-user / localhost only
 # per the project CLAUDE.md. Uses the project venv directly (faster
 # restart than `uv run`) since deps are already resolved.
-ExecStart=/home/beryndil/Projects/Bearings-v1/.venv/bin/python /home/beryndil/.local/share/bearings-v1/launch.py
+ExecStart=/home/beryndil/Projects/Bearings-v1/.venv/bin/bearings serve --host 127.0.0.1 --port 8788
 Restart=on-failure
 RestartSec=2s
 

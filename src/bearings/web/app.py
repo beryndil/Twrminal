@@ -278,7 +278,7 @@ def create_app(
     # when both a DB connection is wired AND ``enable_driver_dispatch=True``
     # is passed. The flag defaults to ``False`` so test harnesses that
     # inject a DB connection (but do not want an autonomous driver running
-    # in the background) are unaffected. Production callers (CLI, launch.py)
+    # in the background) are unaffected. Production callers (bearings serve CLI)
     # pass ``enable_driver_dispatch=True`` to activate the dispatch wire.
     if db_connection is not None and enable_driver_dispatch:
         _turn_driver = build_turn_driver(db_connection=db_connection)

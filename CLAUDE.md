@@ -111,9 +111,8 @@ The 12-tool stack is wired through `.pre-commit-config.yaml`:
 ## Common dev commands
 
 ```bash
-# Run the server (port 8788) — stopgap launcher until `bearings serve`
-# ships (see TODO.md "Stopgap launcher" entry); systemd unit calls this.
-.venv/bin/python ~/.local/share/bearings-v1/launch.py
+# Run the server (port 8788) — same invocation as the systemd unit.
+.venv/bin/bearings serve --host 127.0.0.1 --port 8788
 
 # Single test by node id, by file, or by -k expression
 uv run pytest tests/test_routing.py::test_priority_ladder -q

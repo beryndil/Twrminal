@@ -155,22 +155,6 @@ TODO entry, cite the resolving commit.
 
 
 
-### Stopgap launcher → `bearings serve` CLI (deferred) — 2026-05-01
-
-`~/.local/share/bearings-v1/launch.py` still owns boot-time wiring
-(Settings → create_app → aiosqlite startup hook → uvicorn). The
-systemd unit `config/bearings-v1.service` calls it directly via
-the project venv. Documented as a stopgap in the launcher's own
-docstring; landed in production on the dogfood cutover (2026-05-01)
-because the planned `bearings serve` subcommand hadn't shipped.
-
-**Action when the CLI lands**: swap the unit's ExecStart from
-`/.venv/bin/python /.local/share/bearings-v1/launch.py` back to
-`/usr/bin/uv run bearings serve --host 127.0.0.1 --port 8788`,
-delete launch.py, drop this entry. The CLI must own the same
-startup-hook side effects (DB connection on app.state.db_connection)
-or the swap regresses cold-start.
-
 ### Item 2.9 — theme server-sync layer (deferred)
 
 `docs/behavior/themes.md` §"Persistence boundary" prescribes

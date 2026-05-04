@@ -2,19 +2,14 @@
 
 Per ``docs/architecture-v1.md`` §1.1.1 the CLI is the only supported
 boot path; per ``docs/behavior/bearings-cli.md`` §"bearings serve"
-the subcommand wires :class:`Settings` → :func:`create_app` →
-``aiosqlite`` startup hook → ``uvicorn.run``.
+the subcommand wires :class:`Settings` → :func:`load_schema` →
+:func:`create_app` → ``uvicorn.run``.
 
-The body deliberately mirrors the v1.0 ``launch.py`` stopgap that
-``~/.local/share/bearings-v1/launch.py`` ships — the v1.1
-closing-sweep moves that wiring into the CLI so the systemd unit can
-call ``bearings serve`` instead of a stopgap script (TODO.md
-"Stopgap launcher → ``bearings serve`` CLI").
-
-Per arch §1.1.1 the subcommand body stays thin: parsing args, calling
-:func:`create_app`, registering the DB lifecycle hooks, handing off
-to ``uvicorn``. No business logic — every observable behavior comes
-from :mod:`bearings.web.app`.
+Per arch §1.1.1 the subcommand body stays thin: parsing args, opening
+the DB connection (with schema applied), calling :func:`create_app`,
+registering the shutdown hook, and handing off to ``uvicorn``. No
+business logic — every observable behavior comes from
+:mod:`bearings.web.app`.
 """
 
 from __future__ import annotations
@@ -28,6 +23,7 @@ import uvicorn
 
 from bearings.config.constants import CLI_EXIT_OK
 from bearings.config.settings import Settings
+from bearings.db.connection import load_schema
 from bearings.web.app import create_app
 
 
@@ -93,9 +89,16 @@ def _run(args: argparse.Namespace) -> int:
 
 
 async def _connect_db(db_path: Path) -> aiosqlite.Connection:
-    """Open the long-lived sqlite connection before app construction."""
+    """Open the long-lived sqlite connection before app construction.
+
+    Calls :func:`load_schema` so that a fresh DB (e.g. first-time install)
+    gets the DDL applied before :func:`create_app` runs. The schema is fully
+    idempotent (``IF NOT EXISTS`` + ``INSERT OR IGNORE`` guards) so
+    re-application against an existing DB is a no-op.
+    """
     db = await aiosqlite.connect(db_path)
     db.row_factory = aiosqlite.Row
+    await load_schema(db)
     return db
 
 
