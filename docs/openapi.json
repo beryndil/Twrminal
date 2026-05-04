@@ -2684,6 +2684,199 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Delete Message",
+        "description": "Delete a message by id (G3). 204 on success; 404 when absent.",
+        "operationId": "delete_message_api_messages__message_id__delete",
+        "parameters": [
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Message Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{message_id}/pinned": {
+      "patch": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Patch Message Pinned",
+        "description": "Pin or unpin a message via ``PATCH /api/messages/{id}/pinned`` (G3).\n\n``{pinned: true}`` pins the bubble; ``{pinned: false}`` unpins it.\nIdempotent. Returns the updated message row. 404 when absent.",
+        "operationId": "patch_message_pinned_api_messages__message_id__pinned_patch",
+        "parameters": [
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Message Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessagePinnedUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{message_id}/hidden": {
+      "patch": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Patch Message Hidden",
+        "description": "Show or hide a message from the context window (G3).\n\n``{hidden: true}`` drops the message from the next prompt context;\n``{hidden: false}`` restores it. Returns the updated row. 404 when absent.",
+        "operationId": "patch_message_hidden_api_messages__message_id__hidden_patch",
+        "parameters": [
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Message Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageHiddenUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{message_id}/move": {
+      "post": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Move Message",
+        "description": "Re-parent a message to another session (G3).\n\nBody: ``{target_session_id: str}``. Returns the updated message row.\n404 when the message or target session is absent.",
+        "operationId": "move_message_api_messages__message_id__move_post",
+        "parameters": [
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Message Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageMoveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/checklist-items/{item_id}/spawn-chat": {
@@ -4917,6 +5110,36 @@
         "title": "LinkChatIn",
         "description": "Request shape for ``POST /api/checklist-items/{id}/link``."
       },
+      "MessageHiddenUpdate": {
+        "properties": {
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "hidden"
+        ],
+        "title": "MessageHiddenUpdate",
+        "description": "Request body for ``PATCH /api/messages/{id}/hidden`` (G3)."
+      },
+      "MessageMoveRequest": {
+        "properties": {
+          "target_session_id": {
+            "type": "string",
+            "title": "Target Session Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_session_id"
+        ],
+        "title": "MessageMoveRequest",
+        "description": "Request body for ``POST /api/messages/{id}/move`` (G3)."
+      },
       "MessageOut": {
         "properties": {
           "id": {
@@ -5096,6 +5319,16 @@
           "seq": {
             "type": "integer",
             "title": "Seq"
+          },
+          "pinned": {
+            "type": "boolean",
+            "title": "Pinned",
+            "default": false
+          },
+          "hidden_from_context": {
+            "type": "boolean",
+            "title": "Hidden From Context",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -5147,6 +5380,21 @@
         ],
         "title": "MessagePage",
         "description": "Paginated response for ``GET /api/sessions/{id}/messages`` (item 1.3).\n\nWraps the per-page item list with a ``has_more`` flag so the\nfrontend knows whether to show the \"Load older\" affordance.\n``has_more`` is ``False`` when the backend returned fewer rows than\nthe requested ``limit``, or when no ``limit`` was given (full\ntranscript fetch)."
+      },
+      "MessagePinnedUpdate": {
+        "properties": {
+          "pinned": {
+            "type": "boolean",
+            "title": "Pinned"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pinned"
+        ],
+        "title": "MessagePinnedUpdate",
+        "description": "Request body for ``PATCH /api/messages/{id}/pinned`` (G3)."
       },
       "MoveItemIn": {
         "properties": {

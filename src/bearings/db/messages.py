@@ -69,6 +69,10 @@ class Message:
     (item 1.8) to attribute overrides back to individual rules. ``None`` for
     rows whose routing source is ``'manual'`` / ``'manual_override_quota'`` /
     ``'unknown_legacy'`` / ``'default'`` (no rule fired).
+
+    ``pinned`` and ``hidden_from_context`` are G3 context-menu columns:
+    pinned floats the bubble in the conversation header; hidden_from_context
+    drops the message from the next prompt context window.
     """
 
     id: str
@@ -93,6 +97,9 @@ class Message:
     # SQLite implicit rowid — monotonically increasing per insertion order.
     # Exposed as the cursor integer for ``before=`` pagination (item 1.3).
     seq: int
+    # G3 context-menu state columns (DEFAULT 0 for all existing rows).
+    pinned: bool = False
+    hidden_from_context: bool = False
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -416,13 +423,110 @@ async def count_for_session(
     return 0 if row is None else int(row[0])
 
 
+async def update_pinned(
+    connection: aiosqlite.Connection,
+    message_id: str,
+    *,
+    pinned: bool,
+) -> Message | None:
+    """Set or clear the ``pinned`` flag; returns the updated row or ``None`` if absent."""
+    existing = await get(connection, message_id)
+    if existing is None:
+        return None
+    await connection.execute(
+        "UPDATE messages SET pinned = ? WHERE id = ?",
+        (1 if pinned else 0, message_id),
+    )
+    await connection.commit()
+    return await get(connection, message_id)
+
+
+async def update_hidden(
+    connection: aiosqlite.Connection,
+    message_id: str,
+    *,
+    hidden: bool,
+) -> Message | None:
+    """Set or clear the ``hidden_from_context`` flag; returns the updated row or ``None``."""
+    existing = await get(connection, message_id)
+    if existing is None:
+        return None
+    await connection.execute(
+        "UPDATE messages SET hidden_from_context = ? WHERE id = ?",
+        (1 if hidden else 0, message_id),
+    )
+    await connection.commit()
+    return await get(connection, message_id)
+
+
+async def delete(
+    connection: aiosqlite.Connection,
+    message_id: str,
+) -> bool:
+    """Delete a message by id; returns ``True`` if a row was deleted, ``False`` if absent."""
+    existing = await get(connection, message_id)
+    if existing is None:
+        return False
+    await connection.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+    # Decrement the session message count to keep the sidebar counter accurate.
+    await connection.execute(
+        "UPDATE sessions SET message_count = MAX(0, message_count - 1) WHERE id = ?",
+        (existing.session_id,),
+    )
+    await connection.commit()
+    return True
+
+
+async def move_to_session(
+    connection: aiosqlite.Connection,
+    message_id: str,
+    *,
+    target_session_id: str,
+) -> Message | None:
+    """Re-parent a message to ``target_session_id``.
+
+    Decrements the source session's ``message_count`` and increments the
+    target's. Returns the updated message row, or ``None`` if the message
+    or target session is absent.
+    """
+    existing = await get(connection, message_id)
+    if existing is None:
+        return None
+    # Verify the target session exists before mutating.
+    cursor = await connection.execute("SELECT id FROM sessions WHERE id = ?", (target_session_id,))
+    try:
+        target_row = await cursor.fetchone()
+    finally:
+        await cursor.close()
+    if target_row is None:
+        return None
+    source_session_id = existing.session_id
+    await connection.execute(
+        "UPDATE messages SET session_id = ? WHERE id = ?",
+        (target_session_id, message_id),
+    )
+    await connection.execute(
+        "UPDATE sessions SET message_count = MAX(0, message_count - 1) WHERE id = ?",
+        (source_session_id,),
+    )
+    await connection.execute(
+        "UPDATE sessions SET message_count = message_count + 1 WHERE id = ?",
+        (target_session_id,),
+    )
+    await connection.commit()
+    return await get(connection, message_id)
+
+
 _SELECT_MESSAGE_COLUMNS = (
     "SELECT id, session_id, role, content, created_at, "
     "executor_model, advisor_model, effort_level, routing_source, routing_reason, "
     "matched_rule_id, "
     "executor_input_tokens, executor_output_tokens, advisor_input_tokens, "
     "advisor_output_tokens, advisor_calls_count, cache_read_tokens, "
-    "input_tokens, output_tokens, rowid AS seq FROM messages"
+    "input_tokens, output_tokens, rowid AS seq, "
+    "COALESCE(pinned, 0) AS pinned, "
+    "COALESCE(hidden_from_context, 0) AS hidden_from_context "
+    "FROM messages"
 )
 
 
@@ -449,6 +553,8 @@ def _row_to_message(row: aiosqlite.Row | tuple[object, ...]) -> Message:
         input_tokens=None if row[17] is None else int(str(row[17])),
         output_tokens=None if row[18] is None else int(str(row[18])),
         seq=int(str(row[19])),
+        pinned=bool(int(str(row[20]))) if row[20] is not None else False,
+        hidden_from_context=bool(int(str(row[21]))) if row[21] is not None else False,
     )
 
 
@@ -456,9 +562,13 @@ __all__ = [
     "KNOWN_MESSAGE_ROLES",
     "Message",
     "count_for_session",
+    "delete",
     "get",
     "insert_assistant",
     "insert_system",
     "insert_user",
     "list_for_session",
+    "move_to_session",
+    "update_hidden",
+    "update_pinned",
 ]

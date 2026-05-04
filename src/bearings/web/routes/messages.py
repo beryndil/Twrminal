@@ -38,7 +38,13 @@ from bearings.config.constants import MESSAGES_LIST_MAX_LIMIT
 from bearings.db import messages as messages_db
 from bearings.db import sessions as sessions_db
 from bearings.db.messages import Message
-from bearings.web.models.messages import MessageOut, MessagePage
+from bearings.web.models.messages import (
+    MessageHiddenUpdate,
+    MessageMoveRequest,
+    MessageOut,
+    MessagePage,
+    MessagePinnedUpdate,
+)
 
 router = APIRouter()
 
@@ -77,6 +83,8 @@ def _to_out(message: Message) -> MessageOut:
         input_tokens=message.input_tokens,
         output_tokens=message.output_tokens,
         seq=message.seq,
+        pinned=message.pinned,
+        hidden_from_context=message.hidden_from_context,
     )
 
 
@@ -156,6 +164,83 @@ async def get_message(message_id: str, request: Request) -> MessageOut:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no message matches {message_id!r}",
+        )
+    return _to_out(row)
+
+
+@router.patch("/api/messages/{message_id}/pinned", response_model=MessageOut)
+async def patch_message_pinned(
+    message_id: str,
+    payload: MessagePinnedUpdate,
+    request: Request,
+) -> MessageOut:
+    """Pin or unpin a message via ``PATCH /api/messages/{id}/pinned`` (G3).
+
+    ``{pinned: true}`` pins the bubble; ``{pinned: false}`` unpins it.
+    Idempotent. Returns the updated message row. 404 when absent.
+    """
+    db = _db(request)
+    row = await messages_db.update_pinned(db, message_id, pinned=payload.pinned)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no message matches {message_id!r}",
+        )
+    return _to_out(row)
+
+
+@router.patch("/api/messages/{message_id}/hidden", response_model=MessageOut)
+async def patch_message_hidden(
+    message_id: str,
+    payload: MessageHiddenUpdate,
+    request: Request,
+) -> MessageOut:
+    """Show or hide a message from the context window (G3).
+
+    ``{hidden: true}`` drops the message from the next prompt context;
+    ``{hidden: false}`` restores it. Returns the updated row. 404 when absent.
+    """
+    db = _db(request)
+    row = await messages_db.update_hidden(db, message_id, hidden=payload.hidden)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no message matches {message_id!r}",
+        )
+    return _to_out(row)
+
+
+@router.delete("/api/messages/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_message(message_id: str, request: Request) -> None:
+    """Delete a message by id (G3). 204 on success; 404 when absent."""
+    db = _db(request)
+    deleted = await messages_db.delete(db, message_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no message matches {message_id!r}",
+        )
+
+
+@router.post("/api/messages/{message_id}/move", response_model=MessageOut)
+async def move_message(
+    message_id: str,
+    payload: MessageMoveRequest,
+    request: Request,
+) -> MessageOut:
+    """Re-parent a message to another session (G3).
+
+    Body: ``{target_session_id: str}``. Returns the updated message row.
+    404 when the message or target session is absent.
+    """
+    db = _db(request)
+    row = await messages_db.move_to_session(
+        db, message_id, target_session_id=payload.target_session_id
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(f"no message {message_id!r} or no session {payload.target_session_id!r}"),
         )
     return _to_out(row)
 

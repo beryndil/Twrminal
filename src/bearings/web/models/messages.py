@@ -74,6 +74,33 @@ class MessageOut(BaseModel):
     # the lowest ``seq`` it currently holds to walk further into the
     # past via ``loadOlder()``.
     seq: int
+    # G3 context-menu state columns.
+    pinned: bool = False
+    hidden_from_context: bool = False
+
+
+class MessagePinnedUpdate(BaseModel):
+    """Request body for ``PATCH /api/messages/{id}/pinned`` (G3)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pinned: bool
+
+
+class MessageHiddenUpdate(BaseModel):
+    """Request body for ``PATCH /api/messages/{id}/hidden`` (G3)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    hidden: bool
+
+
+class MessageMoveRequest(BaseModel):
+    """Request body for ``POST /api/messages/{id}/move`` (G3)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_session_id: str
 
 
 class MessagePage(BaseModel):
@@ -92,4 +119,10 @@ class MessagePage(BaseModel):
     has_more: bool
 
 
-__all__ = ["MessageOut", "MessagePage"]
+__all__ = [
+    "MessageHiddenUpdate",
+    "MessageMoveRequest",
+    "MessageOut",
+    "MessagePage",
+    "MessagePinnedUpdate",
+]

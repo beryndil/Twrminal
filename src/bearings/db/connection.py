@@ -97,6 +97,10 @@ _ADDED_COLUMNS: Final[tuple[tuple[str, str, str], ...]] = (
     ("sessions", "routing_advisor_model", "TEXT"),
     ("sessions", "routing_advisor_max_uses", "INTEGER NOT NULL DEFAULT 5"),
     ("sessions", "routing_effort_level", "TEXT NOT NULL DEFAULT 'auto'"),
+    # G3 message context-menu columns — landed after initial schema.sql ship.
+    # Existing rows default to 0 (not pinned, not hidden).
+    ("messages", "pinned", "INTEGER NOT NULL DEFAULT 0"),
+    ("messages", "hidden_from_context", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 

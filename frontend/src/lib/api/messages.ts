@@ -7,8 +7,15 @@
  * The conversation pane fetches the tail on session-select and walks
  * backward via ``loadOlder()`` (item 1.3 cursor pagination).
  */
-import { messageEndpoint, sessionMessagesEndpoint } from "../config";
-import { getJson, type RequestOptions } from "./client";
+import {
+  messageDeleteEndpoint,
+  messageEndpoint,
+  messageHiddenEndpoint,
+  messageMoveEndpoint,
+  messagePinnedEndpoint,
+  sessionMessagesEndpoint,
+} from "../config";
+import { deleteResource, getJson, patchJson, postJson, type RequestOptions } from "./client";
 
 /**
  * Wire shape for one message row — one-to-one with
@@ -45,6 +52,9 @@ export interface MessageOut {
   output_tokens: number | null;
   // Cursor for backward pagination (item 1.3).
   seq: number;
+  // G3 context-menu state columns.
+  pinned: boolean;
+  hidden_from_context: boolean;
 }
 
 /**
@@ -103,4 +113,57 @@ export async function getMessage(
   options: RequestOptions = {},
 ): Promise<MessageOut> {
   return await getJson<MessageOut>(messageEndpoint(messageId), options);
+}
+
+/**
+ * Pin or unpin a message bubble via ``PATCH /api/messages/{id}/pinned`` (G3).
+ * ``pinned=true`` floats the bubble in the conversation header.
+ */
+export async function patchMessagePinned(
+  messageId: string,
+  pinned: boolean,
+  options: RequestOptions = {},
+): Promise<MessageOut> {
+  return await patchJson<MessageOut>(messagePinnedEndpoint(messageId), { pinned }, options);
+}
+
+/**
+ * Show or hide a message from the context window via
+ * ``PATCH /api/messages/{id}/hidden`` (G3).
+ * ``hidden=true`` drops it from the next prompt context.
+ */
+export async function patchMessageHidden(
+  messageId: string,
+  hidden: boolean,
+  options: RequestOptions = {},
+): Promise<MessageOut> {
+  return await patchJson<MessageOut>(messageHiddenEndpoint(messageId), { hidden }, options);
+}
+
+/**
+ * Delete a message via ``DELETE /api/messages/{id}`` (G3).
+ * Returns 204 No Content — no body.
+ */
+export async function deleteMessage(
+  messageId: string,
+  options: RequestOptions = {},
+): Promise<void> {
+  return await deleteResource<void>(messageDeleteEndpoint(messageId), options);
+}
+
+/**
+ * Re-parent a message to another session via
+ * ``POST /api/messages/{id}/move`` (G3).
+ * Returns the updated message row.
+ */
+export async function moveMessage(
+  messageId: string,
+  targetSessionId: string,
+  options: RequestOptions = {},
+): Promise<MessageOut> {
+  return await postJson<MessageOut>(
+    messageMoveEndpoint(messageId),
+    { target_session_id: targetSessionId },
+    options,
+  );
 }

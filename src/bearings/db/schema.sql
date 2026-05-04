@@ -135,6 +135,10 @@ CREATE TABLE IF NOT EXISTS messages (
     -- per spec §5 "Backfill for legacy data" and arch §4.7 Optional[int]).
     input_tokens             INTEGER,
     output_tokens            INTEGER,
+    -- context-menu actions (G3): pin floats the bubble in conversation
+    -- header; hidden_from_context drops it from the next prompt window.
+    pinned                   INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+    hidden_from_context      INTEGER NOT NULL DEFAULT 0 CHECK (hidden_from_context IN (0, 1)),
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 

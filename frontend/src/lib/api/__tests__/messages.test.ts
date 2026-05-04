@@ -27,6 +27,8 @@ const sampleRow: MessageOut = {
   input_tokens: 300,
   output_tokens: 200,
   seq: 42,
+  pinned: false,
+  hidden_from_context: false,
 };
 
 const samplePage: MessagePage = {

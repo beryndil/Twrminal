@@ -17,6 +17,8 @@
    * - ``docs/behavior/chat.md`` §"Error states" — assistant bubble
    *   closes with a red error block when the agent emits an
    *   error event mid-turn.
+   * - ``docs/behavior/context-menus.md`` §"Message bubble" — nine
+   *   context-menu actions wired via ``use:contextMenu`` (G3).
    *
    * The component is presentational: receives a ``MessageTurnView``
    * and renders it. The reducer produces these views; the parent
@@ -24,16 +26,33 @@
    */
   import {
     CONVERSATION_STRINGS,
+    MENU_ACTION_MESSAGE_COPY_AS_MARKDOWN,
+    MENU_ACTION_MESSAGE_COPY_CONTENT,
+    MENU_ACTION_MESSAGE_COPY_ID,
+    MENU_ACTION_MESSAGE_DELETE,
+    MENU_ACTION_MESSAGE_FORK_FROM_HERE,
+    MENU_ACTION_MESSAGE_HIDE_FROM_CONTEXT,
+    MENU_ACTION_MESSAGE_JUMP_TO_TURN,
+    MENU_ACTION_MESSAGE_MOVE_TO_SESSION,
+    MENU_ACTION_MESSAGE_PIN,
     MENU_ACTION_MESSAGE_REGENERATE,
     MENU_ACTION_MESSAGE_REGENERATE_IN_PLACE,
+    MENU_ACTION_MESSAGE_SPLIT_HERE,
     MENU_TARGET_MESSAGE,
   } from "../../config";
   import { contextMenu } from "../../actions/contextMenu";
+  import {
+    deleteMessage,
+    moveMessage,
+    patchMessageHidden,
+    patchMessagePinned,
+  } from "../../api/messages";
   import { regenerateSession } from "../../api/sessions";
   import { linkifyToHtml } from "../../linkify";
   import { renderMarkdown } from "../../render";
   import { sanitizeHtml } from "../../sanitize";
   import type { MessageTurnView } from "../../stores/conversation.svelte";
+  import ConfirmDialog from "../sidebar/ConfirmDialog.svelte";
   import RoutingBadge from "./RoutingBadge.svelte";
   import ToolOutput from "./ToolOutput.svelte";
 
@@ -56,6 +75,106 @@
       // Toast feedback handled by the API consumer or parent component
     } catch (err) {
       console.error("Regenerate failed:", err);
+    }
+  }
+
+  // ---- context-menu action state -----------------------------------------
+
+  let showDeleteConfirm = $state(false);
+
+  // ---- context-menu handlers ---------------------------------------------
+
+  const menuHandlers = $derived({
+    /** Scroll the article element into view. */
+    [MENU_ACTION_MESSAGE_JUMP_TO_TURN]: () => {
+      const el = document.querySelector(`[data-turn-id="${CSS.escape(turn.id)}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    },
+
+    /** Copy the plain-text message body to the clipboard. */
+    [MENU_ACTION_MESSAGE_COPY_CONTENT]: () => {
+      void navigator.clipboard.writeText(turn.body);
+    },
+
+    /**
+     * Copy the message as Markdown with role + timestamp header.
+     * Advanced action — Shift+right-click only.
+     */
+    [MENU_ACTION_MESSAGE_COPY_AS_MARKDOWN]: () => {
+      const header = `**${turn.role}** (${turn.createdAt})\n\n`;
+      void navigator.clipboard.writeText(header + turn.body);
+    },
+
+    /** Copy the message ID. Advanced action. */
+    [MENU_ACTION_MESSAGE_COPY_ID]: () => {
+      void navigator.clipboard.writeText(turn.id);
+    },
+
+    /** Pin the message bubble to the conversation header. */
+    [MENU_ACTION_MESSAGE_PIN]: () => {
+      void patchMessagePinned(turn.id, true).catch((err) => {
+        console.error("Pin message failed:", err);
+      });
+    },
+
+    /**
+     * Hide the message from the context window so it is excluded from
+     * the next prompt. Advanced action.
+     */
+    [MENU_ACTION_MESSAGE_HIDE_FROM_CONTEXT]: () => {
+      void patchMessageHidden(turn.id, true).catch((err) => {
+        console.error("Hide message failed:", err);
+      });
+    },
+
+    /**
+     * Move the message to another session. Uses window.prompt for the
+     * session ID until a full session-picker UI lands in a later item.
+     */
+    [MENU_ACTION_MESSAGE_MOVE_TO_SESSION]: () => {
+      // Simple session-ID prompt; a full session-picker is deferred.
+      const targetId = window.prompt("Enter target session ID:");
+      if (targetId === null || targetId.trim() === "") return;
+      void moveMessage(turn.id, targetId.trim()).catch((err) => {
+        console.error("Move message failed:", err);
+      });
+    },
+
+    /**
+     * Split the conversation at this message into a new sibling session.
+     * TODO: backend endpoint lands in G6 (checkpoints). Wired here so the
+     * menu entry appears; the action logs a warning until the endpoint exists.
+     */
+    [MENU_ACTION_MESSAGE_SPLIT_HERE]: () => {
+      // TODO(G6): wire POST /api/messages/{id}/split once checkpoints land.
+      console.warn("split-here: backend not yet implemented (G6)");
+    },
+
+    /**
+     * Fork a new session from this message onward.
+     * TODO: backend endpoint lands in G6 (checkpoints). Wired here so the
+     * menu entry appears; the action logs a warning until the endpoint exists.
+     */
+    [MENU_ACTION_MESSAGE_FORK_FROM_HERE]: () => {
+      // TODO(G6): wire POST /api/messages/{id}/fork once checkpoints land.
+      console.warn("fork-from-here: backend not yet implemented (G6)");
+    },
+
+    [MENU_ACTION_MESSAGE_REGENERATE]: () => void handleRegenerate(),
+    [MENU_ACTION_MESSAGE_REGENERATE_IN_PLACE]: () => void handleRegenerate(),
+
+    /** Show the delete confirmation dialog. Advanced + destructive action. */
+    [MENU_ACTION_MESSAGE_DELETE]: () => {
+      showDeleteConfirm = true;
+    },
+  });
+
+  async function handleDeleteConfirm(): Promise<void> {
+    showDeleteConfirm = false;
+    try {
+      await deleteMessage(turn.id);
+    } catch (err) {
+      console.error("Delete message failed:", err);
     }
   }
 
@@ -83,6 +202,17 @@
   });
 </script>
 
+{#if showDeleteConfirm}
+  <ConfirmDialog
+    message="Delete this message? This cannot be undone."
+    confirmLabel="Delete"
+    onConfirm={() => void handleDeleteConfirm()}
+    onCancel={() => {
+      showDeleteConfirm = false;
+    }}
+  />
+{/if}
+
 <article
   class="message-turn flex flex-col gap-2 px-4 py-4"
   data-testid="message-turn"
@@ -90,10 +220,7 @@
   data-role={turn.role}
   use:contextMenu={{
     target: MENU_TARGET_MESSAGE,
-    handlers: {
-      [MENU_ACTION_MESSAGE_REGENERATE]: handleRegenerate,
-      [MENU_ACTION_MESSAGE_REGENERATE_IN_PLACE]: handleRegenerate,
-    },
+    handlers: menuHandlers,
     data: { messageId: turn.id, sessionId },
   }}
 >

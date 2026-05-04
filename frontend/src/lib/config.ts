@@ -72,6 +72,21 @@ export const sessionMessagesEndpoint = (sessionId: string): string =>
 export const messageEndpoint = (messageId: string): string =>
   `${API_BASE}/messages/${encodeURIComponent(messageId)}`;
 
+/** ``PATCH /api/messages/{id}/pinned`` — pin or unpin a message bubble (G3). */
+export const messagePinnedEndpoint = (messageId: string): string =>
+  `${messageEndpoint(messageId)}/pinned`;
+
+/** ``PATCH /api/messages/{id}/hidden`` — hide or show a message from context (G3). */
+export const messageHiddenEndpoint = (messageId: string): string =>
+  `${messageEndpoint(messageId)}/hidden`;
+
+/** ``DELETE /api/messages/{id}`` — delete a message (G3). */
+export const messageDeleteEndpoint = (messageId: string): string => messageEndpoint(messageId);
+
+/** ``POST /api/messages/{id}/move`` — re-parent a message to another session (G3). */
+export const messageMoveEndpoint = (messageId: string): string =>
+  `${messageEndpoint(messageId)}/move`;
+
 /**
  * ``POST /api/sessions/{id}/prompt`` — composer submit surface per
  * ``docs/behavior/prompt-endpoint.md``. Body shape: ``{ content: str }``;

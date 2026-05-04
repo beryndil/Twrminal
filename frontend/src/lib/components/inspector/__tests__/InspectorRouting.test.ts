@@ -69,6 +69,8 @@ function msg(overrides: Partial<MessageOut> = {}): MessageOut {
     input_tokens: null,
     output_tokens: null,
     seq: 1,
+    pinned: false,
+    hidden_from_context: false,
     ...overrides,
   };
 }
