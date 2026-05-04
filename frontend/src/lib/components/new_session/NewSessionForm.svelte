@@ -61,6 +61,7 @@
   } from "../../config";
   import { previewRouting as previewRoutingDefault, type RoutingPreview } from "../../api/routing";
   import { getCurrentQuota as getCurrentQuotaDefault } from "../../api/quota";
+  import { listTemplates, type TemplateOut } from "../../api/templates";
   import { ApiError } from "../../api/client";
   import QuotaBars, { type QuotaBarsSnapshot } from "./QuotaBars.svelte";
   import RoutingPreviewLine, { type RoutingPreviewState } from "./RoutingPreview.svelte";
@@ -131,6 +132,47 @@
     debounceMs = ROUTING_PREVIEW_DEBOUNCE_MS,
     initialExecutor = EXECUTOR_MODEL_SONNET,
   }: Props = $props();
+
+  // ---- Template picker state ---------------------------------------------
+
+  let templates = $state<TemplateOut[]>([]);
+  let selectedTemplateId = $state<number | null>(null);
+
+  async function loadTemplates(): Promise<void> {
+    try {
+      templates = await listTemplates();
+    } catch {
+      // Non-fatal — picker just stays empty.
+      templates = [];
+    }
+  }
+
+  function onTemplateChange(event: Event): void {
+    const target = event.currentTarget as HTMLSelectElement;
+    const parsed = Number.parseInt(target.value, 10);
+    if (Number.isNaN(parsed)) {
+      selectedTemplateId = null;
+      return;
+    }
+    selectedTemplateId = parsed;
+    const tpl = templates.find((t) => t.id === parsed);
+    if (tpl === undefined) return;
+    // Pre-fill routing axes from the template; mark manual override so the
+    // routing preview does not overwrite the user's explicit template choice.
+    if (isKnownExecutor(tpl.model)) {
+      executor = tpl.model;
+    }
+    if (tpl.advisor_model === ADVISOR_MODEL_OPUS) {
+      advisor = ADVISOR_MODEL_OPUS;
+      advisorMaxUses = tpl.advisor_max_uses;
+    } else {
+      advisor = ADVISOR_MODEL_NONE;
+    }
+    if (isKnownEffort(tpl.effort_level)) {
+      effort = tpl.effort_level;
+    }
+    manualOverride = true;
+  }
 
   // ---- Form state --------------------------------------------------------
 
@@ -267,6 +309,8 @@
     // Initial quota fetch — falls back gracefully on every error path
     // (404 = no snapshot yet; 503 = no poller; 502 = upstream blip).
     void hydrateQuotaOnMount();
+    // Template picker — non-fatal; picker shows empty when unavailable.
+    void loadTemplates();
     return () => {
       if (debounceHandle !== null) {
         clearTimeout(debounceHandle);
@@ -439,6 +483,23 @@
   }}
 >
   <h2 class="new-session-form__title">{NEW_SESSION_STRINGS.dialogTitle}</h2>
+
+  {#if templates.length > 0}
+    <div class="new-session-form__row">
+      <label for="new-session-template">Template</label>
+      <select
+        id="new-session-template"
+        data-testid="new-session-template"
+        value={selectedTemplateId ?? ""}
+        onchange={onTemplateChange}
+      >
+        <option value="">— no template —</option>
+        {#each templates as tpl (tpl.id)}
+          <option value={tpl.id}>{tpl.name}</option>
+        {/each}
+      </select>
+    </div>
+  {/if}
 
   <fieldset class="new-session-form__routing">
     <legend class="new-session-form__routing-heading">

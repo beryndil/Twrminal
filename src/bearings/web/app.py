@@ -63,6 +63,7 @@ from bearings.config.constants import (
     ROUTE_TAG_SESSIONS,
     ROUTE_TAG_SHELL,
     ROUTE_TAG_TAGS,
+    ROUTE_TAG_TEMPLATES,
     ROUTE_TAG_UPLOADS,
     ROUTE_TAG_USAGE,
     ROUTE_TAG_VAULT,
@@ -93,6 +94,7 @@ from bearings.web.routes.routing import router as routing_router
 from bearings.web.routes.sessions import router as sessions_router
 from bearings.web.routes.shell import router as shell_router
 from bearings.web.routes.tags import router as tags_router
+from bearings.web.routes.templates import router as templates_router
 from bearings.web.routes.uploads import router as uploads_router
 from bearings.web.routes.usage import router as usage_router
 from bearings.web.routes.vault import router as vault_router
@@ -352,6 +354,8 @@ def create_app(
     app.include_router(checklists_router, tags=[ROUTE_TAG_CHECKLISTS])
     # G6 — checkpoints surface (gutter chips + /checkpoint slash command + fork).
     app.include_router(checkpoints_router, tags=[ROUTE_TAG_CHECKPOINTS])
+    # G7 — templates CRUD (new-session template picker + save_as_template action).
+    app.include_router(templates_router, tags=[ROUTE_TAG_TEMPLATES])
     app.include_router(sessions_router, tags=[ROUTE_TAG_SESSIONS])
     app.include_router(approvals_router, tags=[ROUTE_TAG_APPROVALS])
     app.include_router(messages_router, tags=[ROUTE_TAG_MESSAGES])

@@ -108,6 +108,16 @@ export const checkpointForkEndpoint = (checkpointId: string): string =>
   `${checkpointEndpoint(checkpointId)}/fork`;
 
 /**
+ * ``GET /api/templates`` — list all templates alphabetically (G7).
+ * ``POST /api/templates`` — create a new template (G7).
+ */
+export const API_TEMPLATES_ENDPOINT = `${API_BASE}/templates`;
+
+/** ``GET / PATCH / DELETE /api/templates/{id}`` — single template (G7). */
+export const templateEndpoint = (templateId: number): string =>
+  `${API_BASE}/templates/${templateId}`;
+
+/**
  * ``POST /api/sessions/{id}/prompt`` — composer submit surface per
  * ``docs/behavior/prompt-endpoint.md``. Body shape: ``{ content: str }``;
  * 202 Accepted ack body: ``{ queued: bool, session_id: str }``.

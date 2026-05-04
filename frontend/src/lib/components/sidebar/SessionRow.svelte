@@ -38,6 +38,7 @@
   import type { SessionOut } from "../../api/sessions";
   import { listTags } from "../../api/tags";
   import type { TagOut } from "../../api/tags";
+  import { createTemplate } from "../../api/templates";
   import { contextMenu } from "../../actions/contextMenu";
   import {
     MENU_ACTION_SESSION_ARCHIVE,
@@ -50,6 +51,7 @@
     MENU_ACTION_SESSION_PIN,
     MENU_ACTION_SESSION_RENAME,
     MENU_ACTION_SESSION_REOPEN,
+    MENU_ACTION_SESSION_SAVE_AS_TEMPLATE,
     MENU_ACTION_SESSION_UNPIN,
     MENU_TARGET_SESSION,
     SESSION_KIND_CHAT,
@@ -179,6 +181,20 @@
     },
     [MENU_ACTION_SESSION_DUPLICATE]: () => {
       void duplicateSession(session).then(() => refreshSessions(tagsStore.selectedIds));
+    },
+    [MENU_ACTION_SESSION_SAVE_AS_TEMPLATE]: () => {
+      const name = window.prompt("Save as template — enter a name:", session.title);
+      if (!name || name.trim() === "") return;
+      void createTemplate({
+        name: name.trim(),
+        model: session.model,
+        permission_profile: session.permission_mode ?? "standard",
+        working_dir_default: session.working_dir,
+      }).catch(() => {
+        // Non-fatal — the user sees no feedback in v1 beyond the lack of
+        // template appearing in the picker; a 409 collision is the most
+        // common failure (duplicate name).
+      });
     },
     ...(session.pinned
       ? {
