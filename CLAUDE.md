@@ -25,6 +25,33 @@ standards provides *containers* (config module, strict typing, validation
 discipline, i18n-ready string tables). Audit checks both for routing
 files; coding standards alone for everything else.
 
+## Architecture at a glance
+
+Backend (`src/bearings/`) is eight single-responsibility packages — no
+god-store, no `__init__.py` re-export wall:
+
+| Package | Responsibility |
+|---|---|
+| `cli/` | Typer entrypoint surface (`bearings serve` / `init` / `gc` / `todo` / `migrate`). Handlers stay thin — every body is a single call into a domain helper. |
+| `config/` | Pydantic `Settings` tree + `Final[...]` named constants. Every spec-mandated number lives in `config/constants.py`; inline literals downstream are an audit failure. |
+| `db/` | `schema.sql` + per-resource async queries (`sessions.py`, `messages.py`, `tags.py`, `routing.py`, `quota.py`, …). aiosqlite, no ORM. |
+| `agent/` | Claude Agent SDK loop, runner, routing engine, quota guard, override aggregator, paired chats, sentinels, prompt dispatch. The bulk of the business logic. |
+| `web/` | FastAPI app + `routes/` + `models/` (Pydantic) + WebSocket streaming + static-bundle serve. `app.py:create_app()` is the OpenAPI source of truth. |
+| `bearings_dir/` | `~/.local/share/bearings-v1/` filesystem layout (uploads, artifacts, vault, history.jsonl, pending.toml). |
+| `metrics/` | Prometheus exposition for `GET /metrics`. |
+| `migrations/` | One-shot v0.17.x → v0.18.0 cutover (driven by `scripts/migrate_v0_17_to_v0_18.py`). |
+
+Frontend (`frontend/`) is SvelteKit on Svelte 5 + Vite + Tailwind +
+TypeScript. The static build output is committed under
+`src/bearings/web/dist/` so a fresh clone serves the UI without any
+Node toolchain installed. Per-subsystem observable behavior lives at
+`docs/behavior/<name>.md` (chat, checklists, vault, paired-chats,
+themes, keyboard-shortcuts, context-menus, tool-output-streaming,
+prompt-endpoint, bearings-cli).
+
+Full decomposition (class boundaries, import graph, key interfaces,
+divergences from v0.17.x): `docs/architecture-v1.md`.
+
 ## Repo invariants
 
 * Branch: `v1-rebuild` (orphan history). Pre-commit `branch-verifier`
@@ -80,6 +107,41 @@ The 12-tool stack is wired through `.pre-commit-config.yaml`:
   ts-prune, depcheck. Gated on frontend file changes + the presence of
   `frontend/node_modules/`.
 * **Repo-wide (1):** lychee on every Markdown file.
+
+## Common dev commands
+
+```bash
+# Run the server (port 8788) — stopgap launcher until `bearings serve`
+# ships (see TODO.md "Stopgap launcher" entry); systemd unit calls this.
+.venv/bin/python ~/.local/share/bearings-v1/launch.py
+
+# Single test by node id, by file, or by -k expression
+uv run pytest tests/test_routing.py::test_priority_ladder -q
+uv run pytest tests/test_routing.py -q
+uv run pytest -k "override_rate" -q
+
+# Targeted lint / type-check on a single file
+uv run mypy src/bearings/agent/routing.py
+uv run ruff check src/bearings/agent/routing.py
+uv run ruff format src/bearings/agent/routing.py   # writes; use --check to dry-run
+
+# Frontend dev server (only when iterating UI; the committed bundle
+# at src/bearings/web/dist/ is what the backend actually serves).
+cd frontend && npm run dev
+
+# Frontend gates — mirror the 6 frontend pre-commit hooks
+cd frontend && npm run lint
+cd frontend && npm run check          # svelte-check + tsc
+cd frontend && npm run knip
+cd frontend && npm run ts-prune
+cd frontend && npm run depcheck
+cd frontend && npm run format:check
+cd frontend && npm test               # vitest unit
+cd frontend && npm run test:e2e       # playwright; one-time: `npm run test:e2e:install`
+
+# Rebuild the committed UI bundle after frontend changes
+cd frontend && npm run build          # writes src/bearings/web/dist/
+```
 
 ## OpenAPI export
 
