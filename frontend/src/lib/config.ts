@@ -577,6 +577,10 @@ export const SIDEBAR_STRINGS = {
   multiSelectBarLabel: (count: number) => `${count} session${count === 1 ? "" : "s"} selected`,
   multiSelectBarClearLabel: "Cancel",
   multiSelectBarAriaLabel: "Multi-select actions",
+  /** Sort-control toggle (below TagFilterPanel). */
+  sortControlAriaLabel: "Session sort order",
+  sortLastActionLabel: "Last action",
+  sortGroupedLabel: "Grouped",
 } as const;
 
 // ---- Routing preview + quota guard tunings --------------------------------
@@ -1611,6 +1615,21 @@ export const THEME_META_NAME = "theme-color";
  * no JSON wrapper, the draft is always a plain string.
  */
 export const COMPOSER_DRAFT_KEY_PREFIX = "bearings-v1:draft:";
+
+/**
+ * localStorage key for the sidebar session-sort preference.
+ *
+ * Value is one of the ``SESSION_SORT_*`` literals. Defaults to
+ * ``SESSION_SORT_LAST_ACTION`` when absent.
+ */
+export const SESSION_SORT_STORAGE_KEY = "bearings-v1:session-sort";
+
+/** Sort sessions as a flat list ordered by ``updated_at DESC``. */
+export const SESSION_SORT_LAST_ACTION = "last_action" as const;
+/** Sort sessions grouped alphabetically by tag (original behaviour). */
+export const SESSION_SORT_GROUPED = "grouped" as const;
+
+export type SessionSortMode = typeof SESSION_SORT_LAST_ACTION | typeof SESSION_SORT_GROUPED;
 
 /**
  * Theme picker + Appearance section UI strings. Anchors to

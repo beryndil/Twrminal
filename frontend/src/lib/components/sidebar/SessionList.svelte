@@ -57,8 +57,14 @@
     MENU_ACTION_MULTI_SELECT_EXPORT,
     MENU_ACTION_MULTI_SELECT_TAG,
     MENU_ACTION_MULTI_SELECT_UNTAG,
+    SESSION_SORT_GROUPED,
+    SESSION_SORT_LAST_ACTION,
     SIDEBAR_STRINGS,
   } from "../../config";
+  import {
+    sessionSortStore as sessionSortStoreDefault,
+    setSessionSort as setSessionSortDefault,
+  } from "../../stores/sessionSort.svelte";
   import { listTags, type TagOut } from "../../api/tags";
   import {
     refreshSessions as refreshSessionsDefault,
@@ -98,6 +104,9 @@
      * unit tests can substitute a fake without touching the network.
      */
     reopenSession?: typeof reopenSessionDefault;
+    /** Sort preference store — injected for unit-test substitution. */
+    sessionSortStore?: typeof sessionSortStoreDefault;
+    setSessionSort?: typeof setSessionSortDefault;
   }
 
   const {
@@ -110,6 +119,8 @@
     toggleTag = toggleTagDefault,
     clearTagFilter = clearTagFilterDefault,
     reopenSession = reopenSessionDefault,
+    sessionSortStore = sessionSortStoreDefault,
+    setSessionSort = setSessionSortDefault,
   }: Props = $props();
 
   /**
@@ -221,17 +232,25 @@
    * in the sidebar (open groups + closed rows when expanded). Used to
    * compute the range for shift-click selection.
    *
-   * A session appearing in multiple tag groups is deduplicated: we use
-   * the first occurrence in group order to establish position.
+   * In ``last_action`` mode the open rows are already a flat ordered
+   * list (``openSessions``). In ``grouped`` mode they are gathered from
+   * the tag-group array, deduplicating sessions that appear in multiple
+   * groups.
    */
   const flatSessionIds = $derived.by(() => {
     const seen = new Set<string>();
     const ids: string[] = [];
-    for (const group of groups) {
-      for (const s of group.sessions) {
-        if (!seen.has(s.id)) {
-          seen.add(s.id);
-          ids.push(s.id);
+    if (sessionSortStore.mode === SESSION_SORT_LAST_ACTION) {
+      for (const s of openSessions) {
+        ids.push(s.id);
+      }
+    } else {
+      for (const group of groups) {
+        for (const s of group.sessions) {
+          if (!seen.has(s.id)) {
+            seen.add(s.id);
+            ids.push(s.id);
+          }
         }
       }
     }
@@ -471,6 +490,38 @@
   />
 
   <!--
+    Sort-mode toggle — sits between the tag filter and the session list.
+    Two pill buttons: "Last action" (default) and "Grouped".
+  -->
+  <div
+    class="session-list__sort-bar"
+    role="group"
+    aria-label={SIDEBAR_STRINGS.sortControlAriaLabel}
+    data-testid="session-list-sort-bar"
+  >
+    <button
+      type="button"
+      class="session-list__sort-btn"
+      class:session-list__sort-btn--active={sessionSortStore.mode === SESSION_SORT_LAST_ACTION}
+      aria-pressed={sessionSortStore.mode === SESSION_SORT_LAST_ACTION}
+      data-testid="session-list-sort-last-action"
+      onclick={() => setSessionSort(SESSION_SORT_LAST_ACTION)}
+    >
+      {SIDEBAR_STRINGS.sortLastActionLabel}
+    </button>
+    <button
+      type="button"
+      class="session-list__sort-btn"
+      class:session-list__sort-btn--active={sessionSortStore.mode === SESSION_SORT_GROUPED}
+      aria-pressed={sessionSortStore.mode === SESSION_SORT_GROUPED}
+      data-testid="session-list-sort-grouped"
+      onclick={() => setSessionSort(SESSION_SORT_GROUPED)}
+    >
+      {SIDEBAR_STRINGS.sortGroupedLabel}
+    </button>
+  </div>
+
+  <!--
     Selection bar — shown when ≥1 session is in the multi-select set.
     Gives the user a clear affordance for the active selection count
     and a one-click escape hatch.
@@ -510,26 +561,29 @@
       <p class="px-3 py-2 text-xs text-red-400" data-testid="session-list-error">
         {SIDEBAR_STRINGS.loadFailed}
       </p>
-    {:else if groups.length === 0 && closedSessions.length === 0}
+    {:else if openSessions.length === 0 && closedSessions.length === 0}
       <p class="px-3 py-2 text-xs text-fg-muted" data-testid="session-list-empty">
         {tagsStore.selectedIds.size > 0
           ? SIDEBAR_STRINGS.emptySessionList
           : SIDEBAR_STRINGS.emptySessionListUnfiltered}
       </p>
     {:else}
-      {#each groups as group (group.key)}
+      <!--
+        Open sessions — rendered either as a flat "last action" list or
+        grouped by tag, depending on the active sort mode.
+      -->
+      {#if sessionSortStore.mode === SESSION_SORT_LAST_ACTION}
+        <!--
+          Flat list sorted by last action (updated_at DESC from the
+          backend). No group headers — sessions render in a single
+          ordered sequence.
+        -->
         <section
           class="session-list__group"
           data-testid="session-list-group"
-          data-group-key={group.key}
+          data-group-key="__last_action__"
         >
-          <header
-            class="bg-surface-1 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-fg-muted"
-            data-testid="session-list-group-label"
-          >
-            {group.key === "__ungrouped__" ? group.label : displayLeaf(group.label)}
-          </header>
-          {#each group.sessions as session (`${group.key}:${session.id}`)}
+          {#each openSessions as session (session.id)}
             <SessionRow
               {session}
               tags={sessionsStore.tagsBySessionId[session.id] ?? []}
@@ -547,7 +601,48 @@
             />
           {/each}
         </section>
-      {/each}
+      {:else}
+        <!--
+          Grouped view — sessions grouped alphabetically by tag.
+          Original behaviour.
+        -->
+        {#each groups as group (group.key)}
+          <section
+            class="session-list__group"
+            data-testid="session-list-group"
+            data-group-key={group.key}
+          >
+            <header
+              class="bg-surface-1 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-fg-muted"
+              data-testid="session-list-group-label"
+            >
+              {group.key === "__ungrouped__" ? group.label : displayLeaf(group.label)}
+            </header>
+            {#each group.sessions as session (`${group.key}:${session.id}`)}
+              <SessionRow
+                {session}
+                tags={sessionsStore.tagsBySessionId[session.id] ?? []}
+                selectedTagIds={tagsStore.selectedIds}
+                isSelected={selectedSessionId === session.id}
+                {onSelect}
+                onToggleTag={toggleTag}
+                {multiSelectHandlers}
+                onShiftClick={(id) => {
+                  handleShiftClick(id);
+                }}
+                onUpdateAnchor={(id) => {
+                  lastAnchorId = id;
+                }}
+              />
+            {/each}
+          </section>
+        {/each}
+      {/if}
+
+      <!--
+        Closed sessions — always shown below open sessions regardless of
+        sort mode. Collapsed by default; expander reveals closed rows.
+      -->
       {#if closedSessions.length > 0}
         <section
           class="session-list__closed border-t border-border"
@@ -604,6 +699,40 @@
 </div>
 
 <style>
+  .session-list__sort-bar {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.375rem 0.75rem;
+    border-bottom: 1px solid rgb(var(--bearings-border));
+  }
+
+  .session-list__sort-btn {
+    flex: 1;
+    padding: 0.2rem 0;
+    border-radius: 0.25rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: rgb(var(--bearings-fg-muted));
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    text-align: center;
+    transition:
+      color 0.1s,
+      background 0.1s;
+  }
+
+  .session-list__sort-btn:hover {
+    background: rgb(var(--bearings-surface-2));
+    color: rgb(var(--bearings-fg));
+  }
+
+  .session-list__sort-btn--active {
+    background: rgb(var(--bearings-surface-2));
+    color: rgb(var(--bearings-fg-strong));
+    border-color: rgb(var(--bearings-border));
+  }
+
   .session-list__selection-bar {
     display: flex;
     align-items: center;
