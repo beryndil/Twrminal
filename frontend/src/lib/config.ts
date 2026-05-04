@@ -573,6 +573,10 @@ export const SIDEBAR_STRINGS = {
     [SESSION_KIND_CHAT]: "Chat session",
     [SESSION_KIND_CHECKLIST]: "Checklist session",
   } as const satisfies Record<SessionKind, string>,
+  /** Selection bar — shown when ≥1 session is selected via multi-select. */
+  multiSelectBarLabel: (count: number) => `${count} session${count === 1 ? "" : "s"} selected`,
+  multiSelectBarClearLabel: "Cancel",
+  multiSelectBarAriaLabel: "Multi-select actions",
 } as const;
 
 // ---- Routing preview + quota guard tunings --------------------------------

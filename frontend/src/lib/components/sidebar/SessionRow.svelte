@@ -53,12 +53,18 @@
     MENU_ACTION_SESSION_REOPEN,
     MENU_ACTION_SESSION_SAVE_AS_TEMPLATE,
     MENU_ACTION_SESSION_UNPIN,
+    MENU_TARGET_MULTI_SELECT,
     MENU_TARGET_SESSION,
     SESSION_KIND_CHAT,
     SIDEBAR_STRINGS,
   } from "../../config";
   import { refreshSessions } from "../../stores/sessions.svelte";
   import { tagsStore } from "../../stores/tags.svelte";
+  import {
+    clearSelection,
+    multiSelectionStore,
+    toggleId,
+  } from "../../stores/multiSelection.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import SessionTagPicker from "./SessionTagPicker.svelte";
 
@@ -86,10 +92,43 @@
      * hidden so the row stays presentational.
      */
     onReopen?: (sessionId: string) => void;
+    /**
+     * Shift-click callback — called when the user shift-clicks this
+     * row to trigger a range-select. Provided by :class:`SessionList`.
+     * When omitted shift-click falls through to plain navigation.
+     */
+    onShiftClick?: (sessionId: string) => void;
+    /**
+     * Handlers for the ``MENU_TARGET_MULTI_SELECT`` context menu.
+     * Provided by :class:`SessionList` so all selected-row menus
+     * share the same wired actions.
+     */
+    multiSelectHandlers?: Readonly<Record<string, () => void>>;
+    /**
+     * Called on plain click and ctrl/cmd-click so :class:`SessionList`
+     * can track the last non-shift click as the anchor for the next
+     * shift-click range-select. Optional — omitting it disables anchor
+     * tracking on this row (harmless for callers that don't use the
+     * multi-select feature).
+     */
+    onUpdateAnchor?: (sessionId: string) => void;
   }
 
-  const { session, tags, selectedTagIds, isSelected, onSelect, onToggleTag, onReopen }: Props =
-    $props();
+  const {
+    session,
+    tags,
+    selectedTagIds,
+    isSelected,
+    onSelect,
+    onToggleTag,
+    onReopen,
+    onShiftClick,
+    multiSelectHandlers = {},
+    onUpdateAnchor,
+  }: Props = $props();
+
+  /** Whether this row is part of the current multi-select set. */
+  const isInSelection = $derived(multiSelectionStore.ids.has(session.id));
 
   const sessionHref = $derived(`/sessions/${encodeURIComponent(session.id)}`);
 
@@ -297,6 +336,7 @@
     href={sessionHref}
     class="session-row group flex w-full flex-col gap-1 border-b border-border px-3 py-2 text-left no-underline transition-colors hover:bg-surface-2"
     class:session-row--selected={isSelected}
+    class:session-row--in-selection={isInSelection}
     class:bg-surface-2={isSelected}
     class:opacity-70={isClosed}
     data-testid="session-row"
@@ -304,14 +344,62 @@
     data-sveltekit-preload-data="hover"
     aria-current={isSelected ? "true" : undefined}
     title={isClosed && session.closing_summary !== null ? session.closing_summary : undefined}
-    onclick={() => onSelect(session.id)}
+    onclick={(event) => {
+      if (event.ctrlKey || event.metaKey) {
+        // Ctrl/Cmd-click: toggle this row in the multi-select set.
+        event.preventDefault();
+        toggleId(session.id);
+        onUpdateAnchor?.(session.id);
+        return;
+      }
+      if (event.shiftKey) {
+        // Shift-click: range-select from the last anchor to this row.
+        event.preventDefault();
+        onShiftClick?.(session.id);
+        // Anchor is NOT updated on shift-click (Finder semantics).
+        return;
+      }
+      // Plain click: clear any active selection, then navigate.
+      if (multiSelectionStore.ids.size > 0) {
+        clearSelection();
+      }
+      onUpdateAnchor?.(session.id);
+      onSelect(session.id);
+    }}
     use:contextMenu={{
-      target: MENU_TARGET_SESSION,
-      handlers: menuHandlers,
+      target: isInSelection ? MENU_TARGET_MULTI_SELECT : MENU_TARGET_SESSION,
+      handlers: isInSelection ? multiSelectHandlers : menuHandlers,
       data: { sessionId: session.id },
     }}
   >
     <span class="flex items-center gap-2">
+      <!--
+        Multi-select checkbox — visible when the row is in the selection
+        or when the user hovers (CSS group-hover). Clicking the checkbox
+        toggles the row without navigating, so stopPropagation is required
+        to prevent the anchor's onclick from also firing.
+      -->
+      <span
+        role="checkbox"
+        tabindex="0"
+        aria-checked={isInSelection}
+        aria-label={SIDEBAR_STRINGS.multiSelectBarAriaLabel}
+        class="session-row__checkbox"
+        class:session-row__checkbox--checked={isInSelection}
+        data-testid="session-row-checkbox"
+        onclick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          toggleId(session.id);
+        }}
+        onkeydown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleId(session.id);
+          }
+        }}
+      ></span>
       <span
         class="inline-block h-2 w-2 rounded-full"
         class:bg-accent={session.kind === SESSION_KIND_CHAT}
@@ -433,5 +521,47 @@
    */
   .session-row--selected {
     box-shadow: inset 2px 0 0 0 rgb(var(--bearings-accent));
+  }
+
+  /* Multi-select highlight — row tinted when it is part of the selection set. */
+  .session-row--in-selection {
+    background: rgba(var(--bearings-accent), 0.12);
+  }
+
+  /*
+   * Checkbox — hidden by default; revealed on hover (group-hover via the
+   * parent's ``group`` class) or when the row is checked. The element is
+   * a styled span with role="checkbox" to avoid breaking the anchor's
+   * click semantics.
+   */
+  .session-row__checkbox {
+    display: inline-block;
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 0.1875rem;
+    border: 1.5px solid rgb(var(--bearings-border));
+    background: rgb(var(--bearings-surface-1));
+    flex-shrink: 0;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+
+  /* Show on hover of the parent session-row (group-hover pattern). */
+  .session-row:hover .session-row__checkbox,
+  .session-row__checkbox--checked {
+    opacity: 1;
+  }
+
+  /* Checked state — filled with accent colour. */
+  .session-row__checkbox--checked {
+    background: rgb(var(--bearings-accent));
+    border-color: rgb(var(--bearings-accent));
+  }
+
+  /* Focus ring for keyboard accessibility. */
+  .session-row__checkbox:focus-visible {
+    outline: 2px solid rgb(var(--bearings-accent));
+    outline-offset: 1px;
   }
 </style>

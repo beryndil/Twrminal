@@ -24,6 +24,8 @@ export const ESC_PRIORITY_CONTEXT_MENU = 1;
 export const ESC_PRIORITY_COMMAND_PALETTE = 2;
 export const ESC_PRIORITY_PENDING_OPS_CARD = 3;
 export const ESC_PRIORITY_OVERLAY = 4;
+/** Multi-select — cleared after overlays, before the input-blur step. */
+export const ESC_PRIORITY_MULTI_SELECT = 5;
 
 interface EscEntry {
   readonly priority: number;
