@@ -104,7 +104,7 @@
     {/if}
     {#if session.error_pending}
       <span
-        class="text-xs text-red-400"
+        class="animate-pulse text-xs text-red-400"
         aria-label={SIDEBAR_STRINGS.errorPendingIndicatorAriaLabel}
         data-testid="session-error-indicator"
       >

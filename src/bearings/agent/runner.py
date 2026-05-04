@@ -131,6 +131,7 @@ class RunnerStatus:
     is_running: bool
     is_awaiting_user: bool
     routing_decision: RoutingDecision | None
+    is_error: bool = False
 
 
 class SessionRunner:

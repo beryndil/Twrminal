@@ -117,6 +117,7 @@ class SessionsBroadcaster:
                 "session_id": session_id,
                 "is_running": status.is_running,
                 "is_awaiting_user": status.is_awaiting_user,
+                "is_error": status.is_error,
             },
             ensure_ascii=False,
             separators=(",", ":"),

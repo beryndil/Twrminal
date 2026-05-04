@@ -329,6 +329,16 @@ async def _enter_error_state(
             fatal=True,
         )
     )
+    # Fan the error state to /ws/sessions subscribers so the sidebar
+    # row gains its red flashing pip without waiting for a page reload.
+    runner.set_status(
+        RunnerStatus(
+            is_running=False,
+            is_awaiting_user=False,
+            routing_decision=session.config.decision,
+            is_error=True,
+        )
+    )
 
 
 def _to_sdk_options(kwargs: OptionsKwargs) -> ClaudeAgentOptions:

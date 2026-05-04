@@ -102,6 +102,24 @@ export async function reopenSession(
 }
 
 /**
+ * User-driven recovery from ERROR state.
+ *
+ * Calls ``POST /api/sessions/{id}/recover``, which clears
+ * ``error_pending`` in the DB and triggers a runner respawn so the
+ * next prompt can proceed without the user sending a message first.
+ *
+ * Per ``docs/behavior/chat.md`` §"Error states" and
+ * ``TODO.md`` §"POST /api/sessions/{id}/recover".
+ */
+export async function recoverSession(
+  sessionId: string,
+  options: RequestOptions = {},
+): Promise<SessionOut> {
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}/recover`;
+  return await postJson<SessionOut>(path, null, options);
+}
+
+/**
  * Wire shape for ``POST /api/sessions`` — one-to-one with
  * :class:`bearings.web.models.sessions.SessionCreate`. ``tag_ids``
  * defaults to an empty list at the API boundary; the new-session form

@@ -22,7 +22,13 @@ import type { SessionOut } from "./sessions";
 type SessionsBroadcastEvent =
   | { type: "session_upsert"; session: SessionOut }
   | { type: "session_delete"; session_id: string }
-  | { type: "runner_state"; session_id: string; is_running: boolean; is_awaiting_user: boolean };
+  | {
+      type: "runner_state";
+      session_id: string;
+      is_running: boolean;
+      is_awaiting_user: boolean;
+      is_error: boolean;
+    };
 
 type SessionsBroadcastHandler = (event: SessionsBroadcastEvent) => void;
 
@@ -142,6 +148,8 @@ function _parseFrame(text: string): SessionsBroadcastEvent | null {
     const session_id = obj.session_id;
     const is_running = obj.is_running;
     const is_awaiting_user = obj.is_awaiting_user;
+    // is_error defaults to false for older server versions that omit the field.
+    const is_error = typeof obj.is_error === "boolean" ? obj.is_error : false;
     if (
       typeof session_id !== "string" ||
       typeof is_running !== "boolean" ||
@@ -149,7 +157,7 @@ function _parseFrame(text: string): SessionsBroadcastEvent | null {
     ) {
       return null;
     }
-    return { type: "runner_state", session_id, is_running, is_awaiting_user };
+    return { type: "runner_state", session_id, is_running, is_awaiting_user, is_error };
   }
   return null;
 }

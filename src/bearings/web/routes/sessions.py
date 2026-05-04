@@ -462,6 +462,39 @@ async def reopen_session(session_id: str, request: Request) -> SessionOut:
     return out
 
 
+@router.post("/api/sessions/{session_id}/recover", response_model=SessionOut)
+async def resume_session(session_id: str, request: Request) -> SessionOut:
+    """User-driven recovery from ERROR state.
+
+    Clears the ``error_pending`` flag in the DB and triggers a runner
+    respawn so the next user prompt can proceed. Per
+    ``docs/behavior/chat.md`` §"Error states" and ``TODO.md`` §"POST
+    /api/sessions/{id}/recover HTTP route".
+
+    - ``404`` — session not found.
+    - ``200`` — session row returned with ``error_pending=False``; the
+      runner respawn is a side-effect (transparent to the caller).
+    """
+    db = _db(request)
+    row = await sessions_db.set_error_pending(db, session_id, False)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no session matches {session_id!r}",
+        )
+    # Trigger reap-recovery: if the supervisor task is gone the next
+    # __call__ will respawn it, making the session ready for the next
+    # prompt without the user sending a message first.
+    factory = getattr(request.app.state, "runner_factory", None)
+    if isinstance(factory, InProcessRunnerRegistry):
+        await factory(session_id)
+    out = _to_out(row)
+    broadcaster = _sessions_broadcaster(request)
+    if broadcaster is not None:
+        broadcaster.publish_upsert(out)
+    return out
+
+
 @router.get("/api/sessions/{session_id}/paired-chat-info")
 async def get_paired_chat_info_route(session_id: str, request: Request) -> PairedChatInfo | None:
     """Fetch paired-chat metadata for a chat session.

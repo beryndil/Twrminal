@@ -41,6 +41,7 @@
   import ModelSelector from "./ModelSelector.svelte";
   import PermissionModeSelector from "./PermissionModeSelector.svelte";
   import StopUndoInline from "./StopUndoInline.svelte";
+  import { recoverSession } from "../../api/sessions";
   import { pasteIntoComposer } from "../../stores/composerBridge.svelte";
 
   interface Props {
@@ -56,6 +57,21 @@
       text: CONVERSATION_STRINGS.askForMoreDetailPrompt,
       kind: "link",
     });
+  }
+
+  let recovering = $state(false);
+
+  async function handleRecover(): Promise<void> {
+    if (sessionId === null || recovering) return;
+    recovering = true;
+    try {
+      await recoverSession(sessionId);
+      // error block clears via the session_upsert broadcast (error_pending=false)
+    } catch {
+      // Recovery failed — leave the error block visible; user can retry.
+    } finally {
+      recovering = false;
+    }
   }
 
   let bodyEl: HTMLDivElement | null = $state(null);
@@ -190,6 +206,17 @@
         <p class="font-medium">{CONVERSATION_STRINGS.errorBubbleLabel}</p>
         <p class="text-xs">{conversationStore.error.message}</p>
         <p class="text-xs text-red-600 dark:text-red-400">{CONVERSATION_STRINGS.errorHintLabel}</p>
+        {#if sessionId !== null}
+          <button
+            type="button"
+            class="mt-1 self-start rounded bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            disabled={recovering}
+            onclick={handleRecover}
+            data-testid="conversation-recover-btn"
+          >
+            {recovering ? CONVERSATION_STRINGS.recoveringLabel : CONVERSATION_STRINGS.recoverLabel}
+          </button>
+        {/if}
       </div>
     {:else if conversationStore.turns.length === 0}
       <p class="px-4 py-3 text-sm text-fg-muted" data-testid="conversation-empty">

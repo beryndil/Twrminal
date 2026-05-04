@@ -622,6 +622,32 @@ async def reopen(
     return await get(connection, session_id)
 
 
+async def set_error_pending(
+    connection: aiosqlite.Connection,
+    session_id: str,
+    value: bool,
+) -> Session | None:
+    """Set or clear the ``error_pending`` flag on a session row.
+
+    Called by the recover route to clear the flag on user-driven
+    recovery, and by the runner error hook to set it when the agent
+    loop enters the ERROR state.
+
+    Returns the updated :class:`Session` row (re-fetched after the
+    write) so callers can broadcast a session-upsert without a second
+    query; returns ``None`` when ``session_id`` is not found.
+    """
+    existing = await get(connection, session_id)
+    if existing is None:
+        return None
+    await connection.execute(
+        "UPDATE sessions SET error_pending = ?, updated_at = ? WHERE id = ?",
+        (1 if value else 0, now_iso(), session_id),
+    )
+    await connection.commit()
+    return await get(connection, session_id)
+
+
 async def delete(
     connection: aiosqlite.Connection,
     session_id: str,

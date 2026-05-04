@@ -96,9 +96,15 @@ connectSessionsBroadcast((event) => {
     _applyUpsert(event.session);
   } else if (event.type === "session_delete") {
     _applyDelete(event.session_id);
+  } else if (event.type === "runner_state" && event.is_error) {
+    // Agent loop entered ERROR state — set error_pending locally so
+    // the sidebar pip flashes without waiting for a page reload.
+    // The session_upsert from the recover route will clear it.
+    const idx = state.sessions.findIndex((s) => s.id === event.session_id);
+    if (idx !== -1) {
+      state.sessions[idx] = { ...state.sessions[idx], error_pending: true };
+    }
   }
-  // runner_state events are informational for now — a future item
-  // can surface a "live" badge on sidebar rows by reading this.
 });
 
 /**

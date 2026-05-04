@@ -358,6 +358,9 @@ export const CONVERSATION_STRINGS = {
   errorHintLabel: "Try sending a new message to continue.",
   askForMoreDetailLabel: "Ask for more detail",
   askForMoreDetailPrompt: "Can you expand on that in more detail?",
+  // Phase 4 error recovery
+  recoverLabel: "Recover",
+  recoveringLabel: "Recovering…",
 } as const;
 
 /**
