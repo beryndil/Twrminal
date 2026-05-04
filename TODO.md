@@ -123,6 +123,12 @@ so the sidebar pip lights immediately on error without a page reload.~~
 
 ## Remaining deferrals (post-v1 scope)
 
+> **Tracked in checklist session `ses_5301b9896456b66c41ce5a87dbd49054`**
+> ("Bearings v1.1 — Deferred work"). All five named items below plus
+> the 12 per-module route stubs have been migrated to that checklist.
+> Edit this file when an item resolves; strike it here and cite the
+> commit hash per TODO.md discipline.
+
 ~~### Theme picker silently flips to OS scheme on first paint — 2026-05-02~~
 
 ~~Resolved by commit `c730cba` (Phase 6 of the UI/UX gap sweep).
