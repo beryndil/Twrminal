@@ -50,7 +50,7 @@ describe("Conversation — hydration", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const url = fetchMock.mock.calls[0][0] as string;
-      expect(url).toBe("/api/sessions/ses_a/messages");
+      expect(url).toBe("/api/sessions/ses_a/messages?limit=100");
     });
   });
 

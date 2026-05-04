@@ -49,6 +49,7 @@ from bearings.config.constants import (
     ROUTE_TAG_FS,
     ROUTE_TAG_HEALTH,
     ROUTE_TAG_HISTORY,
+    ROUTE_TAG_IMPORT,
     ROUTE_TAG_MEMORIES,
     ROUTE_TAG_MESSAGES,
     ROUTE_TAG_METRICS,
@@ -74,6 +75,7 @@ from bearings.web.routes.diag import router as diag_router
 from bearings.web.routes.fs import router as fs_router
 from bearings.web.routes.health import router as health_router
 from bearings.web.routes.history import router as history_router
+from bearings.web.routes.import_db import router as import_db_router
 from bearings.web.routes.memories import router as memories_router
 from bearings.web.routes.messages import router as messages_router
 from bearings.web.routes.metrics import router as metrics_router
@@ -260,6 +262,7 @@ def create_app(
     app.include_router(diag_router, tags=[ROUTE_TAG_DIAG])
     app.include_router(health_router, tags=[ROUTE_TAG_HEALTH])
     app.include_router(metrics_router, tags=[ROUTE_TAG_METRICS])
+    app.include_router(import_db_router, tags=[ROUTE_TAG_IMPORT])
     # E2E harness extension seam (item 3.1) — extra routers mount
     # *between* the production routers and the static bundle so debug
     # endpoints take precedence over the SPA fallback. Production

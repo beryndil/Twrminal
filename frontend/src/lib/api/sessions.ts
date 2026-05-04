@@ -14,7 +14,7 @@
  * job is to project the ``Iterable<number>`` of selected tag ids onto
  * the wire shape.
  */
-import { API_SESSIONS_ENDPOINT, sessionStopEndpoint } from "../config";
+import { API_SESSIONS_ENDPOINT, sessionModelEndpoint, sessionStopEndpoint } from "../config";
 import { ApiError, getJson, patchJson, postJson, type RequestOptions } from "./client";
 
 /**
@@ -206,6 +206,26 @@ export async function listSessions(params: ListSessionsParams = {}): Promise<Ses
 export async function getMostRecentSession(signal?: AbortSignal): Promise<SessionOut | null> {
   const sessions = await listSessions({ includeClosed: true, signal });
   return sessions[0] ?? null;
+}
+
+/**
+ * Swap the session's executor model via
+ * ``PATCH /api/sessions/{id}/model`` (spec §7).
+ *
+ * The server persists the new model name and recycles the live SDK
+ * supervisor.  The sessions-broadcast WS will upsert the returned row
+ * into the sessions store automatically.
+ *
+ * @throws :class:`ApiError` on 404 (session not found), 422 (unknown model
+ *   name), or 5xx.
+ */
+export async function patchSessionModel(
+  sessionId: string,
+  model: string,
+  options: RequestOptions = {},
+): Promise<SessionOut> {
+  const path = sessionModelEndpoint(sessionId);
+  return await patchJson<SessionOut>(path, { model }, options);
 }
 
 /**

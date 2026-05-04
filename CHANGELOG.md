@@ -31,6 +31,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Import from Bearings** — `POST /api/import/bearings` copies all sessions,
+  messages, tags, tag memories, and checklist items from the main Bearings
+  database (`~/.local/share/bearings/db.sqlite`) into the v1 database.
+  Duplicate rows (by primary key) are skipped; the entire operation is
+  transactional (all-or-nothing). The `/settings` page exposes an
+  "Import now" button with a result summary showing imported/skipped counts
+  and any error messages.
+  - `src/bearings/db/import_bearings.py` — `import_from_bearings(dest, source_path)`
+    function and `ImportResult` dataclass. Handles column mapping for schema
+    differences (e.g., `default_working_dir` → `working_dir` on tags;
+    `message_count=0`, `closing_summary=NULL` on imported sessions).
+  - `src/bearings/web/routes/import_db.py` — `POST /api/import/bearings`
+    endpoint; returns `ImportResultOut` Pydantic model with per-table counts.
+  - `frontend/src/lib/api/import.ts` — `importFromBearings()` client.
+  - `frontend/src/routes/settings/+page.svelte` — **Import section** with
+    "Import now" button, result summary on success, and error display.
+  - `src/bearings/config/constants.py` — `ROUTE_TAG_IMPORT` constant.
+  - `frontend/src/lib/config.ts` — `API_IMPORT_BEARINGS_ENDPOINT` constant.
+  - Tests: `tests/test_import_bearings.py` (10 DB layer tests),
+    `tests/test_import_api.py` (3 route tests).
+
 - **Default-from-last-session auto-fill** (wiring-v1-daily-driver item 3.4).
   - `frontend/src/lib/api/sessions.ts` — `getMostRecentSession()` helper:
     calls `listSessions({includeClosed: true})` and returns the first row

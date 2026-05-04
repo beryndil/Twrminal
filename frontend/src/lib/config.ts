@@ -96,6 +96,14 @@ export const sessionStopEndpoint = (sessionId: string): string =>
   `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/stop`;
 
 /**
+ * ``PATCH /api/sessions/{id}/model`` — swap the executor model mid-session
+ * (spec §7). The server persists the new model and recycles the live SDK
+ * supervisor; the next prompt re-spawns with ``--model <new>``.
+ */
+export const sessionModelEndpoint = (sessionId: string): string =>
+  `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/model`;
+
+/**
  * ``GET /api/commands`` — slash-command list for the composer typeahead
  * (item 2.3). No session scoping — the scanner merges user + project
  * locations server-side.
@@ -107,6 +115,13 @@ export const API_COMMANDS_ENDPOINT = `${API_BASE}/commands`;
  * user-preferences row (item 3.2).
  */
 export const API_PREFERENCES_ENDPOINT = `${API_BASE}/preferences`;
+
+/**
+ * ``POST /api/import/bearings`` — import all data from the original
+ * Bearings database into Bearings-v1. Copies sessions, messages, tags,
+ * and related data. Rows with duplicate IDs are skipped.
+ */
+export const API_IMPORT_BEARINGS_ENDPOINT = `${API_BASE}/import/bearings`;
 
 /**
  * ``GET /api/history/search?q=<term>`` — full-text search over sessions
@@ -813,6 +828,23 @@ export type EffortLevel = (typeof KNOWN_EFFORT_LEVELS)[number];
  */
 export const DEFAULT_ADVISOR_MAX_USES_SONNET = 5;
 export const DEFAULT_ADVISOR_MAX_USES_HAIKU = 3;
+
+/**
+ * Approximate input-token pricing (USD per 1 M tokens) for each executor
+ * model (spec §7 recost estimate, spec §13 risk 4 "off by ±20%").
+ *
+ * Used only for the mid-session model-switch confirmation dialog.  The
+ * dialog copy explicitly labels all numbers "estimated."  These rates
+ * reflect Anthropic's published list prices as of v1.1; pin-bump if
+ * pricing changes materially.
+ *
+ * Values: Sonnet 4.6 → $3.00/M, Haiku 4.5 → $0.80/M, Opus 4.7 → $15.00/M.
+ */
+export const MODEL_INPUT_RATES_USD_PER_MILLION: Record<ExecutorModel, number> = {
+  [EXECUTOR_MODEL_SONNET]: 3.0,
+  [EXECUTOR_MODEL_HAIKU]: 0.8,
+  [EXECUTOR_MODEL_OPUS]: 15.0,
+};
 
 // ---- Inspector tab alphabet + string table -------------------------------
 
@@ -1560,6 +1592,42 @@ export const PERMISSION_MODE_SELECTOR_STRINGS = {
   ariaLabel: "Permission mode",
   labelPrefix: "Mode:",
   saveError: "Couldn't update permission mode.",
+} as const;
+
+/** UI strings for the ModelSelector header dropdown (spec §7). */
+export const MODEL_SELECTOR_STRINGS = {
+  ariaLabel: "Executor model",
+  labelPrefix: "Model:",
+  saveError: "Couldn't update model.",
+} as const;
+
+/**
+ * UI strings for the ModelSwitchDialog confirmation modal (spec §7).
+ *
+ * Templates use ``{from}``, ``{to}``, ``{tokens}``, ``{cost}``
+ * placeholders that the component fills at render time.
+ */
+export const MODEL_SWITCH_DIALOG_STRINGS = {
+  ariaLabel: "Switch executor model",
+  /** "Switch executor: Sonnet 4.6 → Opus 4.7" */
+  titleTemplate: "Switch executor: {from} → {to}",
+  /**
+   * "This will re-cost ~38,000 input tokens of conversation history at
+   * Opus 4.7 rates."  Shown when ``last_context_tokens`` is available.
+   */
+  recostBodyTemplate:
+    "This will re-cost ~{tokens} input tokens of conversation history at {to} rates.",
+  /**
+   * Shown instead of the recost line when the session has not yet
+   * completed a turn (``last_context_tokens`` is null).
+   */
+  recostBodyUnknown: "Context window size is unknown — cost estimate unavailable.",
+  /** "Estimated additional cost: ~$0.57" */
+  estimatedCostTemplate: "Estimated additional cost: ~${cost}",
+  cancelLabel: "Cancel",
+  switchLabel: "Switch",
+  switchingLabel: "Switching…",
+  switchError: "Couldn't switch model — try again.",
 } as const;
 
 // ---- Keyboard shortcuts (item 2.9; mirrors ``docs/behavior/keyboard-shortcuts.md``) ----

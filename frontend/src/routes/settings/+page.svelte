@@ -34,6 +34,7 @@
     type PreferencesPatch,
     type PreferencesOut,
   } from "$lib/api/preferences";
+  import { importFromBearings, type ImportResultOut } from "$lib/api/import";
   import ThemePicker from "$lib/themes/ThemePicker.svelte";
   import RoutingRuleEditor from "$lib/components/routing/RoutingRuleEditor.svelte";
 
@@ -43,6 +44,9 @@
   let saveError = $state<string | null>(null);
   let savedFeedback = $state(false);
   let saving = $state(false);
+  let importing = $state(false);
+  let importResult = $state<ImportResultOut | null>(null);
+  let importError = $state<string | null>(null);
 
   // Controlled values — undefined until the API round-trip resolves.
   let prefTheme = $state<ThemeId>("default");
@@ -93,6 +97,23 @@
       saveError = err instanceof Error ? err.message : String(err);
     } finally {
       saving = false;
+    }
+  }
+
+  async function runImport(): Promise<void> {
+    importing = true;
+    importError = null;
+    importResult = null;
+    try {
+      const result = await importFromBearings();
+      importResult = result;
+      if (result.errors.length > 0) {
+        importError = result.errors.join("; ");
+      }
+    } catch (err) {
+      importError = err instanceof Error ? err.message : String(err);
+    } finally {
+      importing = false;
     }
   }
 </script>
@@ -202,6 +223,36 @@
     </p>
     <RoutingRuleEditor kind="system" />
   </section>
+
+  <section class="settings-page__group" aria-label="Data import">
+    <h2 class="settings-page__heading">Import from Bearings</h2>
+    <p class="settings-page__lede">
+      Copy all sessions, messages, and tags from the main Bearings database into this instance.
+      Existing records are preserved — duplicates are skipped.
+    </p>
+    <div class="settings-import__actions">
+      <button
+        class="settings-defaults__save"
+        onclick={runImport}
+        disabled={importing}
+        data-testid="import-button"
+      >
+        {importing ? "Importing…" : "Import now"}
+      </button>
+      {#if importResult}
+        <span class="settings-import__result" role="status" data-testid="import-result">
+          {importResult.sessions_imported} sessions, {importResult.messages_imported} messages,
+          {importResult.tags_imported} tags imported.
+          {#if importResult.sessions_skipped > 0}({importResult.sessions_skipped} skipped){/if}
+        </span>
+      {/if}
+      {#if importError}
+        <span class="settings-page__error" role="alert" data-testid="import-error">
+          {importError}
+        </span>
+      {/if}
+    </div>
+  </section>
 </section>
 
 <style>
@@ -291,5 +342,17 @@
   .settings-defaults__error {
     font-size: 0.8125rem;
     color: #f87171;
+  }
+
+  /* Import section */
+  .settings-import__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+  }
+  .settings-import__result {
+    font-size: 0.8125rem;
+    color: #4ade80;
   }
 </style>

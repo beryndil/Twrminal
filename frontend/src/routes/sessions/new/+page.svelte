@@ -84,6 +84,18 @@
     }
   });
 
+  // When exactly one tag is selected and it has a working_dir set,
+  // auto-populate the working dir field. If the user has manually
+  // edited the field, it's not overwritten on subsequent tag changes.
+  $effect(() => {
+    if (selectedTagIds.length === 1) {
+      const tag = availableTags.find((t) => t.id === selectedTagIds[0]);
+      if (tag?.working_dir && tag.working_dir.trim() !== "") {
+        workingDir = tag.working_dir;
+      }
+    }
+  });
+
   /**
    * Pre-fill ``workingDir`` + ``initialExecutor`` from the most-recently-
    * updated session (item 3.4).  Falls back to the preferences-API
