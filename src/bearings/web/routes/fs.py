@@ -101,14 +101,19 @@ def _pick_roots(cfg: FsCfg) -> tuple[Path, ...]:
 
     When ``allow_roots`` is explicitly configured, honour it.  When the
     list is empty (fresh :class:`~bearings.config.settings.FsCfg` with
-    no TOML config), fall back to the user's home directory so the
-    picker is usable on default local installations.  This fallback
-    only applies to ``POST /api/fs/pick``; ``GET /api/fs/list`` and
-    ``GET /api/fs/read`` remain strict.
+    no TOML config), fall back to filesystem root so the picker can
+    navigate anywhere on a default single-user localhost install.
+    Bearings ships in single-user localhost mode (no auth gate); the
+    picker is user-driven and the alternative — locking to ``$HOME`` —
+    rejects common working dirs like ``/tmp``, ``/srv``, ``/var/www``,
+    or any other-user project tree the operator has read access to.
+    This fallback only applies to ``POST /api/fs/pick``; ``GET
+    /api/fs/list`` and ``GET /api/fs/read`` remain strict (they 403
+    unless ``allow_roots`` is explicitly configured).
     """
     if cfg.allow_roots:
         return cfg.allow_roots
-    return (Path.home(),)
+    return (Path("/"),)
 
 
 @router.post("/api/fs/pick", response_model=FsPickOut, status_code=status.HTTP_200_OK)

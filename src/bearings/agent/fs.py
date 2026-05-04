@@ -127,6 +127,13 @@ def validate_path(raw: str, allow_roots: Iterable[Path]) -> Path:
     for root in roots:
         root_resolved = root.resolve(strict=False)
         root_str = str(root_resolved)
+        # Filesystem root (``/``) is the explicit "allow every absolute
+        # path" sentinel — used by the picker fallback when no TOML
+        # config narrows the surface. Special-cased because the
+        # ``root_str + os.sep`` boundary check below would compare to
+        # ``"//"`` and reject every real path.
+        if root_str == os.sep:
+            return resolved
         # Boundary check: either equal, or starts with ``root_str + os.sep``
         # so ``/safe/root`` does not match ``/safe/rooted-evil``.
         if resolved_str == root_str:

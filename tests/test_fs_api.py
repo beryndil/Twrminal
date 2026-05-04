@@ -155,15 +155,40 @@ def test_post_pick_403_outside_configured_roots(app_client: TestClient, tmp_path
 
 
 def test_post_pick_empty_root_defaults_to_home() -> None:
-    """With empty allow_roots, omitting root falls back to home dir without error."""
-    import os
+    """With empty allow_roots, omitting root falls back to ``$HOME``.
 
+    The picker accepts any absolute path under filesystem root in this
+    mode (see :func:`bearings.web.routes.fs._pick_roots`), but the
+    *default* opening directory when the caller omits ``root`` is still
+    ``$HOME`` — that's where work-in-progress projects typically live
+    and what the user most often wants as the picker's starting point.
+    """
     app = create_app(heartbeat_interval_s=_HEARTBEAT_S, fs_cfg=FsCfg())
     with TestClient(app) as client:
         response = client.post("/api/fs/pick", json={})
         assert response.status_code == 200
         body = response.json()
         assert body["path"] == os.path.expanduser("~")
+
+
+def test_post_pick_empty_allow_roots_accepts_any_absolute_path(tmp_path: Path) -> None:
+    """With empty ``allow_roots``, the picker can navigate anywhere.
+
+    Regression: before this fix, ``_pick_roots`` fell back to
+    ``(Path.home(),)`` so any picker navigation outside ``$HOME``
+    (``/tmp``, ``/srv``, another user's project tree) returned 403
+    "path '...' is outside the configured fs allow-roots". Single-user
+    localhost defaults must let the operator browse any directory they
+    have read access to.
+    """
+    target = tmp_path / "outside-home"
+    target.mkdir()
+    app = create_app(heartbeat_interval_s=_HEARTBEAT_S, fs_cfg=FsCfg())
+    with TestClient(app) as client:
+        response = client.post("/api/fs/pick", json={"root": str(target)})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["path"] == str(target)
 
 
 def test_post_pick_navigates_subdirectory(app_client: TestClient, fs_root: Path) -> None:
