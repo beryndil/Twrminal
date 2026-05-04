@@ -166,6 +166,17 @@ class SessionPermissionModeUpdate(BaseModel):
     permission_mode: str | None = None
 
 
+class SessionPinnedUpdate(BaseModel):
+    """Request shape for ``PATCH /api/sessions/{id}/pinned``.
+
+    ``pinned=true`` pins the session row; ``pinned=false`` unpins it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    pinned: bool
+
+
 class SessionDescriptionUpdate(BaseModel):  # pragma: no cover — reserved for v1 PATCH expansion
     """Reserved request shape for the description (plug) PATCH path.
 
@@ -204,5 +215,6 @@ __all__ = [
     "SessionModelUpdate",
     "SessionOut",
     "SessionPermissionModeUpdate",
+    "SessionPinnedUpdate",
     "SessionTitleUpdate",
 ]

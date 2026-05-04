@@ -61,6 +61,7 @@ from bearings.web.models.sessions import (
     SessionModelUpdate,
     SessionOut,
     SessionPermissionModeUpdate,
+    SessionPinnedUpdate,
     SessionTitleUpdate,
 )
 from bearings.web.routes.ws_sessions import SessionsBroadcaster
@@ -433,6 +434,32 @@ async def patch_session_permission_mode(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no session matches {session_id!r}",
+        )
+    out = _to_out(row)
+    broadcaster = _sessions_broadcaster(request)
+    if broadcaster is not None:
+        broadcaster.publish_upsert(out)
+    return out
+
+
+@router.patch("/api/sessions/{session_id}/pinned", response_model=SessionOut)
+async def patch_session_pinned(
+    session_id: str,
+    payload: SessionPinnedUpdate,
+    request: Request,
+) -> SessionOut:
+    """Pin or unpin a session row via ``PATCH /api/sessions/{id}/pinned``.
+
+    ``{pinned: true}`` pins the row; ``{pinned: false}`` unpins it.
+    Idempotent — setting the same value twice is a no-op. Returns the
+    updated session row. 404 when the session is absent.
+    """
+    db = _db(request)
+    row = await sessions_db.update_pinned(db, session_id, pinned=payload.pinned)
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

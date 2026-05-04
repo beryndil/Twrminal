@@ -2188,6 +2188,59 @@
         }
       }
     },
+    "/api/sessions/{session_id}/pinned": {
+      "patch": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Patch Session Pinned",
+        "description": "Pin or unpin a session row via ``PATCH /api/sessions/{id}/pinned``.\n\n``{pinned: true}`` pins the row; ``{pinned: false}`` unpins it.\nIdempotent \u2014 setting the same value twice is a no-op. Returns the\nupdated session row. 404 when the session is absent.",
+        "operationId": "patch_session_pinned_api_sessions__session_id__pinned_patch",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionPinnedUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{session_id}/reopen": {
       "post": {
         "tags": [
@@ -6336,6 +6389,21 @@
         "type": "object",
         "title": "SessionPermissionModeUpdate",
         "description": "Request shape for ``PATCH /api/sessions/{id}/permission_mode`` (item 3.3).\n\n``None`` clears the column \u2014 the runner falls back to the profile default\non the next boot. Non-``None`` values are validated by the DB layer against\n:data:`KNOWN_SDK_PERMISSION_MODES`."
+      },
+      "SessionPinnedUpdate": {
+        "properties": {
+          "pinned": {
+            "type": "boolean",
+            "title": "Pinned"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pinned"
+        ],
+        "title": "SessionPinnedUpdate",
+        "description": "Request shape for ``PATCH /api/sessions/{id}/pinned``.\n\n``pinned=true`` pins the session row; ``pinned=false`` unpins it."
       },
       "SessionTitleUpdate": {
         "properties": {

@@ -622,6 +622,24 @@ async def reopen(
     return await get(connection, session_id)
 
 
+async def update_pinned(
+    connection: aiosqlite.Connection,
+    session_id: str,
+    *,
+    pinned: bool,
+) -> Session | None:
+    """Set or clear the ``pinned`` flag; returns the updated row or ``None`` if absent."""
+    existing = await get(connection, session_id)
+    if existing is None:
+        return None
+    await connection.execute(
+        "UPDATE sessions SET pinned = ?, updated_at = ? WHERE id = ?",
+        (1 if pinned else 0, now_iso(), session_id),
+    )
+    await connection.commit()
+    return await get(connection, session_id)
+
+
 async def set_error_pending(
     connection: aiosqlite.Connection,
     session_id: str,
@@ -822,6 +840,7 @@ __all__ = [
     "is_closed",
     "list_all",
     "reopen",
+    "update_pinned",
     "update_routing_decision",
     "update_title",
 ]

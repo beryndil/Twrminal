@@ -15,7 +15,14 @@
  * the wire shape.
  */
 import { API_SESSIONS_ENDPOINT, sessionModelEndpoint, sessionStopEndpoint } from "../config";
-import { ApiError, getJson, patchJson, postJson, type RequestOptions } from "./client";
+import {
+  ApiError,
+  deleteResource,
+  getJson,
+  patchJson,
+  postJson,
+  type RequestOptions,
+} from "./client";
 
 /**
  * Wire shape for one session row — one-to-one with
@@ -335,4 +342,74 @@ export async function getPairedChatInfo(
 ): Promise<PairedChatInfo | null> {
   const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}/paired-chat-info`;
   return await getJson<PairedChatInfo | null>(path, options);
+}
+
+/**
+ * Archive (close) a session via ``POST /api/sessions/{id}/close``.
+ * Stamps ``closed_at`` to now, moving the row to the sidebar's closed group.
+ */
+export async function closeSession(
+  sessionId: string,
+  options: RequestOptions = {},
+): Promise<SessionOut> {
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}/close`;
+  return await postJson<SessionOut>(path, null, options);
+}
+
+/**
+ * Delete a session permanently via ``DELETE /api/sessions/{id}``.
+ * Cascades to messages, checkpoints, and session_tags rows.
+ */
+export async function deleteSession(
+  sessionId: string,
+  options: RequestOptions = {},
+): Promise<void> {
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}`;
+  return await deleteResource<void>(path, options);
+}
+
+/**
+ * Pin or unpin a session via ``PATCH /api/sessions/{id}/pinned``.
+ * ``pinned=true`` pins the row; ``pinned=false`` unpins it.
+ */
+export async function patchSessionPinned(
+  sessionId: string,
+  pinned: boolean,
+  options: RequestOptions = {},
+): Promise<SessionOut> {
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}/pinned`;
+  return await patchJson<SessionOut>(path, { pinned }, options);
+}
+
+/**
+ * Duplicate a session via ``POST /api/sessions``, cloning the title,
+ * session_instructions, working_dir, and model from the source row.
+ * Message history is NOT copied — only the session metadata.
+ */
+export async function duplicateSession(
+  source: SessionOut,
+  options: RequestOptions = {},
+): Promise<SessionOut> {
+  const body = {
+    kind: source.kind,
+    title: `${source.title} (copy)`,
+    working_dir: source.working_dir,
+    model: source.model,
+    session_instructions: source.session_instructions ?? null,
+    permission_mode: source.permission_mode ?? null,
+    tag_ids: [] as number[],
+  };
+  return await postJson<SessionOut>(API_SESSIONS_ENDPOINT, body, options);
+}
+
+/**
+ * Update the title of a session via ``PATCH /api/sessions/{id}``.
+ */
+export async function patchSessionTitle(
+  sessionId: string,
+  title: string,
+  options: RequestOptions = {},
+): Promise<SessionOut> {
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}`;
+  return await patchJson<SessionOut>(path, { title }, options);
 }

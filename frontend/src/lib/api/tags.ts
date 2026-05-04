@@ -7,7 +7,14 @@
  * chips and the global list to populate the filter panel.
  */
 import { API_TAGS_ENDPOINT, sessionTagsEndpoint } from "../config";
-import { deleteResource, getJson, patchJson, postJson, type RequestOptions } from "./client";
+import {
+  ApiError,
+  deleteResource,
+  getJson,
+  patchJson,
+  postJson,
+  type RequestOptions,
+} from "./client";
 
 /**
  * Wire shape for one tag — one-to-one with
@@ -96,4 +103,38 @@ export async function updateTag(
  */
 export async function deleteTag(tagId: number, options: RequestOptions = {}): Promise<void> {
   await deleteResource<void>(`${API_TAGS_ENDPOINT}/${tagId}`, options);
+}
+
+/**
+ * Attach a tag to a session via ``PUT /api/sessions/{sessionId}/tags/{tagId}``.
+ * Idempotent — attaching an already-attached tag returns 200.
+ */
+export async function attachTagToSession(
+  sessionId: string,
+  tagId: number,
+  options: RequestOptions = {},
+): Promise<TagOut> {
+  const path = `${sessionTagsEndpoint(sessionId)}/${tagId}`;
+  const response = await fetch(path, {
+    method: "PUT",
+    headers: { Accept: "application/json" },
+    signal: options.signal,
+  });
+  if (response.status < 200 || response.status >= 300) {
+    const body: unknown = await response.json().catch(() => null);
+    throw new ApiError(response.status, body, `PUT ${path} → ${response.status}`);
+  }
+  return (await response.json()) as TagOut;
+}
+
+/**
+ * Detach a tag from a session via ``DELETE /api/sessions/{sessionId}/tags/{tagId}``.
+ */
+export async function detachTagFromSession(
+  sessionId: string,
+  tagId: number,
+  options: RequestOptions = {},
+): Promise<void> {
+  const path = `${sessionTagsEndpoint(sessionId)}/${tagId}`;
+  await deleteResource<void>(path, options);
 }
