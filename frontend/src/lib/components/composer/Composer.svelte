@@ -264,6 +264,36 @@
     }
     return null;
   }
+
+  function handleDragOver(event: DragEvent): void {
+    // Allow drops by preventing the default behavior
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "copy";
+    }
+  }
+
+  function handleDrop(event: DragEvent): void {
+    // Insert the dragged text (e.g. markdown link from vault row) into the textarea
+    event.preventDefault();
+    if (event.dataTransfer === null || textareaEl === null) return;
+    const text = event.dataTransfer.getData("text/plain");
+    if (!text) return;
+    // Insert at cursor position
+    const start = textareaEl.selectionStart;
+    const end = textareaEl.selectionEnd;
+    const before = draft.slice(0, start);
+    const after = draft.slice(end);
+    draft = before + text + after;
+    // Move cursor after the inserted text
+    textareaEl.focus();
+    requestAnimationFrame(() => {
+      if (textareaEl !== null) {
+        const newCursorPos = start + text.length;
+        textareaEl.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    });
+  }
 </script>
 
 <div class="composer relative flex flex-col gap-1" data-testid="composer">
@@ -291,6 +321,8 @@
       maxlength={PROMPT_CONTENT_MAX_CHARS}
       disabled={inflight}
       onkeydown={handleKeydown}
+      ondragover={handleDragOver}
+      ondrop={handleDrop}
     ></textarea>
     <div class="flex items-center justify-between">
       {#if errorMessage !== null}

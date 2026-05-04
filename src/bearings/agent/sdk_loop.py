@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import json
 import logging
 from typing import Any
@@ -116,6 +117,17 @@ async def run_session_loop(
     # The production default is the SDK class itself.
     factory = client_factory if client_factory is not None else ClaudeSDKClient
     sdk_options = _to_sdk_options(options_kwargs)
+    session_id = session.config.session_id
+
+    # Capture the CLI subprocess's stderr at WARN so quiet init stalls
+    # (the "Control request timeout: initialize" class) leave a trace
+    # in journald instead of hanging silently. Without this, the SDK
+    # transport inherits stderr from the parent and any CLI-side error
+    # is interleaved with uvicorn output without a session prefix.
+    def _log_cli_stderr(line: str, _sid: str = session_id) -> None:
+        _log.warning("session %s: claude-cli stderr: %s", _sid, line.rstrip())
+
+    sdk_options = dataclasses.replace(sdk_options, stderr=_log_cli_stderr)
     decision = session.config.decision
     translator = SDKEventTranslator(session.config.session_id, decision)
     try:

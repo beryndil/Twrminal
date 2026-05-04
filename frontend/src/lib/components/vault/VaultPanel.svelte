@@ -256,6 +256,13 @@
     await selectVaultDoc(entryId);
   }
 
+  function handleDragStartVaultRow(entry: VaultEntryOut, event: DragEvent): void {
+    if (event.dataTransfer === null) return;
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("text/plain", entry.markdown_link);
+    // Optional: set a custom drag image (simplified — just use text)
+  }
+
   async function handleCopyMarkdownLink(entry: VaultEntryOut): Promise<void> {
     await writeClipboard(entry.markdown_link);
     showToast(VAULT_STRINGS.pasteToastClipboardLink);
@@ -360,10 +367,26 @@
                 <button
                   type="button"
                   class="w-full rounded px-2 py-1 text-left text-sm hover:bg-surface-2"
+                  draggable={true}
                   data-testid="vault-panel-hit"
                   data-vault-id={hit.vault_id}
                   data-line-number={hit.line_number}
                   onclick={() => handleSelectEntry(hit.vault_id)}
+                  ondragstart={(event) => {
+                    // Search hits don't have the full entry data, so create a minimal one for drag
+                    const entry: VaultEntryOut = {
+                      id: hit.vault_id,
+                      path: hit.path,
+                      slug: hit.path,
+                      title: hit.title,
+                      kind: hit.kind,
+                      mtime: 0,
+                      size: 0,
+                      last_indexed_at: 0,
+                      markdown_link: `[${hit.title ?? hit.path}](file://${hit.path})`,
+                    };
+                    handleDragStartVaultRow(entry, event);
+                  }}
                 >
                   <span class="block font-mono text-xs text-fg-muted">
                     {VAULT_STRINGS.searchHitTemplate
@@ -402,10 +425,12 @@
                   type="button"
                   class="w-full rounded px-2 py-1 text-left text-sm hover:bg-surface-2"
                   class:bg-surface-2={vaultStore.selected?.entry.id === entry.id}
+                  draggable={true}
                   data-testid="vault-panel-row"
                   data-vault-id={entry.id}
                   data-vault-kind={VAULT_KIND_PLAN}
                   onclick={() => handleSelectEntry(entry.id)}
+                  ondragstart={(event) => handleDragStartVaultRow(entry, event)}
                 >
                   {entryLabel(entry)}
                 </button>
@@ -425,10 +450,12 @@
                   type="button"
                   class="w-full rounded px-2 py-1 text-left text-sm hover:bg-surface-2"
                   class:bg-surface-2={vaultStore.selected?.entry.id === entry.id}
+                  draggable={true}
                   data-testid="vault-panel-row"
                   data-vault-id={entry.id}
                   data-vault-kind={VAULT_KIND_TODO}
                   onclick={() => handleSelectEntry(entry.id)}
+                  ondragstart={(event) => handleDragStartVaultRow(entry, event)}
                 >
                   {entryLabel(entry)}
                 </button>
