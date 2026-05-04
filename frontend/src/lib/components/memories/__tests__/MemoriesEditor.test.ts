@@ -47,6 +47,7 @@ function fakeTag(overrides: Partial<TagOut> = {}): TagOut {
     color: null,
     default_model: null,
     working_dir: null,
+    pinned: false,
     group: "bearings",
     created_at: "2026-04-29T00:00:00Z",
     updated_at: "2026-04-29T00:00:00Z",

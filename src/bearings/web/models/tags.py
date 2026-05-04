@@ -50,6 +50,8 @@ class TagOut(BaseModel):
     ``group`` is computed from ``name`` (slash-namespace convention per
     :data:`bearings.config.constants.TAG_GROUP_SEPARATOR`) and exposed
     so the frontend filter panel doesn't have to re-parse it.
+    ``pinned`` controls sidebar sort order — pinned tags float to the
+    top of the filter panel per context-menus §"Tag".
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -59,9 +61,22 @@ class TagOut(BaseModel):
     color: str | None
     default_model: str | None
     working_dir: str | None
+    pinned: bool
     group: str | None
     created_at: str
     updated_at: str
+
+
+class TagPinnedUpdate(BaseModel):
+    """Request body for ``PATCH /api/tags/{id}/pinned``.
+
+    ``pinned=true`` pins the tag in the sidebar filter panel;
+    ``pinned=false`` unpins it. Mirrors :class:`SessionPinnedUpdate`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    pinned: bool
 
 
 class TagMemoryIn(BaseModel):
@@ -88,4 +103,4 @@ class TagMemoryOut(BaseModel):
     updated_at: str
 
 
-__all__ = ["TagIn", "TagMemoryIn", "TagMemoryOut", "TagOut"]
+__all__ = ["TagIn", "TagMemoryIn", "TagMemoryOut", "TagOut", "TagPinnedUpdate"]

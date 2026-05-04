@@ -101,6 +101,9 @@ _ADDED_COLUMNS: Final[tuple[tuple[str, str, str], ...]] = (
     # Existing rows default to 0 (not pinned, not hidden).
     ("messages", "pinned", "INTEGER NOT NULL DEFAULT 0"),
     ("messages", "hidden_from_context", "INTEGER NOT NULL DEFAULT 0"),
+    # G4 tag context-menu columns — landed after initial schema.sql ship.
+    # Existing tags default to 0 (unpinned).
+    ("tags", "pinned", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 

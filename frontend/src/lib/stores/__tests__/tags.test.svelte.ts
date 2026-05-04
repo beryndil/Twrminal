@@ -14,6 +14,7 @@ const fixtureTag: TagOut = {
   color: null,
   default_model: null,
   working_dir: null,
+  pinned: false,
   group: "bearings",
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",

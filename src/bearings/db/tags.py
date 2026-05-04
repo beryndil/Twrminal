@@ -93,6 +93,7 @@ class Tag:
     working_dir: str | None
     created_at: str
     updated_at: str
+    pinned: bool = False
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -170,13 +171,15 @@ async def create(
         color=color,
         default_model=default_model,
         working_dir=working_dir,
+        pinned=False,
         created_at=timestamp,
         updated_at=timestamp,
     )
     cursor = await connection.execute(
-        "INSERT INTO tags (name, color, default_model, working_dir, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (name, color, default_model, working_dir, timestamp, timestamp),
+        "INSERT INTO tags "
+        "(name, color, default_model, working_dir, pinned, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (name, color, default_model, working_dir, 0, timestamp, timestamp),
     )
     new_id = cursor.lastrowid
     await cursor.close()
@@ -189,6 +192,7 @@ async def create(
         color=color,
         default_model=default_model,
         working_dir=working_dir,
+        pinned=False,
         created_at=timestamp,
         updated_at=timestamp,
     )
@@ -328,6 +332,7 @@ async def update(
         color=color,
         default_model=default_model,
         working_dir=working_dir,
+        pinned=existing.pinned,
         created_at=existing.created_at,
         updated_at=timestamp,
     )
@@ -416,12 +421,46 @@ async def set_for_session(
     await connection.commit()
 
 
+async def update_pinned(
+    connection: aiosqlite.Connection,
+    tag_id: int,
+    *,
+    pinned: bool,
+) -> Tag | None:
+    """Pin or unpin a tag; returns the updated row (or ``None`` if absent).
+
+    Mirrors the per-session :func:`bearings.db.sessions.update_pinned`
+    contract: only the ``pinned`` column is touched; other fields and
+    ``updated_at`` are unchanged (pinning is not a content mutation).
+    Returns ``None`` when no row matches ``tag_id`` (404-friendly).
+    """
+    existing = await get(connection, tag_id)
+    if existing is None:
+        return None
+    cursor = await connection.execute(
+        "UPDATE tags SET pinned = ? WHERE id = ?",
+        (1 if pinned else 0, tag_id),
+    )
+    await cursor.close()
+    await connection.commit()
+    return Tag(
+        id=existing.id,
+        name=existing.name,
+        color=existing.color,
+        default_model=existing.default_model,
+        working_dir=existing.working_dir,
+        pinned=pinned,
+        created_at=existing.created_at,
+        updated_at=existing.updated_at,
+    )
+
+
 # Single source of truth for the column list — keeps the SELECT in
 # the helpers above synchronised. Adding a column means editing this
 # string and :func:`_row_to_tag` together.
 _SELECT_TAG_COLUMNS = (
     "SELECT tags.id, tags.name, tags.color, tags.default_model, tags.working_dir, "
-    "tags.created_at, tags.updated_at FROM tags"
+    "tags.pinned, tags.created_at, tags.updated_at FROM tags"
 )
 
 
@@ -433,8 +472,9 @@ def _row_to_tag(row: aiosqlite.Row | tuple[object, ...]) -> Tag:
         color=None if row[2] is None else str(row[2]),
         default_model=None if row[3] is None else str(row[3]),
         working_dir=None if row[4] is None else str(row[4]),
-        created_at=str(row[5]),
-        updated_at=str(row[6]),
+        pinned=bool(row[5]),
+        created_at=str(row[6]),
+        updated_at=str(row[7]),
     )
 
 
@@ -451,4 +491,5 @@ __all__ = [
     "list_groups",
     "set_for_session",
     "update",
+    "update_pinned",
 ]

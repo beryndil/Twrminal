@@ -14,6 +14,9 @@
    *   selecting more tags WIDENS the result. This is enforced
    *   downstream (the store + backend); the panel's job is the chip
    *   UI + click semantics.
+   * - ``docs/behavior/context-menus.md`` §"Tag" — right-click on a
+   *   chip opens MENU_TARGET_TAG with pin/unpin/copy/edit/delete
+   *   handlers via ``use:contextMenu``.
    *
    * Tags render in alphabetical order (the API contract from
    * :func:`bearings.db.tags.list_all`). Slash-prefix groups
@@ -23,8 +26,22 @@
    * chat.md is silent on whether the panel groups visually, and the
    * flat list is the simpler floor.
    */
-  import { SIDEBAR_STRINGS } from "../../config";
+  import { goto } from "$app/navigation";
+
+  import {
+    SIDEBAR_STRINGS,
+    MENU_TARGET_TAG,
+    MENU_ACTION_TAG_PIN,
+    MENU_ACTION_TAG_UNPIN,
+    MENU_ACTION_TAG_COPY_NAME,
+    MENU_ACTION_TAG_EDIT,
+    MENU_ACTION_TAG_DELETE,
+  } from "../../config";
   import type { TagOut } from "../../api/tags";
+  import { deleteTag, patchTagPinned } from "../../api/tags";
+  import { contextMenu } from "../../actions/contextMenu";
+  import { refreshTags } from "../../stores/tags.svelte";
+  import ConfirmDialog from "../sidebar/ConfirmDialog.svelte";
 
   interface Props {
     tags: readonly TagOut[];
@@ -36,7 +53,65 @@
   const { tags, selectedIds, onToggle, onClear }: Props = $props();
 
   const hasSelection = $derived(selectedIds.size > 0);
+
+  // ---- confirm delete state -----------------------------------------------
+
+  let showDeleteConfirm = $state(false);
+  let deletingTag = $state<TagOut | null>(null);
+
+  async function handleDeleteConfirm(): Promise<void> {
+    const tag = deletingTag;
+    showDeleteConfirm = false;
+    deletingTag = null;
+    if (tag === null) return;
+    try {
+      await deleteTag(tag.id);
+      await refreshTags();
+    } catch {
+      // Leave the chip in place — the next refresh shows real state.
+    }
+  }
+
+  // ---- context menu handlers per tag --------------------------------------
+
+  function menuHandlersForTag(tag: TagOut): Readonly<Record<string, () => void>> {
+    return {
+      ...(tag.pinned
+        ? {
+            [MENU_ACTION_TAG_UNPIN]: () => {
+              void patchTagPinned(tag.id, false).then(() => refreshTags());
+            },
+          }
+        : {
+            [MENU_ACTION_TAG_PIN]: () => {
+              void patchTagPinned(tag.id, true).then(() => refreshTags());
+            },
+          }),
+      [MENU_ACTION_TAG_COPY_NAME]: () => {
+        void navigator.clipboard.writeText(tag.name);
+      },
+      [MENU_ACTION_TAG_EDIT]: () => {
+        void goto("/tags");
+      },
+      [MENU_ACTION_TAG_DELETE]: () => {
+        deletingTag = tag;
+        showDeleteConfirm = true;
+      },
+    };
+  }
 </script>
+
+{#if showDeleteConfirm && deletingTag !== null}
+  <ConfirmDialog
+    message={`Delete tag "${deletingTag.name}"? This cannot be undone.`}
+    confirmLabel="Delete"
+    onConfirm={() => void handleDeleteConfirm()}
+    onCancel={() => {
+      showDeleteConfirm = false;
+      deletingTag = null;
+    }}
+  />
+{/if}
 
 <section
   class="tag-filter border-b border-border px-3 py-2"
@@ -75,6 +150,11 @@
           data-testid="tag-filter-chip"
           data-tag-id={tag.id}
           onclick={() => onToggle(tag.id)}
+          use:contextMenu={{
+            target: MENU_TARGET_TAG,
+            handlers: menuHandlersForTag(tag),
+            data: { tagId: tag.id },
+          }}
         >
           {tag.name}
         </button>

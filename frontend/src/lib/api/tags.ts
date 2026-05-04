@@ -28,6 +28,7 @@ export interface TagOut {
   color: string | null;
   default_model: string | null;
   working_dir: string | null;
+  pinned: boolean;
   group: string | null;
   created_at: string;
   updated_at: string;
@@ -103,6 +104,19 @@ export async function updateTag(
  */
 export async function deleteTag(tagId: number, options: RequestOptions = {}): Promise<void> {
   await deleteResource<void>(`${API_TAGS_ENDPOINT}/${tagId}`, options);
+}
+
+/**
+ * Pin or unpin a tag via ``PATCH /api/tags/{id}/pinned``.
+ * ``pinned=true`` pins the tag in the sidebar filter panel;
+ * ``pinned=false`` unpins it.
+ */
+export async function patchTagPinned(
+  tagId: number,
+  pinned: boolean,
+  options: RequestOptions = {},
+): Promise<TagOut> {
+  return await patchJson<TagOut>(`${API_TAGS_ENDPOINT}/${tagId}/pinned`, { pinned }, options);
 }
 
 /**

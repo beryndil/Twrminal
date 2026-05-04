@@ -58,6 +58,12 @@
     type NewSessionSubmission,
   } from "$lib/components/new_session/NewSessionForm.svelte";
   import FolderPicker from "$lib/components/new_session/FolderPicker.svelte";
+  import { contextMenu } from "$lib/actions/contextMenu";
+  import {
+    MENU_TARGET_TAG_CHIP,
+    MENU_ACTION_TAG_CHIP_COPY_NAME,
+    MENU_ACTION_TAG_CHIP_DETACH,
+  } from "$lib/config";
 
   /** Title is derived from the first message — single line, ≤80 chars. */
   const TITLE_MAX_FROM_MESSAGE = 80;
@@ -269,6 +275,19 @@
               aria-pressed={active}
               onclick={() => toggleTag(tag.id)}
               data-testid={`new-session-tag-${tag.id}`}
+              use:contextMenu={{
+                target: MENU_TARGET_TAG_CHIP,
+                disabled: !active,
+                handlers: {
+                  [MENU_ACTION_TAG_CHIP_COPY_NAME]: () => {
+                    void navigator.clipboard.writeText(tag.name);
+                  },
+                  [MENU_ACTION_TAG_CHIP_DETACH]: () => {
+                    toggleTag(tag.id);
+                  },
+                },
+                data: { tagId: tag.id },
+              }}
             >
               {tag.name}
             </button>

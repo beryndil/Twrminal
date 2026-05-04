@@ -30,7 +30,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from bearings.db import tags as tags_db
 from bearings.db.tags import Tag
-from bearings.web.models.tags import TagIn, TagOut
+from bearings.web.models.tags import TagIn, TagOut, TagPinnedUpdate
 
 router = APIRouter()
 
@@ -59,6 +59,7 @@ def _to_out(tag: Tag) -> TagOut:
         color=tag.color,
         default_model=tag.default_model,
         working_dir=tag.working_dir,
+        pinned=tag.pinned,
         group=tag.group,
         created_at=tag.created_at,
         updated_at=tag.updated_at,
@@ -136,6 +137,20 @@ async def update_tag(tag_id: int, payload: TagIn, request: Request) -> TagOut:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+    if tag is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"tag {tag_id} not found")
+    return _to_out(tag)
+
+
+@router.patch("/api/tags/{tag_id}/pinned", response_model=TagOut)
+async def patch_tag_pinned(tag_id: int, payload: TagPinnedUpdate, request: Request) -> TagOut:
+    """Pin or unpin a tag via ``PATCH /api/tags/{id}/pinned``.
+
+    ``{pinned: true}`` pins the tag in the sidebar filter panel;
+    ``{pinned: false}`` unpins it. 404 if absent.
+    """
+    db = _db(request)
+    tag = await tags_db.update_pinned(db, tag_id, pinned=payload.pinned)
     if tag is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"tag {tag_id} not found")
     return _to_out(tag)

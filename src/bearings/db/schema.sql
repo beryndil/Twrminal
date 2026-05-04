@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS tags (
     color                    TEXT,
     default_model            TEXT,
     working_dir              TEXT,
+    pinned                   INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
     created_at               TEXT    NOT NULL,
     updated_at               TEXT    NOT NULL
 );
