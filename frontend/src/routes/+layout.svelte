@@ -54,7 +54,8 @@
   import { inspectorStore, setActiveSession } from "$lib/stores/inspector.svelte";
   import ContextMeter from "$lib/components/conversation/ContextMeter.svelte";
   import SidebarSearch from "$lib/components/sidebar/SidebarSearch.svelte";
-  import { reopenSession } from "$lib/api/sessions";
+  import PairedChatIndicator from "$lib/components/conversation/PairedChatIndicator.svelte";
+  import { reopenSession, getPairedChatInfo, type PairedChatInfo } from "$lib/api/sessions";
 
   interface Props {
     children?: Snippet;
@@ -117,6 +118,7 @@
   }
 
   let isReopeningSession = $state(false);
+  let pairedChatInfo = $state<PairedChatInfo | null>(null);
 
   async function handleReopenSession(): Promise<void> {
     if (selectedSessionId === null) return;
@@ -130,6 +132,30 @@
       isReopeningSession = false;
     }
   }
+
+  // Fetch paired-chat-info when the active session changes
+  $effect(() => {
+    const sessionId = selectedSessionId;
+    pairedChatInfo = null;
+    if (sessionId === null) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const info = await getPairedChatInfo(sessionId);
+        if (!cancelled) {
+          pairedChatInfo = info;
+        }
+      } catch (err) {
+        // Silently ignore errors — missing pairing data doesn't block the UI
+        console.error("Failed to fetch paired-chat-info:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  });
 
   /** Current URL path as a plain string for nav-active comparisons. */
   const currentPath: string = $derived(page.url.pathname as string);
@@ -457,6 +483,15 @@
                 >
                   {activeSession.description}
                 </p>
+              {/if}
+              <!-- Paired-chat breadcrumb chip (when chat is linked to a checklist item) -->
+              {#if pairedChatInfo !== null}
+                <div class="mt-1">
+                  <PairedChatIndicator
+                    parentTitle={pairedChatInfo.parent_title}
+                    itemLabel={pairedChatInfo.item_label}
+                  />
+                </div>
               {/if}
             {/if}
           </header>

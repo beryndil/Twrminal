@@ -86,6 +86,7 @@ class SessionOut(BaseModel):
     last_completed_at: str | None
     closed_at: str | None
     closing_summary: str | None
+    paired_parent_title: str | None = None
 
 
 class SessionTitleUpdate(BaseModel):
@@ -166,7 +167,24 @@ class SessionDescriptionUpdate(BaseModel):  # pragma: no cover — reserved for 
     description: str | None = Field(default=None, max_length=SESSION_DESCRIPTION_MAX_LENGTH)
 
 
+class PairedChatInfo(BaseModel):
+    """Response shape for ``GET /api/sessions/{id}/paired-chat-info``.
+
+    Per ``docs/behavior/paired-chats.md`` §"From the chat side" — when a
+    chat session is paired to a checklist item, the breadcrumb shows
+    ``<parent checklist title> › <item label>``. This endpoint returns
+    those two fields when a pairing exists, or ``None`` when the chat is
+    unpaired.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    parent_title: str
+    item_label: str
+
+
 __all__ = [
+    "PairedChatInfo",
     "PromptAck",
     "PromptIn",
     "SessionCreate",

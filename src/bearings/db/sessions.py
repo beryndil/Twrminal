@@ -582,6 +582,42 @@ async def get_kind(
     return None if row is None else str(row[0])
 
 
+async def get_paired_chat_info(
+    connection: aiosqlite.Connection,
+    session_id: str,
+) -> tuple[str, str] | None:
+    """Fetch paired-chat metadata for a chat session.
+
+    When a chat session (``kind='chat'``) is paired to a checklist item
+    via ``checklist_item_id``, returns a tuple ``(parent_title, item_label)``
+    where:
+
+    * ``parent_title`` is the title of the parent checklist session.
+    * ``item_label`` is the label of the checklist item.
+
+    Returns ``None`` when the session is not paired or the session/item
+    is absent. Used by the breadcrumb chip on the conversation header
+    per ``docs/behavior/paired-chats.md`` §"From the chat side".
+    """
+    cursor = await connection.execute(
+        "SELECT parent.title, item.label "
+        "FROM sessions chat "
+        "LEFT JOIN checklist_items item ON chat.checklist_item_id = item.id "
+        "LEFT JOIN sessions parent ON item.checklist_id = parent.id "
+        "WHERE chat.id = ? AND item.id IS NOT NULL",
+        (session_id,),
+    )
+    try:
+        row = await cursor.fetchone()
+    finally:
+        await cursor.close()
+    if row is None:
+        return None
+    parent_title = row[0]
+    item_label = row[1]
+    return (str(parent_title), str(item_label))
+
+
 _SELECT_SESSION_COLUMNS = (
     "SELECT id, kind, title, description, session_instructions, working_dir, model, "
     "permission_mode, max_budget_usd, total_cost_usd, message_count, "
@@ -648,6 +684,7 @@ __all__ = [
     "exists",
     "get",
     "get_kind",
+    "get_paired_chat_info",
     "is_closed",
     "list_all",
     "reopen",

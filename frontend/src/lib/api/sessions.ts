@@ -56,6 +56,12 @@ export interface SessionOut {
    * on closed rows; ``null`` for rows closed manually (or never).
    */
   closing_summary: string | null;
+  /**
+   * Paired-chat parent title (when chat is linked to a checklist item).
+   * ``null`` when the chat is unpaired or the parent has been deleted.
+   * Shown in the sidebar as ``↳ <parent_title>``.
+   */
+  paired_parent_title?: string | null;
 }
 
 interface ListSessionsParams {
@@ -285,4 +291,24 @@ export async function regenerateSession(
     );
   }
   // 204 No Content — nothing to parse.
+}
+
+/**
+ * Fetch paired-chat metadata for a chat session.
+ *
+ * Returns ``{parent_title, item_label}`` when paired to a checklist item,
+ * or ``null`` when unpaired. The breadcrumb chip on the conversation header
+ * uses this to render ``<parent checklist title> › <item label>``.
+ */
+export interface PairedChatInfo {
+  parent_title: string;
+  item_label: string;
+}
+
+export async function getPairedChatInfo(
+  sessionId: string,
+  options: RequestOptions = {},
+): Promise<PairedChatInfo | null> {
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}/paired-chat-info`;
+  return await getJson<PairedChatInfo | null>(path, options);
 }

@@ -185,6 +185,13 @@
       {/each}
     </span>
   {/if}
+
+  <!-- Paired-chat annotation (↳ parent checklist title) -->
+  {#if session.paired_parent_title}
+    <span class="text-xs text-fg-muted" data-testid="session-paired-parent">
+      ↳ {session.paired_parent_title}
+    </span>
+  {/if}
 </a>
 
 <style>

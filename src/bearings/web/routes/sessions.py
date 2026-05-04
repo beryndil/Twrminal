@@ -55,6 +55,7 @@ from bearings.db import sessions as sessions_db
 from bearings.db import tags as tags_db
 from bearings.db.sessions import Session
 from bearings.web.models.sessions import (
+    PairedChatInfo,
     PromptIn,
     SessionCreate,
     SessionModelUpdate,
@@ -124,7 +125,7 @@ def _sessions_broadcaster(request: Request) -> SessionsBroadcaster | None:
     )
 
 
-def _to_out(session: Session) -> SessionOut:
+def _to_out(session: Session, paired_parent_title: str | None = None) -> SessionOut:
     """Wire shape for a session row."""
     return SessionOut(
         id=session.id,
@@ -150,6 +151,7 @@ def _to_out(session: Session) -> SessionOut:
         last_completed_at=session.last_completed_at,
         closed_at=session.closed_at,
         closing_summary=session.closing_summary,
+        paired_parent_title=paired_parent_title,
     )
 
 
@@ -191,7 +193,15 @@ async def list_sessions(
         include_closed=include_closed,
         tag_ids=tag_filter,
     )
-    return [_to_out(row) for row in rows]
+    # Fetch paired-chat parent titles for chat rows (sidebar annotation).
+    # Build a map of session_id → parent_title for efficient lookup.
+    paired_info_map: dict[str, str | None] = {}
+    for row in rows:
+        if row.kind == "chat" and row.checklist_item_id is not None:
+            info = await sessions_db.get_paired_chat_info(db, row.id)
+            paired_info_map[row.id] = info[0] if info else None
+
+    return [_to_out(row, paired_parent_title=paired_info_map.get(row.id)) for row in rows]
 
 
 @router.post(
@@ -274,7 +284,12 @@ async def get_session(session_id: str, request: Request) -> SessionOut:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no session matches {session_id!r}",
         )
-    return _to_out(row)
+    # Fetch paired-chat parent title if this is a paired chat.
+    paired_parent_title: str | None = None
+    if row.kind == "chat" and row.checklist_item_id is not None:
+        info = await sessions_db.get_paired_chat_info(db, session_id)
+        paired_parent_title = info[0] if info else None
+    return _to_out(row, paired_parent_title=paired_parent_title)
 
 
 @router.patch("/api/sessions/{session_id}", response_model=SessionOut)
@@ -442,6 +457,30 @@ async def reopen_session(session_id: str, request: Request) -> SessionOut:
     if broadcaster is not None:
         broadcaster.publish_upsert(out)
     return out
+
+
+@router.get("/api/sessions/{session_id}/paired-chat-info")
+async def get_paired_chat_info_route(session_id: str, request: Request) -> PairedChatInfo | None:
+    """Fetch paired-chat metadata for a chat session.
+
+    Per ``docs/behavior/paired-chats.md`` §"From the chat side" — when a
+    chat session is paired to a checklist item, the breadcrumb shows
+    ``<parent checklist title> › <item label>``. This endpoint returns
+    those two fields when a pairing exists, or ``None`` when the chat is
+    unpaired.
+
+    Returns 200 with ``{parent_title, item_label}`` when paired, or
+    200 with ``null`` when unpaired or the session is absent. (Returning
+    200 for both cases avoids the cognitive overhead of decoding a 404
+    as "not paired" vs "session missing" — the UI reads the None value
+    and hides the breadcrumb.)
+    """
+    db = _db(request)
+    info = await sessions_db.get_paired_chat_info(db, session_id)
+    if info is None:
+        return None
+    parent_title, item_label = info
+    return PairedChatInfo(parent_title=parent_title, item_label=item_label)
 
 
 # ---- regenerate ------------------------------------------------------------
