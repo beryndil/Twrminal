@@ -54,6 +54,7 @@
   import { inspectorStore, setActiveSession } from "$lib/stores/inspector.svelte";
   import ContextMeter from "$lib/components/conversation/ContextMeter.svelte";
   import SidebarSearch from "$lib/components/sidebar/SidebarSearch.svelte";
+  import { reopenSession } from "$lib/api/sessions";
 
   interface Props {
     children?: Snippet;
@@ -113,6 +114,21 @@
    */
   function handleSelectSession(sessionId: string): void {
     void goto(`/sessions/${encodeURIComponent(sessionId)}`);
+  }
+
+  let isReopeningSession = $state(false);
+
+  async function handleReopenSession(): Promise<void> {
+    if (selectedSessionId === null) return;
+    isReopeningSession = true;
+    try {
+      await reopenSession(selectedSessionId);
+      // The session-broadcast WebSocket will automatically refresh the session
+      // in the store, which will cause activeSession to update and the
+      // Composer to re-render.
+    } finally {
+      isReopeningSession = false;
+    }
   }
 
   /** Current URL path as a plain string for nav-active comparisons. */
@@ -472,11 +488,24 @@
             data-testid="app-shell-main-composer"
           >
             {#if selectedSessionId !== null && activeSession?.kind !== SESSION_KIND_CHECKLIST}
-              <Composer
-                sessionId={selectedSessionId}
-                disabled={activeSession?.closed_at !== null &&
-                  activeSession?.closed_at !== undefined}
-              />
+              {#if activeSession?.closed_at !== null && activeSession?.closed_at !== undefined}
+                <div class="flex justify-center">
+                  <button
+                    type="button"
+                    class="rounded bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-muted disabled:opacity-50"
+                    disabled={isReopeningSession}
+                    onclick={handleReopenSession}
+                  >
+                    {#if isReopeningSession}
+                      ↻ Reopening…
+                    {:else}
+                      ↻ Reopen session
+                    {/if}
+                  </button>
+                </div>
+              {:else}
+                <Composer sessionId={selectedSessionId} disabled={false} />
+              {/if}
             {/if}
           </footer>
         </main>

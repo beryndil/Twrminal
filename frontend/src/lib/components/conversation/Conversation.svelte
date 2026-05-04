@@ -41,12 +41,22 @@
   import ModelSelector from "./ModelSelector.svelte";
   import PermissionModeSelector from "./PermissionModeSelector.svelte";
   import StopUndoInline from "./StopUndoInline.svelte";
+  import { pasteIntoComposer } from "../../stores/composerBridge.svelte";
 
   interface Props {
     sessionId: string | null;
   }
 
   const { sessionId }: Props = $props();
+
+  function handleAskForMoreDetail(): void {
+    if (sessionId === null) return;
+    pasteIntoComposer({
+      sessionId,
+      text: CONVERSATION_STRINGS.askForMoreDetailPrompt,
+      kind: "link",
+    });
+  }
 
   let bodyEl: HTMLDivElement | null = $state(null);
   let atBottom = $state(true);
@@ -172,16 +182,22 @@
         {CONVERSATION_STRINGS.loadingTranscript}
       </p>
     {:else if conversationStore.error !== null}
-      <p class="px-4 py-3 text-sm text-red-400" data-testid="conversation-error">
-        {CONVERSATION_STRINGS.loadFailed}
-      </p>
+      <div
+        class="flex flex-col gap-2 border-l-4 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300"
+        data-testid="conversation-error"
+        role="alert"
+      >
+        <p class="font-medium">{CONVERSATION_STRINGS.errorBubbleLabel}</p>
+        <p class="text-xs">{conversationStore.error.message}</p>
+        <p class="text-xs text-red-600 dark:text-red-400">{CONVERSATION_STRINGS.errorHintLabel}</p>
+      </div>
     {:else if conversationStore.turns.length === 0}
       <p class="px-4 py-3 text-sm text-fg-muted" data-testid="conversation-empty">
         {CONVERSATION_STRINGS.emptyTranscript}
       </p>
     {:else}
       {#each conversationStore.turns as turn (turn.id)}
-        <MessageTurn {turn} />
+        <MessageTurn {turn} {sessionId} onAskForMoreDetail={handleAskForMoreDetail} />
       {/each}
     {/if}
   </div>

@@ -246,3 +246,43 @@ export async function patchSessionPermissionMode(
   const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}/permission_mode`;
   return await patchJson<SessionOut>(path, { permission_mode: permissionMode }, options);
 }
+
+/**
+ * Regenerate from the last message via ``POST /api/sessions/{id}/regenerate``.
+ * Inserts a re-roll boundary (per ``docs/behavior/chat.md`` §"What a message turn looks like").
+ * The server queues a synthetic prompt and the runner will re-generate from the
+ * last message. Returns 204 No Content on success.
+ *
+ * @throws :class:`ApiError` on 404 (session not found) or 5xx.
+ */
+export async function regenerateSession(
+  sessionId: string,
+  options: RequestOptions = {},
+): Promise<void> {
+  const HTTP_OK_MIN = 200;
+  const HTTP_OK_MAX = 300;
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}/regenerate`;
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    signal: options.signal,
+  });
+  if (response.status < HTTP_OK_MIN || response.status >= HTTP_OK_MAX) {
+    let errorBody: unknown = null;
+    try {
+      errorBody = await response.json();
+    } catch {
+      try {
+        errorBody = await response.text();
+      } catch {
+        // ignore
+      }
+    }
+    throw new ApiError(
+      response.status,
+      errorBody,
+      `POST regenerate ${sessionId} → ${response.status} ${response.statusText}`,
+    );
+  }
+  // 204 No Content — nothing to parse.
+}

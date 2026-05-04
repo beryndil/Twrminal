@@ -22,7 +22,14 @@
    * and renders it. The reducer produces these views; the parent
    * Conversation component iterates the list.
    */
-  import { CONVERSATION_STRINGS } from "../../config";
+  import {
+    CONVERSATION_STRINGS,
+    MENU_ACTION_MESSAGE_REGENERATE,
+    MENU_ACTION_MESSAGE_REGENERATE_IN_PLACE,
+    MENU_TARGET_MESSAGE,
+  } from "../../config";
+  import { contextMenu } from "../../actions/contextMenu";
+  import { regenerateSession } from "../../api/sessions";
   import { linkifyToHtml } from "../../linkify";
   import { renderMarkdown } from "../../render";
   import { sanitizeHtml } from "../../sanitize";
@@ -32,9 +39,25 @@
 
   interface Props {
     turn: MessageTurnView;
+    sessionId?: string | null;
+    onAskForMoreDetail?: () => void;
   }
 
-  const { turn }: Props = $props();
+  const { turn, sessionId, onAskForMoreDetail }: Props = $props();
+
+  function handleAskForMoreDetail(): void {
+    onAskForMoreDetail?.();
+  }
+
+  async function handleRegenerate(): Promise<void> {
+    if (sessionId === null || sessionId === undefined) return;
+    try {
+      await regenerateSession(sessionId);
+      // Toast feedback handled by the API consumer or parent component
+    } catch (err) {
+      console.error("Regenerate failed:", err);
+    }
+  }
 
   // Body rendering pipeline — marked → DOMPurify. The pipeline runs
   // asynchronously because :func:`renderMarkdown` returns a promise;
@@ -65,6 +88,14 @@
   data-testid="message-turn"
   data-turn-id={turn.id}
   data-role={turn.role}
+  use:contextMenu={{
+    target: MENU_TARGET_MESSAGE,
+    handlers: {
+      [MENU_ACTION_MESSAGE_REGENERATE]: handleRegenerate,
+      [MENU_ACTION_MESSAGE_REGENERATE_IN_PLACE]: handleRegenerate,
+    },
+    data: { messageId: turn.id, sessionId },
+  }}
 >
   {#if turn.role === "user"}
     <div class="flex flex-col items-end gap-1">
@@ -105,7 +136,10 @@
         </div>
       </details>
     {/if}
-    <div class="rounded bg-surface-1 px-3 py-2 text-sm" data-testid="message-turn-assistant">
+    <div
+      class="group relative rounded bg-surface-1 px-3 py-2 text-sm"
+      data-testid="message-turn-assistant"
+    >
       {#if turn.thinking.length > 0}
         <details
           class="mb-2 rounded border border-border bg-surface-2"
@@ -124,6 +158,27 @@
         <p class="text-fg-muted" data-testid="message-turn-body-fallback">{turn.body}</p>
       {/if}
       <div class="mt-2 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          class="opacity-0 transition-opacity group-hover:opacity-100"
+          title={CONVERSATION_STRINGS.askForMoreDetailLabel}
+          onclick={handleAskForMoreDetail}
+          data-testid="message-turn-ask-for-detail"
+        >
+          <svg
+            class="h-4 w-4 text-fg-muted hover:text-fg-strong"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+        </button>
         {#if turn.routing !== null}
           <RoutingBadge routing={turn.routing} />
         {/if}

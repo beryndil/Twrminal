@@ -353,6 +353,11 @@ export const CONVERSATION_STRINGS = {
   loadingOlder: "Loading…",
   // Item 1.4 turn_replayed annotation — user row inline badge.
   turnResumedLabel: "↻ resumed",
+  // Phase 1 conversation UX
+  reopenSessionLabel: "Reopen session",
+  errorHintLabel: "Try sending a new message to continue.",
+  askForMoreDetailLabel: "Ask for more detail",
+  askForMoreDetailPrompt: "Can you expand on that in more detail?",
 } as const;
 
 /**
