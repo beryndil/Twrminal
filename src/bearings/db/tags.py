@@ -3,31 +3,50 @@
 Per ``docs/architecture-v1.md`` §1.1.3 this concern module owns every
 query that touches ``tags`` and the per-session join table
 ``session_tags``. Per ``docs/behavior/chat.md`` §"When the user creates
-a chat" every chat must carry ≥1 general tag; per
-``docs/behavior/checklists.md`` "the chat inherits the checklist's
-working directory, model, and tags" — the inheritance fields landed on
-``tags`` are :attr:`Tag.default_model` and :attr:`Tag.working_dir`. Per
-``docs/behavior/context-menus.md`` §"Tag (sidebar tag chip in the
-filter panel)" the user pins / unpins / edits / deletes tags from a
-right-click menu; the API surface for those actions lives in
-:mod:`bearings.web.routes.tags` (item 1.4) on top of this layer.
+a chat" every chat may carry any number of tags, with cardinality
+constraints on the ``project`` / ``severity`` classes enforced at the
+API boundary. Per ``docs/behavior/checklists.md`` "the chat inherits
+the checklist's working directory, model, and tags" — the inheritance
+fields landed on ``tags`` are :attr:`Tag.default_model` and
+:attr:`Tag.working_dir`. Per ``docs/behavior/context-menus.md`` §"Tag
+(sidebar tag chip in the filter panel)" the user pins / unpins / edits
+/ deletes tags from a right-click menu; the API surface for those
+actions lives in :mod:`bearings.web.routes.tags` (item 1.4) on top of
+this layer.
 
-Tag groups
-----------
+Tag classes
+-----------
 
-The 0.4 schema landed without a ``tag_groups`` table or a ``group``
-column on ``tags``. Item 1.4 adopts slash-namespacing on the tag name
-(``<group>/<name>``) as the group carrier — already the convention in
-test fixtures (``bearings/architect``, ``bearings/exec``) and in
-``docs/behavior/checklists.md`` cross-references. The separator is the
-single character :data:`bearings.config.constants.TAG_GROUP_SEPARATOR`;
-a bare name (no separator) is treated as the unnamed/default group.
-:func:`list_groups` enumerates the distinct prefixes; :func:`list_all`
-accepts an optional ``group`` filter that matches via ``LIKE
-"<group>/%"``. This is decided-and-documented; if a future arch
-amendment promotes ``group`` to a first-class column the dataclass
-gains a field and the helpers below stay backward-compatible (the
-slash-namespace convention is additive).
+The tag set is partitioned by :attr:`Tag.class_` into three buckets the
+UI renders as separate filter sections:
+
+* ``project``  — ≤1 per session; drives sidebar grouping.
+* ``severity`` — ≤1 per session; drives the header shield colour;
+  carries no ``default_model`` / ``working_dir`` (rejected in
+  :meth:`Tag.__post_init__`).
+* ``general``  — many per session; catch-all for legacy
+  slash-namespaced tags and free-form labels.
+
+The schema CHECK constraint pins the alphabet
+(:data:`bearings.config.constants.KNOWN_TAG_CLASSES`); new classes
+amend the CHECK. Cardinality is enforced at the API boundary, not the
+schema, so partial create-and-validate flows roll back cleanly.
+
+Within a class, tags render in ``(pinned DESC, sort_order ASC, name
+ASC)`` order. :func:`update_sort_orders` is the atomic per-class
+re-sequencing path used by the drag-to-reorder UI on the ``/tags``
+page.
+
+Tag groups (deprecated)
+-----------------------
+
+Pre-class versions used slash-namespacing on the tag name
+(``<group>/<name>``) — the separator is
+:data:`bearings.config.constants.TAG_GROUP_SEPARATOR`. The convention
+is retained for one release: legacy tags like ``bearings/architect``
+keep working, classified as ``general``. The :attr:`Tag.group`
+property and :func:`list_groups` helper still parse the prefix, marked
+deprecated. New code should use ``class_`` instead.
 
 Public surface:
 
@@ -37,6 +56,7 @@ Public surface:
   :func:`list_for_session`, :func:`list_groups`, :func:`update`,
   :func:`delete` — tag CRUD; same return-shape conventions as
   :mod:`bearings.db.templates`.
+* :func:`update_sort_orders` — atomic per-class re-sequencing.
 * :func:`attach`, :func:`detach`, :func:`set_for_session` — the
   per-session join surface; :func:`set_for_session` is the
   single-call replace path the API layer uses when the user edits a
@@ -52,7 +72,11 @@ import aiosqlite
 from bearings.config.constants import (
     EXECUTOR_MODEL_FULL_ID_PREFIX,
     KNOWN_EXECUTOR_MODELS,
+    KNOWN_TAG_CLASSES,
+    TAG_CLASS_GENERAL,
+    TAG_CLASS_SEVERITY,
     TAG_COLOR_MAX_LENGTH,
+    TAG_DEFAULT_SORT_ORDER,
     TAG_GROUP_SEPARATOR,
     TAG_NAME_MAX_LENGTH,
 )
@@ -69,9 +93,9 @@ class Tag:
     * ``name`` — non-empty, ≤
       :data:`bearings.config.constants.TAG_NAME_MAX_LENGTH` chars,
       UNIQUE across the table. The slash-namespace convention is
-      enforced softly — a name with no
-      :data:`bearings.config.constants.TAG_GROUP_SEPARATOR` is the
-      unnamed/default group.
+      retained for back-compat — a legacy name like
+      ``bearings/architect`` parses via :attr:`group` but the
+      authoritative categorisation is :attr:`class_`.
     * ``color`` — optional cosmetic CSS string;
       ≤ :data:`bearings.config.constants.TAG_COLOR_MAX_LENGTH` chars.
     * ``default_model`` — optional executor short name from
@@ -80,9 +104,18 @@ class Tag:
       :data:`bearings.config.constants.EXECUTOR_MODEL_FULL_ID_PREFIX`
       (mirrors :class:`bearings.db.templates.Template`'s validator and
       :class:`bearings.agent.routing.RoutingDecision`'s alphabet).
+      Severity-class tags must leave this ``None``.
     * ``working_dir`` — optional absolute path the chat inherits when
       this tag is applied (per ``docs/behavior/checklists.md`` "the
       chat inherits the checklist's working directory…").
+      Severity-class tags must leave this ``None``.
+    * ``class_`` — partitions the tag set into ``'project'`` /
+      ``'severity'`` / ``'general'`` (see
+      :data:`bearings.config.constants.KNOWN_TAG_CLASSES`). The Python
+      attribute is suffixed to dodge the keyword; the schema column
+      and JSON wire shape use the bare ``class``.
+    * ``sort_order`` — per-class display order. Lower renders first
+      within its class; ties break on ``name ASC``.
     * ``created_at`` / ``updated_at`` — ISO-8601 UTC strings.
     """
 
@@ -94,6 +127,8 @@ class Tag:
     created_at: str
     updated_at: str
     pinned: bool = False
+    class_: str = TAG_CLASS_GENERAL
+    sort_order: int = TAG_DEFAULT_SORT_ORDER
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -114,15 +149,30 @@ class Tag:
             )
         if self.working_dir is not None and not self.working_dir:
             raise ValueError("Tag.working_dir must be non-empty if provided")
+        if self.class_ not in KNOWN_TAG_CLASSES:
+            raise ValueError(f"Tag.class_ {self.class_!r} is not in {sorted(KNOWN_TAG_CLASSES)}")
+        if self.class_ == TAG_CLASS_SEVERITY:
+            if self.default_model is not None:
+                raise ValueError(
+                    "Tag.default_model must be None for severity-class tags "
+                    "(severity is signalling, not configuration)"
+                )
+            if self.working_dir is not None:
+                raise ValueError(
+                    "Tag.working_dir must be None for severity-class tags "
+                    "(severity is signalling, not configuration)"
+                )
+        if self.sort_order < 0:
+            raise ValueError(f"Tag.sort_order must be non-negative (got {self.sort_order})")
 
     @property
     def group(self) -> str | None:
         """The slash-prefix group, or ``None`` for the default group.
 
         ``"bearings/architect"`` → ``"bearings"``;
-        ``"general"`` → ``None``. Consumers (filter panel, group
-        listing) read this property rather than re-parsing the name at
-        each call site.
+        ``"general"`` → ``None``. **Deprecated** — use :attr:`class_`
+        instead. Retained one release for legacy slash-namespaced
+        names that pre-date the class column.
         """
         sep_index = self.name.find(TAG_GROUP_SEPARATOR)
         if sep_index <= 0:
@@ -150,6 +200,8 @@ async def create(
     color: str | None = None,
     default_model: str | None = None,
     working_dir: str | None = None,
+    class_: str = TAG_CLASS_GENERAL,
+    sort_order: int = TAG_DEFAULT_SORT_ORDER,
 ) -> Tag:
     """Insert a new tag and return the populated dataclass.
 
@@ -158,6 +210,9 @@ async def create(
     uniqueness is enforced by the schema's ``UNIQUE`` constraint;
     :class:`aiosqlite.IntegrityError` surfaces unchanged so the API
     layer can translate to a 409.
+
+    ``class_`` defaults to ``'general'`` so existing callers that
+    pre-date the class column keep working without explicit threading.
     """
     timestamp = now_iso()
     # Build-and-discard a phantom Tag whose only purpose is to fire
@@ -172,14 +227,27 @@ async def create(
         default_model=default_model,
         working_dir=working_dir,
         pinned=False,
+        class_=class_,
+        sort_order=sort_order,
         created_at=timestamp,
         updated_at=timestamp,
     )
     cursor = await connection.execute(
         "INSERT INTO tags "
-        "(name, color, default_model, working_dir, pinned, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (name, color, default_model, working_dir, 0, timestamp, timestamp),
+        "(name, color, default_model, working_dir, pinned, class, sort_order, "
+        " created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            name,
+            color,
+            default_model,
+            working_dir,
+            0,
+            class_,
+            sort_order,
+            timestamp,
+            timestamp,
+        ),
     )
     new_id = cursor.lastrowid
     await cursor.close()
@@ -193,6 +261,8 @@ async def create(
         default_model=default_model,
         working_dir=working_dir,
         pinned=False,
+        class_=class_,
+        sort_order=sort_order,
         created_at=timestamp,
         updated_at=timestamp,
     )
@@ -227,21 +297,41 @@ async def get_by_name(connection: aiosqlite.Connection, name: str) -> Tag | None
 async def list_all(
     connection: aiosqlite.Connection,
     *,
+    class_: str | None = None,
     group: str | None = None,
 ) -> list[Tag]:
-    """Every tag, alphabetically by ``name``; optionally filtered by group prefix.
+    """Every tag, ordered for filter-panel rendering; optionally filtered.
 
-    Group filtering uses ``LIKE "<group>/%"`` against the tag name
-    (slash-namespace convention; see the module docstring). Passing
-    ``group=""`` is equivalent to ``group=None`` (no filter).
+    Default ordering is ``(class ASC, sort_order ASC, name ASC)`` so the
+    filter panel can iterate the result and emit one section per class
+    in row order. Pinned-first ordering is layered by the caller —
+    pinning is a render-time concern, not a query-time one (the
+    sidebar floats pinned chips to the top of their section).
+
+    ``class_`` filters to one of
+    :data:`bearings.config.constants.KNOWN_TAG_CLASSES`; passing
+    ``None`` returns every class.
+
+    ``group`` is the deprecated slash-namespace prefix filter retained
+    for legacy callers; it composes with ``class_`` via AND. Prefer
+    ``class_`` for new code.
     """
+    clauses: list[str] = []
+    params: list[object] = []
+    if class_ is not None:
+        if class_ not in KNOWN_TAG_CLASSES:
+            raise ValueError(f"list_all: class_ {class_!r} not in {sorted(KNOWN_TAG_CLASSES)}")
+        clauses.append("class = ?")
+        params.append(class_)
     if group:
-        cursor = await connection.execute(
-            _SELECT_TAG_COLUMNS + " WHERE name LIKE ? ORDER BY name ASC",
-            (f"{group}{TAG_GROUP_SEPARATOR}%",),
-        )
-    else:
-        cursor = await connection.execute(_SELECT_TAG_COLUMNS + " ORDER BY name ASC")
+        clauses.append("name LIKE ?")
+        params.append(f"{group}{TAG_GROUP_SEPARATOR}%")
+    where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    order_sql = " ORDER BY class ASC, sort_order ASC, name ASC"
+    cursor = await connection.execute(
+        _SELECT_TAG_COLUMNS + where_sql + order_sql,
+        tuple(params),
+    )
     try:
         rows = await cursor.fetchall()
     finally:
@@ -325,6 +415,8 @@ async def update(
     color: str | None,
     default_model: str | None,
     working_dir: str | None,
+    class_: str | None = None,
+    sort_order: int | None = None,
 ) -> Tag | None:
     """Replace a tag's mutable fields; returns the new value (or ``None``).
 
@@ -337,15 +429,45 @@ async def update(
     decided-and-documented (the behavior docs are silent on
     rename-cascade; the schema's id-based join means a rename just
     works).
+
+    ``class_`` and ``sort_order`` are optional for back-compat with
+    callers that pre-date the class column; passing ``None`` keeps the
+    existing value. Pre-INSERT validation runs in
+    :class:`Tag.__post_init__` against a phantom row so a severity tag
+    can never land with a non-null ``default_model`` / ``working_dir``.
     """
     existing = await get(connection, tag_id)
     if existing is None:
         return None
+    new_class = existing.class_ if class_ is None else class_
+    new_sort_order = existing.sort_order if sort_order is None else sort_order
     timestamp = now_iso()
+    # Phantom validate before touching the DB.
+    Tag(
+        id=tag_id,
+        name=name,
+        color=color,
+        default_model=default_model,
+        working_dir=working_dir,
+        pinned=existing.pinned,
+        class_=new_class,
+        sort_order=new_sort_order,
+        created_at=existing.created_at,
+        updated_at=timestamp,
+    )
     cursor = await connection.execute(
         "UPDATE tags SET name = ?, color = ?, default_model = ?, working_dir = ?, "
-        "updated_at = ? WHERE id = ?",
-        (name, color, default_model, working_dir, timestamp, tag_id),
+        "class = ?, sort_order = ?, updated_at = ? WHERE id = ?",
+        (
+            name,
+            color,
+            default_model,
+            working_dir,
+            new_class,
+            new_sort_order,
+            timestamp,
+            tag_id,
+        ),
     )
     await cursor.close()
     await connection.commit()
@@ -356,6 +478,8 @@ async def update(
         default_model=default_model,
         working_dir=working_dir,
         pinned=existing.pinned,
+        class_=new_class,
+        sort_order=new_sort_order,
         created_at=existing.created_at,
         updated_at=timestamp,
     )
@@ -477,9 +601,67 @@ async def update_pinned(
         default_model=existing.default_model,
         working_dir=existing.working_dir,
         pinned=pinned,
+        class_=existing.class_,
+        sort_order=existing.sort_order,
         created_at=existing.created_at,
         updated_at=existing.updated_at,
     )
+
+
+async def update_sort_orders(
+    connection: aiosqlite.Connection,
+    *,
+    class_: str,
+    ordered_ids: tuple[int, ...],
+) -> None:
+    """Re-sequence ``sort_order`` within ``class_`` to match ``ordered_ids``.
+
+    Atomic at the SQLite-transaction level: every UPDATE shares one
+    ``BEGIN ... COMMIT`` so a concurrent reader either sees the prior
+    sequencing or the new sequencing, never a partial mid-replace
+    state. Each id at index ``i`` in ``ordered_ids`` is assigned
+    ``sort_order = i``; ``updated_at`` is **not** bumped (sort_order
+    is a UI-state column, not a content mutation, so it shouldn't
+    invalidate caches keyed on ``updated_at``).
+
+    Validates that ``class_`` is in :data:`KNOWN_TAG_CLASSES` and that
+    every id in ``ordered_ids`` belongs to a tag of that class — a
+    cross-class id is a 422-class API error and the helper raises
+    :class:`ValueError` so the route layer can translate it. The check
+    is done in a single ``SELECT id, class FROM tags WHERE id IN
+    (...)`` rather than per-id round-trip.
+
+    Empty ``ordered_ids`` is a no-op (callers can use the helper as a
+    "validate and apply" path even when the user dragged nothing).
+    """
+    if class_ not in KNOWN_TAG_CLASSES:
+        raise ValueError(
+            f"update_sort_orders: class_ {class_!r} not in {sorted(KNOWN_TAG_CLASSES)}"
+        )
+    if not ordered_ids:
+        return
+    placeholders = ",".join("?" * len(ordered_ids))
+    cursor = await connection.execute(
+        f"SELECT id, class FROM tags WHERE id IN ({placeholders})",
+        ordered_ids,
+    )
+    try:
+        rows = await cursor.fetchall()
+    finally:
+        await cursor.close()
+    found_classes = {int(str(row[0])): str(row[1]) for row in rows}
+    missing = [tag_id for tag_id in ordered_ids if tag_id not in found_classes]
+    if missing:
+        raise ValueError(f"update_sort_orders: tag ids {missing} not found")
+    cross_class = [tag_id for tag_id in ordered_ids if found_classes[tag_id] != class_]
+    if cross_class:
+        raise ValueError(f"update_sort_orders: tag ids {cross_class} are not in class {class_!r}")
+    for index, tag_id in enumerate(ordered_ids):
+        await connection.execute(
+            "UPDATE tags SET sort_order = ? WHERE id = ?",
+            (index, tag_id),
+        )
+    await connection.commit()
 
 
 # Single source of truth for the column list — keeps the SELECT in
@@ -487,7 +669,8 @@ async def update_pinned(
 # string and :func:`_row_to_tag` together.
 _SELECT_TAG_COLUMNS = (
     "SELECT tags.id, tags.name, tags.color, tags.default_model, tags.working_dir, "
-    "tags.pinned, tags.created_at, tags.updated_at FROM tags"
+    "tags.pinned, tags.class, tags.sort_order, tags.created_at, tags.updated_at "
+    "FROM tags"
 )
 
 
@@ -500,8 +683,10 @@ def _row_to_tag(row: aiosqlite.Row | tuple[object, ...]) -> Tag:
         default_model=None if row[3] is None else str(row[3]),
         working_dir=None if row[4] is None else str(row[4]),
         pinned=bool(row[5]),
-        created_at=str(row[6]),
-        updated_at=str(row[7]),
+        class_=str(row[6]),
+        sort_order=int(str(row[7])),
+        created_at=str(row[8]),
+        updated_at=str(row[9]),
     )
 
 
@@ -520,4 +705,5 @@ __all__ = [
     "set_for_session",
     "update",
     "update_pinned",
+    "update_sort_orders",
 ]

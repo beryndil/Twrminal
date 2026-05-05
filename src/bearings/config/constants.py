@@ -579,16 +579,39 @@ TAG_NAME_MAX_LENGTH: Final[int] = 200
 # enough that an absurd value can't bloat the row.
 TAG_COLOR_MAX_LENGTH: Final[int] = 64
 
-# Tag-group separator. The schema does not declare a separate
-# ``tag_groups`` table; tag groups are expressed by slash-namespacing
-# the tag name (``<group>/<name>``). The separator is a single character
-# so the group prefix is unambiguous and a bare name (no separator) is
-# treated as the unnamed/default group. Decided-and-documented per the
-# item-1.4 done-when's "tag groups" requirement: the schema landed in
-# 0.4 with no group column, so the rebuild adopts the slash-namespace
-# convention already in test fixtures (``bearings/architect``,
-# ``bearings/exec``).
+# Tag-group separator. **Deprecated** as of the tag-class feature (the
+# ``tags.class`` column replaces slash-namespace as the categorisation
+# primitive). Retained for one release as a back-compat shim — the
+# ``Tag.group`` property and ``list_groups`` helper still parse legacy
+# slash-prefixed names so existing tags like ``bearings/architect``
+# continue to render correctly under the "general" class. New code
+# should not introduce slash-prefixed names; use ``class_`` instead.
 TAG_GROUP_SEPARATOR: Final[str] = "/"
+
+# Tag class enum — partitions the tag set into project-level (one per
+# session, drives sidebar grouping), severity-level (zero-or-one per
+# session, drives the header shield), and general (legacy / free-form,
+# many per session). Mirrors the schema CHECK constraint on
+# ``tags.class``. Cardinality is enforced at the API boundary by
+# :func:`bearings.web.routes.tags._validate_tag_cardinality`; the
+# schema permits any number of any class so a half-built create
+# transaction can roll back cleanly. Severity-class tags carry no
+# ``default_model`` / ``working_dir`` (validated in
+# :class:`bearings.db.tags.Tag.__post_init__`).
+TAG_CLASS_PROJECT: Final[str] = "project"
+TAG_CLASS_SEVERITY: Final[str] = "severity"
+TAG_CLASS_GENERAL: Final[str] = "general"
+KNOWN_TAG_CLASSES: Final[frozenset[str]] = frozenset(
+    {TAG_CLASS_PROJECT, TAG_CLASS_SEVERITY, TAG_CLASS_GENERAL}
+)
+
+# Default sort_order for newly-created tags. Per-class scope: a fresh
+# project tag and a fresh severity tag both start at 0, and the user
+# drag-reorders within each class panel via
+# :func:`bearings.db.tags.update_sort_orders`. Listings break ties on
+# ``name ASC`` so two zero-order tags render alphabetically until the
+# user re-sequences them.
+TAG_DEFAULT_SORT_ORDER: Final[int] = 0
 
 # Tag-memory title maximum length. Titles surface in the memories editor
 # UI (per ``docs/behavior/vault.md`` cross-reference) as a one-line
@@ -1293,6 +1316,7 @@ __all__ = [
     "KNOWN_SDK_SETTING_SOURCES",
     "KNOWN_SENTINEL_KINDS",
     "KNOWN_SESSION_KINDS",
+    "KNOWN_TAG_CLASSES",
     "KNOWN_VAULT_KINDS",
     "MAX_CHECKPOINTS_PER_SESSION",
     "MAX_UPLOAD_SIZE_BYTES",
@@ -1384,7 +1408,11 @@ __all__ = [
     "STREAM_MAX_DELTA_CHARS",
     "STREAM_MAX_TOOL_OUTPUT_CHARS",
     "STREAM_TRUNCATION_MARKER_TEMPLATE",
+    "TAG_CLASS_GENERAL",
+    "TAG_CLASS_PROJECT",
+    "TAG_CLASS_SEVERITY",
     "TAG_COLOR_MAX_LENGTH",
+    "TAG_DEFAULT_SORT_ORDER",
     "TAG_GROUP_SEPARATOR",
     "TAG_MEMORY_BODY_MAX_LENGTH",
     "TAG_MEMORY_TITLE_MAX_LENGTH",

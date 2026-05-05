@@ -104,6 +104,27 @@ _ADDED_COLUMNS: Final[tuple[tuple[str, str, str], ...]] = (
     # G4 tag context-menu columns — landed after initial schema.sql ship.
     # Existing tags default to 0 (unpinned).
     ("tags", "pinned", "INTEGER NOT NULL DEFAULT 0"),
+    # Tag-class feature columns — landed after initial schema.sql ship.
+    # Existing tags default to 'general' (legacy slash-namespaced names
+    # carry forward unchanged) and sort_order 0 (alphabetical fallback
+    # within the class until the user drag-reorders).
+    (
+        "tags",
+        "class",
+        "TEXT NOT NULL DEFAULT 'general' CHECK (class IN ('project', 'severity', 'general'))",
+    ),
+    ("tags", "sort_order", "INTEGER NOT NULL DEFAULT 0"),
+)
+
+
+# Indexes that reference columns introduced via ``_ADDED_COLUMNS``.
+# These must be created **after** the ALTER pass so a legacy DB
+# (whose live tags table predates the column the index references)
+# does not raise ``no such column`` on the very first re-init. Fresh
+# DBs hit the same code path harmlessly because every CREATE INDEX
+# is gated on ``IF NOT EXISTS``.
+_POST_ALTER_INDEXES: Final[tuple[str, ...]] = (
+    "CREATE INDEX IF NOT EXISTS idx_tags_class_sort_order ON tags(class, sort_order ASC, name ASC)",
 )
 
 
@@ -114,6 +135,10 @@ async def _ensure_added_columns(connection: aiosqlite.Connection) -> None:
     added only when ``PRAGMA table_info(<table>)`` does not already
     list it. Keeps ``load_schema`` a single idempotent entrypoint
     rather than scattering ALTERs across migration files.
+
+    After every ALTER lands, runs :data:`_POST_ALTER_INDEXES` so any
+    index that references a freshly-added column is built against the
+    new shape, not the stale one.
     """
     for table, column, column_type in _ADDED_COLUMNS:
         async with connection.execute(f"PRAGMA table_info({table})") as cursor:
@@ -123,3 +148,5 @@ async def _ensure_added_columns(connection: aiosqlite.Connection) -> None:
             await connection.execute(
                 f"ALTER TABLE {table} ADD COLUMN {column} {column_type}",
             )
+    for index_sql in _POST_ALTER_INDEXES:
+        await connection.execute(index_sql)

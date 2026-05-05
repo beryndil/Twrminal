@@ -244,6 +244,104 @@ async def test_messages_has_routing_and_usage_columns_per_spec(
         )
 
 
+async def test_tags_has_class_and_sort_order_columns(database_path: Path) -> None:
+    """Tag-class feature columns are present after bootstrap (fresh DB)."""
+    factory = get_connection_factory(database_path)
+    async with factory() as connection:
+        await load_schema(connection)
+        column_types = await _column_types(connection, "tags")
+
+    assert "class" in column_types, "tags.class missing — schema.sql or _ADDED_COLUMNS regression"
+    assert column_types["class"] == "TEXT"
+    assert "sort_order" in column_types, "tags.sort_order missing"
+    assert column_types["sort_order"] == "INTEGER"
+
+
+async def test_tags_class_check_constraint_rejects_unknown(database_path: Path) -> None:
+    """The CHECK on ``tags.class`` enforces the alphabet at the DB layer."""
+    factory = get_connection_factory(database_path)
+    async with factory() as connection:
+        await load_schema(connection)
+        with pytest.raises(aiosqlite.IntegrityError):
+            await connection.execute(
+                "INSERT INTO tags (name, class, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                (
+                    "bad",
+                    "milestone",
+                    "2026-04-28T00:00:00+00:00",
+                    "2026-04-28T00:00:00+00:00",
+                ),
+            )
+            await connection.commit()
+
+
+async def test_tags_class_sort_order_index_exists(database_path: Path) -> None:
+    """``idx_tags_class_sort_order`` index is created so listings stay cheap."""
+    factory = get_connection_factory(database_path)
+    async with factory() as connection:
+        await load_schema(connection)
+        rows = await connection.execute_fetchall(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'tags'"
+        )
+        index_names = {str(row[0]) for row in rows}
+
+    assert "idx_tags_class_sort_order" in index_names, (
+        f"expected idx_tags_class_sort_order in {sorted(index_names)}"
+    )
+
+
+async def test_tags_added_columns_apply_to_pre_class_db(database_path: Path) -> None:
+    """A DB created before the class column gets the column added on next bootstrap.
+
+    Simulates an existing v1 install that pre-dates the tag-class feature
+    by creating ``tags`` with the original column set, then re-running
+    :func:`load_schema` and verifying the new columns + index appear via
+    the ``_ADDED_COLUMNS`` ALTER path.
+    """
+    factory = get_connection_factory(database_path)
+    async with factory() as connection:
+        # Pre-class shape — every column the original schema.sql shipped
+        # *before* the tag-class feature. The ``IF NOT EXISTS`` clause in
+        # the bootstrap-time CREATE TABLE will skip on re-init, leaving
+        # the legacy shape intact for the ALTER pass to fix up.
+        await connection.execute(
+            "CREATE TABLE tags ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "name TEXT NOT NULL UNIQUE, "
+            "color TEXT, "
+            "default_model TEXT, "
+            "working_dir TEXT, "
+            "pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)), "
+            "created_at TEXT NOT NULL, "
+            "updated_at TEXT NOT NULL"
+            ")"
+        )
+        await connection.commit()
+
+        # Now re-run bootstrap — _ADDED_COLUMNS should ALTER in class +
+        # sort_order without touching the existing rows.
+        await connection.execute(
+            "INSERT INTO tags (name, created_at, updated_at) VALUES (?, ?, ?)",
+            ("legacy", "2026-04-28T00:00:00+00:00", "2026-04-28T00:00:00+00:00"),
+        )
+        await connection.commit()
+
+        await load_schema(connection)
+        column_types = await _column_types(connection, "tags")
+        assert "class" in column_types
+        assert "sort_order" in column_types
+
+        # Existing row gets the column DEFAULTs.
+        rows = list(
+            await connection.execute_fetchall(
+                "SELECT class, sort_order FROM tags WHERE name = ?", ("legacy",)
+            )
+        )
+        assert len(rows) == 1
+        assert str(rows[0][0]) == "general"
+        assert int(rows[0][1]) == 0
+
+
 async def test_foreign_keys_pragma_is_on_after_bootstrap(
     database_path: Path,
 ) -> None:

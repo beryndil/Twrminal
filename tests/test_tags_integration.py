@@ -24,6 +24,11 @@ from pathlib import Path
 import aiosqlite
 import pytest
 
+from bearings.config.constants import (
+    TAG_CLASS_GENERAL,
+    TAG_CLASS_PROJECT,
+    TAG_CLASS_SEVERITY,
+)
 from bearings.db import get_connection_factory, load_schema
 from bearings.db.tags import (
     Tag,
@@ -38,6 +43,7 @@ from bearings.db.tags import (
     list_groups,
     set_for_session,
     update,
+    update_sort_orders,
 )
 
 
@@ -254,3 +260,200 @@ async def test_create_invalid_default_model_raises_before_db(
         await create(connection, name="bad", default_model="not-a-model")
     rows = await list_all(connection)
     assert rows == []
+
+
+# ---------------------------------------------------------------------------
+# class_ + sort_order — tag-class feature
+# ---------------------------------------------------------------------------
+
+
+async def test_create_with_class_round_trips(connection: aiosqlite.Connection) -> None:
+    """Class column persists round-trip via :func:`get`."""
+    tag = await create(
+        connection,
+        name="bearings",
+        class_=TAG_CLASS_PROJECT,
+        default_model="opus",
+        working_dir="/home/dave/proj",
+    )
+    assert tag.class_ == TAG_CLASS_PROJECT
+    fetched = await get(connection, tag.id)
+    assert fetched is not None
+    assert fetched.class_ == TAG_CLASS_PROJECT
+
+
+async def test_create_severity_with_inheritance_field_rejected(
+    connection: aiosqlite.Connection,
+) -> None:
+    """Phantom-validate fires before DB write — severity + default_model is rejected."""
+    with pytest.raises(ValueError, match="default_model"):
+        await create(
+            connection,
+            name="urgent",
+            class_=TAG_CLASS_SEVERITY,
+            default_model="opus",
+        )
+    assert await list_all(connection) == []
+
+
+async def test_create_defaults_to_general_class(
+    connection: aiosqlite.Connection,
+) -> None:
+    """Pre-class call site (no class_ kwarg) lands as ``general``."""
+    tag = await create(connection, name="freeform")
+    assert tag.class_ == TAG_CLASS_GENERAL
+    assert tag.sort_order == 0
+
+
+async def test_list_all_orders_by_class_then_sort_order(
+    connection: aiosqlite.Connection,
+) -> None:
+    """``(class ASC, sort_order ASC, name ASC)`` is the canonical render order."""
+    await create(connection, name="z-general")
+    await create(connection, name="a-general")
+    await create(
+        connection,
+        name="b-project",
+        class_=TAG_CLASS_PROJECT,
+        sort_order=2,
+    )
+    await create(
+        connection,
+        name="a-project",
+        class_=TAG_CLASS_PROJECT,
+        sort_order=1,
+    )
+    await create(
+        connection,
+        name="high",
+        class_=TAG_CLASS_SEVERITY,
+        sort_order=10,
+    )
+    rows = await list_all(connection)
+    # Class order: general < project < severity (alphabetical within class
+    # is the SQL-level fallback). Within-class: sort_order ASC, name ASC.
+    assert [t.name for t in rows] == [
+        "a-general",
+        "z-general",
+        "a-project",
+        "b-project",
+        "high",
+    ]
+
+
+async def test_list_all_filters_by_class(connection: aiosqlite.Connection) -> None:
+    """``class_=`` filter returns only the requested class."""
+    await create(connection, name="freeform")
+    await create(connection, name="bearings", class_=TAG_CLASS_PROJECT)
+    await create(connection, name="archon", class_=TAG_CLASS_PROJECT)
+    rows = await list_all(connection, class_=TAG_CLASS_PROJECT)
+    assert {t.name for t in rows} == {"bearings", "archon"}
+    assert all(t.class_ == TAG_CLASS_PROJECT for t in rows)
+
+
+async def test_list_all_class_filter_rejects_unknown(
+    connection: aiosqlite.Connection,
+) -> None:
+    with pytest.raises(ValueError, match="class_"):
+        await list_all(connection, class_="milestone")
+
+
+async def test_update_sort_orders_resequences_within_class(
+    connection: aiosqlite.Connection,
+) -> None:
+    """Drag-reorder path: ids in the new order get sort_order = index."""
+    a = await create(connection, name="a", class_=TAG_CLASS_PROJECT, sort_order=0)
+    b = await create(connection, name="b", class_=TAG_CLASS_PROJECT, sort_order=1)
+    c = await create(connection, name="c", class_=TAG_CLASS_PROJECT, sort_order=2)
+    await update_sort_orders(
+        connection,
+        class_=TAG_CLASS_PROJECT,
+        ordered_ids=(c.id, a.id, b.id),
+    )
+    rows = await list_all(connection, class_=TAG_CLASS_PROJECT)
+    assert [t.name for t in rows] == ["c", "a", "b"]
+
+
+async def test_update_sort_orders_rejects_cross_class(
+    connection: aiosqlite.Connection,
+) -> None:
+    """A project id cannot appear in a severity re-sequence call."""
+    proj = await create(connection, name="proj", class_=TAG_CLASS_PROJECT)
+    sev = await create(connection, name="sev", class_=TAG_CLASS_SEVERITY)
+    with pytest.raises(ValueError, match="not in class"):
+        await update_sort_orders(
+            connection,
+            class_=TAG_CLASS_SEVERITY,
+            ordered_ids=(sev.id, proj.id),
+        )
+
+
+async def test_update_sort_orders_rejects_missing_id(
+    connection: aiosqlite.Connection,
+) -> None:
+    with pytest.raises(ValueError, match="not found"):
+        await update_sort_orders(
+            connection,
+            class_=TAG_CLASS_PROJECT,
+            ordered_ids=(99_999,),
+        )
+
+
+async def test_update_sort_orders_empty_is_noop(
+    connection: aiosqlite.Connection,
+) -> None:
+    a = await create(connection, name="a", class_=TAG_CLASS_PROJECT, sort_order=5)
+    await update_sort_orders(connection, class_=TAG_CLASS_PROJECT, ordered_ids=())
+    fetched = await get(connection, a.id)
+    assert fetched is not None
+    assert fetched.sort_order == 5
+
+
+async def test_update_sort_orders_rejects_unknown_class(
+    connection: aiosqlite.Connection,
+) -> None:
+    with pytest.raises(ValueError, match="class_"):
+        await update_sort_orders(connection, class_="milestone", ordered_ids=(1,))
+
+
+async def test_update_can_change_class(connection: aiosqlite.Connection) -> None:
+    """Promoting a general tag to project class persists round-trip."""
+    tag = await create(connection, name="bearings")
+    assert tag.class_ == TAG_CLASS_GENERAL
+    updated = await update(
+        connection,
+        tag.id,
+        name="bearings",
+        color=None,
+        default_model="opus",
+        working_dir="/home/dave/proj",
+        class_=TAG_CLASS_PROJECT,
+    )
+    assert updated is not None
+    assert updated.class_ == TAG_CLASS_PROJECT
+    assert updated.default_model == "opus"
+    refetched = await get(connection, tag.id)
+    assert refetched is not None
+    assert refetched.class_ == TAG_CLASS_PROJECT
+
+
+async def test_update_to_severity_strips_inheritance_via_validator(
+    connection: aiosqlite.Connection,
+) -> None:
+    """Promoting to severity while keeping default_model is rejected by the validator."""
+    tag = await create(
+        connection,
+        name="urgent",
+        default_model="opus",
+        working_dir="/x",
+    )
+    with pytest.raises(ValueError, match="default_model"):
+        await update(
+            connection,
+            tag.id,
+            name="urgent",
+            color=None,
+            default_model="opus",
+            working_dir=None,
+            class_=TAG_CLASS_SEVERITY,
+        )

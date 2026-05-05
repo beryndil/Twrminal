@@ -148,15 +148,33 @@ CREATE INDEX IF NOT EXISTS idx_messages_routing_source
     ON messages(routing_source) WHERE routing_source IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
--- tags — top-level categorisation. Every chat or checklist session must
--- carry ≥1 tag (enforced at the API boundary, not at the schema level —
--- the schema permits zero rows in session_tags so a half-built create
--- transaction can roll back cleanly).
+-- tags — top-level categorisation. Sessions may carry any number of tags
+-- (the API boundary enforces "≤1 project, ≤1 severity" cardinality on
+-- bulk replace; the schema permits any combination so a half-built
+-- create transaction can roll back cleanly).
+--
+-- `class` partitions the tag set into three buckets the UI renders as
+-- separate filter sections (per docs/behavior/chat.md and
+-- docs/behavior/context-menus.md):
+--   • 'project'  — drives sidebar grouping; ≤1 per session.
+--   • 'severity' — drives the header shield colour; ≤1 per session.
+--                  Severity tags carry no `default_model` / `working_dir`
+--                  (validated in :class:`bearings.db.tags.Tag`).
+--   • 'general'  — many per session; the catch-all for legacy
+--                  slash-namespaced tags and free-form labels.
+-- The CHECK constraint pins the alphabet; new classes amend the CHECK.
+--
+-- `sort_order` is per-class display order. The user drag-reorders within
+-- each class panel via :func:`bearings.db.tags.update_sort_orders`.
+-- Listings break ties on `name ASC` so two zero-order tags render
+-- alphabetically until re-sequenced.
 --
 -- `default_model` and `working_dir` are the inheritance fields described
 -- in docs/behavior/chat.md ("the chat inherits the checklist's working
 -- directory, model, and tags") and docs/behavior/checklists.md
--- ("inherits the checklist's working directory, model, and tags").
+-- ("inherits the checklist's working directory, model, and tags"). Only
+-- 'project' and 'general' tags carry these; 'severity' rejects them at
+-- the dataclass boundary.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS tags (
     id                       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,9 +183,19 @@ CREATE TABLE IF NOT EXISTS tags (
     default_model            TEXT,
     working_dir              TEXT,
     pinned                   INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+    class                    TEXT    NOT NULL DEFAULT 'general'
+                                     CHECK (class IN ('project', 'severity', 'general')),
+    sort_order               INTEGER NOT NULL DEFAULT 0,
     created_at               TEXT    NOT NULL,
     updated_at               TEXT    NOT NULL
 );
+
+-- The class+sort_order index is created in db/connection.py after the
+-- ``_ensure_added_columns`` ALTER pass so a legacy DB that pre-dates
+-- the tag-class columns gets the columns added before the index that
+-- references them is built. (CREATE INDEX inside this script would
+-- evaluate against the legacy table shape on the first re-init and
+-- raise ``no such column: class``.)
 
 -- session_tags — many-to-many between sessions and tags.
 CREATE TABLE IF NOT EXISTS session_tags (
