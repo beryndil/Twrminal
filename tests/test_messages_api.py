@@ -100,14 +100,14 @@ async def test_list_messages_returns_routing_and_usage_fields(
         decision=_decision(),
         model_usage={
             "claude-haiku-4-5": {
-                "input_tokens": 80,
-                "output_tokens": 200,
-                "cache_read_input_tokens": 50,
+                "inputTokens": 80,
+                "outputTokens": 200,
+                "cacheReadInputTokens": 50,
             },
             "claude-opus-4-6": {
-                "input_tokens": 30,
-                "output_tokens": 150,
-                "cache_read_input_tokens": 0,
+                "inputTokens": 30,
+                "outputTokens": 150,
+                "cacheReadInputTokens": 0,
             },
         },
     )

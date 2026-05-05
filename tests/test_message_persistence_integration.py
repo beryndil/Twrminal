@@ -69,14 +69,14 @@ async def test_persist_writes_every_spec_5_column(
     decision = _decision()
     model_usage = {
         "claude-sonnet-4-6": {
-            "input_tokens": 1500,
-            "output_tokens": 400,
-            "cache_read_input_tokens": 2000,
+            "inputTokens": 1500,
+            "outputTokens": 400,
+            "cacheReadInputTokens": 2000,
         },
         "claude-opus-4-6": {
-            "input_tokens": 80,
-            "output_tokens": 30,
-            "cache_read_input_tokens": 10,
+            "inputTokens": 80,
+            "outputTokens": 30,
+            "cacheReadInputTokens": 10,
         },
     }
     msg = await persist_assistant_turn(
@@ -170,9 +170,9 @@ async def test_persist_no_advisor_decision_records_null_advisor_model(
         decision=decision,
         model_usage={
             "claude-opus-4-7": {
-                "input_tokens": 5000,
-                "output_tokens": 800,
-                "cache_read_input_tokens": 100,
+                "inputTokens": 5000,
+                "outputTokens": 800,
+                "cacheReadInputTokens": 100,
             },
         },
     )

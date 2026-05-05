@@ -393,9 +393,9 @@ def test_result_message_emits_message_complete_with_routing_usage() -> None:
         structured_output=None,
         model_usage={
             "claude-sonnet-4-6": {
-                "input_tokens": 100,
-                "output_tokens": 50,
-                "cache_read_input_tokens": 25,
+                "inputTokens": 100,
+                "outputTokens": 50,
+                "cacheReadInputTokens": 25,
             }
         },
         permission_denials=None,

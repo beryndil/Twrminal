@@ -788,20 +788,23 @@ BEARINGS_TODO_CHECK_DEFAULT_MAX_AGE_DAYS: Final[int] = 30
 #
 # The SDK exposes ``ResultMessage.model_usage`` as ``dict[str, Any] | None``
 # (verified via the installed ``claude_agent_sdk.types.ResultMessage``
-# dataclass shape, 2026-04-28). At runtime each value is a per-model dict
-# whose token-bucket keys mirror the Anthropic API convention for the
-# Messages endpoint's usage block. Pinning the key names here as named
-# constants means a future SDK rename (e.g. ``input_tokens`` →
-# ``inputTokens``) is a one-line edit; without these, the projection
-# in ``agent/persistence.py`` would carry inline literals that the
-# auditor flags per coding-standards §"no inline string literals".
+# dataclass shape). At runtime each value is a per-model dict whose
+# token-bucket keys are the **camelCase** keys the CLI emits on the
+# wire and the SDK forwards verbatim from
+# ``_internal/message_parser.py:236`` (``model_usage=data.get("modelUsage")``).
+# The top-level ``ResultMessage.usage`` field uses snake_case (Anthropic
+# Messages API convention); the per-model breakdown does not. Confirmed
+# by inspecting a live ``ResultMessage.model_usage`` dict — keys are
+# ``inputTokens`` / ``outputTokens`` / ``cacheReadInputTokens`` /
+# ``cacheCreationInputTokens`` / ``costUSD`` / ``webSearchRequests`` /
+# ``contextWindow`` / ``maxOutputTokens``. Pinning the names as named
+# constants means a future SDK rename is a one-line edit; without these,
+# the projection in ``agent/persistence.py`` would carry inline literals
+# that the auditor flags per coding-standards §"no inline string literals".
 # ---------------------------------------------------------------------------
-MODEL_USAGE_KEY_INPUT_TOKENS: Final[str] = "input_tokens"
-MODEL_USAGE_KEY_OUTPUT_TOKENS: Final[str] = "output_tokens"
-# Cache-read token bucket. The Anthropic Messages API uses
-# ``cache_read_input_tokens``; the SDK forwards the same key on the
-# per-model dict.
-MODEL_USAGE_KEY_CACHE_READ_TOKENS: Final[str] = "cache_read_input_tokens"
+MODEL_USAGE_KEY_INPUT_TOKENS: Final[str] = "inputTokens"
+MODEL_USAGE_KEY_OUTPUT_TOKENS: Final[str] = "outputTokens"
+MODEL_USAGE_KEY_CACHE_READ_TOKENS: Final[str] = "cacheReadInputTokens"
 
 # ``GET /api/sessions/{id}/messages`` page-size cap. The endpoint
 # returns the full transcript by default — for very long sessions a
