@@ -52,9 +52,25 @@
           "tags"
         ],
         "summary": "List Tags",
-        "description": "Every tag, alphabetical; optional ``?group=`` filter for the prefix.",
+        "description": "Every tag, ordered ``(class, sort_order, name)``; optional filters.\n\n``?class_=`` filters to ``project`` / ``severity`` / ``general``;\n422 on an unknown value. ``?group=`` is the deprecated slash-prefix\nfilter, retained for one release. Both compose via AND when set.",
         "operationId": "list_tags_api_tags_get",
         "parameters": [
+          {
+            "name": "class_",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Class "
+            }
+          },
           {
             "name": "group",
             "in": "query",
@@ -100,13 +116,48 @@
         }
       }
     },
+    "/api/tags/sort-order": {
+      "put": {
+        "tags": [
+          "tags"
+        ],
+        "summary": "Update Tags Sort Order",
+        "description": "Re-sequence ``sort_order`` within ``payload.class_`` to match the id list.\n\nDrag-to-reorder path on the ``/tags`` page. Each id at index ``i``\nin ``ordered_ids`` gets ``sort_order = i``. Empty ``ordered_ids``\nis a no-op (validates the class only). 422 if any id is missing\nor belongs to a different class.",
+        "operationId": "update_tags_sort_order_api_tags_sort_order_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagSortOrderUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tag-groups": {
       "get": {
         "tags": [
           "tags"
         ],
         "summary": "List Tag Groups",
-        "description": "Distinct slash-prefix groups across the tag set.",
+        "description": "Distinct slash-prefix groups across the tag set.\n\n**Deprecated** \u2014 the slash-namespace concept is superseded by the\n:class:`Tag.class_` column. Retained for one release so v0.18.x\nfrontend builds keep rendering. Frontend should migrate to\n``GET /api/tags?class_=...``.",
         "operationId": "list_tag_groups_api_tag_groups_get",
         "responses": {
           "200": {
@@ -123,7 +174,8 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/tags/{tag_id}": {
@@ -2291,7 +2343,7 @@
           "sessions"
         ],
         "summary": "Create Session",
-        "description": "Create a session row + attach tags atomically.\n\nPer arch \u00a71.1.5 the v1 session-create surface \u2014 the closing-sweep\naudit (2026-05-02) found this endpoint missing despite the master\nchecklist marking the item DONE.\n\nValidation precedence:\n\n* ``kind`` must be in :data:`KNOWN_SESSION_KINDS` \u2192 422 otherwise.\n* Every id in ``tag_ids`` must reference an existing tag row \u2192 404\n  with the missing list otherwise. Tag existence is checked BEFORE\n  :func:`sessions_db.create` so a bad tag id never leaves an\n  orphaned session.\n* Deeper field invariants (model name format, permission-mode enum,\n  title bounds beyond Pydantic's) raise ``ValueError`` from\n  :class:`Session.__post_init__` and surface as 422.\n\nReturns 201 with ``Location: /api/sessions/<id>``.",
+        "description": "Create a session row + attach tags atomically.\n\nPer arch \u00a71.1.5 the v1 session-create surface \u2014 the closing-sweep\naudit (2026-05-02) found this endpoint missing despite the master\nchecklist marking the item DONE.\n\nValidation precedence:\n\n* ``kind`` must be in :data:`KNOWN_SESSION_KINDS` \u2192 422 otherwise.\n* Every id in ``tag_ids`` must reference an existing tag row \u2192 404\n  with the missing list otherwise. Tag existence is checked BEFORE\n  :func:`sessions_db.create` so a bad tag id never leaves an\n  orphaned session.\n* ``working_dir`` is required. If omitted, the first tag (in order)\n  with a non-null ``working_dir`` is used. Returns 422 if both the\n  payload field is None/omitted and no tag provides a directory.\n* Deeper field invariants (model name format, permission-mode enum,\n  title bounds beyond Pydantic's) raise ``ValueError`` from\n  :class:`Session.__post_init__` and surface as 422.\n\nReturns 201 with ``Location: /api/sessions/<id>``.",
         "operationId": "create_session_api_sessions_post",
         "requestBody": {
           "required": true,
@@ -6809,8 +6861,15 @@
             "title": "Title"
           },
           "working_dir": {
-            "type": "string",
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Working Dir"
           },
           "model": {
@@ -6898,11 +6957,10 @@
         "required": [
           "kind",
           "title",
-          "working_dir",
           "model"
         ],
         "title": "SessionCreate",
-        "description": "Request shape for ``POST /api/sessions``.\n\nPer arch \u00a71.1.5 the v1 session-create surface. The Pydantic shape\nenforces field shape; the route handler enforces ``kind`` membership\nin :data:`KNOWN_SESSION_KINDS`, that ``tag_ids`` references existing\nrows, and the deeper dataclass invariants (model name format,\npermission-mode enum, etc.) via :class:`Session.__post_init__`.\n\n``tag_ids`` defaults to the empty list \u2014 the new-session form\nenforces \"\u22651 tag\" at the UI layer; the API accepts zero so a CLI\nor test caller can create an untagged session without first\ncreating a tag.\n\nThe three ``routing_*`` fields carry the routing-decision projection\nso the supervisor respawn path can reconstruct the full\n:class:`bearings.agent.routing.RoutingDecision` without falling\nback to template defaults. ``routing_advisor_model=None`` means \"no\nadvisor\"; omitting these fields uses the same defaults as the\nsession-bootstrap fallback."
+        "description": "Request shape for ``POST /api/sessions``.\n\nPer arch \u00a71.1.5 the v1 session-create surface. The Pydantic shape\nenforces field shape; the route handler enforces ``kind`` membership\nin :data:`KNOWN_SESSION_KINDS`, that ``tag_ids`` references existing\nrows, and the deeper dataclass invariants (model name format,\npermission-mode enum, etc.) via :class:`Session.__post_init__`.\n\n``working_dir`` is optional. If omitted, the route handler derives it\nfrom the first tag in ``tag_ids`` (in order) that has a non-null\n``working_dir`` set. Returns 422 if both ``working_dir`` is omitted\nand no tag provides a directory.\n\n``tag_ids`` defaults to the empty list \u2014 the new-session form\nenforces \"\u22651 tag\" at the UI layer; the API accepts zero so a CLI\nor test caller can create an untagged session without first\ncreating a tag. When multiple tags are supplied, their order in the\nlist determines priority: index 0 = highest priority.\n\nThe three ``routing_*`` fields carry the routing-decision projection\nso the supervisor respawn path can reconstruct the full\n:class:`bearings.agent.routing.RoutingDecision` without falling\nback to template defaults. ``routing_advisor_model=None`` means \"no\nadvisor\"; omitting these fields uses the same defaults as the\nsession-bootstrap fallback."
       },
       "SessionModelUpdate": {
         "properties": {
@@ -7506,6 +7564,22 @@
               }
             ],
             "title": "Working Dir"
+          },
+          "class_": {
+            "type": "string",
+            "enum": [
+              "project",
+              "severity",
+              "general"
+            ],
+            "title": "Class",
+            "default": "general"
+          },
+          "sort_order": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "default": 0
           }
         },
         "additionalProperties": false,
@@ -7514,7 +7588,7 @@
           "name"
         ],
         "title": "TagIn",
-        "description": "Request body for ``POST /api/tags`` and ``PATCH /api/tags/{id}``.\n\nThe validators mirror :class:`bearings.db.tags.Tag.__post_init__`\nso a bad payload fails at the wire boundary with a 422 rather than\nsurfacing a 500 from the dataclass downstream. ``model_config``\nforbids extra fields so a typo (e.g. ``defaultModel`` instead of\n``default_model``) is rejected loudly."
+        "description": "Request body for ``POST /api/tags`` and ``PATCH /api/tags/{id}``.\n\nThe validators mirror :class:`bearings.db.tags.Tag.__post_init__`\nso a bad payload fails at the wire boundary with a 422 rather than\nsurfacing a 500 from the dataclass downstream. ``model_config``\nforbids extra fields so a typo (e.g. ``defaultModel`` instead of\n``default_model``) is rejected loudly.\n\nThe ``class_`` field is the tag-class feature partition; the\ntrailing underscore matches the Python attribute on\n:class:`bearings.db.tags.Tag` and the JSON wire key (uniform\nnaming across the layer rather than aliasing ``class`` only on\nthe wire)."
       },
       "TagMemoryIn": {
         "properties": {
@@ -7637,6 +7711,19 @@
             "type": "boolean",
             "title": "Pinned"
           },
+          "class_": {
+            "type": "string",
+            "enum": [
+              "project",
+              "severity",
+              "general"
+            ],
+            "title": "Class"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
           "group": {
             "anyOf": [
               {
@@ -7666,12 +7753,14 @@
           "default_model",
           "working_dir",
           "pinned",
+          "class_",
+          "sort_order",
           "group",
           "created_at",
           "updated_at"
         ],
         "title": "TagOut",
-        "description": "Response body for tag endpoints.\n\n``group`` is computed from ``name`` (slash-namespace convention per\n:data:`bearings.config.constants.TAG_GROUP_SEPARATOR`) and exposed\nso the frontend filter panel doesn't have to re-parse it.\n``pinned`` controls sidebar sort order \u2014 pinned tags float to the\ntop of the filter panel per context-menus \u00a7\"Tag\"."
+        "description": "Response body for tag endpoints.\n\n``class_`` partitions the tag into project / severity / general\n(see :data:`bearings.config.constants.KNOWN_TAG_CLASSES`).\n``sort_order`` is the per-class display order. ``pinned`` floats\nthe tag to the top of its class section per context-menus \u00a7\"Tag\".\n\n``group`` is the deprecated slash-prefix carrier (parsed from\n``name``); retained for back-compat with v0.18.x frontend builds\nthat still consume it. New consumers should use ``class_``."
       },
       "TagPinnedUpdate": {
         "properties": {
@@ -7687,6 +7776,33 @@
         ],
         "title": "TagPinnedUpdate",
         "description": "Request body for ``PATCH /api/tags/{id}/pinned``.\n\n``pinned=true`` pins the tag in the sidebar filter panel;\n``pinned=false`` unpins it. Mirrors :class:`SessionPinnedUpdate`."
+      },
+      "TagSortOrderUpdate": {
+        "properties": {
+          "class_": {
+            "type": "string",
+            "enum": [
+              "project",
+              "severity",
+              "general"
+            ],
+            "title": "Class"
+          },
+          "ordered_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Ordered Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "class_"
+        ],
+        "title": "TagSortOrderUpdate",
+        "description": "Request body for ``PUT /api/tags/sort-order``.\n\nRe-sequences tags within ``class_`` to match ``ordered_ids``. The\ndrag-to-reorder UI on ``/tags`` posts the new order in one call;\neach id at index ``i`` gets ``sort_order = i``. Empty\n``ordered_ids`` is a no-op.\n\nThe route validates that every id belongs to a tag of ``class_``\nvia :func:`bearings.db.tags.update_sort_orders` \u2014 a cross-class id\nraises 422."
       },
       "TemplateIn": {
         "properties": {

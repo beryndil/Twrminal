@@ -3,11 +3,15 @@
 Per ``docs/architecture-v1.md`` §1.1.5 ``web/routes/tags.py`` owns:
 
 * ``POST /api/tags`` — create a tag.
-* ``GET /api/tags`` — list tags (optional ``group=`` filter).
+* ``GET /api/tags`` — list tags (optional ``class_=`` filter; the
+  legacy ``group=`` filter is retained for one release).
 * ``GET /api/tags/{id}`` — fetch one tag.
 * ``PATCH /api/tags/{id}`` — replace a tag's mutable fields.
+* ``PUT /api/tags/sort-order`` — re-sequence ``sort_order`` within a
+  class to match an explicit id list (drag-reorder path).
 * ``DELETE /api/tags/{id}`` — delete one tag (cascades).
-* ``GET /api/tag-groups`` — list distinct group prefixes.
+* ``GET /api/tag-groups`` — **deprecated** — list distinct slash-prefix
+  groups; superseded by the ``class`` column.
 * ``GET /api/sessions/{sid}/tags`` — list tags attached to a session.
 * ``PUT /api/sessions/{sid}/tags/{tid}`` — attach (idempotent).
 * ``DELETE /api/sessions/{sid}/tags/{tid}`` — detach.
@@ -28,9 +32,15 @@ from __future__ import annotations
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Request, status
 
+from bearings.config.constants import KNOWN_TAG_CLASSES
 from bearings.db import tags as tags_db
 from bearings.db.tags import Tag
-from bearings.web.models.tags import TagIn, TagOut, TagPinnedUpdate
+from bearings.web.models.tags import (
+    TagIn,
+    TagOut,
+    TagPinnedUpdate,
+    TagSortOrderUpdate,
+)
 
 router = APIRouter()
 
@@ -60,6 +70,8 @@ def _to_out(tag: Tag) -> TagOut:
         default_model=tag.default_model,
         working_dir=tag.working_dir,
         pinned=tag.pinned,
+        class_=tag.class_,  # type: ignore[arg-type]
+        sort_order=tag.sort_order,
         group=tag.group,
         created_at=tag.created_at,
         updated_at=tag.updated_at,
@@ -77,6 +89,8 @@ async def create_tag(payload: TagIn, request: Request) -> TagOut:
             color=payload.color,
             default_model=payload.default_model,
             working_dir=payload.working_dir,
+            class_=payload.class_,
+            sort_order=payload.sort_order,
         )
     except aiosqlite.IntegrityError as exc:
         raise HTTPException(
@@ -91,16 +105,58 @@ async def create_tag(payload: TagIn, request: Request) -> TagOut:
 
 
 @router.get("/api/tags", response_model=list[TagOut])
-async def list_tags(request: Request, group: str | None = None) -> list[TagOut]:
-    """Every tag, alphabetical; optional ``?group=`` filter for the prefix."""
+async def list_tags(
+    request: Request,
+    class_: str | None = None,
+    group: str | None = None,
+) -> list[TagOut]:
+    """Every tag, ordered ``(class, sort_order, name)``; optional filters.
+
+    ``?class_=`` filters to ``project`` / ``severity`` / ``general``;
+    422 on an unknown value. ``?group=`` is the deprecated slash-prefix
+    filter, retained for one release. Both compose via AND when set.
+    """
     db = _db(request)
-    rows = await tags_db.list_all(db, group=group)
+    if class_ is not None and class_ not in KNOWN_TAG_CLASSES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"class_ {class_!r} is not in {sorted(KNOWN_TAG_CLASSES)}",
+        )
+    rows = await tags_db.list_all(db, class_=class_, group=group)
     return [_to_out(tag) for tag in rows]
 
 
-@router.get("/api/tag-groups", response_model=list[str])
+@router.put("/api/tags/sort-order", status_code=status.HTTP_204_NO_CONTENT)
+async def update_tags_sort_order(payload: TagSortOrderUpdate, request: Request) -> None:
+    """Re-sequence ``sort_order`` within ``payload.class_`` to match the id list.
+
+    Drag-to-reorder path on the ``/tags`` page. Each id at index ``i``
+    in ``ordered_ids`` gets ``sort_order = i``. Empty ``ordered_ids``
+    is a no-op (validates the class only). 422 if any id is missing
+    or belongs to a different class.
+    """
+    db = _db(request)
+    try:
+        await tags_db.update_sort_orders(
+            db,
+            class_=payload.class_,
+            ordered_ids=tuple(payload.ordered_ids),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+
+@router.get("/api/tag-groups", response_model=list[str], deprecated=True)
 async def list_tag_groups(request: Request) -> list[str]:
-    """Distinct slash-prefix groups across the tag set."""
+    """Distinct slash-prefix groups across the tag set.
+
+    **Deprecated** — the slash-namespace concept is superseded by the
+    :class:`Tag.class_` column. Retained for one release so v0.18.x
+    frontend builds keep rendering. Frontend should migrate to
+    ``GET /api/tags?class_=...``.
+    """
     db = _db(request)
     return await tags_db.list_groups(db)
 
@@ -127,6 +183,8 @@ async def update_tag(tag_id: int, payload: TagIn, request: Request) -> TagOut:
             color=payload.color,
             default_model=payload.default_model,
             working_dir=payload.working_dir,
+            class_=payload.class_,
+            sort_order=payload.sort_order,
         )
     except aiosqlite.IntegrityError as exc:
         raise HTTPException(

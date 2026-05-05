@@ -16,14 +16,25 @@ disable to this file keeps the carve-out narrow — every public
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from bearings.config.constants import (
+    TAG_CLASS_GENERAL,
     TAG_COLOR_MAX_LENGTH,
+    TAG_DEFAULT_SORT_ORDER,
     TAG_MEMORY_BODY_MAX_LENGTH,
     TAG_MEMORY_TITLE_MAX_LENGTH,
     TAG_NAME_MAX_LENGTH,
 )
+
+# Wire-shape literal alphabet for the tag class column. Mirrors
+# :data:`bearings.config.constants.KNOWN_TAG_CLASSES` so a frontend
+# typo like ``"sevrity"`` (codespell:ignore sevrity) is rejected at
+# the 422 boundary rather than surfacing a 500 from the dataclass
+# downstream.
+TagClass = Literal["project", "severity", "general"]
 
 
 class TagIn(BaseModel):
@@ -34,6 +45,12 @@ class TagIn(BaseModel):
     surfacing a 500 from the dataclass downstream. ``model_config``
     forbids extra fields so a typo (e.g. ``defaultModel`` instead of
     ``default_model``) is rejected loudly.
+
+    The ``class_`` field is the tag-class feature partition; the
+    trailing underscore matches the Python attribute on
+    :class:`bearings.db.tags.Tag` and the JSON wire key (uniform
+    naming across the layer rather than aliasing ``class`` only on
+    the wire).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -42,16 +59,21 @@ class TagIn(BaseModel):
     color: str | None = Field(default=None, max_length=TAG_COLOR_MAX_LENGTH)
     default_model: str | None = None
     working_dir: str | None = Field(default=None, min_length=1)
+    class_: TagClass = TAG_CLASS_GENERAL  # type: ignore[assignment]
+    sort_order: int = Field(default=TAG_DEFAULT_SORT_ORDER, ge=0)
 
 
 class TagOut(BaseModel):
     """Response body for tag endpoints.
 
-    ``group`` is computed from ``name`` (slash-namespace convention per
-    :data:`bearings.config.constants.TAG_GROUP_SEPARATOR`) and exposed
-    so the frontend filter panel doesn't have to re-parse it.
-    ``pinned`` controls sidebar sort order — pinned tags float to the
-    top of the filter panel per context-menus §"Tag".
+    ``class_`` partitions the tag into project / severity / general
+    (see :data:`bearings.config.constants.KNOWN_TAG_CLASSES`).
+    ``sort_order`` is the per-class display order. ``pinned`` floats
+    the tag to the top of its class section per context-menus §"Tag".
+
+    ``group`` is the deprecated slash-prefix carrier (parsed from
+    ``name``); retained for back-compat with v0.18.x frontend builds
+    that still consume it. New consumers should use ``class_``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -62,6 +84,8 @@ class TagOut(BaseModel):
     default_model: str | None
     working_dir: str | None
     pinned: bool
+    class_: TagClass
+    sort_order: int
     group: str | None
     created_at: str
     updated_at: str
@@ -77,6 +101,25 @@ class TagPinnedUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     pinned: bool
+
+
+class TagSortOrderUpdate(BaseModel):
+    """Request body for ``PUT /api/tags/sort-order``.
+
+    Re-sequences tags within ``class_`` to match ``ordered_ids``. The
+    drag-to-reorder UI on ``/tags`` posts the new order in one call;
+    each id at index ``i`` gets ``sort_order = i``. Empty
+    ``ordered_ids`` is a no-op.
+
+    The route validates that every id belongs to a tag of ``class_``
+    via :func:`bearings.db.tags.update_sort_orders` — a cross-class id
+    raises 422.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    class_: TagClass
+    ordered_ids: list[int] = Field(default_factory=list)
 
 
 class TagMemoryIn(BaseModel):
@@ -103,4 +146,12 @@ class TagMemoryOut(BaseModel):
     updated_at: str
 
 
-__all__ = ["TagIn", "TagMemoryIn", "TagMemoryOut", "TagOut", "TagPinnedUpdate"]
+__all__ = [
+    "TagClass",
+    "TagIn",
+    "TagMemoryIn",
+    "TagMemoryOut",
+    "TagOut",
+    "TagPinnedUpdate",
+    "TagSortOrderUpdate",
+]

@@ -176,3 +176,168 @@ def test_attach_unknown_session_or_tag_404(app_client: TestClient) -> None:
     assert response.status_code == 404
     response2 = app_client.put("/api/sessions/sess1/tags/99999")
     assert response2.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# class_ + sort_order — tag-class feature
+# ---------------------------------------------------------------------------
+
+
+def test_post_tag_with_class_and_sort_order(app_client: TestClient) -> None:
+    """Wire shape carries ``class_`` + ``sort_order`` round-trip."""
+    response = app_client.post(
+        "/api/tags",
+        json={
+            "name": "bearings",
+            "class_": "project",
+            "default_model": "opus",
+            "working_dir": "/home/dave/proj",
+            "sort_order": 3,
+        },
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["class_"] == "project"
+    assert body["sort_order"] == 3
+
+
+def test_post_tag_defaults_to_general_class(app_client: TestClient) -> None:
+    """No ``class_`` in payload → ``general`` (back-compat with old clients)."""
+    response = app_client.post("/api/tags", json={"name": "freeform"})
+    assert response.status_code == 201
+    assert response.json()["class_"] == "general"
+    assert response.json()["sort_order"] == 0
+
+
+def test_post_severity_with_default_model_returns_422(app_client: TestClient) -> None:
+    """Severity-class tags reject ``default_model`` at the wire boundary."""
+    response = app_client.post(
+        "/api/tags",
+        json={
+            "name": "urgent",
+            "class_": "severity",
+            "default_model": "opus",
+        },
+    )
+    assert response.status_code == 422
+    assert "default_model" in response.json()["detail"]
+
+
+def test_post_unknown_class_returns_422(app_client: TestClient) -> None:
+    """Pydantic Literal rejects classes outside the alphabet."""
+    response = app_client.post(
+        "/api/tags",
+        json={"name": "x", "class_": "milestone"},
+    )
+    assert response.status_code == 422
+
+
+def test_get_tags_filters_by_class(app_client: TestClient) -> None:
+    """``?class_=project`` returns only project-class tags."""
+    app_client.post("/api/tags", json={"name": "freeform"})
+    app_client.post(
+        "/api/tags",
+        json={"name": "bearings", "class_": "project"},
+    )
+    app_client.post(
+        "/api/tags",
+        json={"name": "archon", "class_": "project"},
+    )
+    response = app_client.get("/api/tags", params={"class_": "project"})
+    assert response.status_code == 200
+    body = response.json()
+    assert {t["name"] for t in body} == {"bearings", "archon"}
+    assert all(t["class_"] == "project" for t in body)
+
+
+def test_get_tags_class_filter_rejects_unknown(app_client: TestClient) -> None:
+    response = app_client.get("/api/tags", params={"class_": "milestone"})
+    assert response.status_code == 422
+
+
+def test_patch_tag_can_change_class(app_client: TestClient) -> None:
+    """PATCH threads ``class_`` and ``sort_order``."""
+    created = app_client.post("/api/tags", json={"name": "bearings"}).json()
+    response = app_client.patch(
+        f"/api/tags/{created['id']}",
+        json={
+            "name": "bearings",
+            "color": None,
+            "default_model": "opus",
+            "working_dir": "/home/dave/proj",
+            "class_": "project",
+            "sort_order": 5,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["class_"] == "project"
+    assert body["sort_order"] == 5
+
+
+def test_put_sort_order_resequences(app_client: TestClient) -> None:
+    """Drag-reorder path: PUT /api/tags/sort-order assigns ``sort_order = index``."""
+    a = app_client.post(
+        "/api/tags", json={"name": "a", "class_": "project", "sort_order": 0}
+    ).json()
+    b = app_client.post(
+        "/api/tags", json={"name": "b", "class_": "project", "sort_order": 1}
+    ).json()
+    c = app_client.post(
+        "/api/tags", json={"name": "c", "class_": "project", "sort_order": 2}
+    ).json()
+
+    response = app_client.put(
+        "/api/tags/sort-order",
+        json={"class_": "project", "ordered_ids": [c["id"], a["id"], b["id"]]},
+    )
+    assert response.status_code == 204
+
+    listed = app_client.get("/api/tags", params={"class_": "project"}).json()
+    assert [t["name"] for t in listed] == ["c", "a", "b"]
+
+
+def test_put_sort_order_rejects_cross_class(app_client: TestClient) -> None:
+    """A general tag id cannot appear in a project re-sequence call."""
+    proj = app_client.post("/api/tags", json={"name": "p", "class_": "project"}).json()
+    gen = app_client.post("/api/tags", json={"name": "g"}).json()
+
+    response = app_client.put(
+        "/api/tags/sort-order",
+        json={"class_": "project", "ordered_ids": [proj["id"], gen["id"]]},
+    )
+    assert response.status_code == 422
+
+
+def test_put_sort_order_rejects_missing_id(app_client: TestClient) -> None:
+    response = app_client.put(
+        "/api/tags/sort-order",
+        json={"class_": "project", "ordered_ids": [99_999]},
+    )
+    assert response.status_code == 422
+
+
+def test_put_sort_order_empty_ok(app_client: TestClient) -> None:
+    """Empty list is a no-op (still 204)."""
+    response = app_client.put(
+        "/api/tags/sort-order",
+        json={"class_": "project", "ordered_ids": []},
+    )
+    assert response.status_code == 204
+
+
+def test_put_sort_order_unknown_class_422(app_client: TestClient) -> None:
+    response = app_client.put(
+        "/api/tags/sort-order",
+        json={"class_": "milestone", "ordered_ids": []},
+    )
+    assert response.status_code == 422
+
+
+def test_get_tag_groups_still_works_for_back_compat(app_client: TestClient) -> None:
+    """Deprecated endpoint continues to function for v0.18.x frontend builds."""
+    for n in ("bearings/a", "bearings/b", "research/c"):
+        app_client.post("/api/tags", json={"name": n})
+    response = app_client.get("/api/tag-groups")
+    assert response.status_code == 200
+    assert response.json() == ["bearings", "research"]

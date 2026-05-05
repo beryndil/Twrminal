@@ -264,3 +264,18 @@ conversation pane it offered; the v1 paired-chat flow uses
 sweep) along with its test and its `CHECKLIST_STRINGS.checklistChat*`
 entries. Re-add only when a behavior doc justifies an inline pane
 alternative to pane-swap.
+
+## Push backlog — SSH proxy config permissions (2026-05-04)
+
+`git push` from the tag-class feature work (commit `a911687` and
+follow-up commits) failed with `Bad owner or permissions on
+/etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf`. The directory
+`/etc/ssh/ssh_config.d/` is owned by `nobody:nobody` (regression from
+a recent `systemd` update — the symlink target lives at
+`/usr/lib/systemd/ssh_config.d/`). Local commits landed on
+`v1-rebuild` but did not propagate to `origin/v1-rebuild`. Fix with:
+
+    sudo chown root:root /etc/ssh/ssh_config.d /etc/ssh/ssh_config.d/*
+
+Then `git push` to drain the backlog. Resolve in the same commit that
+sweeps the fix.
