@@ -268,7 +268,8 @@ alternative to pane-swap.
 ## Push backlog — SSH proxy config permissions (2026-05-04)
 
 `git push` from the tag-class feature work (commit `a911687` and
-follow-up commits) failed with `Bad owner or permissions on
+follow-up commits, including the 2026-05-05 SDK history-replay fix at
+`e641892`) failed with `Bad owner or permissions on
 /etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf`. The directory
 `/etc/ssh/ssh_config.d/` is owned by `nobody:nobody` (regression from
 a recent `systemd` update — the symlink target lives at
@@ -278,4 +279,5 @@ a recent `systemd` update — the symlink target lives at
     sudo chown root:root /etc/ssh/ssh_config.d /etc/ssh/ssh_config.d/*
 
 Then `git push` to drain the backlog. Resolve in the same commit that
-sweeps the fix.
+sweeps the fix. The agent worktree runs with `--no-new-privileges`, so
+the chown must be issued from a regular shell.
