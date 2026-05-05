@@ -282,6 +282,7 @@ async def _do_run_one_turn(
             content=body,
             decision=session.config.decision,
             model_usage=last_result.model_usage if last_result is not None else None,
+            total_cost_usd=last_result.total_cost_usd if last_result is not None else None,
         )
 
 

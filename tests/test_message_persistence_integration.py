@@ -185,6 +185,73 @@ async def test_persist_no_advisor_decision_records_null_advisor_model(
     assert fetched.advisor_calls_count == 0
 
 
+async def test_persist_increments_session_total_cost_usd(
+    conn: aiosqlite.Connection,
+) -> None:
+    """Each turn's ``ResultMessage.total_cost_usd`` accumulates onto the
+    session row.
+
+    Regression: ``sessions.total_cost_usd`` was initialised to ``0.0`` in
+    :func:`bearings.db.sessions.create` and no codepath ever UPDATEd it,
+    so the UI's "Total cost (USD)" surface displayed ``$0.00`` for every
+    session indefinitely. This test pins the rollup.
+    """
+    sid = await _new_session(conn)
+    before = await sessions_db.get(conn, sid)
+    assert before is not None and before.total_cost_usd == 0.0
+    # First turn: $0.05 billed.
+    await persist_assistant_turn(
+        conn,
+        session_id=sid,
+        content="first",
+        decision=_decision(),
+        model_usage=None,
+        total_cost_usd=0.05,
+    )
+    mid = await sessions_db.get(conn, sid)
+    assert mid is not None and mid.total_cost_usd == pytest.approx(0.05)
+    # Second turn: $0.07 billed; rollup must accumulate, not replace.
+    await persist_assistant_turn(
+        conn,
+        session_id=sid,
+        content="second",
+        decision=_decision(),
+        model_usage=None,
+        total_cost_usd=0.07,
+    )
+    after = await sessions_db.get(conn, sid)
+    assert after is not None and after.total_cost_usd == pytest.approx(0.12)
+
+
+async def test_persist_skips_total_cost_update_for_none_or_zero(
+    conn: aiosqlite.Connection,
+) -> None:
+    """``total_cost_usd=None`` (default / cache-only turn) and ``0.0`` are
+    no-ops for the session-row rollup so the column stays monotonic."""
+    sid = await _new_session(conn)
+    # default kwarg = None
+    await persist_assistant_turn(
+        conn,
+        session_id=sid,
+        content="cache hit",
+        decision=_decision(),
+        model_usage=None,
+    )
+    after_none = await sessions_db.get(conn, sid)
+    assert after_none is not None and after_none.total_cost_usd == 0.0
+    # explicit 0.0
+    await persist_assistant_turn(
+        conn,
+        session_id=sid,
+        content="zero billed",
+        decision=_decision(),
+        model_usage=None,
+        total_cost_usd=0.0,
+    )
+    after_zero = await sessions_db.get(conn, sid)
+    assert after_zero is not None and after_zero.total_cost_usd == 0.0
+
+
 async def test_persist_appears_in_list_for_session(
     conn: aiosqlite.Connection,
 ) -> None:

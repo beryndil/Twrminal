@@ -667,6 +667,41 @@ async def update_pinned(
     return await get(connection, session_id)
 
 
+async def add_to_total_cost(
+    connection: aiosqlite.Connection,
+    session_id: str,
+    delta_usd: float,
+) -> None:
+    """Atomically add ``delta_usd`` to the session row's ``total_cost_usd``.
+
+    Called by :func:`bearings.agent.persistence.persist_assistant_turn`
+    after each assistant turn so the session-level rollup the UI reads
+    (``GET /api/sessions/{id}.total_cost_usd``) tracks every API call
+    billed against the session.
+
+    The row's ``total_cost_usd`` was initialised to ``0.0`` in
+    :func:`create` and stays there until this helper increments it. The
+    UPDATE uses SQL-side ``+=`` (one statement, atomic against
+    concurrent readers) rather than a read-modify-write so two near-
+    simultaneous turns on the same session don't race-lose a delta.
+
+    ``delta_usd`` ≤ 0 is a no-op: the SDK emits ``None`` / ``0.0`` for
+    cache-only turns or pure-tool turns where no billing happens, and
+    skipping those keeps the rollup monotonic per the
+    :class:`Session.total_cost_usd ≥ 0` dataclass invariant. ``updated_at``
+    is intentionally **not** bumped — cost is a derived rollup, not a
+    user-visible content mutation, so caches keyed on ``updated_at``
+    stay valid across cost-only updates.
+    """
+    if delta_usd <= 0:
+        return
+    await connection.execute(
+        "UPDATE sessions SET total_cost_usd = total_cost_usd + ? WHERE id = ?",
+        (float(delta_usd), session_id),
+    )
+    await connection.commit()
+
+
 async def set_error_pending(
     connection: aiosqlite.Connection,
     session_id: str,
@@ -856,6 +891,7 @@ def _row_to_session(row: aiosqlite.Row | tuple[object, ...]) -> Session:
 
 __all__ = [
     "Session",
+    "add_to_total_cost",
     "close",
     "close_with_summary",
     "create",

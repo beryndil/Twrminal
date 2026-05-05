@@ -84,6 +84,7 @@ from bearings.config.constants import (
     MODEL_USAGE_KEY_OUTPUT_TOKENS,
 )
 from bearings.db import messages as messages_db
+from bearings.db import sessions as sessions_db
 from bearings.db.messages import Message
 
 
@@ -303,13 +304,19 @@ async def persist_assistant_turn(
     content: str,
     decision: RoutingDecision,
     model_usage: Mapping[str, object] | None,
+    total_cost_usd: float | None = None,
 ) -> Message:
     """Insert one assistant-role message row for the turn just completed.
 
     Composes :func:`extract_model_usage` (pure projection) +
     :func:`bearings.db.messages.insert_assistant` (DB write) so the
     per-turn driver (item 1.10+ ``agent/turn_executor.py``) has one
-    call site for "the turn produced this content; persist it".
+    call site for "the turn produced this content; persist it". When
+    ``total_cost_usd`` is supplied (the SDK's
+    ``ResultMessage.total_cost_usd`` rollup), also increments the
+    session row's cumulative ``total_cost_usd`` via
+    :func:`bearings.db.sessions.add_to_total_cost` so the UI's
+    "Total cost (USD)" surface tracks every billed turn.
 
     Args:
         connection: Open aiosqlite connection (the same one the
@@ -326,12 +333,18 @@ async def persist_assistant_turn(
         model_usage: Raw ``ResultMessage.model_usage`` dict (or
             ``None`` if the turn was a pure-cache hit / synthetic
             replay — every field projects to ``0`` in that case).
+        total_cost_usd: SDK ``ResultMessage.total_cost_usd`` for the
+            turn. ``None`` / ``0`` / negative is a no-op for the
+            session-row rollup (cache-only turns or synthetic
+            replays bill nothing). Defaults to ``None`` so existing
+            test call sites that pass only ``model_usage`` keep
+            working.
 
     Returns:
         The persisted :class:`bearings.db.messages.Message` row.
     """
     breakdown = extract_model_usage(model_usage, decision)
-    return await messages_db.insert_assistant(
+    message = await messages_db.insert_assistant(
         connection,
         session_id=session_id,
         content=content,
@@ -348,6 +361,9 @@ async def persist_assistant_turn(
         advisor_calls_count=breakdown.advisor_calls_count,
         cache_read_tokens=breakdown.cache_read_tokens,
     )
+    if total_cost_usd is not None:
+        await sessions_db.add_to_total_cost(connection, session_id, total_cost_usd)
+    return message
 
 
 class MessagePersistence(Protocol):
@@ -369,6 +385,7 @@ class MessagePersistence(Protocol):
         content: str,
         decision: RoutingDecision,
         model_usage: Mapping[str, object] | None,
+        total_cost_usd: float | None = None,
     ) -> Message: ...
 
 
