@@ -48,6 +48,8 @@ function fakeTag(overrides: Partial<TagOut> = {}): TagOut {
     default_model: null,
     working_dir: null,
     pinned: false,
+    class_: "general" as const,
+    sort_order: 0,
     group: "bearings",
     created_at: "2026-04-29T00:00:00Z",
     updated_at: "2026-04-29T00:00:00Z",
@@ -64,7 +66,9 @@ interface StubMemoriesStore {
 
 interface StubTagsStore {
   all: TagOut[];
-  selectedIds: ReadonlySet<number>;
+  selectedProjectIds: ReadonlySet<number>;
+  selectedSeverityIds: ReadonlySet<number>;
+  selectedOtherIds: ReadonlySet<number>;
   loading: boolean;
   error: Error | null;
 }
@@ -83,7 +87,9 @@ function makeStubStores(
     },
     tagsStore: {
       all: tags,
-      selectedIds: new Set<number>(),
+      selectedProjectIds: new Set<number>(),
+      selectedSeverityIds: new Set<number>(),
+      selectedOtherIds: new Set<number>(),
       loading: false,
       error: null,
     },

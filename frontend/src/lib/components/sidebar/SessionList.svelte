@@ -72,6 +72,7 @@
   } from "../../stores/sessions.svelte";
   import {
     clearTagFilter as clearTagFilterDefault,
+    currentFilter,
     refreshTags as refreshTagsDefault,
     tagsStore as tagsStoreDefault,
     toggleTag as toggleTagDefault,
@@ -190,22 +191,40 @@
   const closedSessions = $derived(
     sessionsStore.sessions.filter((session) => session.closed_at !== null),
   );
+  /**
+   * Union of every selected tag id across the three sections —
+   * what the grouping pass uses to decide which tag chips are
+   * "visible" on a session row. The session-filter query itself
+   * uses the three sets independently (OR within / AND across);
+   * the per-row chip-visibility is union semantics because a chip
+   * remains relevant as long as ANY of its sections is selecting
+   * it.
+   */
+  const selectedTagIdsUnion = $derived(
+    new Set<number>([
+      ...tagsStore.selectedProjectIds,
+      ...tagsStore.selectedSeverityIds,
+      ...tagsStore.selectedOtherIds,
+    ]),
+  );
   const groups = $derived(
-    groupSessions(openSessions, sessionsStore.tagsBySessionId, tagsStore.selectedIds),
+    groupSessions(openSessions, sessionsStore.tagsBySessionId, selectedTagIdsUnion),
   );
 
   /**
    * Local UI state — whether the closed-sessions expander is open.
    * Resets on every tag-filter change so a narrow-and-broaden cycle
    * doesn't leave a stale expanded panel pointing at the wrong rows;
-   * tracked through ``$effect`` against the filter set so the
+   * tracked through ``$effect`` against the filter sets so the
    * collapsed state is the steady-state default.
    */
   let showClosed = $state(false);
   let reopenError = $state<string | null>(null);
 
   $effect(() => {
-    void tagsStore.selectedIds;
+    void tagsStore.selectedProjectIds;
+    void tagsStore.selectedSeverityIds;
+    void tagsStore.selectedOtherIds;
     showClosed = false;
   });
 
@@ -213,7 +232,7 @@
     try {
       reopenError = null;
       await reopenSession(sessionId);
-      await refreshSessions(tagsStore.selectedIds);
+      await refreshSessions(currentFilter());
     } catch (error) {
       reopenError = error instanceof Error ? error.message : String(error);
     }
@@ -348,7 +367,7 @@
 
   async function handleTagPickerDone(): Promise<void> {
     tagPickerMode = null;
-    await refreshSessions(tagsStore.selectedIds);
+    await refreshSessions(currentFilter());
     clearSelection();
   }
 
@@ -361,7 +380,7 @@
     const ids = Array.from(multiSelectionStore.ids);
     await Promise.allSettled(ids.map((id) => deleteSession(id)));
     clearSelection();
-    await refreshSessions(tagsStore.selectedIds);
+    await refreshSessions(currentFilter());
   }
 
   // ---- Multi-select close -------------------------------------------------
@@ -370,7 +389,7 @@
     const ids = Array.from(multiSelectionStore.ids);
     await Promise.allSettled(ids.map((id) => closeSession(id)));
     clearSelection();
-    await refreshSessions(tagsStore.selectedIds);
+    await refreshSessions(currentFilter());
   }
 
   // ---- Multi-select export ------------------------------------------------
@@ -435,8 +454,9 @@
 
   /**
    * Fetch on mount + on every filter-set change. ``$effect`` re-runs
-   * when ``tagsStore.selectedIds`` updates (Svelte 5 tracks the
-   * proxy reads inside the effect's body).
+   * when any of the three section filter sets update — Svelte 5
+   * tracks the proxy reads inside the effect's body, and
+   * :func:`currentFilter` reads all three.
    */
   onMount(() => {
     void refreshTags();
@@ -450,7 +470,7 @@
   });
 
   $effect(() => {
-    void refreshSessions(tagsStore.selectedIds);
+    void refreshSessions(currentFilter());
   });
 </script>
 
@@ -484,7 +504,9 @@
 <div class="session-list flex h-full flex-col" data-testid="session-list">
   <TagFilterPanel
     tags={tagsStore.all}
-    selectedIds={tagsStore.selectedIds}
+    selectedProjectIds={tagsStore.selectedProjectIds}
+    selectedSeverityIds={tagsStore.selectedSeverityIds}
+    selectedOtherIds={tagsStore.selectedOtherIds}
     onToggle={toggleTag}
     onClear={clearTagFilter}
   />
@@ -563,7 +585,7 @@
       </p>
     {:else if openSessions.length === 0 && closedSessions.length === 0}
       <p class="px-3 py-2 text-xs text-fg-muted" data-testid="session-list-empty">
-        {tagsStore.selectedIds.size > 0
+        {selectedTagIdsUnion.size > 0
           ? SIDEBAR_STRINGS.emptySessionList
           : SIDEBAR_STRINGS.emptySessionListUnfiltered}
       </p>
@@ -587,7 +609,7 @@
             <SessionRow
               {session}
               tags={sessionsStore.tagsBySessionId[session.id] ?? []}
-              selectedTagIds={tagsStore.selectedIds}
+              selectedTagIds={selectedTagIdsUnion}
               isSelected={selectedSessionId === session.id}
               {onSelect}
               onToggleTag={toggleTag}
@@ -622,7 +644,7 @@
               <SessionRow
                 {session}
                 tags={sessionsStore.tagsBySessionId[session.id] ?? []}
-                selectedTagIds={tagsStore.selectedIds}
+                selectedTagIds={selectedTagIdsUnion}
                 isSelected={selectedSessionId === session.id}
                 {onSelect}
                 onToggleTag={toggleTag}
@@ -669,7 +691,7 @@
                 <SessionRow
                   {session}
                   tags={sessionsStore.tagsBySessionId[session.id] ?? []}
-                  selectedTagIds={tagsStore.selectedIds}
+                  selectedTagIds={selectedTagIdsUnion}
                   isSelected={selectedSessionId === session.id}
                   {onSelect}
                   onToggleTag={toggleTag}

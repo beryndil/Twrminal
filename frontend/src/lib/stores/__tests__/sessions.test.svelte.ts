@@ -42,6 +42,8 @@ const fixtureTag: TagOut = {
   default_model: null,
   working_dir: null,
   pinned: false,
+  class_: "general" as const,
+  sort_order: 0,
   group: "bearings",
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
@@ -62,33 +64,61 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
+const emptyFilter = (): {
+  project: ReadonlySet<number>;
+  severity: ReadonlySet<number>;
+  other: ReadonlySet<number>;
+} => ({
+  project: new Set<number>(),
+  severity: new Set<number>(),
+  other: new Set<number>(),
+});
+
 describe("sessionsStore.refreshSessions", () => {
-  it("omits tag_ids from the query when the filter set is empty", async () => {
+  it("omits every tag_ids_<class> param from the query when no section has a selection", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse([fixtureSession])) // sessions list
       .mockResolvedValueOnce(jsonResponse([])); // per-session tags
 
-    await refreshSessions(new Set<number>());
+    await refreshSessions(emptyFilter());
 
     const sessionsCallUrl = String(fetchMock.mock.calls[0][0]);
     expect(sessionsCallUrl).toBe("/api/sessions");
     expect(sessionsCallUrl).not.toContain("tag_ids");
   });
 
-  it("emits ?tag_ids=1&tag_ids=2 for the OR filter shape", async () => {
+  it("emits ?tag_ids_project=1&tag_ids_project=2 for the project section", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse([fixtureSession]))
       .mockResolvedValueOnce(jsonResponse([fixtureTag]));
 
-    await refreshSessions(new Set<number>([1, 2]));
+    await refreshSessions({ ...emptyFilter(), project: new Set([1, 2]) });
 
     const sessionsCallUrl = String(fetchMock.mock.calls[0][0]);
-    // URLSearchParams may emit either ordering; assert both keys appear.
-    expect(sessionsCallUrl).toContain("tag_ids=1");
-    expect(sessionsCallUrl).toContain("tag_ids=2");
-    expect(sessionsCallUrl).toMatch(/tag_ids=1.*tag_ids=2|tag_ids=2.*tag_ids=1/);
+    expect(sessionsCallUrl).toContain("tag_ids_project=1");
+    expect(sessionsCallUrl).toContain("tag_ids_project=2");
+    expect(sessionsCallUrl).not.toContain("tag_ids_severity");
+    expect(sessionsCallUrl).not.toContain("tag_ids_other");
+  });
+
+  it("emits all three section params when each has a selection", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse([fixtureSession]))
+      .mockResolvedValueOnce(jsonResponse([fixtureTag]));
+
+    await refreshSessions({
+      project: new Set([1]),
+      severity: new Set([2]),
+      other: new Set([3]),
+    });
+
+    const sessionsCallUrl = String(fetchMock.mock.calls[0][0]);
+    expect(sessionsCallUrl).toContain("tag_ids_project=1");
+    expect(sessionsCallUrl).toContain("tag_ids_severity=2");
+    expect(sessionsCallUrl).toContain("tag_ids_other=3");
   });
 
   it("populates per-session tag map from /api/sessions/{id}/tags", async () => {
@@ -96,7 +126,7 @@ describe("sessionsStore.refreshSessions", () => {
       .mockResolvedValueOnce(jsonResponse([fixtureSession]))
       .mockResolvedValueOnce(jsonResponse([fixtureTag]));
 
-    await refreshSessions(new Set<number>());
+    await refreshSessions(emptyFilter());
 
     expect(sessionsStore.sessions).toEqual([fixtureSession]);
     expect(sessionsStore.tagsBySessionId[fixtureSession.id]).toEqual([fixtureTag]);
@@ -106,7 +136,7 @@ describe("sessionsStore.refreshSessions", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response("server down", { status: 500 }),
     );
-    await refreshSessions(new Set<number>());
+    await refreshSessions(emptyFilter());
     expect(sessionsStore.error).toBeInstanceOf(Error);
     expect(sessionsStore.loading).toBe(false);
   });
@@ -116,7 +146,7 @@ describe("sessionsStore.refreshSessions", () => {
       .mockResolvedValueOnce(jsonResponse([fixtureSession]))
       .mockResolvedValueOnce(new Response("nope", { status: 500 }));
 
-    await refreshSessions(new Set<number>());
+    await refreshSessions(emptyFilter());
 
     expect(sessionsStore.sessions).toEqual([fixtureSession]);
     expect(sessionsStore.tagsBySessionId[fixtureSession.id]).toEqual([]);

@@ -66,6 +66,8 @@ const tag = (id: number, name: string): TagOut => ({
   default_model: null,
   working_dir: null,
   pinned: false,
+  class_: "general" as const,
+  sort_order: 0,
   group: name.includes("/") ? name.split("/")[0] : null,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
@@ -141,7 +143,16 @@ function extractTagIds(url: string): number[] {
   const queryStart = url.indexOf("?");
   if (queryStart < 0) return [];
   const params = new URLSearchParams(url.slice(queryStart + 1));
-  return params.getAll("tag_ids").map((v) => Number.parseInt(v, 10));
+  // Three-section shape — the fake server treats the union of every
+  // section's selection as OR-flat (matches the test's previous OR
+  // semantics, which now lives entirely within the "other" section
+  // because the test fixtures use ``class_: "general"``).
+  return [
+    ...params.getAll("tag_ids"),
+    ...params.getAll("tag_ids_project"),
+    ...params.getAll("tag_ids_severity"),
+    ...params.getAll("tag_ids_other"),
+  ].map((v) => Number.parseInt(v, 10));
 }
 
 describe("SessionList integration — finder-click + OR semantics", () => {
@@ -182,7 +193,7 @@ describe("SessionList integration — finder-click + OR semantics", () => {
     const lastSessionsCall = server.urls
       .filter((u) => u.startsWith("/api/sessions?") || u === "/api/sessions")
       .at(-1)!;
-    expect(lastSessionsCall).toContain("tag_ids=1");
+    expect(lastSessionsCall).toContain("tag_ids_other=1");
   });
 
   it("OR semantics — adding a second tag widens the result rather than narrowing", async () => {
@@ -222,8 +233,8 @@ describe("SessionList integration — finder-click + OR semantics", () => {
       const lastSessionsCall = server.urls
         .filter((u) => u.startsWith("/api/sessions?") || u === "/api/sessions")
         .at(-1)!;
-      expect(lastSessionsCall).toContain("tag_ids=1");
-      expect(lastSessionsCall).toContain("tag_ids=2");
+      expect(lastSessionsCall).toContain("tag_ids_other=1");
+      expect(lastSessionsCall).toContain("tag_ids_other=2");
     });
   });
 

@@ -56,7 +56,9 @@ const fakeStores = (sessions: readonly SessionOut[]) => ({
   },
   tagsStore: {
     all: [] as never[],
-    selectedIds: new Set<number>(),
+    selectedProjectIds: new Set<number>(),
+    selectedSeverityIds: new Set<number>(),
+    selectedOtherIds: new Set<number>(),
     loading: false,
     error: null as Error | null,
   },

@@ -44,6 +44,8 @@ const tag = (id: number, name: string): TagOut => ({
   default_model: null,
   working_dir: null,
   pinned: false,
+  class_: "general" as const,
+  sort_order: 0,
   group: name.includes("/") ? name.split("/")[0] : null,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
@@ -153,7 +155,7 @@ describe("SessionRow", () => {
     expect(onSelect).toHaveBeenCalledWith("ses_a");
   });
 
-  it("clicking a tag chip fires onToggleTag with the tag id (finder-click)", async () => {
+  it("clicking a tag chip fires onToggleTag with the tag id and class (finder-click)", async () => {
     const onToggleTag = vi.fn();
     const onSelect = vi.fn();
     const { getAllByTestId } = render(SessionRow, {
@@ -167,7 +169,7 @@ describe("SessionRow", () => {
       },
     });
     await fireEvent.click(getAllByTestId("session-tag-chip")[0]);
-    expect(onToggleTag).toHaveBeenCalledWith(7);
+    expect(onToggleTag).toHaveBeenCalledWith(7, "general");
   });
 
   it("renders the closing-summary tooltip on closed rows via the title attribute", () => {

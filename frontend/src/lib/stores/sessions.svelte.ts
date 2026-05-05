@@ -108,21 +108,33 @@ connectSessionsBroadcast((event) => {
 });
 
 /**
- * Refresh the sidebar list. ``tagFilter`` is the OR-semantics filter
- * set from :data:`tagsStore.selectedIds`; an empty set means "no
- * filter applied" (the route omits the ``tag_ids`` query param
- * entirely when the iterable is empty, mirroring the backend
- * contract).
+ * Refresh the sidebar list using the three-section faceted tag
+ * filter. Each section's set applies OR-within (a session matches
+ * when it carries any of the listed tags within the class); the
+ * three sections compose AND-across (a session must satisfy every
+ * non-empty section). An empty section is "no constraint from this
+ * class" — the route omits the matching ``tag_ids_<class>=`` query
+ * param so the backend leaves it unconstrained.
  */
-export async function refreshSessions(tagFilter: ReadonlySet<number>): Promise<void> {
+export async function refreshSessions(filter: {
+  project: ReadonlySet<number>;
+  severity: ReadonlySet<number>;
+  other: ReadonlySet<number>;
+}): Promise<void> {
   refreshController?.abort();
   const controller = new AbortController();
   refreshController = controller;
   state.loading = true;
   try {
     const params: Parameters<typeof listSessions>[0] = { signal: controller.signal };
-    if (tagFilter.size > 0) {
-      params.tagIds = tagFilter;
+    if (filter.project.size > 0) {
+      params.tagIdsProject = filter.project;
+    }
+    if (filter.severity.size > 0) {
+      params.tagIdsSeverity = filter.severity;
+    }
+    if (filter.other.size > 0) {
+      params.tagIdsOther = filter.other;
     }
     const sessions = await listSessions(params);
     if (controller.signal.aborted) {

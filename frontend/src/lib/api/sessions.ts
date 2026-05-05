@@ -77,12 +77,22 @@ interface ListSessionsParams {
   /** ``false`` excludes rows whose ``closed_at`` is set. */
   includeClosed?: boolean;
   /**
-   * OR-semantics filter — sessions attached to **at least one** of
-   * the listed ids appear. An empty iterable applies no filter (the
-   * client treats "no selection" the same as "no parameter"); pass
-   * ``undefined`` to make the omission explicit.
+   * Legacy OR-semantics filter — sessions attached to **at least
+   * one** of the listed ids appear regardless of class. Retained for
+   * back-compat with v0.18.x callers; new callers should use the
+   * three per-class params instead.
    */
   tagIds?: Iterable<number>;
+  /**
+   * Project-class faceted filter. OR within; AND with the other two
+   * sections. An empty / undefined iterable means "no constraint
+   * from this class" (the route omits the param).
+   */
+  tagIdsProject?: Iterable<number>;
+  /** Severity-class faceted filter; same OR-within / AND-across shape. */
+  tagIdsSeverity?: Iterable<number>;
+  /** General-class (other) faceted filter; same OR-within / AND-across shape. */
+  tagIdsOther?: Iterable<number>;
   signal?: AbortSignal;
 }
 
@@ -218,6 +228,21 @@ export async function listSessions(params: ListSessionsParams = {}): Promise<Ses
   if (params.tagIds !== undefined) {
     for (const id of params.tagIds) {
       query.push(["tag_ids", String(id)]);
+    }
+  }
+  if (params.tagIdsProject !== undefined) {
+    for (const id of params.tagIdsProject) {
+      query.push(["tag_ids_project", String(id)]);
+    }
+  }
+  if (params.tagIdsSeverity !== undefined) {
+    for (const id of params.tagIdsSeverity) {
+      query.push(["tag_ids_severity", String(id)]);
+    }
+  }
+  if (params.tagIdsOther !== undefined) {
+    for (const id of params.tagIdsOther) {
+      query.push(["tag_ids_other", String(id)]);
     }
   }
   const options: RequestOptions = {};

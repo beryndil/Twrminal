@@ -59,7 +59,7 @@
     SIDEBAR_STRINGS,
   } from "../../config";
   import { refreshSessions } from "../../stores/sessions.svelte";
-  import { tagsStore } from "../../stores/tags.svelte";
+  import { currentFilter } from "../../stores/tags.svelte";
   import {
     clearSelection,
     multiSelectionStore,
@@ -83,8 +83,13 @@
      * The actual URL change is owned by the anchor's ``href``.
      */
     onSelect: (sessionId: string) => void;
-    /** Tag-chip click — finder-click integration; toggles tag in filter set. */
-    onToggleTag: (tagId: number) => void;
+    /**
+     * Tag-chip click — finder-click integration; toggles the tag in
+     * its class section's filter set. The class is sourced from
+     * ``TagOut.class_`` at the click site so the parent doesn't need
+     * to look it up.
+     */
+    onToggleTag: (tagId: number, klass: TagOut["class_"]) => void;
     /**
      * Reopen-button click on a closed row. Optional because
      * non-sidebar callers (e.g. the conversation header) may render
@@ -160,7 +165,7 @@
     }
     try {
       await patchSessionTitle(session.id, trimmed);
-      await refreshSessions(tagsStore.selectedIds);
+      await refreshSessions(currentFilter());
       renaming = false;
     } catch (err) {
       renameError = err instanceof Error ? err.message : String(err);
@@ -188,7 +193,7 @@
 
   async function handleTagPickerSave(): Promise<void> {
     showTagPicker = false;
-    await refreshSessions(tagsStore.selectedIds);
+    await refreshSessions(currentFilter());
   }
 
   // ---- confirm delete state ----------------------------------------------
@@ -201,7 +206,7 @@
       await deleteSession(session.id);
       // The sessions broadcaster will remove the row; also force a
       // refresh so the tag-by-session map stays consistent.
-      await refreshSessions(tagsStore.selectedIds);
+      await refreshSessions(currentFilter());
     } catch {
       // Failure is surfaced by leaving the row in place; the next
       // refresh will show the real state.
@@ -219,7 +224,7 @@
       void openTagPicker();
     },
     [MENU_ACTION_SESSION_DUPLICATE]: () => {
-      void duplicateSession(session).then(() => refreshSessions(tagsStore.selectedIds));
+      void duplicateSession(session).then(() => refreshSessions(currentFilter()));
     },
     [MENU_ACTION_SESSION_SAVE_AS_TEMPLATE]: () => {
       const name = window.prompt("Save as template — enter a name:", session.title);
@@ -238,27 +243,23 @@
     ...(session.pinned
       ? {
           [MENU_ACTION_SESSION_UNPIN]: () => {
-            void patchSessionPinned(session.id, false).then(() =>
-              refreshSessions(tagsStore.selectedIds),
-            );
+            void patchSessionPinned(session.id, false).then(() => refreshSessions(currentFilter()));
           },
         }
       : {
           [MENU_ACTION_SESSION_PIN]: () => {
-            void patchSessionPinned(session.id, true).then(() =>
-              refreshSessions(tagsStore.selectedIds),
-            );
+            void patchSessionPinned(session.id, true).then(() => refreshSessions(currentFilter()));
           },
         }),
     ...(isClosed
       ? {
           [MENU_ACTION_SESSION_REOPEN]: () => {
-            void reopenSession(session.id).then(() => refreshSessions(tagsStore.selectedIds));
+            void reopenSession(session.id).then(() => refreshSessions(currentFilter()));
           },
         }
       : {
           [MENU_ACTION_SESSION_ARCHIVE]: () => {
-            void closeSession(session.id).then(() => refreshSessions(tagsStore.selectedIds));
+            void closeSession(session.id).then(() => refreshSessions(currentFilter()));
           },
         }),
     [MENU_ACTION_SESSION_COPY_ID]: () => {
@@ -487,13 +488,13 @@
             data-tag-id={tag.id}
             onclick={(event) => {
               event.stopPropagation();
-              onToggleTag(tag.id);
+              onToggleTag(tag.id, tag.class_);
             }}
             onkeydown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
                 event.stopPropagation();
-                onToggleTag(tag.id);
+                onToggleTag(tag.id, tag.class_);
               }
             }}
           >

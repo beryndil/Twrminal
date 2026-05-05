@@ -37,22 +37,49 @@
     MENU_ACTION_TAG_EDIT,
     MENU_ACTION_TAG_DELETE,
   } from "../../config";
-  import type { TagOut } from "../../api/tags";
+  import type { TagClass, TagOut } from "../../api/tags";
   import { deleteTag, patchTagPinned } from "../../api/tags";
   import { contextMenu } from "../../actions/contextMenu";
-  import { refreshTags } from "../../stores/tags.svelte";
+  import { refreshTags, tagsByClass } from "../../stores/tags.svelte";
   import ConfirmDialog from "../sidebar/ConfirmDialog.svelte";
 
   interface Props {
     tags: readonly TagOut[];
-    selectedIds: ReadonlySet<number>;
-    onToggle: (tagId: number) => void;
+    /** Selected project-class tag ids (OR within; AND with other sections). */
+    selectedProjectIds: ReadonlySet<number>;
+    /** Selected severity-class tag ids (OR within; AND with other sections). */
+    selectedSeverityIds: ReadonlySet<number>;
+    /** Selected general-class tag ids (OR within; AND with other sections). */
+    selectedOtherIds: ReadonlySet<number>;
+    /**
+     * Chip click — flips ``tagId`` in or out of its class section.
+     * The class is taken from ``TagOut.class_`` at the click site so
+     * the parent doesn't need to look it up.
+     */
+    onToggle: (tagId: number, klass: TagClass) => void;
+    /** Clear button — empties every section. */
     onClear: () => void;
   }
 
-  const { tags, selectedIds, onToggle, onClear }: Props = $props();
+  const {
+    tags,
+    selectedProjectIds,
+    selectedSeverityIds,
+    selectedOtherIds,
+    onToggle,
+    onClear,
+  }: Props = $props();
 
-  const hasSelection = $derived(selectedIds.size > 0);
+  const buckets = $derived(tagsByClass(tags));
+  const hasSelection = $derived(
+    selectedProjectIds.size + selectedSeverityIds.size + selectedOtherIds.size > 0,
+  );
+
+  function selectionFor(klass: TagClass): ReadonlySet<number> {
+    if (klass === "project") return selectedProjectIds;
+    if (klass === "severity") return selectedSeverityIds;
+    return selectedOtherIds;
+  }
 
   // ---- confirm delete state -----------------------------------------------
 
@@ -137,28 +164,44 @@
   {#if tags.length === 0}
     <p class="text-xs text-fg-muted" data-testid="tag-filter-empty">No tags yet.</p>
   {:else}
-    <div class="flex flex-wrap gap-1" role="group" aria-label={SIDEBAR_STRINGS.tagFilterLabel}>
-      {#each tags as tag (tag.id)}
-        <button
-          type="button"
-          class="rounded px-1.5 py-0.5 text-xs transition-colors"
-          class:bg-accent={selectedIds.has(tag.id)}
-          class:text-fg-strong={selectedIds.has(tag.id)}
-          class:bg-surface-2={!selectedIds.has(tag.id)}
-          class:text-fg-muted={!selectedIds.has(tag.id)}
-          aria-pressed={selectedIds.has(tag.id)}
-          data-testid="tag-filter-chip"
-          data-tag-id={tag.id}
-          onclick={() => onToggle(tag.id)}
-          use:contextMenu={{
-            target: MENU_TARGET_TAG,
-            handlers: menuHandlersForTag(tag),
-            data: { tagId: tag.id },
-          }}
-        >
-          {tag.name}
-        </button>
-      {/each}
-    </div>
+    {#each [{ klass: "project" as TagClass, label: "Project", bucket: buckets.project, testid: "tag-filter-section-project" }, { klass: "severity" as TagClass, label: "Severity", bucket: buckets.severity, testid: "tag-filter-section-severity" }, { klass: "general" as TagClass, label: "Other", bucket: buckets.other, testid: "tag-filter-section-other" }] as section (section.klass)}
+      <div class="mb-2 last:mb-0" data-testid={section.testid} data-tag-class={section.klass}>
+        <h3 class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
+          {section.label}
+        </h3>
+        {#if section.bucket.length === 0}
+          <p class="text-xs text-fg-muted" data-testid={`${section.testid}-empty`}>
+            {section.klass === "general"
+              ? "No other tags. Add one on the /tags page."
+              : `No ${section.label.toLowerCase()} tags yet — assign a class on the /tags page.`}
+          </p>
+        {:else}
+          <div class="flex flex-wrap gap-1" role="group" aria-label={`${section.label} tags`}>
+            {#each section.bucket as tag (tag.id)}
+              <button
+                type="button"
+                class="rounded px-1.5 py-0.5 text-xs transition-colors"
+                class:bg-accent={selectionFor(section.klass).has(tag.id)}
+                class:text-fg-strong={selectionFor(section.klass).has(tag.id)}
+                class:bg-surface-2={!selectionFor(section.klass).has(tag.id)}
+                class:text-fg-muted={!selectionFor(section.klass).has(tag.id)}
+                aria-pressed={selectionFor(section.klass).has(tag.id)}
+                data-testid="tag-filter-chip"
+                data-tag-id={tag.id}
+                data-tag-class={tag.class_}
+                onclick={() => onToggle(tag.id, section.klass)}
+                use:contextMenu={{
+                  target: MENU_TARGET_TAG,
+                  handlers: menuHandlersForTag(tag),
+                  data: { tagId: tag.id },
+                }}
+              >
+                {tag.name}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {/each}
   {/if}
 </section>

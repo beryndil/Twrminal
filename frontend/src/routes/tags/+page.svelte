@@ -30,6 +30,7 @@
     deleteTag,
     listTags,
     updateTag,
+    type TagClass,
     type TagInput,
     type TagOut,
   } from "$lib/api/tags";
@@ -41,6 +42,7 @@
   let selectedId = $state<number | null>(null);
   let creatingNew = $state(false);
   let newTagName = $state("");
+  let newTagClass = $state<TagClass>("general");
   let newTagError = $state<string | null>(null);
   let creating = $state(false);
 
@@ -51,6 +53,7 @@
   let editColor = $state("");
   let editModel = $state("");
   let editWd = $state("");
+  let editClass = $state<TagClass>("general");
   let editError = $state<string | null>(null);
   let saving = $state(false);
   let deleting = $state(false);
@@ -72,7 +75,18 @@
     editColor = tag.color ?? "";
     editModel = tag.default_model ?? "";
     editWd = tag.working_dir ?? "";
+    editClass = tag.class_;
     editError = null;
+  });
+
+  // Severity-class tags reject default_model / working_dir at the
+  // backend boundary; the form mirrors that constraint by clearing
+  // and disabling the fields when severity is selected.
+  $effect(() => {
+    if (editClass === "severity") {
+      editModel = "";
+      editWd = "";
+    }
   });
 
   async function hydrate(): Promise<void> {
@@ -110,10 +124,11 @@
     creating = true;
     newTagError = null;
     try {
-      const created = await createTag({ name });
+      const created = await createTag({ name, class_: newTagClass });
       tags = [...tags, created].sort((a, b) => a.name.localeCompare(b.name));
       creatingNew = false;
       selectedId = created.id;
+      newTagClass = "general";
     } catch (error) {
       newTagError = describe(error);
     } finally {
@@ -136,6 +151,7 @@
       color: editColor.trim() === "" ? null : editColor.trim(),
       default_model: editModel.trim() === "" ? null : editModel.trim(),
       working_dir: editWd.trim() === "" ? null : editWd.trim(),
+      class_: editClass,
     };
     saving = true;
     editError = null;
@@ -185,20 +201,26 @@
     return error instanceof Error ? error.message : String(error);
   }
 
-  // Group the tags by their ``group`` prefix for the master list. An
-  // empty group means "ungrouped" — surfaced under a special bucket
-  // so flat tag sets still render meaningfully.
-  const groupedTags = $derived(groupTagsByPrefix(tags));
+  // Group the tags by class for the master list. The three buckets
+  // mirror the sidebar filter panel: project / severity / general
+  // ("Other"). A class with no tags surfaces an explanatory empty
+  // state rather than disappearing — same UX shape as the filter.
+  const groupedTags = $derived(groupTagsByClass(tags));
 
-  function groupTagsByPrefix(rows: TagOut[]): Array<[string, TagOut[]]> {
-    const buckets = new Map<string, TagOut[]>();
+  function groupTagsByClass(rows: TagOut[]): Array<[string, TagOut[]]> {
+    const buckets = new Map<string, TagOut[]>([
+      ["Project", []],
+      ["Severity", []],
+      ["Other", []],
+    ]);
     for (const row of rows) {
-      const key = row.group ?? "(ungrouped)";
-      const bucket = buckets.get(key) ?? [];
-      bucket.push(row);
-      buckets.set(key, bucket);
+      const label =
+        row.class_ === "project" ? "Project" : row.class_ === "severity" ? "Severity" : "Other";
+      buckets.get(label)!.push(row);
     }
-    return [...buckets.entries()].sort(([a], [b]) => a.localeCompare(b));
+    // Preserve insertion order (project → severity → other) so the
+    // page reads top-to-bottom matching the filter panel.
+    return [...buckets.entries()];
   }
 
   const selected = $derived(tags.find((row) => row.id === selectedId) ?? null);
@@ -228,11 +250,19 @@
       >
         <input
           type="text"
-          placeholder="tag/name"
+          placeholder="tag name"
           aria-label="New tag name"
           bind:value={newTagName}
           data-testid="tags-page-new-name"
         />
+        <label class="tags-page__class-select">
+          <span>Class</span>
+          <select bind:value={newTagClass} data-testid="tags-page-new-class">
+            <option value="project">Project</option>
+            <option value="severity">Severity</option>
+            <option value="general">Other</option>
+          </select>
+        </label>
         <button type="submit" disabled={creating} data-testid="tags-page-new-submit">
           {creating ? "Creating…" : "Create"}
         </button>
@@ -250,31 +280,42 @@
     {:else if tags.length === 0}
       <p class="tags-page__hint">No tags yet. Create one above to get started.</p>
     {:else}
-      {#each groupedTags as [group, rows] (group)}
-        <section class="tags-page__group">
-          <h2 class="tags-page__group-heading">{group}</h2>
-          <ul class="tags-page__rows">
-            {#each rows as tag (tag.id)}
-              {@const active = tag.id === selectedId}
-              <li>
-                <button
-                  type="button"
-                  class="tags-page__row"
-                  class:tags-page__row--active={active}
-                  aria-pressed={active}
-                  onclick={() => selectTag(tag.id)}
-                  data-testid={`tags-page-row-${tag.id}`}
-                >
-                  <span
-                    class="tags-page__swatch"
-                    style={tag.color ? `background:${tag.color};` : undefined}
-                    aria-hidden="true"
-                  ></span>
-                  <span class="tags-page__row-name">{tag.name}</span>
-                </button>
-              </li>
-            {/each}
-          </ul>
+      {#each groupedTags as [classLabel, rows] (classLabel)}
+        <section
+          class="tags-page__group"
+          data-testid={`tags-page-class-${classLabel.toLowerCase()}`}
+        >
+          <h2 class="tags-page__group-heading">{classLabel}</h2>
+          {#if rows.length === 0}
+            <p class="tags-page__hint">
+              {classLabel === "Other"
+                ? "No other tags. Create one above."
+                : `No ${classLabel.toLowerCase()} tags yet — pick the class on creation or reassign an existing tag below.`}
+            </p>
+          {:else}
+            <ul class="tags-page__rows">
+              {#each rows as tag (tag.id)}
+                {@const active = tag.id === selectedId}
+                <li>
+                  <button
+                    type="button"
+                    class="tags-page__row"
+                    class:tags-page__row--active={active}
+                    aria-pressed={active}
+                    onclick={() => selectTag(tag.id)}
+                    data-testid={`tags-page-row-${tag.id}`}
+                  >
+                    <span
+                      class="tags-page__swatch"
+                      style={tag.color ? `background:${tag.color};` : undefined}
+                      aria-hidden="true"
+                    ></span>
+                    <span class="tags-page__row-name">{tag.name}</span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
         </section>
       {/each}
     {/if}
@@ -309,6 +350,14 @@
           <input type="text" bind:value={editName} data-testid="tags-page-edit-name" />
         </label>
         <label>
+          <span>Class</span>
+          <select bind:value={editClass} data-testid="tags-page-edit-class">
+            <option value="project">Project (one per session, drives sidebar grouping)</option>
+            <option value="severity">Severity (one per session, drives the header shield)</option>
+            <option value="general">Other (free-form, many per session)</option>
+          </select>
+        </label>
+        <label>
           <span>Color (hex or palette token)</span>
           <input
             type="text"
@@ -317,23 +366,35 @@
             data-testid="tags-page-edit-color"
           />
         </label>
-        <label>
+        <label class:tags-page__field--disabled={editClass === "severity"}>
           <span>Default model</span>
           <input
             type="text"
             bind:value={editModel}
             placeholder="sonnet"
+            disabled={editClass === "severity"}
             data-testid="tags-page-edit-model"
           />
+          {#if editClass === "severity"}
+            <span class="tags-page__field-hint">
+              Severity tags carry no inherited model — clear and disabled.
+            </span>
+          {/if}
         </label>
-        <label>
+        <label class:tags-page__field--disabled={editClass === "severity"}>
           <span>Default working dir</span>
           <input
             type="text"
             bind:value={editWd}
             placeholder="/home/you/Projects/example"
+            disabled={editClass === "severity"}
             data-testid="tags-page-edit-wd"
           />
+          {#if editClass === "severity"}
+            <span class="tags-page__field-hint">
+              Severity tags carry no inherited working_dir — clear and disabled.
+            </span>
+          {/if}
         </label>
         <div class="tags-page__edit-actions">
           <button type="submit" disabled={saving} data-testid="tags-page-edit-save">
