@@ -9,6 +9,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Tag classes (project / severity / general):** Tags now carry a
+  `class` column that partitions them into three buckets the UI
+  renders as separate filter sections. Cardinality is enforced at the
+  API boundary on bulk-replace: a session may carry up to one project
+  tag, up to one severity tag, and any number of general tags.
+  Severity-class tags reject `default_model` / `working_dir` at the
+  dataclass + Pydantic validators (severity is signalling, not
+  configuration). New `tags.sort_order` column scopes per-class
+  display order; `PUT /api/tags/sort-order` is the atomic
+  drag-reorder endpoint. New `?class_=` filter on `GET /api/tags`;
+  three new `tag_ids_<class>` query params on `GET /api/sessions`
+  (OR within a section, AND across sections; empty section means
+  "no constraint", not "exclude everything"). The legacy `tag_ids`
+  param and `GET /api/tag-groups` endpoint are retained one release
+  for back-compat with v0.18.x consumers.
+
 - **`/advisor` per-turn override (G9):** The composer slash-command
   `/advisor <message>` attaches `force_advisor=true` to the prompt
   payload.  The backend SDK loop honours the flag by prepending

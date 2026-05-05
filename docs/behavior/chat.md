@@ -9,7 +9,7 @@ Sibling subsystems referenced here:
 
 The user opens the new-session dialog (sidebar "+" button, the keyboard shortcut documented in [keyboard-shortcuts](keyboard-shortcuts.md), or by selecting a template). The dialog requires:
 
-* at least one tag (every chat must carry ≥1 general tag — see [vault](vault.md) for how tags surface elsewhere);
+* any number of tags (zero or more), partitioned across the three tag classes — at most one *project*, at most one *severity*, any number of *general* labels. The project tag drives sidebar grouping and inheritance; the severity tag drives the header shield colour; general tags are free-form labels (see [vault](vault.md) for how tags surface elsewhere). Cardinality is enforced on session create: payloads with two project tags or two severity tags return 422.
 * a working directory (free-text path or browse);
 * a routing selection per spec §6 (executor model, optional advisor model with `max_uses`, effort level);
 * a first message body.

@@ -118,7 +118,7 @@ One module per resource group; **no god `store.py`**.
 | `db/connect.py` | `async def init_db(path) -> aiosqlite.Connection`. Idempotent first-run apply of `schema.sql`. Seeds spec §3 default system rules (idempotent on `seeded = 1`). |
 | `db/sessions.py` | `sessions` table queries. CRUD + state transitions + token-totals readout. |
 | `db/messages.py` | `messages` table queries — including the spec §5 routing/usage columns added day 1 (no ALTER chain). Tool-call rows live here too (one-to-many on `messages.id`). |
-| `db/tags.py` | `tags` + the per-session join (`session_tags`). |
+| `db/tags.py` | `tags` + the per-session join (`session_tags`). The `tags.class` column (`'project'` / `'severity'` / `'general'`) partitions the tag set for the three-section sidebar filter; `tags.sort_order` is per-class display order. Severity-class tags reject `default_model` / `working_dir` at the dataclass boundary. The slash-namespace `<group>/<name>` convention is retained for one release for back-compat — new categorisation goes through `class`. |
 | `db/memories.py` | `tag_memories` table. Pulled out of v0.17.x's `_tags.py` so the boundary between "tags as labels" and "tag memories as system-prompt fragments" is visible. |
 | `db/checklists.py` | `checklist_items` + `checklist_paired_chats`. |
 | `db/checkpoints.py` | `checkpoints` table — Bearings' own snapshot/restore feature, distinct from the SDK's `enable_file_checkpointing` (see §5). |

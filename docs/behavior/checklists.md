@@ -19,7 +19,7 @@ A checklist session has no composer and no conversation history — those live o
 
 ## When the user creates a checklist
 
-The user picks "Checklist" as the session kind in the new-session dialog (or via a slash-command / tag-rule the rebuild may add). Tags are required (≥1 general tag, like every session). After create, the pane opens with the Add-item input focused.
+The user picks "Checklist" as the session kind in the new-session dialog (or via a slash-command / tag-rule the rebuild may add). Tags follow the same rules as chats — any number of tags, with at most one project class, at most one severity class, and any number of general labels (see [chat](chat.md) §"When the user creates a chat" for the cardinality rule). Severity-class tags carry no `default_model` / `working_dir`, so a paired chat spawned from a leaf inherits inheritance fields only from project / general tags. After create, the pane opens with the Add-item input focused.
 
 ## Item edit / add / delete / reorder
 

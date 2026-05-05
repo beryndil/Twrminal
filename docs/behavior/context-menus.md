@@ -67,6 +67,16 @@ Action IDs (e.g. `session.copy_id`) are public — `~/.config/bearings/menus.tom
 | edit | Edit tag… | `tag.edit` |
 | destructive | Delete tag | `tag.delete` (advanced) |
 
+The filter panel renders three sections — Project, Severity, Other —
+each scoped to one tag class. Selections within a section apply OR
+semantics; selections across sections apply AND. An empty section
+emits no constraint (it does not exclude rows). The "Edit tag…"
+action lands on `/tags`, where a class selector lets the operator
+reassign a tag between project / severity / other; severity-class
+tags surface their `default_model` / `working_dir` inputs disabled
+and cleared because the backend rejects non-null inheritance fields
+on severity rows.
+
 ### Tag chip (attached to a session, inside SessionEdit / NewSessionForm)
 
 | Section | Label | ID |
