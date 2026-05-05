@@ -2262,7 +2262,7 @@
           "sessions"
         ],
         "summary": "List Sessions",
-        "description": "List sessions filtered by ``kind`` + ``include_closed`` + ``tag_ids``.\n\n``tag_ids`` is the sidebar tag-filter query surface from\n``docs/behavior/chat.md`` \u00a7 \"When the user creates a chat\" + the\nitem 2.2 done-when criterion (\"OR semantics across tags\"). Repeat\nthe parameter for multi-select filtering \u2014 ``?tag_ids=1&tag_ids=2``\nreturns sessions attached to tag 1 OR tag 2 (the standard FastAPI\nlist-query convention; a comma-list would have required custom\nparsing for no expressivity gain). Omitting the parameter applies\nno tag filter.",
+        "description": "List sessions filtered by ``kind`` + ``include_closed`` + tag filters.\n\nTwo filter shapes coexist:\n\n* ``tag_ids`` \u2014 legacy flat OR (back-compat). Returns sessions\n  attached to **at least one** of the listed tags regardless of\n  class. Repeat the parameter for multi-select.\n* ``tag_ids_project`` / ``tag_ids_severity`` / ``tag_ids_other`` \u2014\n  three-section faceted filter from the tag-class feature. OR\n  within each class; AND across classes. An omitted (or empty)\n  section means \"no constraint from this class,\" NOT \"exclude\n  everything\" \u2014 the empty-section state lets the filter panel\n  render an empty section without blanking out results.\n\nAll four can be combined; each is an additional AND constraint at\nthe SQL layer (legacy ``tag_ids`` joins; per-class params use\ncorrelated EXISTS subqueries). A frontend that only uses the new\nsurface should leave ``tag_ids`` empty.",
         "operationId": "list_sessions_api_sessions_get",
         "parameters": [
           {
@@ -2308,6 +2308,63 @@
                 }
               ],
               "title": "Tag Ids"
+            }
+          },
+          {
+            "name": "tag_ids_project",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tag Ids Project"
+            }
+          },
+          {
+            "name": "tag_ids_severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tag Ids Severity"
+            }
+          },
+          {
+            "name": "tag_ids_other",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tag Ids Other"
             }
           }
         ],

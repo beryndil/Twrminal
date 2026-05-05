@@ -228,3 +228,87 @@ async def test_list_all_combines_kind_and_tag_filter(conn: aiosqlite.Connection)
 
     chats_only = await sessions_db.list_all(conn, kind="chat", tag_ids=(tag1.id,))
     assert {row.id for row in chats_only} == {chat_tagged.id}
+
+
+# ---------------------------------------------------------------------------
+# Three-section faceted filter — tag-class feature
+# ---------------------------------------------------------------------------
+
+
+async def test_list_all_three_section_or_within_and_across(
+    conn: aiosqlite.Connection,
+) -> None:
+    """OR within a section; AND across sections; empty = no constraint."""
+    from bearings.db import tags as tags_db
+
+    proj_a = await tags_db.create(conn, name="proj-a", class_="project")
+    proj_b = await tags_db.create(conn, name="proj-b", class_="project")
+    sev_high = await tags_db.create(conn, name="high", class_="severity")
+
+    alpha = await sessions_db.create(
+        conn, kind="chat", title="alpha", working_dir="/wd", model="sonnet"
+    )
+    beta = await sessions_db.create(
+        conn, kind="chat", title="beta", working_dir="/wd", model="sonnet"
+    )
+    gamma = await sessions_db.create(
+        conn, kind="chat", title="gamma", working_dir="/wd", model="sonnet"
+    )
+    await tags_db.attach(conn, session_id=alpha.id, tag_id=proj_a.id)
+    await tags_db.attach(conn, session_id=alpha.id, tag_id=sev_high.id)
+    await tags_db.attach(conn, session_id=beta.id, tag_id=proj_b.id)
+    await tags_db.attach(conn, session_id=beta.id, tag_id=sev_high.id)
+    await tags_db.attach(conn, session_id=gamma.id, tag_id=proj_a.id)
+
+    # AND-across: project IN {a, b} AND severity IN {high}.
+    rows = await sessions_db.list_all(
+        conn,
+        tag_ids_project=(proj_a.id, proj_b.id),
+        tag_ids_severity=(sev_high.id,),
+    )
+    assert {r.id for r in rows} == {alpha.id, beta.id}
+
+
+async def test_list_all_empty_section_means_no_constraint(
+    conn: aiosqlite.Connection,
+) -> None:
+    """Omitting a section must not exclude rows from other sections."""
+    from bearings.db import tags as tags_db
+
+    proj = await tags_db.create(conn, name="proj", class_="project")
+    a = await sessions_db.create(conn, kind="chat", title="a", working_dir="/wd", model="sonnet")
+    b = await sessions_db.create(conn, kind="chat", title="b", working_dir="/wd", model="sonnet")
+    await tags_db.attach(conn, session_id=a.id, tag_id=proj.id)
+    await tags_db.attach(conn, session_id=b.id, tag_id=proj.id)
+
+    rows = await sessions_db.list_all(conn, tag_ids_project=(proj.id,))
+    assert {r.id for r in rows} == {a.id, b.id}
+
+
+async def test_list_all_three_section_filter_returns_each_session_once(
+    conn: aiosqlite.Connection,
+) -> None:
+    """EXISTS subquery path doesn't need DISTINCT — verify no duplicates."""
+    from bearings.db import tags as tags_db
+
+    proj = await tags_db.create(conn, name="proj", class_="project")
+    sev = await tags_db.create(conn, name="high", class_="severity")
+    other_a = await tags_db.create(conn, name="general-a")
+    other_b = await tags_db.create(conn, name="general-b")
+
+    s = await sessions_db.create(
+        conn, kind="chat", title="multi", working_dir="/wd", model="sonnet"
+    )
+    await tags_db.attach(conn, session_id=s.id, tag_id=proj.id)
+    await tags_db.attach(conn, session_id=s.id, tag_id=sev.id)
+    await tags_db.attach(conn, session_id=s.id, tag_id=other_a.id)
+    await tags_db.attach(conn, session_id=s.id, tag_id=other_b.id)
+
+    rows = await sessions_db.list_all(
+        conn,
+        tag_ids_project=(proj.id,),
+        tag_ids_severity=(sev.id,),
+        tag_ids_other=(other_a.id, other_b.id),
+    )
+    assert [r.id for r in rows] == [s.id]
+    assert len(rows) == 1, "EXISTS path returns each row once even with multi-tag matches"

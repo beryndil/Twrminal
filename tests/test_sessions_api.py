@@ -260,6 +260,164 @@ async def test_create_session_unknown_tag_404(
     assert rows == []
 
 
+# ---------------------------------------------------------------------------
+# Tag-class cardinality + three-section filter — tag-class feature
+# ---------------------------------------------------------------------------
+
+
+async def test_create_session_two_project_tags_422(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """API enforces ≤1 project tag per session on bulk replace."""
+    from bearings.db import tags as tags_db
+
+    app, conn = app_and_db
+    a = await tags_db.create(conn, name="proj-a", class_="project")
+    b = await tags_db.create(conn, name="proj-b", class_="project")
+    payload = {
+        "kind": SESSION_KIND_CHAT,
+        "title": "two-projects",
+        "working_dir": "/tmp/wd",
+        "model": "claude-sonnet-4-5",
+        "tag_ids": [a.id, b.id],
+    }
+    with TestClient(app) as client:
+        response = client.post("/api/sessions", json=payload)
+    assert response.status_code == 422
+    assert "project" in response.json()["detail"]
+    # No orphan session lands.
+    assert await sessions_db.list_all(conn) == []
+
+
+async def test_create_session_two_severity_tags_422(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """API enforces ≤1 severity tag per session on bulk replace."""
+    from bearings.db import tags as tags_db
+
+    app, conn = app_and_db
+    low = await tags_db.create(conn, name="low", class_="severity")
+    high = await tags_db.create(conn, name="high", class_="severity")
+    payload = {
+        "kind": SESSION_KIND_CHAT,
+        "title": "two-severities",
+        "working_dir": "/tmp/wd",
+        "model": "claude-sonnet-4-5",
+        "tag_ids": [low.id, high.id],
+    }
+    with TestClient(app) as client:
+        response = client.post("/api/sessions", json=payload)
+    assert response.status_code == 422
+    assert "severity" in response.json()["detail"]
+
+
+async def test_create_session_one_project_one_severity_ok(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """One of each class plus general tags is the canonical valid shape."""
+    from bearings.db import tags as tags_db
+
+    app, conn = app_and_db
+    proj = await tags_db.create(conn, name="bearings", class_="project")
+    sev = await tags_db.create(conn, name="urgent", class_="severity")
+    gen = await tags_db.create(conn, name="freeform")
+    payload = {
+        "kind": SESSION_KIND_CHAT,
+        "title": "ok-shape",
+        "working_dir": "/tmp/wd",
+        "model": "claude-sonnet-4-5",
+        "tag_ids": [proj.id, sev.id, gen.id],
+    }
+    with TestClient(app) as client:
+        response = client.post("/api/sessions", json=payload)
+    assert response.status_code == 201
+
+
+async def test_list_sessions_three_section_filter_and_across_or_within(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """OR within a section; AND across sections."""
+    from bearings.db import tags as tags_db
+
+    app, conn = app_and_db
+    proj_a = await tags_db.create(conn, name="proj-a", class_="project")
+    proj_b = await tags_db.create(conn, name="proj-b", class_="project")
+    sev_high = await tags_db.create(conn, name="high", class_="severity")
+    sev_low = await tags_db.create(conn, name="low", class_="severity")
+    gen = await tags_db.create(conn, name="gen")
+
+    # Sessions:
+    #   alpha: proj-a + sev-high
+    #   beta:  proj-b + sev-high + gen
+    #   gamma: proj-a + sev-low
+    #   delta: proj-b only (no severity)
+    alpha = await _new_chat(conn, "alpha")
+    beta = await _new_chat(conn, "beta")
+    gamma = await _new_chat(conn, "gamma")
+    delta = await _new_chat(conn, "delta")
+    await tags_db.attach(conn, session_id=alpha, tag_id=proj_a.id)
+    await tags_db.attach(conn, session_id=alpha, tag_id=sev_high.id)
+    await tags_db.attach(conn, session_id=beta, tag_id=proj_b.id)
+    await tags_db.attach(conn, session_id=beta, tag_id=sev_high.id)
+    await tags_db.attach(conn, session_id=beta, tag_id=gen.id)
+    await tags_db.attach(conn, session_id=gamma, tag_id=proj_a.id)
+    await tags_db.attach(conn, session_id=gamma, tag_id=sev_low.id)
+    await tags_db.attach(conn, session_id=delta, tag_id=proj_b.id)
+
+    with TestClient(app) as client:
+        # AND across (project IN {a,b}) AND (severity IN {high}).
+        # → alpha + beta (both project-matching with high severity).
+        response = client.get(
+            "/api/sessions",
+            params=[
+                ("tag_ids_project", str(proj_a.id)),
+                ("tag_ids_project", str(proj_b.id)),
+                ("tag_ids_severity", str(sev_high.id)),
+            ],
+        )
+    assert response.status_code == 200
+    ids = {row["id"] for row in response.json()}
+    assert ids == {alpha, beta}, "OR within project + AND with severity"
+
+
+async def test_list_sessions_empty_severity_filter_returns_all_severities(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Empty section ≠ "exclude everything" — it means "no constraint."""
+    from bearings.db import tags as tags_db
+
+    app, conn = app_and_db
+    proj = await tags_db.create(conn, name="proj-a", class_="project")
+    sev = await tags_db.create(conn, name="high", class_="severity")
+    a = await _new_chat(conn, "a")
+    b = await _new_chat(conn, "b")
+    await tags_db.attach(conn, session_id=a, tag_id=proj.id)
+    await tags_db.attach(conn, session_id=a, tag_id=sev.id)
+    await tags_db.attach(conn, session_id=b, tag_id=proj.id)
+
+    with TestClient(app) as client:
+        # Project filter set, severity omitted → both sessions returned.
+        response = client.get(
+            "/api/sessions",
+            params=[("tag_ids_project", str(proj.id))],
+        )
+    assert response.status_code == 200
+    ids = {row["id"] for row in response.json()}
+    assert ids == {a, b}, "omitting a section must not exclude rows"
+
+
+async def test_list_sessions_legacy_session_with_no_project_remains_listable(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """No project tag is fine — cardinality is ≤1, not =1."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn, "untagged")
+    with TestClient(app) as client:
+        response = client.get("/api/sessions")
+    assert response.status_code == 200
+    assert sid in {row["id"] for row in response.json()}
+
+
 async def test_create_session_empty_title_422(
     app_and_db: tuple[FastAPI, aiosqlite.Connection],
 ) -> None:

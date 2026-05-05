@@ -333,20 +333,35 @@ async def list_all(
     kind: str | None = None,
     include_closed: bool = True,
     tag_ids: tuple[int, ...] | None = None,
+    tag_ids_project: tuple[int, ...] | None = None,
+    tag_ids_severity: tuple[int, ...] | None = None,
+    tag_ids_other: tuple[int, ...] | None = None,
 ) -> list[Session]:
     """Every session row matching the filters; newest-first.
 
-    ``tag_ids`` is the sidebar tag-filter surface from
-    ``docs/behavior/chat.md`` §"When the user creates a chat" + the
-    item 2.2 done-when criterion ("OR semantics across tags"). Passing
-    ``None`` (default) applies no tag filter; passing a non-empty tuple
-    returns sessions attached to **at least one** of the listed tags
-    (OR semantics, implemented via ``WHERE session_tags.tag_id IN
-    (...)``). ``DISTINCT`` collapses the multi-row product the join
-    produces when a single session matches more than one of the
-    requested tags. Passing the empty tuple raises ``ValueError`` —
-    the API layer maps "no filter" to ``None``, so an empty tuple is a
-    caller bug rather than an "exclude everything" intent.
+    Two filter shapes coexist:
+
+    * ``tag_ids`` — legacy flat OR across every class. Returns sessions
+      attached to **at least one** of the listed tags. Retained for
+      back-compat with v0.18.x callers.
+    * ``tag_ids_project`` / ``tag_ids_severity`` / ``tag_ids_other`` —
+      three-section faceted filter from the tag-class feature. Each
+      tuple is **OR within its class**; the three tuples compose
+      **AND across classes**. An empty / ``None`` tuple means "no
+      constraint from this section" (NOT "exclude everything"); the
+      filter panel renders an empty section by emitting no constraint
+      from that class.
+
+    The two shapes can be combined: each layer is an additional AND
+    constraint. Implementation uses correlated ``EXISTS`` subqueries
+    rather than a multi-join so a session that matches all three
+    classes returns once (no DISTINCT needed in the new path).
+
+    Passing an empty tuple to ``tag_ids`` raises ``ValueError`` — the
+    API layer maps "no filter" to ``None``, so an empty tuple is a
+    caller bug rather than an "exclude everything" intent. The
+    per-class params permit the empty / ``None`` distinction (both
+    mean "no constraint from this section").
     """
     if kind is not None and kind not in KNOWN_SESSION_KINDS:
         raise ValueError(f"list_all: kind {kind!r} not in {sorted(KNOWN_SESSION_KINDS)}")
@@ -365,15 +380,27 @@ async def list_all(
         placeholders = ",".join(["?"] * len(tag_ids))
         clauses.append(f"session_tags.tag_id IN ({placeholders})")
         args.extend(tag_ids)
+    # Three-section faceted filter: each non-empty per-class tuple
+    # contributes one EXISTS subquery; empty / None contributes nothing
+    # ("no constraint from this section"). Sections compose with AND.
+    for section_ids in (tag_ids_project, tag_ids_severity, tag_ids_other):
+        if section_ids:
+            placeholders = ",".join(["?"] * len(section_ids))
+            clauses.append(
+                "EXISTS (SELECT 1 FROM session_tags st_section "
+                "WHERE st_section.session_id = sessions.id "
+                f"AND st_section.tag_id IN ({placeholders}))"
+            )
+            args.extend(section_ids)
     join = (
         " INNER JOIN session_tags ON session_tags.session_id = sessions.id"
         if tag_ids is not None
         else ""
     )
     where = "" if not clauses else " WHERE " + " AND ".join(clauses)
-    # ``SELECT DISTINCT`` is only required on the join path; the
-    # plain-select path returns each row once already, so we keep the
-    # cheaper non-distinct query when no tag filter is in play.
+    # ``SELECT DISTINCT`` is only required on the legacy ``tag_ids``
+    # join path; the EXISTS-based per-class path returns each row once
+    # already.
     select = _SELECT_SESSION_COLUMNS_DISTINCT if tag_ids is not None else _SELECT_SESSION_COLUMNS
     cursor = await connection.execute(
         select + join + where + " ORDER BY sessions.updated_at DESC, sessions.id ASC",

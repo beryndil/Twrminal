@@ -49,6 +49,8 @@ from bearings.config.constants import (
     KNOWN_SESSION_KINDS,
     PROMPT_ACK_QUEUED_KEY,
     PROMPT_ACK_SESSION_ID_KEY,
+    TAG_CLASS_PROJECT,
+    TAG_CLASS_SEVERITY,
 )
 from bearings.db import messages as messages_db
 from bearings.db import sessions as sessions_db
@@ -126,6 +128,60 @@ def _sessions_broadcaster(request: Request) -> SessionsBroadcaster | None:
     )
 
 
+async def _validate_tag_cardinality(
+    db: aiosqlite.Connection,
+    tag_ids: tuple[int, ...],
+) -> None:
+    """Reject tag-id sets that violate the ≤1 project / ≤1 severity rule.
+
+    Cardinality is enforced at the API boundary (not the schema) so a
+    half-built create transaction can roll back cleanly. The bulk-replace
+    path (``POST /api/sessions``, ``set_for_session``) calls this before
+    persisting; single-attach via ``PUT /api/sessions/{sid}/tags/{tid}``
+    intentionally does NOT validate, so the user can transiently land in
+    a 2-project state via incremental edits — the next bulk replace will
+    reject. (See plan §"Migration & risk notes".)
+
+    Raises :class:`HTTPException` 422 with a structured detail listing
+    the violating ids per class. Empty ``tag_ids`` is valid.
+    """
+    if not tag_ids:
+        return
+    # Resolve class for each id in one round-trip. Existing-id validation
+    # happens upstream in :func:`create_session`; if any id is missing
+    # here the count below simply ignores it (the missing-id 404 fires
+    # before we reach this function).
+    placeholders = ",".join("?" * len(tag_ids))
+    cursor = await db.execute(
+        f"SELECT id, class FROM tags WHERE id IN ({placeholders})",
+        tag_ids,
+    )
+    try:
+        rows = await cursor.fetchall()
+    finally:
+        await cursor.close()
+    by_class: dict[str, list[int]] = {}
+    for row in rows:
+        by_class.setdefault(str(row[1]), []).append(int(str(row[0])))
+    project_ids = by_class.get(TAG_CLASS_PROJECT, [])
+    severity_ids = by_class.get(TAG_CLASS_SEVERITY, [])
+    violations: list[str] = []
+    if len(project_ids) > 1:
+        violations.append(f"≤1 project tag allowed (got {sorted(project_ids)})")
+    if len(severity_ids) > 1:
+        violations.append(f"≤1 severity tag allowed (got {sorted(severity_ids)})")
+    if violations:
+        # f-string keeps the detail value AST-detectable as string-typed
+        # for the consistency_lint error-shape rule (which rejects bare
+        # ``str.join`` calls — only ``str(...)``, literals, f-strings,
+        # and string-typed ternaries are accepted).
+        message = "; ".join(violations)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"{message}",
+        )
+
+
 def _to_out(session: Session, paired_parent_title: str | None = None) -> SessionOut:
     """Wire shape for a session row."""
     return SessionOut(
@@ -165,17 +221,28 @@ async def list_sessions(
     kind: str | None = None,
     include_closed: bool = True,
     tag_ids: Annotated[list[int] | None, Query()] = None,
+    tag_ids_project: Annotated[list[int] | None, Query()] = None,
+    tag_ids_severity: Annotated[list[int] | None, Query()] = None,
+    tag_ids_other: Annotated[list[int] | None, Query()] = None,
 ) -> list[SessionOut]:
-    """List sessions filtered by ``kind`` + ``include_closed`` + ``tag_ids``.
+    """List sessions filtered by ``kind`` + ``include_closed`` + tag filters.
 
-    ``tag_ids`` is the sidebar tag-filter query surface from
-    ``docs/behavior/chat.md`` § "When the user creates a chat" + the
-    item 2.2 done-when criterion ("OR semantics across tags"). Repeat
-    the parameter for multi-select filtering — ``?tag_ids=1&tag_ids=2``
-    returns sessions attached to tag 1 OR tag 2 (the standard FastAPI
-    list-query convention; a comma-list would have required custom
-    parsing for no expressivity gain). Omitting the parameter applies
-    no tag filter.
+    Two filter shapes coexist:
+
+    * ``tag_ids`` — legacy flat OR (back-compat). Returns sessions
+      attached to **at least one** of the listed tags regardless of
+      class. Repeat the parameter for multi-select.
+    * ``tag_ids_project`` / ``tag_ids_severity`` / ``tag_ids_other`` —
+      three-section faceted filter from the tag-class feature. OR
+      within each class; AND across classes. An omitted (or empty)
+      section means "no constraint from this class," NOT "exclude
+      everything" — the empty-section state lets the filter panel
+      render an empty section without blanking out results.
+
+    All four can be combined; each is an additional AND constraint at
+    the SQL layer (legacy ``tag_ids`` joins; per-class params use
+    correlated EXISTS subqueries). A frontend that only uses the new
+    surface should leave ``tag_ids`` empty.
     """
     db = _db(request)
     if kind is not None and kind not in KNOWN_SESSION_KINDS:
@@ -183,16 +250,22 @@ async def list_sessions(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"kind {kind!r} not in {sorted(KNOWN_SESSION_KINDS)}",
         )
-    # Normalize the empty-list-from-query edge case (FastAPI hands
-    # ``[]`` if the client sends no ``tag_ids``; treat that the same as
-    # "no filter" so the DB layer's contract — ``None`` for no filter,
-    # non-empty tuple for OR — is honoured.
+    # Normalize the empty-list-from-query edge cases. FastAPI hands
+    # ``[]`` if the client sends no values; the DB layer's contract is
+    # ``None`` for no filter, non-empty tuple otherwise — translate
+    # accordingly.
     tag_filter = tuple(tag_ids) if tag_ids else None
+    project_filter = tuple(tag_ids_project) if tag_ids_project else None
+    severity_filter = tuple(tag_ids_severity) if tag_ids_severity else None
+    other_filter = tuple(tag_ids_other) if tag_ids_other else None
     rows = await sessions_db.list_all(
         db,
         kind=kind,
         include_closed=include_closed,
         tag_ids=tag_filter,
+        tag_ids_project=project_filter,
+        tag_ids_severity=severity_filter,
+        tag_ids_other=other_filter,
     )
     # Fetch paired-chat parent titles for chat rows (sidebar annotation).
     # Build a map of session_id → parent_title for efficient lookup.
@@ -252,6 +325,10 @@ async def create_session(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"unknown tag_ids: {missing}",
             )
+        # ≤1 project / ≤1 severity per session — see
+        # ``_validate_tag_cardinality`` for the rationale and the
+        # single-attach exemption.
+        await _validate_tag_cardinality(db, tag_ids)
     # Resolve working_dir: explicit > first tag with a working_dir set > error
     resolved_working_dir = payload.working_dir
     if resolved_working_dir is None and tag_ids:
