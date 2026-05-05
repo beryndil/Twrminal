@@ -76,6 +76,12 @@ EXPECTED_TABLES = frozenset(
         # Item 3.2 addition — singleton user-preferences row (theme,
         # default_model, default_permission_mode, default_working_dir).
         "preferences",
+        # 2026-05-05 addition — opaque mirror of the Claude Code CLI's
+        # per-session JSONL transcript, persisted via the SDK
+        # :class:`SessionStore` adapter so supervisor respawns (model
+        # swap, idle reap, server restart, recovery from ERROR) restore
+        # full conversation context to the new subprocess.
+        "sdk_session_entries",
     }
 )
 

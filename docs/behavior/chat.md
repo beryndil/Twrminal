@@ -128,6 +128,8 @@ The agent loop for a chat is implicit:
 * A long-idle session's runner is torn down server-side (the user observes nothing — the next send transparently spins it back up).
 * Closing a session drains its runner; subsequent prompts via [prompt-endpoint](prompt-endpoint.md) get a 409 until the session is reopened.
 
+**History persistence across respawn.** Every time the agent's underlying SDK subprocess writes a transcript line, Bearings mirrors it to durable storage. When the supervisor respawns the subprocess (model swap, idle reap, server restart, recovery from ERROR), the new subprocess inherits the full conversation context — the user observes no "this is the start of the session" reset on the next turn. The mirror is invisible in the UI; it surfaces only as continuity ("the agent still knows what we were just discussing"). Transcripts are scoped to a single Bearings session and cleaned up automatically when the session row is deleted.
+
 ## Inspector pane (non-routing subsections)
 
 The right column of the app shell hosts the **Inspector** pane: a tabbed surface that exposes the active session's per-row metadata in long form. Five tabs are wired today, in the order they render: **Agent**, **Context**, **Instructions**, **Routing**, **Usage**. The first three are described here; the routing-and-usage pair belongs to §"What the user does NOT see in chat" because it is governed by the routing spec.

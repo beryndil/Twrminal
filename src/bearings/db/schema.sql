@@ -605,6 +605,47 @@ CREATE TABLE IF NOT EXISTS preferences (
 INSERT OR IGNORE INTO preferences (id) VALUES (1);
 
 -- ---------------------------------------------------------------------------
+-- sdk_session_entries — opaque mirror of the Claude Code CLI's per-session
+-- JSONL transcript, persisted via the SDK's :class:`SessionStore` adapter.
+--
+-- The SDK CLI maintains a ``~/.claude/projects/<cwd>/<uuid>.jsonl`` file
+-- that records every transcript line for a session — user prompts, assistant
+-- turns, tool calls, results, system messages, mode markers, and titles.
+-- That file is what ``--resume <uuid>`` reads to restore conversation
+-- context on respawn. When the SDK is configured with ``session_store=…``,
+-- every line written locally is also passed to the adapter's ``append()``
+-- callback, and ``resume`` materialises the transcript from the adapter
+-- when the local file is absent (e.g. server restart, separate worker
+-- pod, idle-reaped subprocess).
+--
+-- Bearings persists those entries here so the SDK supervisor's respawn
+-- path (model swap, idle reap, server restart, recovery from ERROR) can
+-- restore full conversation context to the new subprocess. Without this,
+-- every respawn would start with empty context and the user observes
+-- "this is the start of the session" on every model swap.
+--
+-- The ``entry_json`` blob is opaque to Bearings — the SDK adapter contract
+-- is "pass-through; round-tripping ``json.dumps`` / ``json.loads`` is the
+-- only required invariant." The CLI's JSONL line shapes are an internal
+-- discriminated union that v1 does not parse.
+--
+-- ``seq`` is the per-session insertion order (monotonic, gap-free per
+-- session) so the loader returns entries in their original write order.
+-- ``ON DELETE CASCADE`` lets a session deletion clean up its mirror rows
+-- atomically.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sdk_session_entries (
+    session_id TEXT    NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    seq        INTEGER NOT NULL,
+    entry_json TEXT    NOT NULL,
+    created_at TEXT    NOT NULL,
+    PRIMARY KEY (session_id, seq)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sdk_session_entries_session
+    ON sdk_session_entries(session_id);
+
+-- ---------------------------------------------------------------------------
 -- Default system_routing_rules seed.
 --
 -- Verbatim from docs/model-routing-v1-spec.md §3 default rule table.

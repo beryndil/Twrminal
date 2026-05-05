@@ -331,6 +331,8 @@ def test_options_kwargs_field_names_align_with_sdk_options() -> None:
         "mcp_servers",
         "hooks",
         "can_use_tool",
+        "session_store",
+        "resume",
     }
     bearings_field_names = {f.name for f in dataclasses.fields(OptionsKwargs)}
     # Every Bearings field that targets SDK must exist on SDK side.
@@ -341,3 +343,76 @@ def test_options_kwargs_field_names_align_with_sdk_options() -> None:
     assert not not_in_carrier, (
         f"SDK-target set has names not declared on OptionsKwargs: {not_in_carrier}"
     )
+    # ``sdk_session_id`` is the one rename: Bearings prefixes with ``sdk_``
+    # to disambiguate from the Bearings session_id field, but maps to the
+    # SDK's ``session_id`` option at splat time. Verify both sides exist.
+    assert "sdk_session_id" in bearings_field_names
+    assert "session_id" in sdk_field_names
+
+
+def test_session_store_passes_through_when_set() -> None:
+    """``session_store`` rides through ``compose_session_options`` unchanged."""
+    sentinel = object()
+    kwargs = compose_session_options(
+        decision=_decision(),
+        session_instructions=None,
+        working_dir="/wd",
+        permission_profile="standard",
+        permission_mode_override=None,
+        setting_sources=None,
+        max_budget_usd=None,
+        bearings_mcp_server=_server(),
+        session_store=sentinel,
+    )
+    assert kwargs.session_store is sentinel
+
+
+def test_sdk_session_id_passes_through_when_set() -> None:
+    """``sdk_session_id`` rides through unchanged when ``resume`` is None."""
+    kwargs = compose_session_options(
+        decision=_decision(),
+        session_instructions=None,
+        working_dir="/wd",
+        permission_profile="standard",
+        permission_mode_override=None,
+        setting_sources=None,
+        max_budget_usd=None,
+        bearings_mcp_server=_server(),
+        sdk_session_id="01234567-89ab-cdef-0123-456789abcdef",
+    )
+    assert kwargs.sdk_session_id == "01234567-89ab-cdef-0123-456789abcdef"
+    assert kwargs.resume is None
+
+
+def test_resume_passes_through_when_set() -> None:
+    """``resume`` rides through unchanged when ``sdk_session_id`` is None."""
+    kwargs = compose_session_options(
+        decision=_decision(),
+        session_instructions=None,
+        working_dir="/wd",
+        permission_profile="standard",
+        permission_mode_override=None,
+        setting_sources=None,
+        max_budget_usd=None,
+        bearings_mcp_server=_server(),
+        resume="01234567-89ab-cdef-0123-456789abcdef",
+    )
+    assert kwargs.resume == "01234567-89ab-cdef-0123-456789abcdef"
+    assert kwargs.sdk_session_id is None
+
+
+def test_sdk_session_id_and_resume_mutually_exclusive() -> None:
+    """Setting both ``sdk_session_id`` and ``resume`` raises ``ValueError``."""
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        compose_session_options(
+            decision=_decision(),
+            session_instructions=None,
+            working_dir="/wd",
+            permission_profile="standard",
+            permission_mode_override=None,
+            setting_sources=None,
+            max_budget_usd=None,
+            bearings_mcp_server=_server(),
+            sdk_session_id="01234567-89ab-cdef-0123-456789abcdef",
+            resume="01234567-89ab-cdef-0123-456789abcdef",
+        )

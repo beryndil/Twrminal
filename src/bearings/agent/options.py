@@ -228,6 +228,29 @@ class OptionsKwargs:
     # ``can_use_tool``: ``None`` until A4 lands the
     # :class:`ApprovalBroker` callback bridge.
     can_use_tool: CanUseToolCallback | None = None
+    # ``session_store``: :class:`bearings.agent.session_store.BearingsSessionStore`
+    # for persisting + restoring SDK transcript JSONL across supervisor
+    # respawns (model swap, idle reap, server restart, recovery). ``None``
+    # disables history mirroring (used by tests that don't exercise the
+    # respawn path). Typed as ``Any`` so this module doesn't import the
+    # SDK ``SessionStore`` Protocol — the duck-typed adapter satisfies
+    # the contract without an isinstance check at the SDK splat site.
+    session_store: Any = None
+    # ``sdk_session_id``: SDK-form UUID derived from the Bearings session
+    # id via :func:`bearings.agent.sdk_session_id.bearings_to_sdk_uuid`.
+    # On first spawn (no entries in the store yet) it splats as the SDK's
+    # ``session_id`` option to bind the CLI's session UUID to ours; on
+    # subsequent spawns the bootstrap clears it and sets ``resume`` so the
+    # SDK materialises history from the store. ``None`` leaves the SDK to
+    # generate a UUID itself (used by tests that don't exercise resume).
+    sdk_session_id: str | None = None
+    # ``resume``: SDK-form UUID matching ``sdk_session_id`` from a prior
+    # spawn. When set, the SDK calls ``session_store.load`` to materialise
+    # the JSONL transcript into a temp ``CLAUDE_CONFIG_DIR`` and the CLI
+    # subprocess starts with ``--resume <uuid>``. Mutually exclusive with
+    # ``sdk_session_id`` per the SDK contract; the bootstrap enforces the
+    # exclusivity at compose time (one or the other, never both).
+    resume: str | None = None
 
 
 def build_options_kwargs(decision: RoutingDecision) -> OptionsKwargs:
@@ -302,6 +325,9 @@ def compose_session_options(
     bearings_mcp_server: McpSdkServerConfig,
     can_use_tool: CanUseToolCallback | None = None,
     extra_system_prompt_parts: tuple[str, ...] = (),
+    session_store: Any = None,
+    sdk_session_id: str | None = None,
+    resume: str | None = None,
 ) -> OptionsKwargs:
     """Build the full :class:`OptionsKwargs` for :class:`ClaudeAgentOptions` construction.
 
@@ -340,11 +366,35 @@ def compose_session_options(
             to append after the default surface (used by tests that
             need to verify the splice order; production callers
             leave empty).
+        session_store: SDK :class:`claude_agent_sdk.types.SessionStore`
+            adapter for mirroring + restoring the CLI's per-session
+            JSONL transcript. ``None`` disables history persistence
+            (used by tests that don't exercise the respawn path).
+        sdk_session_id: SDK-form UUID to pin the CLI's session id to
+            on first spawn. ``None`` means "let the SDK generate one"
+            (no first-spawn pinning); the bootstrap supplies the
+            value derived from the Bearings session id.
+        resume: SDK-form UUID matching a prior spawn's
+            ``sdk_session_id``. When set, the SDK materialises the
+            session_store transcript and starts the CLI with
+            ``--resume <uuid>``. Mutually exclusive with
+            ``sdk_session_id`` per the SDK contract — this function
+            raises :class:`ValueError` when both are non-``None``.
 
     Returns:
         Fully-populated :class:`OptionsKwargs` ready for SDK splat
         via ``ClaudeAgentOptions(**kwargs.as_sdk_kwargs())``.
+
+    Raises:
+        ValueError: If both ``sdk_session_id`` and ``resume`` are set
+            (the SDK rejects the combination unless ``fork_session=True``,
+            which Bearings does not use).
     """
+    if sdk_session_id is not None and resume is not None:
+        raise ValueError(
+            "compose_session_options: sdk_session_id and resume are mutually "
+            "exclusive (the SDK rejects the combination unless fork_session=True)"
+        )
     from bearings.agent.system_prompt import build_system_prompt
 
     base = build_options_kwargs(decision)
@@ -389,6 +439,9 @@ def compose_session_options(
         mcp_servers={BEARINGS_MCP_SERVER_NAME: bearings_mcp_server},
         hooks={},
         can_use_tool=can_use_tool,
+        session_store=session_store,
+        sdk_session_id=sdk_session_id,
+        resume=resume,
     )
 
 

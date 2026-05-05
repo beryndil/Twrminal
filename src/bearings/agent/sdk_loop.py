@@ -72,6 +72,7 @@ from bearings.agent.runner import (
     RunnerStatus,
     SessionRunner,
 )
+from bearings.agent.sdk_session_id import bearings_to_sdk_uuid
 from bearings.agent.session import (
     AgentSession,
     SessionState,
@@ -260,7 +261,15 @@ async def _do_run_one_turn(
     query_content = prompt.content
     if prompt.force_advisor and session.config.decision.advisor_model is not None:
         query_content = FORCE_ADVISOR_INSTRUCTION + prompt.content
-    await client.query(query_content, session_id=session.config.session_id)
+    # Tag the user_input envelope with the SDK-form session UUID (not the
+    # Bearings ``ses_<hex>`` id) so the CLI associates the message with
+    # its own session UUID — consistent with the ``session_id``/``resume``
+    # value we set on ``ClaudeAgentOptions``. Without this, the CLI sees
+    # a mismatched session_id on the user_input envelope and the
+    # transcript materialiser cannot reliably tie the new turn back to
+    # the resumed JSONL.
+    sdk_uuid = bearings_to_sdk_uuid(session.config.session_id)
+    await client.query(query_content, session_id=sdk_uuid)
     last_result: ResultMessage | None = None
     async for sdk_msg in client.receive_response():
         if isinstance(sdk_msg, ResultMessage):
@@ -396,6 +405,18 @@ def _to_sdk_options(kwargs: OptionsKwargs) -> ClaudeAgentOptions:
         sdk_kwargs["setting_sources"] = list(kwargs.setting_sources)
     if kwargs.hooks:
         sdk_kwargs["hooks"] = dict(kwargs.hooks)
+    # SDK history-replay wiring (lands the model-swap context-loss fix
+    # diagnosed 2026-05-05). ``session_store`` is the BearingsSessionStore
+    # adapter; ``sdk_session_id`` pins the CLI's UUID on first spawn;
+    # ``resume`` triggers transcript materialisation on subsequent spawns.
+    # The compose-time precondition guarantees ``sdk_session_id`` and
+    # ``resume`` are mutually exclusive at this point.
+    if kwargs.session_store is not None:
+        sdk_kwargs["session_store"] = kwargs.session_store
+    if kwargs.sdk_session_id is not None:
+        sdk_kwargs["session_id"] = kwargs.sdk_session_id
+    if kwargs.resume is not None:
+        sdk_kwargs["resume"] = kwargs.resume
     return ClaudeAgentOptions(**sdk_kwargs)
 
 

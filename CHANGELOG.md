@@ -9,6 +9,30 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **SDK history replay on supervisor respawn:** Mid-session model
+  swap, idle reap, server restart, and recovery from ERROR all
+  recycle the SDK CLI subprocess. Before this change, the new
+  subprocess started with empty conversation context — the user
+  observed "this is the start of the session" on the next turn and
+  the agent had no memory of prior turns. Bearings now persists the
+  CLI's per-session JSONL transcript via the SDK's
+  `SessionStore` adapter (`bearings.agent.session_store.BearingsSessionStore`),
+  backed by a new `sdk_session_entries` mirror table. On every spawn
+  after the first the bootstrap sets `resume=<sdk_uuid>` and the SDK
+  materialises history into the new subprocess; on the first spawn
+  it pins the CLI's session UUID via `session_id=<sdk_uuid>` so
+  subsequent appends are routable back to the Bearings session id.
+  The SDK UUID is derived deterministically from the Bearings
+  session id (`ses_<32hex>` → `<8>-<4>-<4>-<4>-<12>`) — no new column,
+  no migration. New modules:
+  `bearings.agent.sdk_session_id`,
+  `bearings.agent.session_store`,
+  `bearings.db.sdk_entries`. New tests:
+  `test_sdk_session_id.py`, `test_sdk_entries_db.py`,
+  `test_session_store.py`, `test_session_bootstrap_resume.py` plus
+  added `compose_session_options` coverage of the new kwargs and the
+  mutual-exclusion guard between `sdk_session_id` and `resume`.
+
 - **Tag classes (project / severity / general):** Tags now carry a
   `class` column that partitions them into three buckets the UI
   renders as separate filter sections. Cardinality is enforced at the

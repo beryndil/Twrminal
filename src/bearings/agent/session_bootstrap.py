@@ -38,12 +38,15 @@ from bearings.agent.options import (
 )
 from bearings.agent.routing import RoutingDecision
 from bearings.agent.runner import SessionRunner, SessionSetup, SessionSetupFn
+from bearings.agent.sdk_session_id import bearings_to_sdk_uuid
 from bearings.agent.session import AgentSession, PermissionProfile, SessionConfig
+from bearings.agent.session_store import BearingsSessionStore
 from bearings.agent.tags import resolve_claude_md_blocks
 from bearings.config.constants import (
     DEFAULT_TEMPLATE_ADVISOR_MODEL,
     DEFAULT_TEMPLATE_PERMISSION_PROFILE,
 )
+from bearings.db import sdk_entries as sdk_entries_db
 from bearings.db import sessions as sessions_db
 
 
@@ -145,6 +148,25 @@ def build_session_setup(
         # silently skipped; the tuple is empty if no tags exist or none have
         # working_dir set.
         extra_claude_md_blocks = await resolve_claude_md_blocks(db_connection, session_id)
+        # SDK history-replay wiring (lands the model-swap context-loss fix
+        # diagnosed 2026-05-05). The SessionStore mirrors the CLI's JSONL
+        # transcript to ``sdk_session_entries``; on every spawn after the
+        # first, ``resume=<uuid>`` triggers materialisation from the store
+        # so the new subprocess inherits full conversation context. On the
+        # first spawn (no mirror rows yet) ``sdk_session_id=<uuid>`` pins
+        # the CLI's session UUID to ours so subsequent ``append`` calls
+        # are routable back to this Bearings session id.
+        store = BearingsSessionStore(db_factory=db_factory)
+        sdk_uuid = bearings_to_sdk_uuid(session_id)
+        prior_entry_count = await sdk_entries_db.count_for_session(
+            db_connection, session_id=session_id
+        )
+        if prior_entry_count > 0:
+            sdk_session_id_arg: str | None = None
+            resume_arg: str | None = sdk_uuid
+        else:
+            sdk_session_id_arg = sdk_uuid
+            resume_arg = None
         options = compose_session_options(
             decision=decision,
             session_instructions=row.session_instructions,
@@ -158,6 +180,9 @@ def build_session_setup(
             bearings_mcp_server=bearings_mcp_server,
             can_use_tool=broker.callback() if broker is not None else None,
             extra_system_prompt_parts=extra_claude_md_blocks,
+            session_store=store,
+            sdk_session_id=sdk_session_id_arg,
+            resume=resume_arg,
         )
         return SessionSetup(
             session=agent_session,
