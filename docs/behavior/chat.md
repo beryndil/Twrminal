@@ -90,6 +90,22 @@ Estimated impact on overall bucket: +1.4%
 
 Confirming changes the executor for all subsequent turns in this session; turns already streamed keep whatever model produced them. Their badges (per spec §5) preserve the model that ran them. The "estimated" word is part of the dialog text on purpose: the cost preview is approximate.
 
+## Approval modal
+
+When the agent invokes a tool that requires user approval, a centred modal opens over the conversation pane. Two flavours render:
+
+* **Generic tool approval** — for any tool gated by the SDK's permission callback. The modal shows the tool name, a JSON view of the tool input, and **Allow** / **Deny** buttons. Allow submits `{approved: true}`; Deny submits `{approved: false}`.
+
+* **Agent question** — when the agent invokes the built-in `AskUserQuestion` tool. The modal title reads "Agent is asking:" and the body adapts to one of three shapes the tool input can take:
+
+    * *Structured* `{questions: [...]}` — one block per question, each with a header (small caps), the question prompt, a "Pick one" / "Pick one or more" hint, and a list of selectable options. Single-select questions render as radios; `multiSelect: true` renders checkboxes. The Submit button stays disabled until every question has at least one selection. On submit, picks are encoded as one labelled line per question (e.g. `Schema: First-class column`) joined by newlines, and posted as the `answer` text.
+
+    * *Legacy free-text* `{question: "..."}` — a textarea with placeholder "Type your answer…" and a Submit button. Enter (without shift) submits; Shift+Enter inserts a newline.
+
+    * *Unrecognised input* — neither shape matches. The modal pretty-prints the raw JSON in a fixed-height scrollable block under the notice "Question shape not recognised — answer in free text:" and surfaces the same free-text textarea so the user can still respond. This is a defensive fallback against a future change to the AskUserQuestion shape.
+
+The modal stays visible until the backend's `approval_resolved` event arrives over the WebSocket; submit-button errors render inline (red text) without closing the modal. There is no client-side timeout — a stuck approval is a UX bug, not a security gate.
+
 ## Error states
 
 * **Agent error mid-turn.** The current assistant bubble closes with a red error block stating the underlying error message. The session row in the sidebar gains a red flashing pip ("needs attention now"). The user can post another message; if the next turn completes successfully the red flag clears.

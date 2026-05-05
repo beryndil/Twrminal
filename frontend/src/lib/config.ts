@@ -2072,6 +2072,20 @@ export const APPROVAL_STRINGS = {
   answerLabel: "Your answer",
   answerPlaceholder: "Type your answer…",
   submitLabel: "Submit",
+  /**
+   * AskUserQuestion variant — structured ``questions[]`` shape (one or
+   * more questions, each with ``options`` and a ``multiSelect`` flag).
+   * Distinct from the legacy single-question free-text shape above.
+   */
+  singleSelectHint: "Pick one",
+  multiSelectHint: "Pick one or more",
+  validationMissingSelection: "Pick an answer for every question.",
+  /**
+   * Fallback when neither ``{question}`` nor ``{questions: [...]}`` shape
+   * is recognised — the modal pretty-prints the raw input alongside a
+   * free-text answer box so the user can still respond.
+   */
+  unknownShapeNotice: "Question shape not recognised — answer in free text:",
 } as const;
 
 // ---- Derivations -----------------------------------------------------------
