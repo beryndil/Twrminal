@@ -40,6 +40,7 @@ from bearings.db.tags import (
     get_by_name,
     list_all,
     list_for_session,
+    list_for_session_ordered,
     list_groups,
     set_for_session,
     update,
@@ -435,6 +436,94 @@ async def test_update_can_change_class(connection: aiosqlite.Connection) -> None
     refetched = await get(connection, tag.id)
     assert refetched is not None
     assert refetched.class_ == TAG_CLASS_PROJECT
+
+
+# ---------------------------------------------------------------------------
+# list_for_session_ordered — inheritance-precedence ordering used by
+# bearings.agent.tags.resolve_claude_md_blocks / resolve_default_model /
+# resolve_working_dir. The pre-class implementation ordered by a
+# per-attachment ``session_tags.priority`` column; that column was retired
+# with the tag-class refactor, and these tests guard the replacement
+# contract (project > general > severity, then per-class sort_order, then
+# name) so a future column rename can never silently regress the SELECT.
+# ---------------------------------------------------------------------------
+
+
+async def test_list_for_session_ordered_uses_class_precedence(
+    connection: aiosqlite.Connection,
+) -> None:
+    """Project class outranks general; general outranks severity."""
+    session_id = await _seed_session(connection)
+    sev = await create(connection, name="critical", class_=TAG_CLASS_SEVERITY)
+    gen = await create(connection, name="freeform", class_=TAG_CLASS_GENERAL)
+    proj = await create(
+        connection,
+        name="bearings",
+        class_=TAG_CLASS_PROJECT,
+        working_dir="/home/dave/proj",
+    )
+    # Attach in the reverse of the expected order to prove the SELECT,
+    # not the INSERT order, is what governs the result.
+    await attach(connection, session_id=session_id, tag_id=sev.id)
+    await attach(connection, session_id=session_id, tag_id=gen.id)
+    await attach(connection, session_id=session_id, tag_id=proj.id)
+    rows = await list_for_session_ordered(connection, session_id)
+    assert [t.id for t in rows] == [proj.id, gen.id, sev.id]
+
+
+async def test_list_for_session_ordered_breaks_ties_by_sort_order_then_name(
+    connection: aiosqlite.Connection,
+) -> None:
+    """Within a class: ``sort_order`` ASC, then ``name`` ASC."""
+    session_id = await _seed_session(connection)
+    a_high = await create(connection, name="a-high", sort_order=5)
+    a_low = await create(connection, name="a-low", sort_order=1)
+    z_low = await create(connection, name="z-low", sort_order=1)
+    await attach(connection, session_id=session_id, tag_id=a_high.id)
+    await attach(connection, session_id=session_id, tag_id=z_low.id)
+    await attach(connection, session_id=session_id, tag_id=a_low.id)
+    rows = await list_for_session_ordered(connection, session_id)
+    # sort_order 1 before sort_order 5; within sort_order 1, name ASC
+    # puts a-low ahead of z-low.
+    assert [t.name for t in rows] == ["a-low", "z-low", "a-high"]
+
+
+async def test_list_for_session_ordered_empty_when_no_attachments(
+    connection: aiosqlite.Connection,
+) -> None:
+    session_id = await _seed_session(connection)
+    assert await list_for_session_ordered(connection, session_id) == []
+
+
+async def test_set_for_session_round_trips_through_ordered_select(
+    connection: aiosqlite.Connection,
+) -> None:
+    """Bulk-replace path inserts join rows that the ordered SELECT can read.
+
+    Regression: the pre-class implementation of ``set_for_session`` wrote
+    a ``priority`` column that was dropped from ``session_tags`` in the
+    tag-class refactor, leaving the INSERT broken on every live DB. This
+    test exercises the full ``set_for_session`` → ``list_for_session_ordered``
+    round-trip so any future drift between the INSERT column list and the
+    live schema fails loudly here.
+    """
+    session_id = await _seed_session(connection)
+    proj = await create(
+        connection,
+        name="proj",
+        class_=TAG_CLASS_PROJECT,
+        working_dir="/home/dave/proj",
+    )
+    gen = await create(connection, name="gen", class_=TAG_CLASS_GENERAL)
+    # Pass general first to prove order-of-tag_ids does NOT influence
+    # the resulting precedence (class on the tag row is what matters).
+    await set_for_session(
+        connection,
+        session_id=session_id,
+        tag_ids=(gen.id, proj.id),
+    )
+    rows = await list_for_session_ordered(connection, session_id)
+    assert [t.id for t in rows] == [proj.id, gen.id]
 
 
 async def test_update_to_severity_strips_inheritance_via_validator(

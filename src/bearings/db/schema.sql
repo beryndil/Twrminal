@@ -197,11 +197,14 @@ CREATE TABLE IF NOT EXISTS tags (
 -- evaluate against the legacy table shape on the first re-init and
 -- raise ``no such column: class``.)
 
--- session_tags — many-to-many between sessions and tags.
+-- session_tags — many-to-many between sessions and tags. Pure join
+-- table since the tag-class refactor (precedence now lives on the
+-- ``tags`` row via ``class`` + ``sort_order``; the legacy per-row
+-- ``priority`` column was never wired into a migration on existing
+-- DBs and has been removed from the canonical schema).
 CREATE TABLE IF NOT EXISTS session_tags (
     session_id               TEXT    NOT NULL,
     tag_id                   INTEGER NOT NULL,
-    priority                 INTEGER NOT NULL DEFAULT 0,
     created_at               TEXT    NOT NULL,
     PRIMARY KEY (session_id, tag_id),
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,

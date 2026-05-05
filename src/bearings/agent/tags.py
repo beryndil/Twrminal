@@ -16,13 +16,15 @@ executor model in the routing-preview line) are also valid sources of
 the same fields. This module specifies the precedence so the call site
 in the API layer (item 1.5+) is deterministic.
 
-Multi-tag precedence with priority ordering
---------------------------------------------
+Multi-tag precedence
+--------------------
 
-When a session carries multiple tags (passed in priority order from the
-DB layer), the first tag with a non-null ``default_model`` /
-``working_dir`` wins. Tags are assumed to arrive in priority order:
-index 0 = highest priority. Lower-priority tags provide fallbacks.
+When a session carries multiple tags, the first tag with a non-null
+``default_model`` / ``working_dir`` wins. The DB layer hands the list
+to the agent in inheritance-precedence order — see
+:func:`bearings.db.tags.list_for_session_ordered` for the ordering
+contract (project class first, then general, then severity; ties
+break on per-class ``sort_order`` then ``name``).
 
 Caller-supplied overrides beat every tag: the API layer can pass an
 explicit ``working_dir`` or executor model, and that overrides any
@@ -52,8 +54,9 @@ def resolve_default_model(
 
     * ``explicit`` argument — caller's explicit pick from the
       new-session dialog or the API request body.
-    * First tag with a non-null ``default_model`` (tags assumed to be
-      in priority order: index 0 = highest priority).
+    * First tag with a non-null ``default_model`` (tags must arrive in
+      inheritance-precedence order — see
+      :func:`bearings.db.tags.list_for_session_ordered`).
     * ``None`` if no source supplies a model — the caller layers
       template / system-default resolution downstream.
     """
@@ -107,23 +110,28 @@ async def resolve_claude_md_blocks(
     connection: aiosqlite.Connection,
     session_id: str,
 ) -> tuple[str, ...]:
-    """Load CLAUDE.md files from each tag's working_dir in reverse priority order.
+    """Load CLAUDE.md files from each tag's ``working_dir`` in concatenation order.
 
-    Returns CLAUDE.md file contents as a tuple of strings, ordered from
-    lowest-priority tag to highest-priority tag. This ordering ensures
-    that when the system prompt assembler concatenates them, the
-    highest-priority tag's CLAUDE.md appears last and thus wins on
-    any directive conflicts.
+    Returns CLAUDE.md file contents as a tuple of strings ordered from
+    lowest-precedence tag to highest-precedence tag. The system prompt
+    assembler concatenates the tuple in order, so the highest-precedence
+    tag's CLAUDE.md appears last and wins on any directive conflicts.
 
-    Missing files or directories are silently skipped. If no tags exist
-    or none have a working_dir set, returns an empty tuple.
+    Precedence is defined by
+    :func:`bearings.db.tags.list_for_session_ordered` (project >
+    general > severity, then per-class ``sort_order``); this helper
+    iterates that list in reverse so the highest-precedence block
+    lands at the end of the returned tuple.
+
+    Missing files or directories are silently skipped. If no tags
+    exist or none have a ``working_dir`` set, returns an empty tuple.
     """
     from bearings.db import tags as tags_db
 
     ordered_tags = await tags_db.list_for_session_ordered(connection, session_id)
 
     blocks = []
-    for tag in reversed(ordered_tags):  # Reverse: lowest priority first
+    for tag in reversed(ordered_tags):  # lowest-precedence first; highest gets appended last
         if tag.working_dir is None:
             continue
         content = _load_claude_md_block(tag.working_dir)

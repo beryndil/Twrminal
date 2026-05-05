@@ -367,16 +367,44 @@ async def list_for_session_ordered(
     connection: aiosqlite.Connection,
     session_id: str,
 ) -> list[Tag]:
-    """Every tag attached to ``session_id``, ordered by priority (lowest number = highest priority).
+    """Every tag attached to ``session_id``, ordered for inheritance precedence.
 
-    Used by :mod:`bearings.agent.tags` when resolving CLAUDE.md blocks
-    and working directory with priority semantics. Lower priority value
-    = higher priority (0 = highest).
+    Used by :mod:`bearings.agent.tags` when resolving CLAUDE.md blocks,
+    ``default_model``, and ``working_dir``. Higher-precedence tags come
+    first; the agent layer iterates and the first non-null inheritance
+    field wins.
+
+    Precedence is derived from the tag itself, not from the attachment
+    row — class first, then per-class ``sort_order``, then ``name`` for
+    a stable tiebreak:
+
+    * ``project``  — highest precedence (drives session inheritance per
+      ``docs/behavior/chat.md`` §"When the user creates a chat").
+    * ``general``  — middle precedence (free-form labels and legacy
+      slash-namespaced tags).
+    * ``severity`` — last (carries no inheritance fields per
+      :class:`Tag.__post_init__`, so it is effectively a no-op for
+      inheritance consumers; ordered last for determinism only).
+
+    The pre-class implementation used a per-attachment
+    ``session_tags.priority`` column populated by user pick-order at
+    session-create time. That column was retired with the tag-class
+    refactor — ordering now lives on the ``tags`` row, so the same
+    project tag carries the same precedence on every session it is
+    attached to.
     """
     cursor = await connection.execute(
         _SELECT_TAG_COLUMNS
         + " INNER JOIN session_tags ON session_tags.tag_id = tags.id "
-        + "WHERE session_tags.session_id = ? ORDER BY session_tags.priority ASC",
+        + "WHERE session_tags.session_id = ? "
+        + "ORDER BY "
+        + "  CASE tags.class "
+        + "    WHEN 'project' THEN 0 "
+        + "    WHEN 'general' THEN 1 "
+        + "    ELSE 2 "
+        + "  END ASC, "
+        + "  tags.sort_order ASC, "
+        + "  tags.name ASC",
         (session_id,),
     )
     try:
@@ -558,16 +586,16 @@ async def set_for_session(
     the prior set or the new set, never a partial mid-replace state.
     Empty ``tag_ids`` clears the session's tag set.
 
-    Tag priority is assigned based on index position: index 0 → priority 0
-    (highest), index 1 → priority 1, etc.
+    Order of ``tag_ids`` does **not** affect inheritance precedence.
+    Precedence comes from the tag's own ``class`` + ``sort_order``
+    columns — see :func:`list_for_session_ordered`.
     """
     timestamp = now_iso()
     await connection.execute("DELETE FROM session_tags WHERE session_id = ?", (session_id,))
-    for priority, tag_id in enumerate(tag_ids):
+    for tag_id in tag_ids:
         await connection.execute(
-            "INSERT INTO session_tags (session_id, tag_id, priority, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            (session_id, tag_id, priority, timestamp),
+            "INSERT INTO session_tags (session_id, tag_id, created_at) VALUES (?, ?, ?)",
+            (session_id, tag_id, timestamp),
         )
     await connection.commit()
 

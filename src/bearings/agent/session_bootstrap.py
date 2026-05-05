@@ -139,9 +139,11 @@ def build_session_setup(
         deps = CloseSessionDeps(session_id=session_id, db_factory=db_factory)
         bearings_mcp_server = build_bearings_mcp_server(deps)
         broker = ApprovalBroker(runner) if enable_approval_broker else None
-        # Load CLAUDE.md blocks from each tag's working_dir, in priority order.
-        # Missing files are silently skipped. The tuple is empty if no tags exist
-        # or none have working_dir set.
+        # Load CLAUDE.md blocks from each tag's working_dir, ordered by tag-class
+        # precedence (project > general > severity) so the highest-precedence
+        # block lands last and wins on directive conflicts. Missing files are
+        # silently skipped; the tuple is empty if no tags exist or none have
+        # working_dir set.
         extra_claude_md_blocks = await resolve_claude_md_blocks(db_connection, session_id)
         options = compose_session_options(
             decision=decision,
