@@ -120,10 +120,16 @@ class SessionCreate(BaseModel):
     rows, and the deeper dataclass invariants (model name format,
     permission-mode enum, etc.) via :class:`Session.__post_init__`.
 
+    ``working_dir`` is optional. If omitted, the route handler derives it
+    from the first tag in ``tag_ids`` (in order) that has a non-null
+    ``working_dir`` set. Returns 422 if both ``working_dir`` is omitted
+    and no tag provides a directory.
+
     ``tag_ids`` defaults to the empty list — the new-session form
     enforces "≥1 tag" at the UI layer; the API accepts zero so a CLI
     or test caller can create an untagged session without first
-    creating a tag.
+    creating a tag. When multiple tags are supplied, their order in the
+    list determines priority: index 0 = highest priority.
 
     The three ``routing_*`` fields carry the routing-decision projection
     so the supervisor respawn path can reconstruct the full
@@ -137,7 +143,7 @@ class SessionCreate(BaseModel):
 
     kind: str
     title: str = Field(min_length=1, max_length=SESSION_TITLE_MAX_LENGTH)
-    working_dir: str = Field(min_length=1)
+    working_dir: str | None = Field(default=None, min_length=1)
     model: str = Field(min_length=1)
     description: str | None = Field(default=None, max_length=SESSION_DESCRIPTION_MAX_LENGTH)
     session_instructions: str | None = None

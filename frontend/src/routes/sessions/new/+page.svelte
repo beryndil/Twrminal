@@ -81,6 +81,9 @@
   let submitError = $state<string | null>(null);
   let submitting = $state(false);
 
+  // For drag-to-reorder: tracks which tag is being dragged
+  let draggedTagId = $state<number | null>(null);
+
   // Hydrate tags on mount. Session defaults are skipped when the caller
   // passed ``?bare=1`` (Shift+C chord) — the user gets a clean form.
   $effect(() => {
@@ -90,14 +93,17 @@
     }
   });
 
-  // When exactly one tag is selected and it has a working_dir set,
-  // auto-populate the working dir field. If the user has manually
-  // edited the field, it's not overwritten on subsequent tag changes.
+  // When tags are selected, auto-populate the working dir field from the
+  // first (highest-priority) selected tag that has a working_dir set.
+  // If the user has manually edited the field, it's not overwritten.
   $effect(() => {
-    if (selectedTagIds.length === 1) {
-      const tag = availableTags.find((t) => t.id === selectedTagIds[0]);
-      if (tag?.working_dir && tag.working_dir.trim() !== "") {
-        workingDir = tag.working_dir;
+    if (selectedTagIds.length > 0) {
+      for (const tagId of selectedTagIds) {
+        const tag = availableTags.find((t) => t.id === tagId);
+        if (tag?.working_dir && tag.working_dir.trim() !== "") {
+          workingDir = tag.working_dir;
+          return;
+        }
       }
     }
   });
@@ -158,6 +164,37 @@
     } else {
       selectedTagIds = [...selectedTagIds, tagId];
     }
+  }
+
+  function handleDragStart(tagId: number): void {
+    draggedTagId = tagId;
+  }
+
+  function handleDragEnd(): void {
+    draggedTagId = null;
+  }
+
+  function handleDragOver(e: DragEvent): void {
+    e.preventDefault();
+    e.dataTransfer!.dropEffect = "move";
+  }
+
+  function handleDrop(targetId: number): void {
+    if (draggedTagId === null || draggedTagId === targetId) {
+      draggedTagId = null;
+      return;
+    }
+    const draggedIndex = selectedTagIds.indexOf(draggedTagId);
+    const targetIndex = selectedTagIds.indexOf(targetId);
+    if (draggedIndex === -1 || targetIndex === -1) {
+      draggedTagId = null;
+      return;
+    }
+    const newIds = [...selectedTagIds];
+    newIds.splice(draggedIndex, 1);
+    newIds.splice(targetIndex, 0, draggedTagId);
+    selectedTagIds = newIds;
+    draggedTagId = null;
   }
 
   /**
@@ -253,7 +290,7 @@
   </header>
 
   <fieldset class="new-session-page__tags">
-    <legend>Tags</legend>
+    <legend>Tags — drag selected tags to set priority (top = highest)</legend>
     {#if tagsLoading}
       <p class="new-session-page__hint">Loading tags…</p>
     {:else if tagsError !== null}
@@ -264,36 +301,84 @@
         one.
       </p>
     {:else}
-      <ul class="new-session-page__tag-list" aria-label="Available tags">
-        {#each availableTags as tag (tag.id)}
-          {@const active = selectedTagIds.includes(tag.id)}
-          <li>
-            <button
-              type="button"
-              class="new-session-page__tag-chip"
-              class:new-session-page__tag-chip--active={active}
-              aria-pressed={active}
-              onclick={() => toggleTag(tag.id)}
-              data-testid={`new-session-tag-${tag.id}`}
-              use:contextMenu={{
-                target: MENU_TARGET_TAG_CHIP,
-                disabled: !active,
-                handlers: {
-                  [MENU_ACTION_TAG_CHIP_COPY_NAME]: () => {
-                    void navigator.clipboard.writeText(tag.name);
-                  },
-                  [MENU_ACTION_TAG_CHIP_DETACH]: () => {
-                    toggleTag(tag.id);
-                  },
-                },
-                data: { tagId: tag.id },
-              }}
-            >
-              {tag.name}
-            </button>
-          </li>
-        {/each}
-      </ul>
+      <div class="new-session-page__tags-container">
+        <div class="new-session-page__tags-pool">
+          <div class="new-session-page__tags-zone-label">Available tags</div>
+          <ul class="new-session-page__tag-list" aria-label="Available tags">
+            {#each availableTags.filter((t) => !selectedTagIds.includes(t.id)) as tag (tag.id)}
+              <li>
+                <button
+                  type="button"
+                  class="new-session-page__tag-chip"
+                  aria-pressed="false"
+                  onclick={() => toggleTag(tag.id)}
+                  data-testid={`new-session-tag-${tag.id}`}
+                  use:contextMenu={{
+                    target: MENU_TARGET_TAG_CHIP,
+                    disabled: false,
+                    handlers: {
+                      [MENU_ACTION_TAG_CHIP_COPY_NAME]: () => {
+                        void navigator.clipboard.writeText(tag.name);
+                      },
+                    },
+                    data: { tagId: tag.id },
+                  }}
+                >
+                  {tag.name}
+                </button>
+              </li>
+            {/each}
+          </ul>
+        </div>
+
+        <div class="new-session-page__tags-selected">
+          <div class="new-session-page__tags-zone-label">Selected (drag to reorder)</div>
+          {#if selectedTagIds.length === 0}
+            <p class="new-session-page__hint">Click tags above to select them</p>
+          {:else}
+            <ul class="new-session-page__tag-list-ordered" aria-label="Selected tags">
+              {#each selectedTagIds as tagId (tagId)}
+                {@const tag = availableTags.find((t) => t.id === tagId)}
+                {#if tag}
+                  <li
+                    draggable="true"
+                    ondragstart={() => handleDragStart(tagId)}
+                    ondragend={handleDragEnd}
+                    ondragover={handleDragOver}
+                    ondrop={() => handleDrop(tagId)}
+                    class="new-session-page__tag-row"
+                    class:new-session-page__tag-row--dragging={draggedTagId === tagId}
+                  >
+                    <span class="new-session-page__drag-handle" title="Drag to reorder">⠿</span>
+                    <button
+                      type="button"
+                      class="new-session-page__tag-chip new-session-page__tag-chip--active"
+                      aria-pressed="true"
+                      onclick={() => toggleTag(tagId)}
+                      data-testid={`new-session-tag-${tagId}`}
+                      use:contextMenu={{
+                        target: MENU_TARGET_TAG_CHIP,
+                        disabled: false,
+                        handlers: {
+                          [MENU_ACTION_TAG_CHIP_COPY_NAME]: () => {
+                            void navigator.clipboard.writeText(tag.name);
+                          },
+                          [MENU_ACTION_TAG_CHIP_DETACH]: () => {
+                            toggleTag(tagId);
+                          },
+                        },
+                        data: { tagId },
+                      }}
+                    >
+                      {tag.name}
+                    </button>
+                  </li>
+                {/if}
+              {/each}
+            </ul>
+          {/if}
+        </div>
+      </div>
     {/if}
   </fieldset>
 
@@ -381,6 +466,58 @@
     background: rgb(var(--bearings-accent));
     color: white;
     border-color: transparent;
+  }
+  .new-session-page__tags-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 0.5rem;
+  }
+  .new-session-page__tags-pool,
+  .new-session-page__tags-selected {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .new-session-page__tags-zone-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgb(var(--bearings-fg-muted));
+  }
+  .new-session-page__tag-list-ordered {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .new-session-page__tag-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    opacity: 1;
+    transition: opacity 150ms ease-in-out;
+  }
+  .new-session-page__tag-row--dragging {
+    opacity: 0.5;
+  }
+  .new-session-page__drag-handle {
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    color: rgb(var(--bearings-fg-muted));
+    cursor: grab;
+    user-select: none;
+  }
+  .new-session-page__tag-row:active .new-session-page__drag-handle {
+    cursor: grabbing;
   }
   .new-session-page__field {
     display: flex;

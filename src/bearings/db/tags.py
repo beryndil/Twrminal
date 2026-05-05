@@ -273,6 +273,29 @@ async def list_for_session(
     return [_row_to_tag(row) for row in rows]
 
 
+async def list_for_session_ordered(
+    connection: aiosqlite.Connection,
+    session_id: str,
+) -> list[Tag]:
+    """Every tag attached to ``session_id``, ordered by priority (lowest number = highest priority).
+
+    Used by :mod:`bearings.agent.tags` when resolving CLAUDE.md blocks
+    and working directory with priority semantics. Lower priority value
+    = higher priority (0 = highest).
+    """
+    cursor = await connection.execute(
+        _SELECT_TAG_COLUMNS
+        + " INNER JOIN session_tags ON session_tags.tag_id = tags.id "
+        + "WHERE session_tags.session_id = ? ORDER BY session_tags.priority ASC",
+        (session_id,),
+    )
+    try:
+        rows = await cursor.fetchall()
+    finally:
+        await cursor.close()
+    return [_row_to_tag(row) for row in rows]
+
+
 async def list_groups(connection: aiosqlite.Connection) -> list[str]:
     """Every distinct slash-prefix group across the tag set, sorted.
 
@@ -410,13 +433,17 @@ async def set_for_session(
     share one ``BEGIN ... COMMIT`` so a concurrent reader either sees
     the prior set or the new set, never a partial mid-replace state.
     Empty ``tag_ids`` clears the session's tag set.
+
+    Tag priority is assigned based on index position: index 0 → priority 0
+    (highest), index 1 → priority 1, etc.
     """
     timestamp = now_iso()
     await connection.execute("DELETE FROM session_tags WHERE session_id = ?", (session_id,))
-    for tag_id in tag_ids:
+    for priority, tag_id in enumerate(tag_ids):
         await connection.execute(
-            "INSERT INTO session_tags (session_id, tag_id, created_at) VALUES (?, ?, ?)",
-            (session_id, tag_id, timestamp),
+            "INSERT INTO session_tags (session_id, tag_id, priority, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (session_id, tag_id, priority, timestamp),
         )
     await connection.commit()
 
@@ -488,6 +515,7 @@ __all__ = [
     "get_by_name",
     "list_all",
     "list_for_session",
+    "list_for_session_ordered",
     "list_groups",
     "set_for_session",
     "update",

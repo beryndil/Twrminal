@@ -39,6 +39,7 @@ from bearings.agent.options import (
 from bearings.agent.routing import RoutingDecision
 from bearings.agent.runner import SessionRunner, SessionSetup, SessionSetupFn
 from bearings.agent.session import AgentSession, PermissionProfile, SessionConfig
+from bearings.agent.tags import resolve_claude_md_blocks
 from bearings.config.constants import (
     DEFAULT_TEMPLATE_ADVISOR_MODEL,
     DEFAULT_TEMPLATE_PERMISSION_PROFILE,
@@ -138,6 +139,10 @@ def build_session_setup(
         deps = CloseSessionDeps(session_id=session_id, db_factory=db_factory)
         bearings_mcp_server = build_bearings_mcp_server(deps)
         broker = ApprovalBroker(runner) if enable_approval_broker else None
+        # Load CLAUDE.md blocks from each tag's working_dir, in priority order.
+        # Missing files are silently skipped. The tuple is empty if no tags exist
+        # or none have working_dir set.
+        extra_claude_md_blocks = await resolve_claude_md_blocks(db_connection, session_id)
         options = compose_session_options(
             decision=decision,
             session_instructions=row.session_instructions,
@@ -150,6 +155,7 @@ def build_session_setup(
             max_budget_usd=row.max_budget_usd,
             bearings_mcp_server=bearings_mcp_server,
             can_use_tool=broker.callback() if broker is not None else None,
+            extra_system_prompt_parts=extra_claude_md_blocks,
         )
         return SessionSetup(
             session=agent_session,

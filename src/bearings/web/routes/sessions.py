@@ -228,6 +228,9 @@ async def create_session(
       with the missing list otherwise. Tag existence is checked BEFORE
       :func:`sessions_db.create` so a bad tag id never leaves an
       orphaned session.
+    * ``working_dir`` is required. If omitted, the first tag (in order)
+      with a non-null ``working_dir`` is used. Returns 422 if both the
+      payload field is None/omitted and no tag provides a directory.
     * Deeper field invariants (model name format, permission-mode enum,
       title bounds beyond Pydantic's) raise ``ValueError`` from
       :class:`Session.__post_init__` and surface as 422.
@@ -249,12 +252,28 @@ async def create_session(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"unknown tag_ids: {missing}",
             )
+    # Resolve working_dir: explicit > first tag with a working_dir set > error
+    resolved_working_dir = payload.working_dir
+    if resolved_working_dir is None and tag_ids:
+        tag_list = await tags_db.list_all(db)
+        tag_map = {tag.id: tag for tag in tag_list}
+        for tid in tag_ids:
+            tag = tag_map.get(tid)
+            if tag is not None and tag.working_dir is not None:
+                resolved_working_dir = tag.working_dir
+                break
+    if resolved_working_dir is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="working_dir is required — supply it explicitly or attach a tag with "
+            "a working_dir set",
+        )
     try:
         row = await sessions_db.create(
             db,
             kind=payload.kind,
             title=payload.title,
-            working_dir=payload.working_dir,
+            working_dir=resolved_working_dir,
             model=payload.model,
             description=payload.description,
             session_instructions=payload.session_instructions,

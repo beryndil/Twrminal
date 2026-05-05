@@ -54,22 +54,23 @@ def test_resolve_default_model_picks_single_tag_default() -> None:
 
 
 def test_resolve_default_model_picks_most_recently_updated() -> None:
-    """Multi-tag overlap: the newest ``updated_at`` wins."""
+    """Multi-tag overlap: first tag in priority order (index 0) wins."""
     tags = [
         _tag(
             id=1,
-            name="old",
+            name="first",
             default_model="haiku",
             updated_at="2026-04-01T00:00:00+00:00",
         ),
         _tag(
             id=2,
-            name="new",
+            name="second",
             default_model="opus",
             updated_at="2026-04-28T00:00:00+00:00",
         ),
     ]
-    assert resolve_default_model(tags) == "opus"
+    # First tag (index 0) wins regardless of updated_at
+    assert resolve_default_model(tags) == "haiku"
 
 
 def test_resolve_default_model_breaks_tie_by_lower_id() -> None:
@@ -107,21 +108,23 @@ def test_resolve_working_dir_explicit_wins() -> None:
 
 
 def test_resolve_working_dir_picks_most_recently_updated() -> None:
+    """Multi-tag overlap: first tag in priority order (index 0) wins."""
     tags = [
         _tag(
             id=1,
-            name="old",
-            working_dir="/old/dir",
+            name="first",
+            working_dir="/first/dir",
             updated_at="2026-04-01T00:00:00+00:00",
         ),
         _tag(
             id=2,
-            name="new",
-            working_dir="/new/dir",
+            name="second",
+            working_dir="/second/dir",
             updated_at="2026-04-28T00:00:00+00:00",
         ),
     ]
-    assert resolve_working_dir(tags) == "/new/dir"
+    # First tag (index 0) wins regardless of updated_at
+    assert resolve_working_dir(tags) == "/first/dir"
 
 
 def test_resolve_working_dir_returns_none_when_no_source() -> None:

@@ -16,38 +16,27 @@ executor model in the routing-preview line) are also valid sources of
 the same fields. This module specifies the precedence so the call site
 in the API layer (item 1.5+) is deterministic.
 
-Multi-tag precedence (decided-and-documented)
----------------------------------------------
+Multi-tag precedence with priority ordering
+--------------------------------------------
 
-When a session carries multiple tags whose ``default_model`` /
-``working_dir`` fields are both populated, the most-recently-updated
-tag wins. The behavior docs are silent on this case — chat.md and
-checklists.md describe inheritance from a single source ("the
-checklist's working directory, model, and tags") and don't address
-multi-tag overlap. Decided rationale:
+When a session carries multiple tags (passed in priority order from the
+DB layer), the first tag with a non-null ``default_model`` /
+``working_dir`` wins. Tags are assumed to arrive in priority order:
+index 0 = highest priority. Lower-priority tags provide fallbacks.
 
-* **Most-recently-updated**: a user who edits a tag's defaults is
-  signalling "this is what I want now"; ``updated_at DESC`` honours
-  that intent. If the user wanted explicit precedence they'd reorder
-  by name (which we sort ascending elsewhere) or use one tag at a
-  time, neither of which surfaces well.
-
-* **Tie-break by id ASC**: deterministic when two tags share an
-  ``updated_at`` (possible inside one transaction). Lower id = older
-  tag = the more-established intent wins on a tie.
-
-* **Caller-supplied override beats every tag**: the API layer can
-  pass an explicit ``working_dir`` or executor model, and that
-  overrides any tag-derived default. This mirrors
-  :func:`bearings.agent.templates.build_session_config_from_template`'s
-  resolution order.
-
-If a future arch amendment promotes tag-priority to a first-class
-column (sorted-by-priority precedence), this module's helpers stay
-backward-compatible — the precedence function gains a sort key.
+Caller-supplied overrides beat every tag: the API layer can pass an
+explicit ``working_dir`` or executor model, and that overrides any
+tag-derived default. This mirrors
+:func:`bearings.agent.templates.build_session_config_from_template`'s
+resolution order.
 """
 
 from __future__ import annotations
+
+import contextlib
+import os
+
+import aiosqlite
 
 from bearings.db.tags import Tag
 
@@ -63,17 +52,17 @@ def resolve_default_model(
 
     * ``explicit`` argument — caller's explicit pick from the
       new-session dialog or the API request body.
-    * Most-recently-updated tag with a non-null ``default_model``.
+    * First tag with a non-null ``default_model`` (tags assumed to be
+      in priority order: index 0 = highest priority).
     * ``None`` if no source supplies a model — the caller layers
       template / system-default resolution downstream.
     """
     if explicit is not None:
         return explicit
-    candidates = [tag for tag in tags if tag.default_model is not None]
-    if not candidates:
-        return None
-    chosen = max(candidates, key=_tag_precedence_key)
-    return chosen.default_model
+    for tag in tags:
+        if tag.default_model is not None:
+            return tag.default_model
+    return None
 
 
 def resolve_working_dir(
@@ -90,22 +79,57 @@ def resolve_working_dir(
     """
     if explicit is not None:
         return explicit
-    candidates = [tag for tag in tags if tag.working_dir is not None]
-    if not candidates:
-        return None
-    chosen = max(candidates, key=_tag_precedence_key)
-    return chosen.working_dir
+    for tag in tags:
+        if tag.working_dir is not None:
+            return tag.working_dir
+    return None
 
 
-def _tag_precedence_key(tag: Tag) -> tuple[str, int]:
-    """Sort key for multi-tag precedence: ``(updated_at, -id)`` descending.
+def _load_claude_md_block(working_dir: str) -> str | None:
+    """Load a single CLAUDE.md file from a working directory.
 
-    Returns a tuple where ``max(...)`` picks the most-recently-updated
-    tag, with the lower-id tag winning on an ``updated_at`` tie. The
-    negative id achieves the ASC tie-break under :func:`max` (largest
-    negative = smallest absolute id).
+    Returns the file contents as a string, or None if the file is missing
+    or can't be read. This is a sync helper to avoid ASYNC240 linting
+    warnings in the async caller.
     """
-    return (tag.updated_at, -tag.id)
+    expanded_dir = os.path.expanduser(working_dir)
+    claude_md_path = os.path.join(expanded_dir, "CLAUDE.md")
+    if os.path.isfile(claude_md_path):
+        with (
+            contextlib.suppress(OSError, UnicodeDecodeError),
+            open(claude_md_path, encoding="utf-8") as f,
+        ):
+            return f.read()
+    return None
 
 
-__all__ = ["resolve_default_model", "resolve_working_dir"]
+async def resolve_claude_md_blocks(
+    connection: aiosqlite.Connection,
+    session_id: str,
+) -> tuple[str, ...]:
+    """Load CLAUDE.md files from each tag's working_dir in reverse priority order.
+
+    Returns CLAUDE.md file contents as a tuple of strings, ordered from
+    lowest-priority tag to highest-priority tag. This ordering ensures
+    that when the system prompt assembler concatenates them, the
+    highest-priority tag's CLAUDE.md appears last and thus wins on
+    any directive conflicts.
+
+    Missing files or directories are silently skipped. If no tags exist
+    or none have a working_dir set, returns an empty tuple.
+    """
+    from bearings.db import tags as tags_db
+
+    ordered_tags = await tags_db.list_for_session_ordered(connection, session_id)
+
+    blocks = []
+    for tag in reversed(ordered_tags):  # Reverse: lowest priority first
+        if tag.working_dir is None:
+            continue
+        content = _load_claude_md_block(tag.working_dir)
+        if content is not None:
+            blocks.append(content)
+    return tuple(blocks)
+
+
+__all__ = ["resolve_claude_md_blocks", "resolve_default_model", "resolve_working_dir"]
