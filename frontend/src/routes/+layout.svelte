@@ -58,6 +58,7 @@
   import SidebarSearch from "$lib/components/sidebar/SidebarSearch.svelte";
   import PairedChatIndicator from "$lib/components/conversation/PairedChatIndicator.svelte";
   import { reopenSession, getPairedChatInfo, type PairedChatInfo } from "$lib/api/sessions";
+  import BackendStatusBanner from "$lib/components/feedback/BackendStatusBanner.svelte";
 
   interface Props {
     children?: Snippet;
@@ -580,6 +581,10 @@
           <span class="text-fg-muted">{SIDEBAR_STRINGS.heading} {SIDEBAR_STRINGS.versionTag}</span>
         </footer>
       </div>
+      <!-- Backend-unreachable sticky banner (gap-cycle-01-006).
+           Rendered as position:fixed so it overlays without disturbing
+           the three-column grid. Hidden while the WS is healthy. -->
+      <BackendStatusBanner />
     </ContextMenuProvider>
     <!-- Item 2.4 — sidebar search overlay. Mounted inside KeybindingsProvider
          so its bindHandler call has access to the live keybindings store. -->

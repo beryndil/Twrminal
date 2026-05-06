@@ -32,6 +32,26 @@ type SessionsBroadcastEvent =
 
 type SessionsBroadcastHandler = (event: SessionsBroadcastEvent) => void;
 
+/**
+ * Optional connection-state callbacks for :func:`connectSessionsBroadcast`.
+ *
+ * Callers that need to track whether the sessions-broadcast WebSocket is
+ * healthy (e.g. ``BackendStatusBanner``) supply these alongside the event
+ * handler. Only the callbacks that are actually needed must be provided —
+ * omitting a callback is always safe.
+ */
+export interface SessionsBroadcastOptions {
+  /** Called when the socket opens (or reconnects) successfully. */
+  onOpen?: () => void;
+  /**
+   * Called when the socket closes. ``code`` is the WebSocket close code
+   * (e.g. 4401 for auth failure, 1006 for abnormal closure).
+   */
+  onClose?: (code: number) => void;
+  /** Called when the socket emits an error event. */
+  onError?: () => void;
+}
+
 /** Remove the subscription and close the WebSocket. */
 type Unsubscribe = () => void;
 
@@ -47,8 +67,15 @@ const _BACKOFF_MAX_MS = 30_000;
  *
  * The heartbeat frames the server emits on idle are silently discarded
  * (they keep the connection alive but carry no session data).
+ *
+ * Optional ``options`` callbacks receive raw connection-state signals so
+ * callers such as ``BackendStatusBanner`` can track reachability without
+ * a second independent WebSocket.
  */
-export function connectSessionsBroadcast(onEvent: SessionsBroadcastHandler): Unsubscribe {
+export function connectSessionsBroadcast(
+  onEvent: SessionsBroadcastHandler,
+  options?: SessionsBroadcastOptions,
+): Unsubscribe {
   let stopped = false;
   let ws: WebSocket | null = null;
   let backoffMs = _BACKOFF_INITIAL_MS;
@@ -74,10 +101,12 @@ export function connectSessionsBroadcast(onEvent: SessionsBroadcastHandler): Uns
 
     ws.onopen = () => {
       backoffMs = _BACKOFF_INITIAL_MS;
+      options?.onOpen?.();
     };
 
-    ws.onclose = () => {
+    ws.onclose = (ev: CloseEvent) => {
       ws = null;
+      options?.onClose?.(ev.code);
       if (stopped) {
         return;
       }
@@ -90,6 +119,7 @@ export function connectSessionsBroadcast(onEvent: SessionsBroadcastHandler): Uns
 
     ws.onerror = () => {
       // ``onclose`` fires after ``onerror``; reconnect logic lives there.
+      options?.onError?.();
     };
   }
 

@@ -52,6 +52,35 @@ const state: SessionsState = $state({
 
 export const sessionsStore = state;
 
+// ---- Sessions-broadcast WebSocket connection status -----------------------
+
+/**
+ * Reactive connection status for the sessions-broadcast WebSocket.
+ *
+ * Read by ``BackendStatusBanner`` to determine whether the backend is
+ * reachable. Updated via the :func:`connectSessionsBroadcast` state
+ * callbacks wired below.
+ *
+ * Initial state is ``'closed'`` — the socket is not yet open at module
+ * load time. The banner's 5-second grace period means the initial closed
+ * state does NOT immediately display the banner on first page load.
+ */
+interface WsConnectionStatus {
+  /** Current logical state of the sessions-broadcast WebSocket. */
+  state: "open" | "closed" | "error";
+  /**
+   * The close code from the most recent ``CloseEvent``, or ``null``
+   * before the first close event fires. ``4401`` indicates an auth
+   * failure and suppresses the backend-unreachable banner.
+   */
+  lastCloseCode: number | null;
+}
+
+const wsStatus: WsConnectionStatus = $state({ state: "closed", lastCloseCode: null });
+
+/** Read-only reactive view of the sessions-broadcast WebSocket status. */
+export const wsConnectionStatus: WsConnectionStatus = wsStatus;
+
 let refreshController: AbortController | null = null;
 
 // ---- sessions-broadcast subscription (item 2.6) ----------------------------
@@ -91,21 +120,39 @@ function _applyDelete(sessionId: string): void {
 // ``connectSessionsBroadcast`` auto-reconnects so the subscription
 // survives server restarts.  The returned ``Unsubscribe`` is not
 // stored because this singleton lives for the page's lifetime.
-connectSessionsBroadcast((event) => {
-  if (event.type === "session_upsert") {
-    _applyUpsert(event.session);
-  } else if (event.type === "session_delete") {
-    _applyDelete(event.session_id);
-  } else if (event.type === "runner_state" && event.is_error) {
-    // Agent loop entered ERROR state — set error_pending locally so
-    // the sidebar pip flashes without waiting for a page reload.
-    // The session_upsert from the recover route will clear it.
-    const idx = state.sessions.findIndex((s) => s.id === event.session_id);
-    if (idx !== -1) {
-      state.sessions[idx] = { ...state.sessions[idx], error_pending: true };
+//
+// The ``options`` callbacks update ``wsStatus`` so ``BackendStatusBanner``
+// can reactively reflect the connection state without a second socket.
+connectSessionsBroadcast(
+  (event) => {
+    if (event.type === "session_upsert") {
+      _applyUpsert(event.session);
+    } else if (event.type === "session_delete") {
+      _applyDelete(event.session_id);
+    } else if (event.type === "runner_state" && event.is_error) {
+      // Agent loop entered ERROR state — set error_pending locally so
+      // the sidebar pip flashes without waiting for a page reload.
+      // The session_upsert from the recover route will clear it.
+      const idx = state.sessions.findIndex((s) => s.id === event.session_id);
+      if (idx !== -1) {
+        state.sessions[idx] = { ...state.sessions[idx], error_pending: true };
+      }
     }
-  }
-});
+  },
+  {
+    onOpen() {
+      wsStatus.state = "open";
+      wsStatus.lastCloseCode = null;
+    },
+    onClose(code: number) {
+      wsStatus.state = "closed";
+      wsStatus.lastCloseCode = code;
+    },
+    onError() {
+      wsStatus.state = "error";
+    },
+  },
+);
 
 /**
  * Refresh the sidebar list using the three-section faceted tag
@@ -190,6 +237,31 @@ export function _resetForTests(): void {
   state.error = null;
   refreshController?.abort();
   refreshController = null;
+}
+
+/**
+ * Override ``wsConnectionStatus`` fields for unit tests.
+ *
+ * Directly mutates the ``$state`` object so Svelte's reactive system
+ * propagates the change to any component that reads
+ * ``wsConnectionStatus``.
+ */
+export function _setWsStatusForTests(patch: {
+  state?: "open" | "closed" | "error";
+  lastCloseCode?: number | null;
+}): void {
+  if (patch.state !== undefined) {
+    wsStatus.state = patch.state;
+  }
+  if ("lastCloseCode" in patch) {
+    wsStatus.lastCloseCode = patch.lastCloseCode ?? null;
+  }
+}
+
+/** Reset ``wsConnectionStatus`` to initial state between tests. */
+export function _resetWsStatusForTests(): void {
+  wsStatus.state = "closed";
+  wsStatus.lastCloseCode = null;
 }
 
 function isAbortError(error: unknown): boolean {

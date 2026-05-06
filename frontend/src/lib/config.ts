@@ -334,6 +334,29 @@ export const WS_FRAME_KIND_HEARTBEAT = "heartbeat";
  */
 export const WS_SESSIONS_PATH = "/ws/sessions";
 
+/**
+ * WebSocket close code emitted by the backend when authentication fails
+ * or the session token has expired. When the sessions-broadcast socket
+ * closes with this code, ``BackendStatusBanner`` stays hidden so the
+ * banner does not double-up with the AuthGate UI.
+ *
+ * Behavior anchor: ``docs/behavior/chat.md`` §"Error states" "Auth required".
+ */
+export const WS_CLOSE_CODE_AUTH_FAILURE = 4401;
+
+/**
+ * Duration (ms) a WebSocket disconnect must persist before the
+ * ``BackendStatusBanner`` becomes visible.
+ *
+ * The grace period suppresses the banner during brief blips (routine
+ * server restarts, transient network hiccups) so the UI does not flash
+ * "Backend unreachable" on every fast reconnect.
+ *
+ * Behavior anchor: ``docs/behavior/chat.md`` §"Error states"
+ * "Backend unreachable".
+ */
+export const BACKEND_UNREACHABLE_THRESHOLD_MS = 5_000;
+
 // ---- Session-kind alphabet (mirrors backend ``KNOWN_SESSION_KINDS``) ------
 
 /** Chat-kind session — composer + transcript per ``docs/behavior/chat.md``. */
@@ -2165,6 +2188,20 @@ export const APPROVAL_STRINGS = {
    * free-text answer box so the user can still respond.
    */
   unknownShapeNotice: "Question shape not recognised — answer in free text:",
+} as const;
+
+/**
+ * UI strings for the backend-unreachable sticky banner
+ * (``BackendStatusBanner.svelte``).
+ *
+ * Behavior anchor: ``docs/behavior/chat.md`` §"Error states"
+ * "Backend unreachable".
+ */
+export const BACKEND_STATUS_BANNER_STRINGS = {
+  /** Accessible label for the banner container (role="status"). */
+  ariaLabel: "Backend connection status",
+  /** Visible message shown while the backend is unreachable. */
+  message: "Backend unreachable — retrying",
 } as const;
 
 // ---- Derivations -----------------------------------------------------------
