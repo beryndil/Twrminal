@@ -20,7 +20,7 @@ packages = ["src/bearings"]
 
 [project]
 name = "bearings"
-version = "0.1.0"
+version = "0.2.0"
 description = "Localhost UI to drive Claude Code agent sessions — sessions, tags, routing, streaming, vault, checklists."
 readme = "README.md"
 license = "MIT"
