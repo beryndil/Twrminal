@@ -11,25 +11,32 @@ Wires up the foundational components in the only order that's safe:
 4. Database migrations fourth (logging is up to record progress; the
    process should exit non-zero if migrations fail, which the
    exception handler now ensures).
+5. FastAPI app fifth (only after the DB schema is current; auth
+   config is validated inside :func:`create_app`).
 
-The §7 foundation builds the bootstrap up to the migrations step and
-exits cleanly. §8 (web layer) replaces the trailing ``hello`` event
-with starting the FastAPI server in this same ordering.
+In v1 of §8 we construct and return the app but do not run uvicorn —
+the runner lands with §13 graceful-shutdown work. Tests instantiate
+the app directly via :func:`create_app`.
 """
 
 import asyncio
+
+from fastapi import FastAPI
 
 from bearings.config import Settings
 from bearings.db import init_db
 from bearings.errors import setup_exception_handler
 from bearings.log import configure_logging, get_logger
+from bearings.web import create_app
 
 
-async def _bootstrap() -> None:
+async def _bootstrap() -> FastAPI:
     """Async bootstrap: build settings, init logging+errors, run migrations.
 
     Separated from :func:`main` so tests can drive the async path
-    without re-implementing the ``asyncio.run`` plumbing.
+    without re-implementing the ``asyncio.run`` plumbing. Returns the
+    constructed FastAPI app so future work (uvicorn runner under §13)
+    has the handle ready.
     """
     settings = Settings()
     configure_logging(level=settings.log_level, json=settings.log_json)
@@ -45,7 +52,14 @@ async def _bootstrap() -> None:
 
     await init_db(settings.db_path)
 
-    logger.info("app.ready", db_path=str(settings.db_path))
+    app = create_app(settings)
+    logger.info(
+        "app.ready",
+        db_path=str(settings.db_path),
+        host=settings.host,
+        port=settings.port,
+    )
+    return app
 
 
 def main() -> None:

@@ -65,6 +65,39 @@ def test_settings_db_path_composes(monkeypatch: pytest.MonkeyPatch) -> None:
     assert str(settings.db_path) == "/var/data/b/custom.db"
 
 
+def test_settings_auth_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Auth + bind defaults are localhost-friendly with empty token.
+
+    Empty token is intentional — the web app factory raises at boot
+    unless ``auth_disabled=True``. Settings itself never decides; it
+    just carries the values.
+
+    The autouse ``_isolate_auth_token`` fixture sets a token for web
+    tests; clear it locally so we observe the field default.
+    """
+    monkeypatch.delenv("BEARINGS_AUTH_TOKEN", raising=False)
+    settings = Settings()
+    assert settings.host == "127.0.0.1"
+    assert settings.port == 8788
+    assert settings.auth_header_name == "X-Bearings-Token"
+    assert settings.auth_disabled is False
+    assert settings.auth_token.get_secret_value() == ""
+
+
+def test_settings_auth_token_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``BEARINGS_AUTH_TOKEN`` populates the SecretStr field."""
+    monkeypatch.setenv("BEARINGS_AUTH_TOKEN", "test-token-1234567890")
+    settings = Settings()
+    assert settings.auth_token.get_secret_value() == "test-token-1234567890"
+
+
+def test_settings_port_out_of_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Port range is enforced at the model boundary (1..65535)."""
+    monkeypatch.setenv("BEARINGS_PORT", "70000")
+    with pytest.raises(ValidationError):
+        Settings()
+
+
 def test_settings_rejects_typos_in_kwargs() -> None:
     """extra='forbid' rejects unknown constructor kwargs.
 

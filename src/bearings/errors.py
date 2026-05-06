@@ -24,6 +24,26 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
+class BearingsError(Exception):
+    """Base class for Bearings's own exceptions.
+
+    Distinct from third-party / stdlib errors so callers can catch
+    "anything Bearings raises" without sweeping up unrelated bugs.
+    Subclass for new categories instead of raising :class:`Exception`
+    directly — keeps grep/audit useful.
+    """
+
+
+class ConfigurationError(BearingsError):
+    """Raised when the application cannot boot due to misconfiguration.
+
+    Examples: empty auth token with auth not explicitly disabled,
+    missing required env var, contradictory settings combination.
+    Caught by the bootstrap to print a friendly message and exit
+    non-zero rather than fall through to the catch-all 500 path.
+    """
+
+
 def _handle_exception(
     exc_type: type[BaseException],
     exc_value: BaseException,

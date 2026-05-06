@@ -54,3 +54,30 @@ def _isolate_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     """
     monkeypatch.setenv("BEARINGS_DATA_DIR", str(tmp_path / "data"))
     yield
+
+
+# Test-wide auth token. Real value, not empty — exercises the
+# happy-path of :func:`bearings.web.auth.build_require_auth`. Tests
+# that need to assert auth-failure paths read this value to construct
+# valid headers; tests that need a different token monkeypatch the
+# env var locally.
+TEST_AUTH_TOKEN = "test-token-fixture-1234567890abcdef"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_auth_token(
+    _isolate_bearings_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
+    """Set a known ``BEARINGS_AUTH_TOKEN`` so :func:`create_app` can boot.
+
+    The app factory refuses to construct an app with an empty token
+    unless ``auth_disabled=True``. Tests want a real token so they
+    can also exercise the success path.
+
+    Depends on ``_isolate_bearings_env`` so the strip-everything pass
+    runs *first*; without the explicit dependency, fixture-ordering
+    can land the strip after this setenv and silently nuke the token.
+    """
+    monkeypatch.setenv("BEARINGS_AUTH_TOKEN", TEST_AUTH_TOKEN)
+    yield

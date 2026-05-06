@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -86,6 +86,52 @@ class Settings(BaseSettings):
     db_filename: str = Field(
         default="bearings.sqlite3",
         description="SQLite database filename inside data_dir.",
+    )
+
+    # ---- Web server bind ----
+    #
+    # Defaults match the prompt-endpoint already encoded in
+    # ``~/.claude/CLAUDE.md`` (autonomous-execution pattern POSTs to
+    # ``http://127.0.0.1:8788``). Localhost-only by default — Sec rule:
+    # never bind 0.0.0.0 implicitly. Multi-device exposure is the §11
+    # network-surface phase, gated behind explicit configuration.
+    host: str = Field(
+        default="127.0.0.1",
+        description="Bind host for the HTTP server. Defaults to localhost only.",
+    )
+    port: int = Field(
+        default=8788,
+        ge=1,
+        le=65535,
+        description="Bind port for the HTTP server.",
+    )
+
+    # ---- Shared-token auth ----
+    #
+    # v1 auth model is a single shared bearer token sent on every
+    # authenticated request via the header named by ``auth_header_name``.
+    # NOT JWT, NOT OAuth2, NOT cookies. Stack pin §3 — settled in plan.
+    # Empty default + ``auth_disabled=False`` means the app refuses to
+    # boot without an explicit token (Op directive: Zero-Crash; never
+    # boot an unauthenticated localhost server "by accident").
+    auth_token: SecretStr = Field(
+        default=SecretStr(""),
+        description=(
+            "Shared bearer token for the HTTP API. Required unless "
+            "auth_disabled=True. Empty value triggers a startup failure."
+        ),
+    )
+    auth_header_name: str = Field(
+        default="X-Bearings-Token",
+        description="HTTP header carrying the shared bearer token.",
+    )
+    auth_disabled: bool = Field(
+        default=False,
+        description=(
+            "Dev-only escape hatch: skip auth entirely. Must be paired "
+            "with a structured warning log at startup so it's visible "
+            "in any environment that accidentally enables it."
+        ),
     )
 
     @property
