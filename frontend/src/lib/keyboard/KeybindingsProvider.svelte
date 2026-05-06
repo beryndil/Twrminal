@@ -26,6 +26,7 @@
     KEYBINDING_ACTION_ESC_CASCADE,
     KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET,
     KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE,
+    KEYBINDING_ACTION_TOGGLE_PENDING_OPS,
     KEYBINDING_ACTION_TOGGLE_TEMPLATE_PICKER,
   } from "../config";
   import { dispatchKeyEvent } from "./dispatch";
@@ -34,16 +35,26 @@
   import CheatSheet from "./CheatSheet.svelte";
   import CommandPalette from "./CommandPalette.svelte";
   import TemplatePicker from "../components/menus/TemplatePicker.svelte";
+  import PendingOpsCard from "../components/pending/PendingOpsCard.svelte";
 
   interface Props {
     children?: Snippet;
+    /**
+     * Working directory of the currently-selected session — threaded
+     * down from ``+layout.svelte`` so ``PendingOpsCard`` can fetch
+     * the right ``.bearings/pending.toml`` without reading the
+     * inspector store directly from inside the keyboard subsystem.
+     */
+    activeWorkingDir?: string | null;
   }
 
-  const { children }: Props = $props();
+  const { children, activeWorkingDir = null }: Props = $props();
 
   let cheatSheetOpen = $state(false);
   let commandPaletteOpen = $state(false);
   let templatePickerOpen = $state(false);
+
+  import { toggleCard as togglePendingOpsCard } from "../stores/pending.svelte";
 
   // Re-export the modal flag to the dispatch layer so overlays
   // count as "modal context" for chord gating.
@@ -93,6 +104,7 @@
       bindHandler(KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET, toggleCheatSheet),
       bindHandler(KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE, toggleCommandPalette),
       bindHandler(KEYBINDING_ACTION_TOGGLE_TEMPLATE_PICKER, toggleTemplatePicker),
+      bindHandler(KEYBINDING_ACTION_TOGGLE_PENDING_OPS, togglePendingOpsCard),
       bindHandler(KEYBINDING_ACTION_ESC_CASCADE, handleEsc),
     ];
 
@@ -131,3 +143,4 @@
 <CheatSheet open={cheatSheetOpen} onClose={() => (cheatSheetOpen = false)} />
 <CommandPalette open={commandPaletteOpen} onClose={() => (commandPaletteOpen = false)} />
 <TemplatePicker open={templatePickerOpen} onClose={() => (templatePickerOpen = false)} />
+<PendingOpsCard workingDir={activeWorkingDir} />

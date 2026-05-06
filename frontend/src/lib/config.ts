@@ -590,6 +590,39 @@ export const SIDEBAR_STRINGS = {
  */
 export const ROUTING_PREVIEW_DEBOUNCE_MS = 300;
 
+// ---- Pending operations (gap-cycle-01-004; keyboard-shortcuts §Help) --------
+
+/**
+ * ``GET /api/fs/read`` — read a utf-8 file under an allow-root.
+ * Used by the pending-ops store to load ``.bearings/pending.toml``
+ * for the active session's working directory.
+ */
+export const API_FS_READ_ENDPOINT = `${API_BASE}/fs/read`;
+
+/**
+ * UI strings for the pending-operations floating card (toggled by
+ * ``Ctrl+Shift+O`` per ``docs/behavior/keyboard-shortcuts.md`` §"Help").
+ */
+export const PENDING_OPS_CARD_STRINGS = {
+  cardAriaLabel: "Pending operations",
+  cardHeading: "Pending Operations",
+  closeLabel: "Close",
+  closeAriaLabel: "Close pending operations",
+  emptyLabel: "No pending operations.",
+  loadingLabel: "Loading…",
+  loadErrorLabel: "Couldn't load pending operations.",
+  badgeAriaLabel: (count: number) =>
+    `${count} pending operation${count === 1 ? "" : "s"} — click to view`,
+  ageLabel: (seconds: number): string => {
+    if (seconds < 60) return `${seconds}s ago`;
+    const m = Math.floor(seconds / 60);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  },
+} as const;
+
 // ---- Template picker (gap-cycle-01-002; keyboard-shortcuts §Create) --------
 
 /**
@@ -1771,6 +1804,7 @@ export const KEYBINDING_ACTION_SIDEBAR_UP_FORCE = "navigate.sidebar_up_force";
 export const KEYBINDING_ACTION_SIDEBAR_JUMP_PREFIX = "navigate.sidebar_jump_";
 export const KEYBINDING_ACTION_ESC_CASCADE = "focus.esc_cascade";
 export const KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET = "help.toggle_cheat_sheet";
+export const KEYBINDING_ACTION_TOGGLE_PENDING_OPS = "help.toggle_pending_ops";
 export const KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE = "palette.toggle_command_palette";
 export const KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH = "palette.focus_sidebar_search";
 
@@ -1824,6 +1858,7 @@ export const KEYBOARD_SHORTCUT_STRINGS = {
     [KEYBINDING_ACTION_SIDEBAR_UP_FORCE]: "Move sidebar selection up (works in inputs)",
     [KEYBINDING_ACTION_ESC_CASCADE]: "Close overlay / blur input",
     [KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET]: "Toggle this cheat sheet",
+    [KEYBINDING_ACTION_TOGGLE_PENDING_OPS]: "Toggle the pending-operations card",
     [KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE]: "Toggle the command palette",
     [KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH]: "Focus the sidebar search field",
     [KEYBINDING_ACTION_TOGGLE_TEMPLATE_PICKER]: "Open the template picker",

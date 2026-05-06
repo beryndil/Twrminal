@@ -27,6 +27,7 @@ import {
   KEYBINDING_ACTION_SIDEBAR_UP_FORCE,
   KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET,
   KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE,
+  KEYBINDING_ACTION_TOGGLE_PENDING_OPS,
   KEYBINDING_ACTION_TOGGLE_TEMPLATE_PICKER,
   KEYBINDING_SECTION_COMMAND_PALETTE,
   KEYBINDING_SECTION_CREATE,
@@ -155,6 +156,12 @@ export const KEYBINDINGS: readonly KeybindingSpec[] = [
     chord: { key: "?", display: ["?"] },
     section: KEYBINDING_SECTION_HELP,
     global: false,
+  },
+  {
+    id: KEYBINDING_ACTION_TOGGLE_PENDING_OPS,
+    chord: { code: "KeyO", ctrl: true, shift: true, display: ["Ctrl", "Shift", "O"] },
+    section: KEYBINDING_SECTION_HELP,
+    global: true,
   },
   // ---- Command palette ---------------------------------------------
   {

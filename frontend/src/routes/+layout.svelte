@@ -52,6 +52,8 @@
   import ContextMenuProvider from "$lib/context-menu/ContextMenuProvider.svelte";
   import { sessionsStore } from "$lib/stores/sessions.svelte";
   import { inspectorStore, setActiveSession } from "$lib/stores/inspector.svelte";
+  import PendingOpsBadge from "$lib/components/pending/PendingOpsBadge.svelte";
+  import { refreshOps } from "$lib/stores/pending.svelte";
   import ContextMeter from "$lib/components/conversation/ContextMeter.svelte";
   import SidebarSearch from "$lib/components/sidebar/SidebarSearch.svelte";
   import PairedChatIndicator from "$lib/components/conversation/PairedChatIndicator.svelte";
@@ -157,6 +159,21 @@
     };
   });
 
+  /**
+   * Working directory of the active session — passed to
+   * :class:`KeybindingsProvider` so the pending-ops card can read
+   * ``.bearings/pending.toml`` for the right project.
+   */
+  const activeWorkingDir = $derived(activeSession?.working_dir ?? null);
+
+  /**
+   * Refresh pending ops whenever the active session's working directory
+   * changes. This drives the badge count and the card content.
+   */
+  $effect(() => {
+    void refreshOps(activeWorkingDir);
+  });
+
   /** Current URL path as a plain string for nav-active comparisons. */
   const currentPath: string = $derived(page.url.pathname as string);
 
@@ -215,7 +232,7 @@
 </script>
 
 <ThemeProvider>
-  <KeybindingsProvider>
+  <KeybindingsProvider {activeWorkingDir}>
     <ContextMenuProvider>
       <div class="app-shell" data-testid="app-shell">
         <aside
@@ -251,6 +268,7 @@
               </g>
             </svg>
             <span class="text-base font-semibold tracking-tight">{SIDEBAR_STRINGS.heading}</span>
+            <PendingOpsBadge />
           </div>
 
           <!-- New Session -->
