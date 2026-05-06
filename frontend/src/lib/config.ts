@@ -486,6 +486,33 @@ export const CONTEXT_METER_STRINGS = {
 export const CONTEXT_METER_WARN_BAND_PCT = 15;
 
 /**
+ * UI string table for the conversation header band (gap-cycle-01-005).
+ *
+ * Covers: title aria-label, severity shield, tag chips, cost indicator,
+ * and the quota-bars heading surfaced by the ``QuotaBars`` sub-component
+ * when reused in the header (per spec §10 "Quota bars in the session
+ * header"). Pulled out of the component per coding-standards
+ * §"i18n-ready string tables".
+ *
+ * Behavior anchor: ``docs/behavior/chat.md`` §"When the user opens an
+ * existing chat" — the header band item list.
+ */
+export const CONVERSATION_HEADER_STRINGS = {
+  ariaLabel: "Conversation header",
+  /** Aria-label for the severity shield chip. */
+  severityShieldAriaLabel: "Severity",
+  /** Aria-label wrapper for the non-severity tag chips row. */
+  tagChipsAriaLabel: "Attached tags",
+  /**
+   * Currency prefix for the total-cost indicator (chat.md §"total-cost /
+   * context-window indicator" — cost expressed in USD).
+   */
+  costPrefix: "$",
+  /** Aria-label for the total-cost readout span. */
+  costAriaLabel: "Total session cost",
+} as const;
+
+/**
  * ``rel`` attribute for outbound anchors per chat.md §"Conversation
  * rendering" — "rendered as anchors that open in a new tab with
  * ``noopener noreferrer``". Pulled out of the linkifier so a future

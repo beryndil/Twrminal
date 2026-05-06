@@ -37,10 +37,9 @@
   import ApprovalModal from "./ApprovalModal.svelte";
   import AskUserQuestionModal from "./AskUserQuestionModal.svelte";
   import CheckpointGutter from "./CheckpointGutter.svelte";
+  import ConversationHeader from "./ConversationHeader.svelte";
   import LiveTodos from "./LiveTodos.svelte";
   import MessageTurn from "./MessageTurn.svelte";
-  import ModelSelector from "./ModelSelector.svelte";
-  import PermissionModeSelector from "./PermissionModeSelector.svelte";
   import StopUndoInline from "./StopUndoInline.svelte";
   import { checkpointBus } from "../../stores/checkpointBus.svelte";
   import { recoverSession } from "../../api/sessions";
@@ -166,11 +165,11 @@
 </script>
 
 <section class="conversation flex h-full flex-col" data-testid="conversation">
-  <!-- Header bar — model selector + permission-mode selector; both hidden when no session active -->
-  <div class="flex items-center justify-end gap-3 border-b border-border px-3 py-1">
-    <ModelSelector {sessionId} />
-    <PermissionModeSelector {sessionId} />
-  </div>
+  <!-- Full conversation header band (title, severity, tags, breadcrumb,
+       model selector, cost, context meter, quota bars). Per
+       docs/behavior/chat.md §"opens an existing chat" + arch §1.2
+       ConversationHeader.svelte. -->
+  <ConversationHeader {sessionId} />
   <!-- Live todos strip — sticky above the scroll body; hidden when empty -->
   <LiveTodos />
   <div class="relative flex-1 overflow-hidden">
