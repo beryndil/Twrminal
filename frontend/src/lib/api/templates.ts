@@ -102,15 +102,14 @@ async function patchTemplate(
 
 /**
  * Delete a template by id. 204 on success; 404 surfaces as :class:`ApiError`.
- *
- * Not yet consumed by any UI component — export added when a template
- * management surface lands (future item).
  */
-async function deleteTemplate(templateId: number, options: RequestOptions = {}): Promise<void> {
+export async function deleteTemplate(
+  templateId: number,
+  options: RequestOptions = {},
+): Promise<void> {
   return await deleteResource<void>(templateEndpoint(templateId), options);
 }
 
 // Silence unused-variable warnings in editors until consumers are added.
 void getTemplate;
 void patchTemplate;
-void deleteTemplate;

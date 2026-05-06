@@ -27,6 +27,7 @@ import {
   KEYBINDING_ACTION_SIDEBAR_UP_FORCE,
   KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET,
   KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE,
+  KEYBINDING_ACTION_TOGGLE_TEMPLATE_PICKER,
   KEYBINDING_SECTION_COMMAND_PALETTE,
   KEYBINDING_SECTION_CREATE,
   KEYBINDING_SECTION_FOCUS,
@@ -102,6 +103,12 @@ export const KEYBINDINGS: readonly KeybindingSpec[] = [
   {
     id: KEYBINDING_ACTION_NEW_CHAT_BARE,
     chord: { code: "KeyC", shift: true, display: ["Shift", "C"] },
+    section: KEYBINDING_SECTION_CREATE,
+    global: false,
+  },
+  {
+    id: KEYBINDING_ACTION_TOGGLE_TEMPLATE_PICKER,
+    chord: { code: "KeyT", display: ["T"] },
     section: KEYBINDING_SECTION_CREATE,
     global: false,
   },

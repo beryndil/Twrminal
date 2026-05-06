@@ -595,6 +595,26 @@ export const SIDEBAR_STRINGS = {
  */
 export const ROUTING_PREVIEW_DEBOUNCE_MS = 300;
 
+// ---- Template picker (gap-cycle-01-002; keyboard-shortcuts §Create) --------
+
+/**
+ * UI strings for the template picker dropdown (toggled by the ``t`` chord
+ * per ``docs/behavior/keyboard-shortcuts.md`` §"Create").
+ */
+export const TEMPLATE_PICKER_STRINGS = {
+  heading: "Templates",
+  emptyLabel: "No saved templates.",
+  loadingLabel: "Loading templates…",
+  loadErrorLabel: "Couldn't load templates.",
+  instantiateErrorPrefix: "Couldn't create session:",
+  closeLabel: "Close",
+  deleteLabel: "Delete template",
+  deleteConfirmMessage: (name: string) => `Delete template "${name}"? This cannot be undone.`,
+  deleteConfirmLabel: "Delete",
+  deleteCancelLabel: "Cancel",
+  ariaLabel: "Template picker",
+} as const;
+
 /**
  * Quota-bar yellow / red transition thresholds (spec §4 + §10 —
  * "yellow at 80% used, red at 95%"). Mirrors the backend's
@@ -1748,6 +1768,7 @@ export const MODEL_SWITCH_DIALOG_STRINGS = {
  */
 export const KEYBINDING_ACTION_NEW_CHAT_DEFAULTS = "create.new_chat_with_defaults";
 export const KEYBINDING_ACTION_NEW_CHAT_BARE = "create.new_chat_bare";
+export const KEYBINDING_ACTION_TOGGLE_TEMPLATE_PICKER = "create.toggle_template_picker";
 export const KEYBINDING_ACTION_SIDEBAR_DOWN = "navigate.sidebar_down";
 export const KEYBINDING_ACTION_SIDEBAR_UP = "navigate.sidebar_up";
 export const KEYBINDING_ACTION_SIDEBAR_DOWN_FORCE = "navigate.sidebar_down_force";
@@ -1810,6 +1831,7 @@ export const KEYBOARD_SHORTCUT_STRINGS = {
     [KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET]: "Toggle this cheat sheet",
     [KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE]: "Toggle the command palette",
     [KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH]: "Focus the sidebar search field",
+    [KEYBINDING_ACTION_TOGGLE_TEMPLATE_PICKER]: "Open the template picker",
   } as const,
   jumpToSlotLabelTemplate: "Jump to sidebar slot {n}",
   duplicateChordError:

@@ -149,7 +149,7 @@ export async function recoverSession(
 interface SessionCreateBody {
   kind: string;
   title: string;
-  working_dir: string;
+  working_dir: string | null;
   model: string;
   description?: string | null;
   session_instructions?: string | null;

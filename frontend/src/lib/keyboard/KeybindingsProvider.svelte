@@ -23,12 +23,14 @@
     KEYBINDING_ACTION_ESC_CASCADE,
     KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET,
     KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE,
+    KEYBINDING_ACTION_TOGGLE_TEMPLATE_PICKER,
   } from "../config";
   import { dispatchKeyEvent } from "./dispatch";
   import { runEscCascade } from "./escCascade";
   import { bindHandler, setComposerFocused, setModalOpen } from "./store.svelte";
   import CheatSheet from "./CheatSheet.svelte";
   import CommandPalette from "./CommandPalette.svelte";
+  import TemplatePicker from "../components/menus/TemplatePicker.svelte";
 
   interface Props {
     children?: Snippet;
@@ -40,21 +42,36 @@
 
   let cheatSheetOpen = $state(false);
   let commandPaletteOpen = $state(false);
+  let templatePickerOpen = $state(false);
 
   // Re-export the modal flag to the dispatch layer so overlays
   // count as "modal context" for chord gating.
   $effect(() => {
-    setModalOpen(cheatSheetOpen || commandPaletteOpen);
+    setModalOpen(cheatSheetOpen || commandPaletteOpen || templatePickerOpen);
   });
 
   function toggleCheatSheet(): void {
     cheatSheetOpen = !cheatSheetOpen;
-    if (cheatSheetOpen) commandPaletteOpen = false;
+    if (cheatSheetOpen) {
+      commandPaletteOpen = false;
+      templatePickerOpen = false;
+    }
   }
 
   function toggleCommandPalette(): void {
     commandPaletteOpen = !commandPaletteOpen;
-    if (commandPaletteOpen) cheatSheetOpen = false;
+    if (commandPaletteOpen) {
+      cheatSheetOpen = false;
+      templatePickerOpen = false;
+    }
+  }
+
+  function toggleTemplatePicker(): void {
+    templatePickerOpen = !templatePickerOpen;
+    if (templatePickerOpen) {
+      cheatSheetOpen = false;
+      commandPaletteOpen = false;
+    }
   }
 
   function handleEsc(): void {
@@ -74,6 +91,7 @@
     const releases = [
       bindHandler(KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET, toggleCheatSheet),
       bindHandler(KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE, toggleCommandPalette),
+      bindHandler(KEYBINDING_ACTION_TOGGLE_TEMPLATE_PICKER, toggleTemplatePicker),
       bindHandler(KEYBINDING_ACTION_ESC_CASCADE, handleEsc),
     ];
 
@@ -115,3 +133,4 @@
   {sessionId}
   onClose={() => (commandPaletteOpen = false)}
 />
+<TemplatePicker open={templatePickerOpen} onClose={() => (templatePickerOpen = false)} />
