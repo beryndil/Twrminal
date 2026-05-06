@@ -6,45 +6,35 @@
    *
    * - ``docs/behavior/keyboard-shortcuts.md`` §"Command palette" —
    *   ``Ctrl+Shift+P`` toggles the palette; Escape closes it.
-   * - ``docs/behavior/chat.md`` §"Slash commands in the composer" —
-   *   selecting a command inserts ``/name`` into the active composer
-   *   via :func:`pasteIntoComposer`.
-   *
-   * The command list is fetched once on first open and then cached
-   * for the lifetime of the component. A fetch failure silently
-   * produces an empty list — the palette degrades gracefully.
+   * - The action list is sourced from the context-menu registry
+   *   (:func:`allPaletteActions`) so every right-click-reachable action
+   *   id is reachable from the palette by label.
+   * - Activating a row calls the handler registered via
+   *   :func:`registerPaletteHandler` / :func:`getPaletteHandler`.
+   *   Rows with no registered handler are shown but do nothing on
+   *   activation — they remain visible for discoverability.
    *
    * String literals — :data:`COMMAND_PALETTE_STRINGS` in
    * ``../../config``.
    */
-  import { listCommands, type CommandOut } from "../api/commands";
   import { COMMAND_PALETTE_STRINGS } from "../config";
-  import { pasteIntoComposer } from "../stores/composerBridge.svelte";
+  import { allPaletteActions, getPaletteHandler, type PaletteEntry } from "../context-menu/palette";
 
   interface Props {
     open: boolean;
     onClose: () => void;
-    /** Active session id — used to route the insertion via composerBridge. */
-    sessionId: string | null;
   }
 
-  const { open, onClose, sessionId }: Props = $props();
+  const { open, onClose }: Props = $props();
 
-  let allCommands = $state<CommandOut[]>([]);
+  const allActions: readonly PaletteEntry[] = allPaletteActions();
+
   let query = $state("");
   let activeIndex = $state(0);
   let inputEl = $state<HTMLInputElement | null>(null);
   let listEl = $state<HTMLUListElement | null>(null);
-  let fetched = $state(false);
 
-  // Fetch once on first open.
   $effect(() => {
-    if (open && !fetched) {
-      fetched = true;
-      void listCommands().then((cmds) => {
-        allCommands = cmds;
-      });
-    }
     if (open) {
       query = "";
       activeIndex = 0;
@@ -57,9 +47,9 @@
 
   const filtered = $derived.by(() => {
     const q = query.trim().toLowerCase();
-    if (q === "") return allCommands;
-    return allCommands.filter(
-      (c) => c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q),
+    if (q === "") return allActions;
+    return allActions.filter(
+      (entry) => entry.label.toLowerCase().includes(q) || entry.id.toLowerCase().includes(q),
     );
   });
 
@@ -75,13 +65,11 @@
     row?.scrollIntoView?.({ block: "nearest" });
   });
 
-  /** Insert the selected command into the active composer and close. */
+  /** Fire the highlighted action and close the palette. */
   function confirmActive(): void {
     const entry = filtered[activeIndex];
     if (entry === undefined) return;
-    if (sessionId !== null) {
-      pasteIntoComposer({ sessionId, text: `/${entry.name} `, kind: "link" });
-    }
+    getPaletteHandler(entry.id)?.();
     onClose();
   }
 
@@ -106,11 +94,6 @@
       confirmActive();
       return;
     }
-  }
-
-  /** Source badge label — falls back to the raw source string. */
-  function sourceLabel(source: string): string {
-    return COMMAND_PALETTE_STRINGS.sourceLabels[source] ?? source;
   }
 </script>
 
@@ -171,14 +154,14 @@
             {COMMAND_PALETTE_STRINGS.noResults}
           </li>
         {:else}
-          {#each filtered as cmd, idx (cmd.name)}
+          {#each filtered as entry, idx (entry.id)}
             <li
-              class="flex cursor-pointer items-start gap-3 rounded px-3 py-2 text-sm"
+              class="flex cursor-pointer items-center gap-3 rounded px-3 py-2 text-sm"
               class:bg-surface-2={idx === activeIndex}
               role="option"
               aria-selected={idx === activeIndex}
               data-testid="command-palette-item"
-              data-command-name={cmd.name}
+              data-action-id={entry.id}
               onclick={() => {
                 activeIndex = idx;
                 confirmActive();
@@ -193,11 +176,8 @@
                 activeIndex = idx;
               }}
             >
-              <span class="font-mono text-accent">/{cmd.name}</span>
-              <span class="flex-1 text-fg-muted">{cmd.description}</span>
-              <span class="shrink-0 rounded bg-surface-2 px-1 text-xs text-fg-muted">
-                {sourceLabel(cmd.source)}
-              </span>
+              <span class="flex-1 text-fg-strong">{entry.label}</span>
+              <span class="shrink-0 font-mono text-xs text-fg-muted">{entry.id}</span>
             </li>
           {/each}
         {/if}

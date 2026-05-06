@@ -415,14 +415,9 @@ export const CONVERSATION_STRINGS = {
 export const COMMAND_PALETTE_STRINGS = {
   title: "Command palette",
   ariaLabel: "Global command palette",
-  searchPlaceholder: "Search slash commands…",
+  searchPlaceholder: "Search actions…",
   closeLabel: "Close",
-  noResults: "No commands match",
-  sourceLabels: {
-    user_commands: "User",
-    user_skills: "Skills",
-    project_commands: "Project",
-  } as Record<string, string>,
+  noResults: "No actions match",
 } as const;
 
 /**

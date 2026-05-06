@@ -7,11 +7,14 @@
    *
    * - ``docs/behavior/keyboard-shortcuts.md`` §"Help" — ``?`` toggles
    *   the cheat sheet; the cheat sheet's open state lives here.
+   * - §"Command palette" — ``Ctrl+Shift+P`` toggles the command
+   *   palette; the palette's open state lives here.
    * - §"Focus" — Esc cascade is the lowest-priority "no-op" branch
    *   when no overlay matched and no input owns focus.
    *
    * Action handlers are bound at this level for the actions the
    * provider owns (``KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET``,
+   * ``KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE``,
    * ``KEYBINDING_ACTION_ESC_CASCADE``). Other actions (``c``, ``j``,
    * ``Alt+1``, etc.) are bound by their respective owners (sidebar,
    * new-session dialog) and tracked through :func:`bindHandler`.
@@ -34,11 +37,9 @@
 
   interface Props {
     children?: Snippet;
-    /** Active session id forwarded to CommandPalette for composer insertion. */
-    sessionId?: string | null;
   }
 
-  const { children, sessionId = null }: Props = $props();
+  const { children }: Props = $props();
 
   let cheatSheetOpen = $state(false);
   let commandPaletteOpen = $state(false);
@@ -128,9 +129,5 @@
 {/if}
 
 <CheatSheet open={cheatSheetOpen} onClose={() => (cheatSheetOpen = false)} />
-<CommandPalette
-  open={commandPaletteOpen}
-  {sessionId}
-  onClose={() => (commandPaletteOpen = false)}
-/>
+<CommandPalette open={commandPaletteOpen} onClose={() => (commandPaletteOpen = false)} />
 <TemplatePicker open={templatePickerOpen} onClose={() => (templatePickerOpen = false)} />
