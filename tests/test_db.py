@@ -38,7 +38,12 @@ async def test_init_db_creates_db_and_schema_version(tmp_path: Path) -> None:
 
 
 async def test_init_db_records_applied_version(tmp_path: Path) -> None:
-    """0001 is recorded in schema_version after first run."""
+    """All shipped migrations are recorded in schema_version after first run.
+
+    The asserted list grows as new migrations land; if a developer
+    forgets to add a row here when adding ``NNNN_*.sql``, the test
+    fails loudly and points at the omission.
+    """
     db_path = tmp_path / "test.sqlite3"
     await init_db(db_path)
 
@@ -48,13 +53,28 @@ async def test_init_db_records_applied_version(tmp_path: Path) -> None:
     ):
         versions = sorted(int(row["version"]) for row in await cur.fetchall())
 
-    assert versions == [1]
+    assert versions == [1, 2]
 
 
 async def test_init_db_is_idempotent(tmp_path: Path) -> None:
-    """Running init_db twice is a no-op — no second insert, no errors."""
+    """Running init_db twice is a no-op — no duplicate inserts, no errors.
+
+    Counts the recorded versions; the value tracks the number of
+    shipped migrations so this assertion stays meaningful as new
+    migrations land.
+    """
     db_path = tmp_path / "test.sqlite3"
     await init_db(db_path)
+    expected_count: int
+
+    async with (
+        connect(db_path) as conn,
+        conn.execute("SELECT COUNT(*) AS n FROM schema_version") as cur,
+    ):
+        first_row = await cur.fetchone()
+    assert first_row is not None
+    expected_count = int(first_row["n"])
+
     await init_db(db_path)
 
     async with (
@@ -64,7 +84,7 @@ async def test_init_db_is_idempotent(tmp_path: Path) -> None:
         row = await cur.fetchone()
 
     assert row is not None
-    assert int(row["n"]) == 1
+    assert int(row["n"]) == expected_count
 
 
 async def test_init_db_creates_parent_dir(tmp_path: Path) -> None:

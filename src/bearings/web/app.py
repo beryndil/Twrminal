@@ -30,7 +30,7 @@ from bearings.web.auth import build_require_auth, require_auth
 from bearings.web.db import build_db_dependency, get_db
 from bearings.web.errors import register_exception_handlers
 from bearings.web.logging import RequestContextMiddleware
-from bearings.web.routers import health
+from bearings.web.routers import health, sessions
 
 logger = structlog.get_logger(__name__)
 
@@ -89,5 +89,6 @@ def create_app(settings: Settings) -> FastAPI:
     app.dependency_overrides[get_db] = build_db_dependency(settings.db_path)
 
     app.include_router(health.router)
+    app.include_router(sessions.router)
 
     return app
