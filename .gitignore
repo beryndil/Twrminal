@@ -65,3 +65,8 @@ frontend/playwright/.cache/
 Thumbs.db
 .playwright-mcp/
 output/playwright/
+
+# Autonomous frontend-parity audit loop — orchestrator state, gap
+# JSONL, and per-cycle audit prose. Loop driver lives in
+# ~/.claude/plans/melodic-toasting-axolotl.md.
+.audit-loop/

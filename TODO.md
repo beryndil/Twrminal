@@ -281,3 +281,27 @@ a recent `systemd` update — the symlink target lives at
 Then `git push` to drain the backlog. Resolve in the same commit that
 sweeps the fix. The agent worktree runs with `--no-new-privileges`, so
 the chown must be issued from a regular shell.
+
+## CLAUDE.md stale v17 path (2026-05-06)
+
+Project `CLAUDE.md` and the "Reference-read protocol" section refer to
+`/home/beryndil/Projects/Bearings/` as the v0.17.x reference tree.
+That path no longer exists — v0.17.x was relocated to
+`/home/beryndil/Projects/archive/bearings-v0.17.x/`. The autonomous
+parity loop driven from `~/.claude/plans/melodic-toasting-axolotl.md`
+uses the archive path in its auditor instructions. Update the project
+`CLAUDE.md` "Authoritative documents" / "Reference-read protocol"
+references to the archive path in the next chore commit.
+
+## API gap: no PATCH for session description (2026-05-05)
+
+`PATCH /api/sessions/{id}` accepts only `SessionTitleUpdate` (title
+field). Other per-attribute PATCHes exist for `model`,
+`permission_mode`, `pinned`, etc. — but `description` has no update
+endpoint, even though `SessionOut` and `SessionCreate` carry the field.
+Blocks the dual-persist contract in `~/.claude/skills/persisting-plans`
+(plug-update half is a no-op on this Bearings). Add either
+`PATCH /api/sessions/{id}/description` or extend `SessionTitleUpdate`
+into `SessionMetadataUpdate` accepting both fields. Surfaced while
+authoring `~/.claude/plans/resolute-restructuring-projects.md` from
+session `ses_3794490d13075208149c2903fed6b8c0`.
