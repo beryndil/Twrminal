@@ -1,0 +1,196 @@
+# bearings — localhost web UI to drive Claude Code agent sessions.
+#
+# Stack: uv + hatchling, src-layout, ruff (lint+format), mypy (non-strict
+# v1 with type-annotation enforcement kept on), pytest + pytest-asyncio +
+# pytest-cov, structlog, pydantic v2 + pydantic-settings, aiosqlite.
+#
+# Every section below maps to a directive in `~/.claude/coding-standards.md`.
+# When a tool table looks opinionated, the comment names the directive.
+
+# ---- Build system (PEP 517 / PEP 518) ----
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bearings"]
+
+# ---- Project metadata (PEP 621) ----
+
+[project]
+name = "bearings"
+version = "0.1.0"
+description = "Localhost UI to drive Claude Code agent sessions — sessions, tags, routing, streaming, vault, checklists."
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Dave Hennigan", email = "dwhennigan@gmail.com" },
+]
+requires-python = ">=3.12"
+keywords = ["claude", "claude-code", "agent", "localhost", "ui"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+    "Private :: Do Not Upload",
+]
+
+dependencies = [
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.6,<3",
+    "structlog>=24.4",
+    "aiosqlite>=0.20",
+]
+
+[project.scripts]
+bearings = "bearings.app:main"
+
+[project.urls]
+Repository = "https://github.com/Beryndil/bearings"
+
+# ---- Dev dependencies (PEP 735 dependency groups) ----
+
+[dependency-groups]
+dev = [
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "pre-commit>=4.0",
+    "commitizen>=3.30",
+    "ty>=0.0.1a8",
+]
+
+# =====================================================================
+# Tool tables — each section is a coding-standards.md directive wired up.
+# =====================================================================
+
+# ---- ruff: lint + format ----
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src"]
+extend-exclude = ["docs", ".venv"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle: PEP 8 spacing/whitespace.
+    "F",        # pyflakes: undefined names, unused imports.
+    "I",        # isort: import ordering.
+    "UP",       # pyupgrade: modern syntax for target Python.
+    "B",        # flake8-bugbear: likely bugs (mutable default args, etc.).
+    "C4",       # flake8-comprehensions: prefer comprehensions over map/filter.
+    "SIM",      # flake8-simplify: collapse needless complexity.
+    "S",        # flake8-bandit: security (Sec rules 1, 7, 8).
+    "T20",      # flake8-print: bans print()/pprint() (Op: Zero-Crash).
+    "ANN",      # flake8-annotations: type annotations required (Q6a).
+    "ERA",      # eradicate: no commented-out code (Q3).
+    "TRY",      # tryceratops: error-handling discipline (Q10a).
+    "BLE",      # flake8-blind-except: bare except / except Exception (Q10a).
+    "PLR",      # pylint refactor: PLR0915 (max-statements), PLR2004 (magic).
+    "PLW",      # pylint warning: dangerous patterns.
+    "RUF",      # ruff-specific.
+    "PGH",      # pygrep-hooks: misuses of # type: ignore / # noqa.
+    "A",        # flake8-builtins: don't shadow id, list, dict, etc.
+]
+ignore = [
+    "E501",     # line-too-long — the formatter handles wrapping.
+    "TRY003",   # long messages outside exception class — over-pedantic.
+    "PLR0913",  # too-many-arguments — situational; we cap function length instead.
+]
+
+[tool.ruff.lint.pylint]
+# Q1a: function length cap. Ruff has no direct line-counter, so
+# max-statements is the proxy. ~30 statements ≈ 40 lines including
+# blanks and comments. Tune if it false-fires.
+max-statements = 30
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately use assertions, magic numbers, and stub credentials.
+"tests/**/*.py" = ["S101", "S105", "S106", "PLR2004"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["bearings"]
+
+# ---- mypy: type checking (Q6a, Q6b) ----
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests"]
+exclude = ['build/', 'dist/', '.venv/']
+
+# Q6a: every public function signature must be annotated.
+disallow_untyped_defs = true
+# Q6b: no `Any` escape hatches in our own annotations. Enforced by
+# ruff's `ANN401` (already in the `ANN` family selected above).
+# We do NOT enable `disallow_any_explicit = true` here — it transitively
+# flags every subclass of `pydantic.BaseModel` / `pydantic_settings.BaseSettings`
+# because their public types contain `Any` internally. ANN401 catches the
+# real concern (us reaching for `Any` in our own code) without the noise.
+warn_return_any = true
+
+# Hygiene.
+warn_unused_ignores = true
+show_error_codes = true
+no_implicit_optional = true
+check_untyped_defs = true
+
+# ---- pytest (Op directive: Testing) ----
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=bearings",
+    "--cov-report=term-missing",
+    "--cov-fail-under=80",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: integration tests requiring external resources",
+]
+
+# ---- coverage.py (Op directive: Testing — 80% threshold) ----
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 80
+exclude_also = [
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "@(abc\\.)?abstractmethod",
+]
+
+# ---- commitizen: conventional-commits enforcement ----
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_scheme = "semver"
+version_provider = "pep621"
+tag_format = "v$version"
+update_changelog_on_bump = true

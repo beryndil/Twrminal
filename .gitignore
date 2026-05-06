@@ -1,0 +1,73 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg
+*.egg-info/
+wheels/
+*.whl
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.tox/
+.nox/
+.dmypy.json
+.pyre/
+
+# Coverage artifacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.cache
+
+# uv: lockfile IS committed (single source of truth for reproducible
+# installs across machines and CI). Don't add it here.
+
+# Type-checker artifacts (ty is alpha; cache location may move)
+.ty_cache/
+
+# Secrets — committed copy is `.env.example`; `.env` itself is local
+.env
+.env.local
+.env.*.local
+
+# OS detritus
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs (apps may write local log files; ship `.log` patterns ignored)
+*.log
+logs/
+
+# Local scratch / experiments
+scratch/
+.scratch/

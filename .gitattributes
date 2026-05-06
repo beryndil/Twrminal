@@ -1,0 +1,30 @@
+# Force LF line endings on text files regardless of contributor OS.
+# Without this, Windows clients commit CRLF, ruff/black reformat the
+# whole file, and diffs become uninspectable.
+* text=auto eol=lf
+
+# Explicit text declarations (defensive — most are caught by `text=auto`).
+*.py     text eol=lf
+*.toml   text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.md     text eol=lf
+*.cfg    text eol=lf
+*.ini    text eol=lf
+*.json   text eol=lf
+*.sh     text eol=lf
+*.txt    text eol=lf
+.env.example text eol=lf
+
+# Binary files — never line-end-converted.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.pdf    binary
+*.zip    binary
+*.gz     binary
+*.tar    binary
+*.whl    binary
+*.so     binary

@@ -1,0 +1,79 @@
+# .pre-commit-config.yaml
+#
+# Hooks run on every `git commit`. Configured to mirror CI's static
+# checks while staying fast — pytest is left for CI because tests can
+# be slow on real projects; the hooks here finish in well under a
+# second on a typical diff.
+#
+# Standards mapped:
+#   - Sec rule 1 (no secrets in client-side code) → gitleaks
+#   - Op: Zero-Crash subitem (no print()) → ruff T20 (in ruff-check)
+#   - Q1b (files ≤ 400 lines) → check-file-length (custom hook)
+#   - Conventional commits (CLAUDE.md) → commitizen on commit-msg stage
+#
+# Install once after `uv sync`:
+#   uv run pre-commit install
+#   uv run pre-commit install --hook-type commit-msg
+
+default_language_version:
+  python: python3.12
+
+default_install_hook_types: [pre-commit, commit-msg]
+
+repos:
+  # ---- Hygiene checks (cheap, universal) ----
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: debug-statements   # catches `breakpoint()`, `pdb.set_trace()`
+
+  # ---- ruff: lint + format (mirrors `uv run ruff check / format`) ----
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.12
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  # ---- gitleaks: scan staged diffs for secrets (Sec rule 1) ----
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+
+  # ---- mypy: gate-of-record type checker ----
+  # Local hook so it uses the project's uv env (which has the deps
+  # mypy needs to resolve). The upstream mirror runs in an isolated
+  # env that doesn't see project dependencies.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: uv run mypy
+        language: system
+        types: [python]
+        pass_filenames: false  # mypy reads `files = [...]` from pyproject
+        require_serial: true
+
+  # ---- Q1b: files ≤ 400 lines (no ruff rule covers this) ----
+  - repo: local
+    hooks:
+      - id: check-file-length
+        name: enforce 400-line file cap (Q1b)
+        entry: scripts/check_file_length.sh
+        language: script
+        types: [python]
+
+  # ---- commitizen: enforce conventional commit messages ----
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.15.0
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
