@@ -24,7 +24,7 @@ Pressing **Start Session** creates the row, attaches the tags, sends the first m
 
 Clicking a sidebar row selects that chat. The conversation pane renders:
 
-* a header band: title, severity shield, attached tag chips, paired-checklist breadcrumb (when the chat was spawned from a checklist item — see [paired-chats](paired-chats.md)), executor model dropdown, total-cost / context-window indicator, and a quota bar pair;
+* a header band: title, severity shield, attached tag chips, paired-checklist breadcrumb (when the chat was spawned from a checklist item — see [paired-chats](paired-chats.md)), executor model dropdown, total-cost / context-window indicator, a quota bar pair, and a **feedback button** (megaphone glyph) — clicking the feedback button opens `https://github.com/Beryndil/Bearings/issues/new` in a new tab, pre-filled with the Bearings version (fetched lazily on first click and cached), browser UA, platform, language, and a steps-to-reproduce scaffold; Bearings does not POST any data — the user submits the GitHub form manually (gap-cycle-01-008, Beryndil standards §17);
 * the conversation body: every message turn in chronological order, oldest at top;
 * a composer: multi-line input, attachment chips, send button, slash-command popup.
 

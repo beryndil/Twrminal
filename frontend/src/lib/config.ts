@@ -246,6 +246,14 @@ export const API_USAGE_BY_MODEL_ENDPOINT = `${API_BASE}/usage/by_model`;
 export const API_USAGE_OVERRIDE_RATES_ENDPOINT = `${API_BASE}/usage/override_rates`;
 
 /**
+ * ``GET /api/diag/server`` — server diagnostics including the Bearings
+ * version string. Fetched lazily by :func:`feedback.fetchVersion` on
+ * the first feedback-button click (gap-cycle-01-008). Response shape:
+ * :class:`bearings.web.models.diag.ServerDiagOut`.
+ */
+export const API_DIAG_SERVER_ENDPOINT = `${API_BASE}/diag/server`;
+
+/**
  * ``GET /api/vault`` — bucketed list of plans + todos per
  * ``docs/behavior/vault.md`` §"When the user opens the vault". Re-scans
  * the filesystem on every request (vault.md §"Failure modes" — "Stale
@@ -533,6 +541,26 @@ export const CONVERSATION_HEADER_STRINGS = {
   costPrefix: "$",
   /** Aria-label for the total-cost readout span. */
   costAriaLabel: "Total session cost",
+} as const;
+
+/**
+ * Base URL for the GitHub ``issues/new`` form. The feedback utility
+ * (:func:`feedback.buildFeedbackUrl`) appends query-encoded parameters
+ * for the issue title, body, and labels. Bearings does not POST any
+ * data — the browser opens the form and the user submits manually
+ * (Beryndil standards §17 / gap-cycle-01-008).
+ */
+export const FEEDBACK_GITHUB_ISSUES_URL =
+  "https://github.com/Beryndil/Bearings/issues/new";
+
+/**
+ * UI strings for :component:`FeedbackButton` (gap-cycle-01-008).
+ */
+export const FEEDBACK_BUTTON_STRINGS = {
+  /** ``aria-label`` on the ``<button>`` element. */
+  ariaLabel: "Send feedback",
+  /** Tooltip shown on hover (``title`` attribute). */
+  tooltip: "Report an issue or send feedback",
 } as const;
 
 /**

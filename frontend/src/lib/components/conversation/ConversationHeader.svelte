@@ -60,6 +60,7 @@
   import PairedChatIndicator from "./PairedChatIndicator.svelte";
   import PermissionModeSelector from "./PermissionModeSelector.svelte";
   import QuotaBars from "../new_session/QuotaBars.svelte";
+  import FeedbackButton from "../feedback/FeedbackButton.svelte";
 
   interface Props {
     sessionId: string | null;
@@ -286,6 +287,10 @@
 
       <!-- Quota bars (overall + Sonnet; spec §10) -->
       <QuotaBars snapshot={quotaSnapshot} />
+
+      <!-- Feedback button — megaphone glyph; opens GitHub issues/new in a
+           new tab pre-filled with env + repro scaffold (gap-cycle-01-008). -->
+      <FeedbackButton />
     </div>
 
     <!-- Context / token meter — full-width strip; hidden until the first
