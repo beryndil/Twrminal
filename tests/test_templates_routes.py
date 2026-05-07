@@ -243,3 +243,143 @@ async def test_delete_template_404_when_already_gone(
     with TestClient(app) as client:
         response = client.delete("/api/templates/9999")
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST /api/templates/{id}/instantiate  (gap-cycle-13-006)
+# ---------------------------------------------------------------------------
+
+
+async def test_instantiate_template_copies_session_instructions(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """session_instructions on the new session == template.system_prompt_baseline."""
+    app, _conn = app_and_db
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/templates",
+            json={
+                "name": "Baseline Template",
+                "model": "sonnet",
+                "system_prompt_baseline": "You are a helpful assistant.",
+                "working_dir_default": "/tmp",
+            },
+        )
+        assert created.status_code == 201
+        template_id = created.json()["id"]
+
+        response = client.post(f"/api/templates/{template_id}/instantiate", json={})
+    assert response.status_code == 201
+    body = response.json()
+    assert body["session_instructions"] == "You are a helpful assistant."
+    assert body["model"] == "sonnet"
+    assert body["title"] == "Baseline Template"
+    assert body["working_dir"] == "/tmp"
+
+
+async def test_instantiate_template_copies_description(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """description is copied from the template to the new session."""
+    app, _conn = app_and_db
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/templates",
+            json={
+                "name": "Described Template",
+                "model": "haiku",
+                "description": "Template for testing.",
+                "working_dir_default": "/tmp",
+            },
+        )
+        template_id = created.json()["id"]
+        response = client.post(f"/api/templates/{template_id}/instantiate", json={})
+    assert response.status_code == 201
+    assert response.json()["description"] == "Template for testing."
+
+
+async def test_instantiate_template_attaches_tags(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Tags named in the template are resolved and attached to the new session."""
+    app, _conn = app_and_db
+    with TestClient(app) as client:
+        # Create a tag first.
+        tag_resp = client.post(
+            "/api/tags",
+            json={"name": "bearings/test", "color": "#aabbcc", "class_": "general"},
+        )
+        assert tag_resp.status_code == 201
+        tag_id = tag_resp.json()["id"]
+
+        created = client.post(
+            "/api/templates",
+            json={
+                "name": "Tagged Template",
+                "model": "sonnet",
+                "working_dir_default": "/tmp",
+                "tag_names": ["bearings/test"],
+            },
+        )
+        template_id = created.json()["id"]
+
+        response = client.post(f"/api/templates/{template_id}/instantiate", json={})
+    assert response.status_code == 201
+    session_id = response.json()["id"]
+
+    # Verify the tag is attached by fetching the session's tags.
+    with TestClient(app) as client:
+        tags_resp = client.get(f"/api/sessions/{session_id}/tags")
+    assert tags_resp.status_code == 200
+    attached_ids = [t["id"] for t in tags_resp.json()]
+    assert tag_id in attached_ids
+
+
+async def test_instantiate_template_404_on_unknown_id(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """404 when the template id does not exist."""
+    app, _conn = app_and_db
+    with TestClient(app) as client:
+        response = client.post("/api/templates/9999/instantiate", json={})
+    assert response.status_code == 404
+    assert "9999" in response.json()["detail"]
+
+
+async def test_instantiate_template_title_override(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Caller can override the title; other fields still inherit from template."""
+    app, _conn = app_and_db
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/templates",
+            json={
+                "name": "Base Name",
+                "model": "haiku",
+                "working_dir_default": "/tmp",
+            },
+        )
+        template_id = created.json()["id"]
+        response = client.post(
+            f"/api/templates/{template_id}/instantiate",
+            json={"title": "Custom Title"},
+        )
+    assert response.status_code == 201
+    assert response.json()["title"] == "Custom Title"
+    assert response.json()["model"] == "haiku"
+
+
+async def test_instantiate_template_422_no_working_dir(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """422 when neither the template nor the override provides a working_dir."""
+    app, _conn = app_and_db
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/templates",
+            json={"name": "No Dir Template", "model": "haiku"},
+        )
+        template_id = created.json()["id"]
+        response = client.post(f"/api/templates/{template_id}/instantiate", json={})
+    assert response.status_code == 422

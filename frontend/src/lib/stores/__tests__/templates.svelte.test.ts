@@ -144,7 +144,7 @@ describe("refreshTemplates", () => {
 // ---------------------------------------------------------------------------
 
 describe("instantiate — happy path", () => {
-  it("calls POST /api/sessions with template fields and returns the new session id", async () => {
+  it("calls POST /api/templates/{id}/instantiate and returns the new session id", async () => {
     const tmpl = makeTemplate({ id: 7, name: "My Template", model: "opus" });
     // Prime the store cache.
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResp([tmpl]));
@@ -156,11 +156,40 @@ describe("instantiate — happy path", () => {
     const id = await instantiate(7);
 
     expect(id).toBe("ses_new");
-    // Verify the POST body contains the right model.
-    const [, init] = fetchSpy.mock.calls[0]!;
+    // Verify the request hits the instantiate endpoint (not POST /api/sessions).
+    const [url] = fetchSpy.mock.calls[0]!;
+    expect(String(url)).toContain("/api/templates/7/instantiate");
+    expect(String(url)).not.toContain("/api/sessions");
+  });
+
+  it("inherits session_instructions and tag_names via the server-side endpoint", async () => {
+    // The store passes no override body — the server copies everything from the template.
+    const tmpl = makeTemplate({
+      id: 8,
+      name: "Full Template",
+      model: "sonnet",
+      system_prompt_baseline: "Be concise.",
+      tag_names: ["bearings/exec"],
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResp([tmpl]));
+    await refreshTemplates();
+
+    // Server returns a session with session_instructions already set.
+    const session = makeSession({
+      id: "ses_full",
+      session_instructions: "Be concise.",
+    });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResp(session, 201));
+
+    const id = await instantiate(8);
+
+    expect(id).toBe("ses_full");
+    // Only the template id appears in the URL — no field-loss workaround in the body.
+    const [url, init] = fetchSpy.mock.calls[0]!;
+    expect(String(url)).toContain("/api/templates/8/instantiate");
+    // Body should be empty ({}), not a partial createSession call.
     const body = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
-    expect(body["model"]).toBe("opus");
-    expect(body["kind"]).toBe("chat");
+    expect(Object.keys(body)).toHaveLength(0);
   });
 });
 

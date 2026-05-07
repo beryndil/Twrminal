@@ -19,8 +19,7 @@
  * Pattern mirrors :mod:`stores/sessions.svelte.ts` — single ``$state``
  * proxy, cancellable refresh, test seam via :func:`_resetForTests`.
  */
-import { createSession } from "../api/sessions";
-import { deleteTemplate, listTemplates, type TemplateOut } from "../api/templates";
+import { deleteTemplate, instantiateTemplate, listTemplates, type TemplateOut } from "../api/templates";
 
 interface TemplatesState {
   /** Cached template list, newest-first (sorted by ``created_at`` DESC). */
@@ -88,27 +87,22 @@ export async function refreshTemplates(): Promise<void> {
 /**
  * Create a new session from a template and return the new session id.
  *
- * Builds a ``POST /api/sessions`` body from the template's routing
- * fields. The title defaults to the template name. If the backend
- * rejects the request (e.g. ``working_dir`` absent and no tags to
- * fall back to — 422), the thrown :class:`ApiError` surfaces inline
- * in the picker rather than closing it.
+ * Delegates to ``POST /api/templates/{id}/instantiate`` which copies all
+ * template fields in one server-side sequence: model, advisor settings,
+ * effort_level, permission_profile, working_dir_default,
+ * system_prompt_baseline → session_instructions, tag_names → attached tags,
+ * and description. The title defaults to the template name.
+ *
+ * If the backend rejects the request (e.g. no resolvable working_dir —
+ * 422), the thrown :class:`ApiError` surfaces inline in the picker rather
+ * than closing it.
  */
 export async function instantiate(templateId: number): Promise<string> {
   const template = state.templates.find((t) => t.id === templateId);
   if (template === undefined) {
     throw new Error(`Template ${templateId} not found in cache`);
   }
-  const session = await createSession({
-    kind: "chat",
-    title: template.name,
-    model: template.model,
-    working_dir: template.working_dir_default,
-    permission_mode: template.permission_profile !== "" ? template.permission_profile : null,
-    routing_advisor_model: template.advisor_model,
-    routing_advisor_max_uses: template.advisor_max_uses,
-    routing_effort_level: template.effort_level,
-  });
+  const session = await instantiateTemplate(templateId);
   return session.id;
 }
 

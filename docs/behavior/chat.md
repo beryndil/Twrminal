@@ -677,3 +677,43 @@ layer is always non-empty.
   collapsed; shorter layers are expanded.
 * After a `SessionEdit` save, the component re-fetches layers so the
   updated `session_instructions` is visible immediately.
+
+## Template instantiation contract (gap-cycle-13-006)
+
+Instantiating a template (sidebar Templates → click row, or context-menu
+"New from template") creates a new session that fully inherits the template's
+fields via `POST /api/templates/{id}/instantiate`.
+
+### Field mapping
+
+| Template field | Session field |
+|---|---|
+| `name` | `title` (override: `title` in request body) |
+| `model` | `model` |
+| `description` | `description` |
+| `working_dir_default` | `working_dir` |
+| `system_prompt_baseline` | `session_instructions` |
+| `permission_profile` | `permission_mode` (empty string → `null`) |
+| `advisor_model` | `routing_advisor_model` |
+| `advisor_max_uses` | `routing_advisor_max_uses` |
+| `effort_level` | `routing_effort_level` |
+| `tag_names` | resolved to tag ids and attached; names that no longer exist are silently skipped |
+
+### Working-dir resolution order
+
+1. `working_dir` override in the request body.
+2. `template.working_dir_default`.
+3. First resolved tag whose `working_dir` is set.
+4. 422 if none of the above yields a directory.
+
+### Override body
+
+All fields in the request body are optional. Omitted fields inherit the
+template's stored values. The `title` field defaults to the template name
+server-side when omitted.
+
+### Responses
+
+* `201` — new session row; `Location: /api/sessions/<id>`.
+* `404` — template not found.
+* `422` — no `working_dir` resolvable, or routing fields are invalid.

@@ -84,7 +84,7 @@ describe("CommandMenu — workingDir prop (gap-cycle-13-005)", () => {
       { name: "cmd_a", description: "Session A command", source: "project_commands" },
     ]);
 
-    const { rerender, getAllByTestId, queryByText } = render(CommandMenu, {
+    const { rerender } = render(CommandMenu, {
       props: {
         query: "",
         workingDir: "/session/a",

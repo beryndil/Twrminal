@@ -133,6 +133,13 @@ export const templateEndpoint = (templateId: number): string =>
   `${API_BASE}/templates/${templateId}`;
 
 /**
+ * ``POST /api/templates/{id}/instantiate`` — create a session from a
+ * template, copying all fields (gap-cycle-13-006).
+ */
+export const templateInstantiateEndpoint = (templateId: number): string =>
+  `${API_BASE}/templates/${templateId}/instantiate`;
+
+/**
  * ``POST /api/sessions/{id}/prompt`` — composer submit surface per
  * ``docs/behavior/prompt-endpoint.md``. Body shape: ``{ content: str }``;
  * 202 Accepted ack body: ``{ queued: bool, session_id: str }``.
