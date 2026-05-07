@@ -20,6 +20,7 @@ driver-run / quota state.
 from __future__ import annotations
 
 import os
+import pathlib
 import time
 
 import aiosqlite
@@ -77,6 +78,24 @@ def _start_time_monotonic(request: Request) -> float:
     return float(started)
 
 
+def _build_mtime() -> float | None:
+    """Return the mtime of ``bearings/__init__.py`` as a Unix timestamp.
+
+    Used as a proxy for the server build time; ``None`` when the path
+    cannot be resolved (e.g. namespace packages or editable installs
+    whose ``__file__`` is absent).
+    """
+    import bearings as _pkg
+
+    pkg_file = getattr(_pkg, "__file__", None)
+    if pkg_file is None:  # pragma: no cover
+        return None
+    try:
+        return pathlib.Path(pkg_file).stat().st_mtime
+    except OSError:  # pragma: no cover
+        return None
+
+
 @router.get("/api/diag/server", response_model=ServerDiagOut)
 async def get_server(request: Request) -> ServerDiagOut:
     """Process-level diagnostics."""
@@ -88,6 +107,7 @@ async def get_server(request: Request) -> ServerDiagOut:
         pid=os.getpid(),
         db_configured=_db_optional(request) is not None,
         billing_mode=billing_mode,
+        build_mtime=_build_mtime(),
     )
     return ServerDiagOut(
         version=diag.version,
@@ -95,6 +115,7 @@ async def get_server(request: Request) -> ServerDiagOut:
         pid=diag.pid,
         db_configured=diag.db_configured,
         billing_mode=diag.billing_mode,
+        build_mtime=diag.build_mtime,
     )
 
 

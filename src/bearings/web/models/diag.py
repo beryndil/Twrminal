@@ -16,6 +16,7 @@ class ServerDiagOut(BaseModel):
     pid: int
     db_configured: bool
     billing_mode: str
+    build_mtime: float | None
 
 
 class RunnerDiagOut(BaseModel):

@@ -163,6 +163,41 @@ Both kinds prefill: Bearings version, browser UA, platform, language.
 
 The `FeedbackButton` in the conversation header continues to invoke `openFeedbackTab()` with the default `kind="bug"` — no behaviour change.
 
+## About (gap-cycle-07-005)
+
+The **About** section renders at the bottom of the Settings page. It is read-only — no PATCH calls are made from this section.
+
+### Hero block
+
+A centered column containing:
+
+| Element | Content |
+|---|---|
+| BearingsMark logo | 48 px icon |
+| Product name | "Bearings" |
+| Release version | `v{version}` from `GET /api/diag/server`; shows "v…" while loading, "version unavailable" on fetch failure |
+| Tagline | "Localhost web UI for Claude Code agent sessions." |
+| Byline link | "by Beryndil" → `https://hardknocks.university/developer.html` (`target="_blank"`, `rel="noopener noreferrer"`) |
+| Developer photo | `/about_beryndil.png` at 80 × 80 with `border-radius: 50%` and `object-fit: cover` |
+| Coffee CTA card | Eyebrow "Enjoy Bearings?" + "Buy Me a Cup of Coffee" link → same developer URL |
+
+### Identity card
+
+A bordered card with four rows rendered below the hero:
+
+| Row | Content |
+|---|---|
+| Build | Formatted from `build_mtime` (Unix timestamp, seconds) returned by `GET /api/diag/server`. Non-finite or `null` → "dev build". Valid timestamp → `new Date(ts * 1000).toLocaleString()`. |
+| Repository | `github.com/Beryndil/Bearings` → `https://github.com/Beryndil/Bearings` |
+| License | "MIT" → `https://github.com/Beryndil/Bearings/blob/main/LICENSE` |
+| Credits | "CREDITS.md" → `https://github.com/Beryndil/Bearings/blob/main/CREDITS.md` |
+
+All identity card links open `target="_blank"` with `rel="noopener noreferrer"`.
+
+### `GET /api/diag/server` — `build_mtime` field
+
+`ServerDiagOut` now includes `build_mtime: float | None`. The backend computes it as the `st_mtime` of `bearings/__init__.py` (proxy for install/build time). Returns `null` when the path cannot be resolved (e.g., namespace packages).
+
 ## API contract summary
 
 | Method | Path | Notes |

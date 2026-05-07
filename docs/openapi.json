@@ -6327,6 +6327,10 @@
           "db_ok": {
             "type": "boolean",
             "title": "Db Ok"
+          },
+          "data_dir": {
+            "type": "string",
+            "title": "Data Dir"
           }
         },
         "additionalProperties": false,
@@ -6335,7 +6339,8 @@
           "status",
           "version",
           "uptime_s",
-          "db_ok"
+          "db_ok",
+          "data_dir"
         ],
         "title": "HealthOut",
         "description": "Response shape for ``GET /api/health``."
@@ -7220,6 +7225,10 @@
             ],
             "title": "Avatar Url"
           },
+          "notify_on_complete": {
+            "type": "boolean",
+            "title": "Notify On Complete"
+          },
           "updated_at": {
             "type": "string",
             "title": "Updated At"
@@ -7234,6 +7243,7 @@
           "default_working_dir",
           "display_name",
           "avatar_url",
+          "notify_on_complete",
           "updated_at"
         ],
         "title": "PreferencesOut",
@@ -7295,6 +7305,17 @@
               }
             ],
             "title": "Display Name"
+          },
+          "notify_on_complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notify On Complete"
           }
         },
         "additionalProperties": false,
@@ -7964,6 +7985,17 @@
           "billing_mode": {
             "type": "string",
             "title": "Billing Mode"
+          },
+          "build_mtime": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Build Mtime"
           }
         },
         "additionalProperties": false,
@@ -7973,7 +8005,8 @@
           "uptime_s",
           "pid",
           "db_configured",
-          "billing_mode"
+          "billing_mode",
+          "build_mtime"
         ],
         "title": "ServerDiagOut",
         "description": "Response shape for ``GET /api/diag/server``."

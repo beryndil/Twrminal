@@ -2140,6 +2140,59 @@ export const HELP_SECTION_STRINGS = {
   requestFeatureLabel: "Request a feature",
 } as const;
 
+/**
+ * UI strings for the About section of the Settings page
+ * (gap-cycle-07-005).
+ *
+ * Two sub-sections:
+ *
+ * **Hero** (centered column):
+ * - BearingsMark logo at 48 px
+ * - "Bearings" title
+ * - Release version line (from ``GET /api/diag/server``)
+ * - One-line tagline
+ * - Clickable "by Beryndil" byline → developer link
+ * - /about_beryndil.png photo at 80 × 80 rounded
+ * - "Buy Me a Cup of Coffee" CTA → same developer link
+ *
+ * **Identity card** (rows):
+ * - Build → formatted build-mtime or "dev build" fallback
+ * - Repository → GitHub repo link
+ * - License → MIT, GitHub LICENSE link
+ * - Credits → CREDITS.md GitHub link
+ */
+export const ABOUT_SECTION_STRINGS = {
+  heading: "About",
+  /** "Bearings" product name rendered in the hero. */
+  productName: "Bearings",
+  tagline: "Localhost web UI for Claude Code agent sessions.",
+  /** Version placeholder while ``GET /api/diag/server`` resolves. */
+  versionLoading: "v…",
+  versionUnavailable: "version unavailable",
+  /** "by Beryndil" byline label. */
+  bylineLabel: "by Beryndil",
+  /** URL for the byline link and the coffee CTA. */
+  developerUrl: "https://hardknocks.university/developer.html",
+  /** Alt text for the developer photo. */
+  photoAlt: "Beryndil",
+  /** CTA eyebrow (above the card title). */
+  coffeeEyebrow: "Enjoy Bearings?",
+  coffeeLabel: "Buy Me a Cup of Coffee",
+  /** Identity card row labels. */
+  buildLabel: "Build",
+  /** "dev build" fallback when build_mtime is null or non-finite. */
+  buildFallback: "dev build",
+  repositoryLabel: "Repository",
+  repositoryHref: "https://github.com/Beryndil/Bearings",
+  repositoryLinkLabel: "github.com/Beryndil/Bearings",
+  licenseLabel: "License",
+  licenseLinkLabel: "MIT",
+  licenseHref: "https://github.com/Beryndil/Bearings/blob/main/LICENSE",
+  creditsLabel: "Credits",
+  creditsLinkLabel: "CREDITS.md",
+  creditsHref: "https://github.com/Beryndil/Bearings/blob/main/CREDITS.md",
+} as const;
+
 /** UI strings for the PermissionModeSelector header dropdown (item 3.3). */
 export const PERMISSION_MODE_SELECTOR_STRINGS = {
   ariaLabel: "Permission mode",
