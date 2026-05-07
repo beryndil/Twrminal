@@ -98,8 +98,12 @@ export function lookupBindingForEvent(event: KeyboardEvent): KeybindingSpec | un
  * focus / modal context. The rules:
  *
  * - ``global: true`` always fires.
- * - ``global: false`` fires iff no input is focused AND no modal is
- *   open.
+ * - ``allowInModalContext: true`` fires unless an input is focused
+ *   (modal-open alone does not block it). This allows a toggle binding
+ *   to close the very modal it opened — e.g. ``?`` dismisses the cheat
+ *   sheet on a second press.
+ * - ``global: false`` (default) fires iff no input is focused AND no
+ *   modal is open.
  *
  * Mirrors the doc §"Contexts" rules without expressing the modal +
  * input states as mutually exclusive (a modal can have an input
@@ -111,7 +115,7 @@ export function bindingAllowedInContext(
 ): boolean {
   if (binding.global) return true;
   if (state.composerFocused) return false;
-  if (state.modalOpen) return false;
+  if (state.modalOpen && !binding.allowInModalContext) return false;
   return true;
 }
 

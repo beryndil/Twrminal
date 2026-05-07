@@ -7,7 +7,7 @@ Sibling subsystems referenced here:
 
 ## What the user sees
 
-* Pressing `?` (anywhere outside an input) opens the cheat sheet modal. The modal lists every active binding grouped by purpose; each chord is rendered as `<kbd>`-style key caps so `Shift+C` shows as `[Shift][C]`.
+* Pressing `?` (anywhere outside an input) opens the cheat sheet modal; pressing `?` again while the cheat sheet is open closes it. The modal lists every active binding grouped by purpose; each chord is rendered as `<kbd>`-style key caps so `Shift+C` shows as `[Shift][C]`.
 * The cheat-sheet content is generated from the same registry that wires the bindings — there is no "docs vs reality" gap.
 * Conflicting chords are not allowed at boot time. A duplicate registration crashes early (in development) so a typo cannot silently shadow a working key in production.
 
@@ -86,6 +86,7 @@ The Esc cascade in priority order:
 
 * The modal is the foreground; sidebar navigation chords do not fire.
 * `Esc` closes the modal (highest priority of the Esc cascade).
+* `?` closes the cheat sheet when the cheat sheet is the open modal (the toggle fires even with a modal open, but only when no input inside the modal is focused).
 * Modal-internal shortcuts (Tab, Shift+Tab, Enter on the primary action, Esc) follow standard form behavior.
 
 ### Checklist pane focused

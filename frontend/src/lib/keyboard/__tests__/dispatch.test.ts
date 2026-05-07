@@ -135,6 +135,13 @@ describe("bindingAllowedInContext", () => {
     section: KEYBINDING_SECTION_CREATE,
     global: true,
   };
+  const modalToggle: KeybindingSpec = {
+    id: "z",
+    chord: { key: "?", display: ["?"] },
+    section: KEYBINDING_SECTION_CREATE,
+    global: false,
+    allowInModalContext: true,
+  };
 
   it("blocks bare-letter chords when composer is focused", () => {
     expect(bindingAllowedInContext(bareLetter, { composerFocused: true, modalOpen: false })).toBe(
@@ -152,6 +159,18 @@ describe("bindingAllowedInContext", () => {
     expect(bindingAllowedInContext(globalChord, { composerFocused: true, modalOpen: true })).toBe(
       true,
     );
+  });
+
+  it("allows allowInModalContext chords even when a modal is open", () => {
+    expect(
+      bindingAllowedInContext(modalToggle, { composerFocused: false, modalOpen: true }),
+    ).toBe(true);
+  });
+
+  it("still blocks allowInModalContext chords when composer is focused", () => {
+    expect(
+      bindingAllowedInContext(modalToggle, { composerFocused: true, modalOpen: true }),
+    ).toBe(false);
   });
 });
 
@@ -187,5 +206,44 @@ describe("dispatchKeyEvent", () => {
   it("returns undefined when no handler is bound for the matched chord", () => {
     const event = new KeyboardEvent("keydown", { code: "KeyC", key: "c" });
     expect(dispatchKeyEvent(event)).toBeUndefined();
+  });
+
+  // gap-cycle-02-003: ? must toggle (open AND close) the cheat sheet.
+  it("fires the cheat-sheet toggle when no modal is open (opens the sheet)", () => {
+    const handler = vi.fn();
+    bindHandler(KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET, handler);
+    setModalOpen(false);
+    const event = new KeyboardEvent("keydown", {
+      code: "Slash",
+      key: "?",
+      shiftKey: true,
+      cancelable: true,
+    });
+    expect(dispatchKeyEvent(event)).toBe(KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET);
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
+  it("fires the cheat-sheet toggle even when modal is open (closes the sheet)", () => {
+    const handler = vi.fn();
+    bindHandler(KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET, handler);
+    // Simulate state after the sheet has been opened: modalOpen = true.
+    setModalOpen(true);
+    const event = new KeyboardEvent("keydown", {
+      code: "Slash",
+      key: "?",
+      shiftKey: true,
+      cancelable: true,
+    });
+    expect(dispatchKeyEvent(event)).toBe(KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET);
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
+  it("does NOT fire bare-letter chords (c, t) while cheat-sheet modal is open", () => {
+    const cHandler = vi.fn();
+    bindHandler(KEYBINDING_ACTION_NEW_CHAT_DEFAULTS, cHandler);
+    setModalOpen(true);
+    const cEvent = new KeyboardEvent("keydown", { code: "KeyC", key: "c" });
+    expect(dispatchKeyEvent(cEvent)).toBeUndefined();
+    expect(cHandler).not.toHaveBeenCalled();
   });
 });

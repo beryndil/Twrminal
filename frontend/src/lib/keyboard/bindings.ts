@@ -64,6 +64,14 @@ export interface KeybindingSpec {
    * for discoverability; the global dispatcher does NOT consume it.
    */
   readonly displayOnly?: boolean;
+  /**
+   * When ``true``, the binding fires even when a modal is open (but
+   * still NOT when an input is focused). ``global`` takes precedence —
+   * a ``global: true`` binding never reaches this check. Intended for
+   * toggle actions whose target IS the modal (e.g. ``?`` can close the
+   * cheat sheet it opened).
+   */
+  readonly allowInModalContext?: boolean;
 }
 
 /**
@@ -152,10 +160,13 @@ export const KEYBINDINGS: readonly KeybindingSpec[] = [
     // the dispatcher's named-key fallback probes shift-agnostic so a
     // layout where ``?`` is not behind Shift still matches per the
     // doc §"Conflict resolution" §"Non-US keyboard layouts".
+    // ``allowInModalContext: true`` lets a second ``?`` press close the
+    // cheat sheet it opened (the modal-open gate would otherwise drop it).
     id: KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET,
     chord: { key: "?", display: ["?"] },
     section: KEYBINDING_SECTION_HELP,
     global: false,
+    allowInModalContext: true,
   },
   {
     id: KEYBINDING_ACTION_TOGGLE_PENDING_OPS,
