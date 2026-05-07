@@ -42,6 +42,7 @@ from bearings.agent.runner import RunnerFactory
 from bearings.agent.session_bootstrap import build_session_setup
 from bearings.agent.turn_driver import build_turn_driver
 from bearings.config.constants import (
+    DEFAULT_BILLING_MODE,
     OPENAPI_DESCRIPTION,
     OPENAPI_TITLE,
     ROUTE_TAG_APPROVALS,
@@ -205,6 +206,7 @@ def create_app(
     shell_cfg: ShellCfg | None = None,
     extra_routers: Iterable[APIRouter] | None = None,
     enable_driver_dispatch: bool = False,
+    billing_mode: str = DEFAULT_BILLING_MODE,
 ) -> FastAPI:
     """Construct the FastAPI app.
 
@@ -297,6 +299,10 @@ def create_app(
         )
     else:
         app.state.driver_runtime = None
+    # Billing mode — surfaced via ``GET /api/diag/server`` so the
+    # frontend can switch between PAYG (dollar figures) and subscription
+    # (token-meter) display modes without a page reload.
+    app.state.billing_mode = billing_mode
     # Misc-API sub-configurations (item 1.10; arch §1.1.5).
     app.state.uploads_cfg = uploads_cfg if uploads_cfg is not None else UploadsCfg()
     app.state.fs_cfg = fs_cfg if fs_cfg is not None else FsCfg()

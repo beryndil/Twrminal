@@ -226,6 +226,24 @@ interface ConversationState {
    * Reset on session-switch.
    */
   cacheHitRatio: number | null;
+  /**
+   * Cumulative executor input tokens for this session, accumulated from
+   * every ``message_complete`` frame that carries a non-null
+   * ``executor_input_tokens`` value. Reset to ``0`` on session-switch.
+   *
+   * Drives :component:`TokenMeter` in subscription billing mode
+   * (gap-cycle-01-017).
+   */
+  sessionInputTokens: number;
+  /**
+   * Cumulative executor output tokens for this session, accumulated
+   * from every ``message_complete`` frame that carries a non-null
+   * ``executor_output_tokens`` value. Reset to ``0`` on session-switch.
+   *
+   * Drives :component:`TokenMeter` in subscription billing mode
+   * (gap-cycle-01-017).
+   */
+  sessionOutputTokens: number;
 }
 
 const state: ConversationState = $state({
@@ -243,6 +261,8 @@ const state: ConversationState = $state({
   currentTurnId: null,
   contextUsage: null,
   cacheHitRatio: null,
+  sessionInputTokens: 0,
+  sessionOutputTokens: 0,
 });
 
 export const conversationStore = state;
@@ -291,6 +311,8 @@ export function resetConversation(sessionId: string | null): void {
   state.currentTurnId = null;
   state.contextUsage = null;
   state.cacheHitRatio = null;
+  state.sessionInputTokens = 0;
+  state.sessionOutputTokens = 0;
 }
 
 /**
@@ -362,6 +384,7 @@ export function ingestFrame(frame: StreamFrame): void {
   // Update context-usage snapshot and cache-hit ratio (item 2.2).
   applyContextUsage(frame.event);
   applyCacheHit(frame.event);
+  applySessionTokens(frame.event);
   state.turns = applyEvent(state.turns, frame.event);
   state.lastSeq = frame.seq;
 }
@@ -461,6 +484,23 @@ function applyCacheHit(event: AgentEvent): void {
   }
   const total = execInput + cacheRead;
   state.cacheHitRatio = total > 0 ? cacheRead / total : 0;
+}
+
+/**
+ * Accumulate per-session executor token totals from ``message_complete``
+ * frames (gap-cycle-01-017).
+ *
+ * Adds ``executor_input_tokens`` / ``executor_output_tokens`` to the
+ * running session totals when both are non-null. Null counts (cache-only
+ * turns or pure-tool turns where the SDK omits token data) are skipped so
+ * the accumulated total reflects only turns with reliable token data.
+ */
+function applySessionTokens(event: AgentEvent): void {
+  if (event.type !== "message_complete") return;
+  const input = event.executor_input_tokens;
+  const output = event.executor_output_tokens;
+  if (input !== null) state.sessionInputTokens += input;
+  if (output !== null) state.sessionOutputTokens += output;
 }
 
 /**

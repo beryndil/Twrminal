@@ -15,6 +15,7 @@ class ServerDiagOut(BaseModel):
     uptime_s: float
     pid: int
     db_configured: bool
+    billing_mode: str
 
 
 class RunnerDiagOut(BaseModel):

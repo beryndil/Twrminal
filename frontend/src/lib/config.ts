@@ -534,6 +534,23 @@ export const CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS = 8000;
 export const MESSAGE_PAGE_SIZE = 100;
 
 /**
+ * String table for the subscription token-usage meter (gap-cycle-01-017).
+ *
+ * Rendered in the conversation header in place of the dollar figure when
+ * the server is configured with ``billing.mode = "subscription"``.
+ * Colours parallel the quota-bar thresholds (spec §10).
+ */
+export const TOKEN_METER_STRINGS = {
+  ariaLabel: "Session token usage",
+  inputLabel: "in",
+  outputLabel: "out",
+  /** Aria-label for the yellow-threshold warning state. */
+  warnAriaLabel: "Approaching quota limit",
+  /** Aria-label for the red-threshold danger state. */
+  dangerAriaLabel: "Quota nearly exhausted",
+} as const;
+
+/**
  * String table for the context/token meter header strip (item 2.2).
  */
 export const CONTEXT_METER_STRINGS = {

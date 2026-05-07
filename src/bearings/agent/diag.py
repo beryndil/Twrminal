@@ -38,6 +38,7 @@ class ServerDiag:
     uptime_s: float
     pid: int
     db_configured: bool
+    billing_mode: str
 
 
 @dataclass(frozen=True)
@@ -84,6 +85,7 @@ def collect_server(
     uptime_s: float,
     pid: int,
     db_configured: bool,
+    billing_mode: str,
 ) -> ServerDiag:
     """Assemble the :class:`ServerDiag` snapshot from primitives."""
     return ServerDiag(
@@ -91,6 +93,7 @@ def collect_server(
         uptime_s=uptime_s,
         pid=pid,
         db_configured=db_configured,
+        billing_mode=billing_mode,
     )
 
 

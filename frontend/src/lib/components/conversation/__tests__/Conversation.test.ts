@@ -15,6 +15,11 @@ vi.mock("../../../agent.svelte", () => ({
   disconnectSession: vi.fn(),
 }));
 
+// Prevent ConversationHeader's fetchBillingMode() from hitting the network.
+vi.mock("../../../utils/appInfo", () => ({
+  fetchBillingMode: () => Promise.resolve("payg"),
+}));
+
 import Conversation from "../Conversation.svelte";
 import { _resetForTests } from "../../../stores/conversation.svelte";
 

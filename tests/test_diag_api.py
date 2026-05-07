@@ -48,6 +48,8 @@ def test_diag_server_returns_version_pid_uptime(
     assert body["pid"] > 0
     assert body["uptime_s"] >= 0
     assert body["db_configured"] is True
+    # billing_mode defaults to "payg" when not supplied to create_app.
+    assert body["billing_mode"] == "payg"
 
 
 def test_diag_server_db_configured_false_without_db() -> None:
@@ -55,6 +57,13 @@ def test_diag_server_db_configured_false_without_db() -> None:
     with TestClient(app) as client:
         body = client.get("/api/diag/server").json()
         assert body["db_configured"] is False
+
+
+def test_diag_server_exposes_subscription_billing_mode() -> None:
+    app = create_app(heartbeat_interval_s=_HEARTBEAT_S, billing_mode="subscription")
+    with TestClient(app) as client:
+        body = client.get("/api/diag/server").json()
+        assert body["billing_mode"] == "subscription"
 
 
 def test_diag_sessions_initially_empty(app_client: TestClient) -> None:

@@ -26,9 +26,9 @@ vi.mock("../../../stores/sessions.svelte", () => ({
   },
 }));
 
-// Conversation store — ContextMeter reads contextUsage / cacheHitRatio.
-// Both null keeps the meter hidden (renders nothing), which is the
-// correct behaviour before a turn completes.
+// Conversation store — ContextMeter reads contextUsage / cacheHitRatio;
+// TokenMeter reads sessionInputTokens / sessionOutputTokens.
+// Both null/zero keeps the meters in their default state.
 vi.mock("../../../stores/conversation.svelte", () => ({
   conversationStore: {
     get contextUsage() {
@@ -37,7 +37,20 @@ vi.mock("../../../stores/conversation.svelte", () => ({
     get cacheHitRatio() {
       return null;
     },
+    get sessionInputTokens() {
+      return 1200;
+    },
+    get sessionOutputTokens() {
+      return 400;
+    },
   },
+}));
+
+// App-info — controls billing-mode resolution for the cost/meter swap.
+// Default returns "payg" so existing cost-indicator tests remain valid.
+let _billingMode: "payg" | "subscription" = "payg";
+vi.mock("../../../utils/appInfo", () => ({
+  fetchBillingMode: () => Promise.resolve(_billingMode),
 }));
 
 import type { SessionOut } from "../../../api/sessions";
@@ -125,6 +138,7 @@ function setupFetch(routes: Record<string, { status: number; body: unknown }> = 
 beforeEach(() => {
   _sessions = [];
   _tagsBySessionId = {};
+  _billingMode = "payg";
   fetchMock.mockReset();
   setupFetch();
   vi.stubGlobal("fetch", fetchMock);
@@ -342,5 +356,46 @@ describe("ConversationHeader", () => {
     expect(getByTestId("model-switch-dialog")).toBeDefined();
     await fireEvent.click(getByTestId("model-switch-cancel"));
     expect(queryByTestId("model-switch-dialog")).toBeNull();
+  });
+
+  // -- Billing mode: subscription renders TokenMeter / PAYG renders dollars ---
+
+  it("renders the dollar cost indicator when billing mode is PAYG", async () => {
+    _billingMode = "payg";
+    setSession(makeSession({ total_cost_usd: 0.42 }));
+    const { getByTestId, queryByTestId } = render(ConversationHeader, {
+      props: { sessionId: "ses_1" },
+    });
+    // Dollar figure visible (cost > 0, PAYG).
+    expect(getByTestId("conversation-header-cost")).toHaveTextContent("$0.42");
+    // TokenMeter must be absent.
+    expect(queryByTestId("token-meter")).toBeNull();
+  });
+
+  it("renders TokenMeter and hides the dollar figure when billing mode is subscription", async () => {
+    _billingMode = "subscription";
+    setSession(makeSession({ total_cost_usd: 0.42 }));
+    const { queryByTestId } = render(ConversationHeader, {
+      props: { sessionId: "ses_1" },
+    });
+    // Billing-mode promise resolves asynchronously; wait for the meter.
+    await waitFor(() => {
+      expect(queryByTestId("token-meter")).toBeDefined();
+    });
+    // Dollar figure must be absent regardless of cost value.
+    expect(queryByTestId("conversation-header-cost")).toBeNull();
+  });
+
+  it("shows token totals from the conversation store in subscription mode", async () => {
+    _billingMode = "subscription";
+    setSession(makeSession({ total_cost_usd: 0.42 }));
+    const { getByTestId } = render(ConversationHeader, {
+      props: { sessionId: "ses_1" },
+    });
+    await waitFor(() => {
+      // conversationStore mock returns 1200 in / 400 out.
+      expect(getByTestId("token-meter-input")).toHaveTextContent("1.2k in");
+      expect(getByTestId("token-meter-output")).toHaveTextContent("400 out");
+    });
   });
 });

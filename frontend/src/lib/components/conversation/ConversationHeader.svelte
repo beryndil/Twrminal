@@ -52,8 +52,11 @@
   import { getCurrentQuota } from "../../api/quota";
   import { TAG_CLASS_SEVERITY } from "../../api/tags";
   import { sessionsStore } from "../../stores/sessions.svelte";
+  import { conversationStore } from "../../stores/conversation.svelte";
   import type { ChecklistItemOut } from "../../api/checklists";
   import type { QuotaBarsSnapshot } from "../new_session/QuotaBars.svelte";
+
+  import { fetchBillingMode, type BillingMode } from "../../utils/appInfo";
 
   import ContextMeter from "./ContextMeter.svelte";
   import ModelSelector from "./ModelSelector.svelte";
@@ -61,6 +64,7 @@
   import PermissionModeSelector from "./PermissionModeSelector.svelte";
   import QuotaBars from "../new_session/QuotaBars.svelte";
   import FeedbackButton from "../feedback/FeedbackButton.svelte";
+  import TokenMeter from "../inspector/TokenMeter.svelte";
 
   interface Props {
     sessionId: string | null;
@@ -173,6 +177,28 @@
     }
   }
 
+  // ---- Billing mode ----------------------------------------------------------
+
+  /**
+   * Resolved billing mode fetched once on mount from
+   * ``GET /api/diag/server`` via :func:`fetchBillingMode`. ``null``
+   * while the fetch is in flight; defaults to ``"payg"`` on error.
+   *
+   * Drives the cost-vs-token-meter swap: subscription mode renders
+   * :component:`TokenMeter`; PAYG mode renders the dollar figure.
+   */
+  let billingMode = $state<BillingMode | null>(null);
+
+  $effect(() => {
+    let cancelled = false;
+    void fetchBillingMode().then((m) => {
+      if (!cancelled) billingMode = m;
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
+
   // ---- Quota bars ------------------------------------------------------------
 
   /** Latest quota snapshot fetched from ``GET /api/quota/current``. */
@@ -274,8 +300,16 @@
       <ModelSelector {sessionId} />
       <PermissionModeSelector {sessionId} />
 
-      <!-- Total-cost indicator — hidden at exactly $0.00 (no turn yet) -->
-      {#if session.total_cost_usd > 0}
+      <!-- Cost / token-meter swap: subscription mode shows TokenMeter
+           (dollar figure is meaningless on a flat-rate plan); PAYG mode
+           shows the dollar figure (hidden at exactly $0.00 — no turn yet). -->
+      {#if billingMode === "subscription"}
+        <TokenMeter
+          inputTokens={conversationStore.sessionInputTokens}
+          outputTokens={conversationStore.sessionOutputTokens}
+          overallUsedPct={quotaSnapshot !== null ? quotaSnapshot.overallUsedPct : null}
+        />
+      {:else if session.total_cost_usd > 0}
         <span
           class="tabular-nums text-xs text-fg-muted"
           aria-label={CONVERSATION_HEADER_STRINGS.costAriaLabel}

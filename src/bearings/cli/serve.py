@@ -74,7 +74,11 @@ def _run(args: argparse.Namespace) -> int:
     """
     settings = Settings()
     db = asyncio.run(_connect_db(settings.db_path))
-    app = create_app(db_connection=db, enable_driver_dispatch=True)
+    app = create_app(
+        db_connection=db,
+        enable_driver_dispatch=True,
+        billing_mode=settings.billing.mode,
+    )
 
     @app.on_event("shutdown")
     async def _close_db() -> None:

@@ -3,7 +3,7 @@
 Per ``docs/architecture-v1.md`` §1.1.5 ``web/routes/diag.py`` exposes
 internal-runtime state for debugging:
 
-* ``GET /api/diag/server`` — version + uptime + pid + db-configured.
+* ``GET /api/diag/server`` — version + uptime + pid + db-configured + billing-mode.
 * ``GET /api/diag/sessions`` — per-runner snapshot.
 * ``GET /api/diag/drivers`` — per-auto-driver-run row.
 * ``GET /api/diag/quota`` — quota poller status.
@@ -34,6 +34,7 @@ from bearings.agent.diag import (
 )
 from bearings.agent.quota import QuotaPoller
 from bearings.agent.runner import SessionRunner
+from bearings.config.constants import DEFAULT_BILLING_MODE
 from bearings.db import auto_driver_runs as auto_driver_runs_db
 from bearings.web.models.diag import (
     DriverDiagListOut,
@@ -80,17 +81,20 @@ def _start_time_monotonic(request: Request) -> float:
 async def get_server(request: Request) -> ServerDiagOut:
     """Process-level diagnostics."""
     uptime_s = max(0.0, time.monotonic() - _start_time_monotonic(request))
+    billing_mode: str = getattr(request.app.state, "billing_mode", DEFAULT_BILLING_MODE)
     diag = collect_server(
         version=__version__,
         uptime_s=uptime_s,
         pid=os.getpid(),
         db_configured=_db_optional(request) is not None,
+        billing_mode=billing_mode,
     )
     return ServerDiagOut(
         version=diag.version,
         uptime_s=diag.uptime_s,
         pid=diag.pid,
         db_configured=diag.db_configured,
+        billing_mode=diag.billing_mode,
     )
 
 
