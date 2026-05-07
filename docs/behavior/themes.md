@@ -30,7 +30,7 @@ When the user lands on the Appearance section for the first time on a device, th
 When the user picks a different theme, the change lands **synchronously in the same tick** as the network success — the user does not see a flash of unstyled content. Every visible surface that uses themed color tokens re-tints immediately:
 
 * The app shell (sidebar, header, conversation panel, inspector, settings dialog);
-* Conversation message bubbles, code-block backgrounds, syntax-highlighting palette (the active syntax theme tracks the app theme);
+* Conversation message bubbles, code-block backgrounds, syntax-highlighting palette (the active syntax theme tracks the app theme — see addendum below);
 * Sidebar row backgrounds, hover states, selected-row accent;
 * Tag chips and severity shields;
 * Form controls (inputs, selects, buttons, modal chrome);
@@ -64,6 +64,41 @@ A theme switch is safe at any point. If the user changes themes while an assista
 * The **locale** for date / number formatting. Deferred for v1; helpers accept a locale already, so a follow-up can surface this without disturbing existing strings.
 * **Per-component overrides.** The user cannot pick a different theme for the conversation pane vs the sidebar; theme is global.
 * **Custom theme uploads.** v1 ships with the three named themes. Custom user themes are out of scope.
+
+## Syntax-highlighting palette wiring (addendum — gap-cycle-04-002)
+
+Fenced code blocks inside conversation messages are highlighted by shiki via
+`frontend/src/lib/render.ts:highlightCode()`.  The function uses shiki's
+`createCssVariablesTheme()` so every highlighted `<span>` receives inline
+`style="color: var(--shiki-token-*)"` placeholders rather than baked hex
+literals.
+
+The palette values for each Bearings theme are defined in `frontend/src/app.css`
+under their respective `[data-theme]` selector blocks, using these custom properties:
+
+| Property | Purpose |
+|---|---|
+| `--shiki-foreground` | Default code text color |
+| `--shiki-background` | Code block background (matches `surface-2`) |
+| `--shiki-token-comment` | Comment tokens |
+| `--shiki-token-keyword` | Keywords |
+| `--shiki-token-string` | String literals |
+| `--shiki-token-string-expression` | Template / expression strings |
+| `--shiki-token-constant` | Constants / booleans / numbers |
+| `--shiki-token-function` | Function names |
+| `--shiki-token-parameter` | Function parameters |
+| `--shiki-token-punctuation` | Brackets, operators |
+| `--shiki-token-link` | URLs in comments / strings |
+
+Dark themes (`evergreen`, `midnight-glass`, `default`) set 200–300-range light
+token colors so they are readable on dark surfaces.  `paper-light` sets 700–800-range
+dark token colors so they hold contrast on the cream background.  Neither pairing
+produces light-on-light or dark-on-dark output.
+
+Because the highlighted HTML already carries CSS-var placeholders, switching the
+active Bearings theme is a **pure `data-theme` attribute flip on `<html>`** — the
+already-rendered code blocks re-tint synchronously with the rest of the app shell;
+no re-render or re-highlight pass is required.
 
 ## Adding a new theme (user-observable consequences only)
 

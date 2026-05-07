@@ -30,6 +30,18 @@
     --bearings-accent: 37 136 70; /* emerald-500: forest green brand */
     --bearings-accent-muted: 30 110 56; /* emerald-600 */
     --bearings-border: 56 65 75; /* slate-700 */
+    /* Shiki CSS-variables palette — dark surface, light tokens. */
+    --shiki-foreground: #e7eaed; /* slate-100 */
+    --shiki-background: #212833; /* surface-2 hex */
+    --shiki-token-comment: #8b9aa1; /* fg-muted */
+    --shiki-token-keyword: #7dd3fc; /* sky-300 */
+    --shiki-token-string: #86efac; /* green-300 */
+    --shiki-token-string-expression: #86efac;
+    --shiki-token-constant: #f9a8d4; /* pink-300 */
+    --shiki-token-function: #93c5fd; /* blue-300 */
+    --shiki-token-parameter: #fde68a; /* amber-200 */
+    --shiki-token-punctuation: #94a3b8; /* slate-400 */
+    --shiki-token-link: #6ee7b7; /* emerald-300 */
   }
 
   /* Midnight Glass — warm-navy with glass panels. */
@@ -43,6 +55,18 @@
     --bearings-accent: 110 168 254;
     --bearings-accent-muted: 64 110 200;
     --bearings-border: 48 64 96;
+    /* Shiki CSS-variables palette — dark surface, light tokens. */
+    --shiki-foreground: #dce2f0;
+    --shiki-background: #202f4b; /* surface-2 hex */
+    --shiki-token-comment: #94a3b8; /* slate-400 ≈ fg-muted */
+    --shiki-token-keyword: #93c5fd; /* blue-300 */
+    --shiki-token-string: #86efac; /* green-300 */
+    --shiki-token-string-expression: #86efac;
+    --shiki-token-constant: #f9a8d4; /* pink-300 */
+    --shiki-token-function: #6ee7b7; /* emerald-300 */
+    --shiki-token-parameter: #fde68a; /* amber-200 */
+    --shiki-token-punctuation: #94a3b8;
+    --shiki-token-link: #7dd3fc; /* sky-300 */
   }
 
   /* Default — Tailwind classic dark. */
@@ -56,6 +80,18 @@
     --bearings-accent: 96 165 250;
     --bearings-accent-muted: 59 130 246;
     --bearings-border: 75 85 99;
+    /* Shiki CSS-variables palette — dark surface, light tokens. */
+    --shiki-foreground: #e5e7eb; /* gray-200 */
+    --shiki-background: #374151; /* surface-2 hex */
+    --shiki-token-comment: #9ca3af; /* gray-400 ≈ fg-muted */
+    --shiki-token-keyword: #93c5fd; /* blue-300 */
+    --shiki-token-string: #86efac; /* green-300 */
+    --shiki-token-string-expression: #86efac;
+    --shiki-token-constant: #f9a8d4; /* pink-300 */
+    --shiki-token-function: #67e8f9; /* cyan-300 */
+    --shiki-token-parameter: #fde68a; /* amber-200 */
+    --shiki-token-punctuation: #9ca3af;
+    --shiki-token-link: #7dd3fc; /* sky-300 */
   }
 
   /* Paper Light — cream, flat. */
@@ -69,6 +105,18 @@
     --bearings-accent: 25 91 168;
     --bearings-accent-muted: 70 130 180;
     --bearings-border: 196 188 168;
+    /* Shiki CSS-variables palette — light surface, dark tokens for contrast. */
+    --shiki-foreground: #212933; /* dark ink */
+    --shiki-background: #eae4d5; /* surface-2 hex */
+    --shiki-token-comment: #5a636e; /* fg-muted */
+    --shiki-token-keyword: #1a56db; /* blue-700 */
+    --shiki-token-string: #047857; /* emerald-700 */
+    --shiki-token-string-expression: #047857;
+    --shiki-token-constant: #be185d; /* pink-700 */
+    --shiki-token-function: #0e7490; /* cyan-700 */
+    --shiki-token-parameter: #9a3412; /* orange-800 */
+    --shiki-token-punctuation: #5a636e;
+    --shiki-token-link: #1d4ed8; /* blue-700 */
   }
 
   html,
