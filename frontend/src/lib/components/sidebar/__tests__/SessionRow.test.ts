@@ -316,6 +316,69 @@ describe("SessionRow", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  // ---- Description sub-line (gap-cycle-11-001) ---------------------------
+
+  it("renders description sub-line when session.description is a non-empty string", () => {
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: { ...baseSession, description: "Executor for gap-cycle-11-001." },
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    expect(getByTestId("session-row-description")).toHaveTextContent(
+      "Executor for gap-cycle-11-001.",
+    );
+  });
+
+  it("renders no description sub-line when session.description is null", () => {
+    const { queryByTestId } = render(SessionRow, {
+      props: {
+        session: { ...baseSession, description: null },
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    expect(queryByTestId("session-row-description")).toBeNull();
+  });
+
+  it("renders no description sub-line when session.description is whitespace-only", () => {
+    const { queryByTestId } = render(SessionRow, {
+      props: {
+        session: { ...baseSession, description: "   " },
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    expect(queryByTestId("session-row-description")).toBeNull();
+  });
+
+  it("description sub-line truncates long text (has truncate class)", () => {
+    const longDesc = "A".repeat(200);
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: { ...baseSession, description: longDesc },
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    const el = getByTestId("session-row-description");
+    expect(el).toBeInTheDocument();
+    expect(el.classList.contains("truncate")).toBe(true);
+  });
+
   // ---- Activity pip rendering (gap-cycle-08-001) -------------------------
 
   it("shows green activity pip when last_completed_at > last_viewed_at and not selected", () => {

@@ -769,6 +769,20 @@
       </span>
     {/if}
 
+    <!--
+      Description sub-line (gap-cycle-11-001): rendered below the title
+      row when session.description is a non-empty string. Single line,
+      truncated with ellipsis on overflow, using the same text-fg-muted
+      token as the paired-parent annotation and tag chips so it re-tints
+      under all themes automatically.
+    -->
+    {#if session.description !== null && session.description !== undefined && session.description.trim() !== ""}
+      <span
+        class="truncate text-xs text-fg-muted"
+        data-testid="session-row-description"
+      >{session.description}</span>
+    {/if}
+
     <!-- Paired-chat annotation (↳ parent checklist title) -->
     {#if session.paired_parent_title}
       <span class="text-xs text-fg-muted" data-testid="session-paired-parent">
