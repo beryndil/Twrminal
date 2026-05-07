@@ -183,6 +183,56 @@ describe("CommandPalette", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  // ---- gap-cycle-12-002: Home / End jump-to-ends ----------------------
+
+  it("Home moves activeIndex to 0 from a non-zero position", async () => {
+    const { getByTestId } = render(CommandPalette, {
+      props: { open: true, onClose: vi.fn() },
+    });
+    const input = getByTestId("command-palette-search");
+    // Move to index 2 via ArrowDown twice.
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    // Confirm index 2 is active before pressing Home.
+    const items = getByTestId("command-palette-list").querySelectorAll(
+      "[data-testid='command-palette-item']",
+    );
+    expect(items[2]?.getAttribute("aria-selected")).toBe("true");
+    // Press Home — should jump to index 0.
+    await fireEvent.keyDown(input, { key: "Home" });
+    expect(items[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(items[2]?.getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("End moves activeIndex to the last result from index 0", async () => {
+    const { getByTestId } = render(CommandPalette, {
+      props: { open: true, onClose: vi.fn() },
+    });
+    const input = getByTestId("command-palette-search");
+    const items = getByTestId("command-palette-list").querySelectorAll(
+      "[data-testid='command-palette-item']",
+    );
+    // Index 0 is active by default.
+    expect(items[0]?.getAttribute("aria-selected")).toBe("true");
+    // Press End — should jump to the last item (index 2 for 3 results).
+    await fireEvent.keyDown(input, { key: "End" });
+    expect(items[2]?.getAttribute("aria-selected")).toBe("true");
+    expect(items[0]?.getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("Home and End are no-ops when filtered list is empty", async () => {
+    const { getByTestId } = render(CommandPalette, {
+      props: { open: true, onClose: vi.fn() },
+    });
+    const input = getByTestId("command-palette-search");
+    // Filter to empty.
+    await fireEvent.input(input, { target: { value: "zzznomatch" } });
+    expect(getByTestId("command-palette-no-results")).toBeTruthy();
+    // Both keys must not throw.
+    await expect(fireEvent.keyDown(input, { key: "Home" })).resolves.not.toThrow();
+    await expect(fireEvent.keyDown(input, { key: "End" })).resolves.not.toThrow();
+  });
+
   // ---- gap-cycle-02-006: Esc cascade integration ----------------------
 
   it("Esc cascade closes the palette regardless of focus owner (gap-cycle-02-006)", () => {

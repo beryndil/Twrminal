@@ -102,6 +102,19 @@ In addition to the global bindings:
 
 See [checklists](checklists.md) for nesting / edit details.
 
+### Command palette open
+
+While the command palette is open and the search input has focus:
+
+* **Up / Down** arrow keys move the highlighted result one row at a time.
+* **Home** jumps the highlight to the **first** result and scrolls it into view.
+* **End** jumps the highlight to the **last** result and scrolls it into view.
+* **Home** and **End** are no-ops when the filtered list is empty.
+* **Enter** activates the highlighted result and closes the palette.
+* **Esc** closes the palette (priority 2 of the Esc cascade).
+
+All of the above call `preventDefault()` so the native input-caret behaviour (Home/End move caret; ArrowUp/Down are also suppressed) does not also fire.
+
 ### Context menu open
 
 * **Up / Down** arrow keys move the highlighted item.

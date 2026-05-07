@@ -103,6 +103,16 @@
       activeIndex = Math.max(activeIndex - 1, 0);
       return;
     }
+    if (event.key === "Home") {
+      event.preventDefault();
+      if (filtered.length > 0) activeIndex = 0;
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      if (filtered.length > 0) activeIndex = filtered.length - 1;
+      return;
+    }
     if (event.key === "Enter") {
       event.preventDefault();
       confirmActive();
