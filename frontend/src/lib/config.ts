@@ -2010,6 +2010,55 @@ export const THEME_STRINGS = {
   } as const satisfies Record<ThemeId, string>,
 } as const;
 
+// ---- Display timezone (gap-cycle-07-006) ----
+
+/**
+ * localStorage key for the per-device display timezone preference.
+ * NOT round-tripped to /api/preferences — each device keeps its own tz.
+ * Absence in localStorage means "Auto" (browser default).
+ */
+export const DISPLAY_TIMEZONE_STORAGE_KEY = "bearings:display:timezone";
+
+/**
+ * Curated IANA timezone list for Settings → Appearance.
+ * "Auto" is a sentinel meaning "use the browser default" — it is never
+ * written to localStorage; its absence is the canonical representation.
+ */
+export const KNOWN_DISPLAY_TIMEZONES = [
+  "Auto",
+  "UTC",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "Europe/London",
+  "Europe/Paris",
+  "Asia/Tokyo",
+  "Asia/Shanghai",
+] as const;
+
+export type DisplayTimezone = (typeof KNOWN_DISPLAY_TIMEZONES)[number];
+
+/** Human-readable labels for each timezone option shown in the select. */
+export const DISPLAY_TIMEZONE_LABELS: Record<DisplayTimezone, string> = {
+  Auto: "Auto (browser default)",
+  UTC: "UTC",
+  "America/New_York": "America/New York (ET)",
+  "America/Chicago": "America/Chicago (CT)",
+  "America/Denver": "America/Denver (MT)",
+  "America/Los_Angeles": "America/Los Angeles (PT)",
+  "Europe/London": "Europe/London (GMT/BST)",
+  "Europe/Paris": "Europe/Paris (CET/CEST)",
+  "Asia/Tokyo": "Asia/Tokyo (JST)",
+  "Asia/Shanghai": "Asia/Shanghai (CST)",
+};
+
+/** UI strings for the timezone control in Settings → Appearance. */
+export const TIMEZONE_STRINGS = {
+  timezoneLabel: "Display timezone",
+  timezoneCaption: "Saved per device. Timestamps re-render immediately.",
+} as const;
+
 // ---- Preferences / defaults (item 3.2) ----
 
 /**

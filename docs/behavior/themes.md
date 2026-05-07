@@ -60,7 +60,7 @@ A theme switch is safe at any point. If the user changes themes while an assista
 
 ## What the user does NOT control via the theme picker
 
-* The display **timezone**. That is a separate Settings → Appearance control (also per-device, persisted in local storage rather than on the server, since a laptop in CT and a phone abroad each want their own display tz).
+* The display **timezone**. That is a separate Settings → Appearance control (also per-device, persisted in local storage rather than on the server, since a laptop in CT and a phone abroad each want their own display tz). **As of gap-cycle-07-006 this control is wired** — see addendum below.
 * The **locale** for date / number formatting. Deferred for v1; helpers accept a locale already, so a follow-up can surface this without disturbing existing strings.
 * **Per-component overrides.** The user cannot pick a different theme for the conversation pane vs the sidebar; theme is global.
 * **Custom theme uploads.** v1 ships with the three named themes. Custom user themes are out of scope.
@@ -129,3 +129,45 @@ This subsystem doc does not list authoring steps. From the user's perspective, w
 * the new option appears in the dropdown alongside the existing three;
 * picking it works exactly like picking any other theme — synchronous re-tint, server-synced, mobile-chrome color updated;
 * the existing themes remain available unchanged.
+
+## Display timezone control (addendum — gap-cycle-07-006)
+
+The timezone select lives in **Settings → Appearance**, directly below the theme picker. It is a separate control from the theme — see §"What the user does NOT control via the theme picker" above.
+
+### What the user sees
+
+A dropdown labeled **Display timezone** with ten options:
+
+| Option value | Visible label |
+|---|---|
+| Auto | "Auto (browser default)" |
+| UTC | "UTC" |
+| America/New_York | "America/New York (ET)" |
+| America/Chicago | "America/Chicago (CT)" |
+| America/Denver | "America/Denver (MT)" |
+| America/Los_Angeles | "America/Los Angeles (PT)" |
+| Europe/London | "Europe/London (GMT/BST)" |
+| Europe/Paris | "Europe/Paris (CET/CEST)" |
+| Asia/Tokyo | "Asia/Tokyo (JST)" |
+| Asia/Shanghai | "Asia/Shanghai (CST)" |
+
+Below the select is a caption: "Saved per device. Timestamps re-render immediately."
+
+### Persistence
+
+* **Per-device only** — stored in `localStorage` under `bearings:display:timezone`. NOT round-tripped to `/api/preferences` so devices share themes but keep independent display timezones.
+* **"Auto" stores nothing.** Absence of the key in `localStorage` is the canonical representation of "Auto". Selecting "Auto" removes the key rather than writing a sentinel.
+
+### What re-renders on change
+
+Switching the timezone re-renders all surfaces that use `formatAbsolute` from `frontend/src/lib/utils/datetime.ts` **in the same tick**:
+
+* Routing timeline timestamps in the Inspector → Routing tab.
+* Reorg audit divider timestamps in the conversation pane.
+* Quota reset tooltips in the new-session dialog.
+* The Settings → About "Build" row.
+
+### Implementation path
+
+`frontend/src/lib/stores/displaySettings.svelte.ts` owns the reactive `displaySettingsStore.timezone` state.
+`frontend/src/lib/utils/datetime.ts:formatAbsolute` reads it on every call — because the store is a Svelte 5 `$state` object, any `$derived` that calls `formatAbsolute` re-runs automatically when the timezone changes, propagating the re-render without any additional subscription or effect.

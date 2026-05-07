@@ -17,6 +17,7 @@
    * (0.95) so a coding-standards review can grep one source of truth.
    */
   import { NEW_SESSION_STRINGS, QUOTA_BAR_RED_PCT, QUOTA_BAR_YELLOW_PCT } from "../../config";
+  import { formatAbsolute } from "../../utils/datetime";
 
   /**
    * Snapshot of the two relevant bucket states (spec §4). ``null`` on
@@ -69,8 +70,7 @@
 
   function resetTooltip(resetsAt: number | null): string | undefined {
     if (resetsAt === null) return undefined;
-    const date = new Date(resetsAt * 1000);
-    return `${NEW_SESSION_STRINGS.quotaResetTooltipPrefix} ${date.toLocaleString()}`;
+    return `${NEW_SESSION_STRINGS.quotaResetTooltipPrefix} ${formatAbsolute(resetsAt * 1000)}`;
   }
 
   const overallSeverity = $derived(severity(snapshot?.overallUsedPct ?? null));

@@ -16,6 +16,7 @@
    * whose ``id`` matches ``entry.anchorMessageId``.
    */
   import type { ReorgAuditEntry } from "../../stores/reorg.svelte";
+  import { formatAbsolute } from "../../utils/datetime";
 
   interface Props {
     entry: ReorgAuditEntry;
@@ -42,7 +43,7 @@
   );
 
   const formattedTime = $derived(
-    new Date(entry.timestamp).toLocaleTimeString(undefined, {
+    formatAbsolute(entry.timestamp, {
       hour: "2-digit",
       minute: "2-digit",
     }),

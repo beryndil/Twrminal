@@ -50,6 +50,7 @@
   } from "../../config";
   import { listMessages, type MessageOut } from "../../api/messages";
   import type { SessionOut } from "../../api/sessions";
+  import { formatAbsolute } from "../../utils/datetime";
   import RoutingBadge from "../conversation/RoutingBadge.svelte";
 
   interface Props {
@@ -381,7 +382,7 @@
             >
               <div class="flex flex-row items-center gap-2 text-xs text-fg-muted">
                 <RoutingBadge routing={badgeRouting(row)} />
-                <span class="font-mono">{row.created_at}</span>
+                <span class="font-mono">{formatAbsolute(row.created_at)}</span>
               </div>
               <button
                 type="button"

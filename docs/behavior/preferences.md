@@ -208,3 +208,14 @@ All identity card links open `target="_blank"` with `rel="noopener noreferrer"`.
 | `POST` | `/api/preferences/avatar` | Upload avatar (multipart) |
 | `DELETE` | `/api/preferences/avatar` | Remove avatar |
 | `POST` | `/api/preferences/sync_from_system` | Populate from OS environment |
+
+## Per-device localStorage preferences (addendum — gap-cycle-07-006)
+
+Some preferences are per-device by design and are stored in `localStorage` only — they are NOT round-tripped through `/api/preferences`. The rationale: a laptop in CT and a phone abroad each need independent values for these settings.
+
+| Key | Type | Default (absent) | Description |
+|---|---|---|---|
+| `bearings:display:timezone` | IANA timezone string | Auto (browser default) | Display timezone for all timestamp surfaces. Absence of the key == "Auto". Managed by `frontend/src/lib/stores/displaySettings.svelte.ts`; formatted via `formatAbsolute` in `frontend/src/lib/utils/datetime.ts`. |
+| `bearings-theme-v1` | theme ID string | OS-color-scheme fallback | UI theme. See [themes.md](themes.md). |
+| `bearings-v1:session-sort` | `"last_action"` \| `"grouped"` | `"last_action"` | Sidebar session sort order. |
+| `bearings-v1:auth-token` | raw token string | (none) | Auth token for the API auth gate. |

@@ -28,16 +28,20 @@
     AUTH_SECTION_STRINGS,
     HELP_SECTION_STRINGS,
     KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET,
+    KNOWN_DISPLAY_TIMEZONES,
     KNOWN_EXECUTOR_MODELS,
     KNOWN_PERMISSION_MODES,
     KNOWN_THEMES,
+    DISPLAY_TIMEZONE_LABELS,
     NOTIFICATION_STRINGS,
     PERMISSION_MODE_LABELS,
     PREFERENCES_STRINGS,
     PRIVACY_STRINGS,
     PROFILE_STRINGS,
     THEME_STRINGS,
+    TIMEZONE_STRINGS,
     API_DIAG_SERVER_ENDPOINT,
+    type DisplayTimezone,
     type ExecutorModel,
     type PermissionMode,
     type ThemeId,
@@ -65,6 +69,7 @@
     setNotifyOnComplete,
     supportsNotifications,
   } from "$lib/utils/notify";
+  import { displaySettingsStore, setTimezone } from "$lib/stores/displaySettings.svelte";
   import ThemePicker from "$lib/themes/ThemePicker.svelte";
   import RoutingRuleEditor from "$lib/components/routing/RoutingRuleEditor.svelte";
   import UserIdentityBlock from "$lib/components/identity/UserIdentityBlock.svelte";
@@ -536,6 +541,25 @@
   <section class="settings-page__group" aria-label="Appearance">
     <h2 class="settings-page__heading">{THEME_STRINGS.appearanceHeading}</h2>
     <ThemePicker />
+
+    <!-- Timezone select (gap-cycle-07-006) -->
+    <label class="settings-defaults__field" data-testid="settings-timezone-field">
+      <span class="settings-defaults__label">{TIMEZONE_STRINGS.timezoneLabel}</span>
+      <select
+        class="settings-defaults__select"
+        value={displaySettingsStore.timezone ?? "Auto"}
+        onchange={(e) => {
+          const v = (e.target as HTMLSelectElement).value as DisplayTimezone;
+          setTimezone(v === "Auto" ? null : v);
+        }}
+        data-testid="settings-timezone-select"
+      >
+        {#each KNOWN_DISPLAY_TIMEZONES as tz (tz)}
+          <option value={tz}>{DISPLAY_TIMEZONE_LABELS[tz]}</option>
+        {/each}
+      </select>
+      <span class="settings-page__lede">{TIMEZONE_STRINGS.timezoneCaption}</span>
+    </label>
   </section>
 
   <section class="settings-page__group" aria-label="Defaults" data-testid="settings-defaults">
