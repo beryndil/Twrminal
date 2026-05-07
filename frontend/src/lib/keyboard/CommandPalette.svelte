@@ -17,8 +17,11 @@
    * String literals — :data:`COMMAND_PALETTE_STRINGS` in
    * ``../../config``.
    */
+  import { onMount } from "svelte";
+
   import { COMMAND_PALETTE_STRINGS } from "../config";
   import { allPaletteActions, getPaletteHandler, type PaletteEntry } from "../context-menu/palette";
+  import { ESC_PRIORITY_COMMAND_PALETTE, registerEscEntry } from "./escCascade";
 
   interface Props {
     open: boolean;
@@ -28,6 +31,17 @@
   const { open, onClose }: Props = $props();
 
   const allActions: readonly PaletteEntry[] = allPaletteActions();
+
+  // Register with the global Esc cascade (priority 2) so pressing Esc
+  // closes the palette even when focus has moved off the search input.
+  // The local onkeydown handler on the input remains as defence-in-depth.
+  onMount(() => {
+    return registerEscEntry({
+      priority: ESC_PRIORITY_COMMAND_PALETTE,
+      isOpen: () => open,
+      close: onClose,
+    });
+  });
 
   let query = $state("");
   let activeIndex = $state(0);

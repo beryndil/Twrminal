@@ -9,14 +9,25 @@
  * - Close on Esc.
  * - Backdrop click closes.
  *
+ * Also covers gap-cycle-02-006:
+ *
+ * - Esc cascade closes the palette regardless of focus owner.
+ * - Priority-1 (context menu) preempts the palette when both open.
+ *
  * Behavior anchor: ``docs/behavior/keyboard-shortcuts.md``
- * §"Command palette".
+ * §"Command palette", §"Focus".
  */
 import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import CommandPalette from "../CommandPalette.svelte";
 import { registerPaletteHandler, _resetPaletteHandlers } from "../../context-menu/palette";
+import {
+  ESC_PRIORITY_CONTEXT_MENU,
+  _resetForTests as resetEscCascade,
+  registerEscEntry,
+  runEscCascade,
+} from "../escCascade";
 
 // ---- mock allPaletteActions so tests don't depend on the full registry ----
 vi.mock("../../context-menu/palette", async (importOriginal) => {
@@ -32,12 +43,14 @@ vi.mock("../../context-menu/palette", async (importOriginal) => {
 });
 
 beforeEach(() => {
+  resetEscCascade();
   _resetPaletteHandlers();
 });
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  resetEscCascade();
   _resetPaletteHandlers();
 });
 
@@ -168,5 +181,43 @@ describe("CommandPalette", () => {
 
     expect(handler).toHaveBeenCalledOnce();
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  // ---- gap-cycle-02-006: Esc cascade integration ----------------------
+
+  it("Esc cascade closes the palette regardless of focus owner (gap-cycle-02-006)", () => {
+    // The palette is open; focus is on document.body (not the search input).
+    const onClose = vi.fn();
+    render(CommandPalette, { props: { open: true, onClose } });
+
+    // Move focus away from the search input so the local onkeydown handler
+    // is not the active path.
+    document.body.focus();
+
+    const result = runEscCascade();
+
+    expect(result).toBe(ESC_PRIORITY_CONTEXT_MENU + 1); // priority 2
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("priority-1 context menu preempts the palette when both are open (gap-cycle-02-006)", () => {
+    const closeMenu = vi.fn();
+    const onClose = vi.fn();
+
+    // Register a context-menu entry at priority 1 that claims to be open.
+    registerEscEntry({
+      priority: ESC_PRIORITY_CONTEXT_MENU,
+      isOpen: () => true,
+      close: closeMenu,
+    });
+
+    render(CommandPalette, { props: { open: true, onClose } });
+
+    const result = runEscCascade();
+
+    expect(result).toBe(ESC_PRIORITY_CONTEXT_MENU);
+    expect(closeMenu).toHaveBeenCalledOnce();
+    // Palette must NOT have been closed — only the highest-priority overlay fires.
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
