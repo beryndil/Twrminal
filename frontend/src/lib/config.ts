@@ -2701,6 +2701,10 @@ export const CONTEXT_MENU_STRINGS = {
   destructiveCancelLabel: "Cancel",
   destructiveConfirmLabel: "Confirm",
   confirmSuppressCheckboxLabel: "Don't ask again this session",
+  /** Label shown on the Confirm button while an async onConfirm is in flight. */
+  confirmPendingLabel: "…",
+  /** Fallback error text when onConfirm rejects with a non-Error value. */
+  confirmErrorFallback: "An error occurred.",
   actionLabels: {
     [MENU_ACTION_SESSION_OPEN_IN_NEW_TAB]: "Open in new tab",
     [MENU_ACTION_SESSION_EDIT]: "Edit session…",

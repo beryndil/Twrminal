@@ -24,6 +24,16 @@
    * confirms. Focus is queued via ``queueMicrotask`` after Svelte's
    * pending changes to ensure the buttons are mounted. See
    * ``docs/behavior/modals.md`` §"ConfirmDialog focus".
+   *
+   * Async confirm: ``onConfirm`` (and ``onConfirmAndSuppress``) may
+   * return a ``Promise``. While the promise is in flight both buttons
+   * are disabled and the Confirm button label flips to
+   * ``CONTEXT_MENU_STRINGS.confirmPendingLabel`` ("…") to signal
+   * activity. Esc and backdrop-click are also suppressed while pending.
+   * On resolve the parent owns closing the dialog (its ``onConfirm``
+   * callback is the commit point). On rejection the dialog stays open
+   * and surfaces the error message inline below the message. See
+   * ``docs/behavior/modals.md`` §"ConfirmDialog async pending".
    */
 
   import { onMount } from "svelte";
@@ -48,14 +58,21 @@
      * compatibility with callers that manage their own suppress logic.
      */
     showSuppressCheckbox?: boolean;
-    onConfirm: () => void;
+    /**
+     * May return a ``Promise`` for async operations. While the promise is
+     * in flight the dialog enters its pending state (buttons disabled,
+     * Confirm label flips to "…"). On resolve the parent owns close; on
+     * rejection the dialog stays open with an inline error.
+     */
+    onConfirm: () => void | Promise<void>;
     /**
      * Called instead of ``onConfirm`` when the user ticks the suppress
      * checkbox and clicks Confirm. Only invoked when
      * ``showSuppressCheckbox`` is ``true`` and the box is checked.
-     * Falls back to ``onConfirm`` when not provided.
+     * Falls back to ``onConfirm`` when not provided. May return a
+     * ``Promise`` for the same async-pending semantics as ``onConfirm``.
      */
-    onConfirmAndSuppress?: () => void;
+    onConfirmAndSuppress?: () => void | Promise<void>;
     onCancel: () => void;
   }
 
@@ -71,6 +88,8 @@
 
   let cancelBtn = $state<HTMLButtonElement | null>(null);
   let confirmBtn = $state<HTMLButtonElement | null>(null);
+  let pending = $state(false);
+  let errorMsg = $state<string | null>(null);
 
   onMount(() => {
     queueMicrotask(() => {
@@ -80,16 +99,25 @@
 
   let dontAskAgain = $state(false);
 
-  function handleConfirm(): void {
-    if (showSuppressCheckbox && dontAskAgain && onConfirmAndSuppress !== undefined) {
-      onConfirmAndSuppress();
-    } else {
-      onConfirm();
+  async function handleConfirm(): Promise<void> {
+    pending = true;
+    errorMsg = null;
+    try {
+      if (showSuppressCheckbox && dontAskAgain && onConfirmAndSuppress !== undefined) {
+        await onConfirmAndSuppress();
+      } else {
+        await onConfirm();
+      }
+    } catch (err: unknown) {
+      errorMsg =
+        err instanceof Error ? err.message : CONTEXT_MENU_STRINGS.confirmErrorFallback;
+    } finally {
+      pending = false;
     }
   }
 
   function handleKeyDown(event: KeyboardEvent): void {
-    if (event.key === "Escape") {
+    if (event.key === "Escape" && !pending) {
       event.stopPropagation();
       onCancel();
     }
@@ -100,7 +128,7 @@
   class="confirm-dialog-backdrop"
   role="presentation"
   data-testid="confirm-dialog-backdrop"
-  onclick={onCancel}
+  onclick={() => { if (!pending) onCancel(); }}
   onkeydown={handleKeyDown}
 >
   <div
@@ -125,12 +153,20 @@
         {CONTEXT_MENU_STRINGS.confirmSuppressCheckboxLabel}
       </label>
     {/if}
+    {#if errorMsg !== null}
+      <p
+        class="confirm-dialog__error"
+        role="alert"
+        data-testid="confirm-dialog-error"
+      >{errorMsg}</p>
+    {/if}
     <div class="confirm-dialog__actions">
       <button
         type="button"
         class="confirm-dialog__btn confirm-dialog__btn--cancel"
         data-testid="confirm-dialog-cancel"
         bind:this={cancelBtn}
+        disabled={pending}
         onclick={onCancel}
       >
         Cancel
@@ -140,9 +176,10 @@
         class="confirm-dialog__btn confirm-dialog__btn--confirm"
         data-testid="confirm-dialog-confirm"
         bind:this={confirmBtn}
+        disabled={pending}
         onclick={handleConfirm}
       >
-        {confirmLabel}
+        {pending ? CONTEXT_MENU_STRINGS.confirmPendingLabel : confirmLabel}
       </button>
     </div>
   </div>
@@ -194,6 +231,12 @@
     accent-color: rgb(var(--bearings-accent, 99 102 241));
   }
 
+  .confirm-dialog__error {
+    font-size: 0.8125rem;
+    color: #f87171;
+    margin: 0;
+  }
+
   .confirm-dialog__actions {
     display: flex;
     justify-content: flex-end;
@@ -212,6 +255,11 @@
 
   .confirm-dialog__btn:hover {
     background: rgb(var(--bearings-surface-1));
+  }
+
+  .confirm-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .confirm-dialog__btn--confirm {
