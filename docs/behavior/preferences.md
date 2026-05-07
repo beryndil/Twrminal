@@ -1,5 +1,35 @@
 # Preferences — observable behavior
 
+## Settings shell layout (gap-cycle-07-007)
+
+The ``/settings`` route renders a ``SettingsShell`` two-column layout:
+
+- **Left nav rail** — ``role="tablist"`` ``aria-orientation="vertical"``, one ``<button role="tab">`` per registered section in weight order. The active button has ``aria-selected="true"`` and ``tabindex="0"``; inactive buttons have ``tabindex="-1"`` (roving tabindex). Keyboard navigation: ↑/↓ moves the active section one step (wraps), Home/End jump to first/last.
+- **Right content pane** — one ``role="tabpanel"`` per section, rendered in the DOM at all times with CSS ``display:none`` for inactive panels (keeps test selectors valid for per-section test suites).
+- **URL deep-link** — the active section id is mirrored into ``?settings=<id>`` via ``history.replaceState`` on every section switch. On mount the shell reads ``window.location.search`` to honour deep-links; unrecognised ids fall back to the first registered section.
+- **Save-status footer** — a sticky footer at the bottom of the content pane shows the aggregated save status of the active section: "Saving…" while a PATCH is in flight, "All changes saved" on success, "Failed to save: {message}" on error. The footer is absent when the section is idle. It resets to idle when the user switches sections.
+
+### Section registry
+
+``frontend/src/lib/components/settings/sections.ts`` is the single source of truth:
+
+| id | label | weight | Section |
+|---|---|---|---|
+| ``profile`` | Profile | 10 | ProfileSection.svelte |
+| ``appearance`` | Appearance | 20 | AppearanceSection.svelte |
+| ``defaults`` | Defaults | 30 | DefaultsSection.svelte |
+| ``notifications`` | Notifications | 40 | NotificationsSection.svelte |
+| ``authentication`` | Authentication | 50 | AuthSection.svelte |
+| ``privacy`` | Privacy | 60 | PrivacySection.svelte |
+| ``routing`` | System routing | 70 | RoutingRulesSection.svelte |
+| ``import`` | Data import | 80 | ImportSection.svelte |
+| ``help`` | Help | 90 | HelpSection.svelte |
+| ``about`` | About | 100 | AboutSection.svelte |
+
+Adding a new section requires one registry append in ``sections.ts``; no changes to ``+page.svelte`` or ``SettingsShell.svelte``.
+
+
+
 The preferences subsystem stores per-instance settings in a single DB row and exposes them via a REST API. This document covers the full observable behavior including the profile/identity contract added in gap-cycle-03-011.
 
 Sibling subsystems referenced here: [themes](themes.md), [chat](chat.md).

@@ -2308,6 +2308,24 @@ export const KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE = "palette.toggle_command_
 export const KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH = "palette.focus_sidebar_search";
 
 /**
+ * UI strings for the SettingsShell two-column layout (gap-cycle-07-007).
+ *
+ * ``statusSaving`` / ``statusSaved`` / ``statusErrorPrefix`` surface in the
+ * persistent footer that aggregates save status across the active section's
+ * writes.
+ */
+export const SETTINGS_SHELL_STRINGS = {
+  /** Footer label while a PATCH is in flight. */
+  statusSaving: "Saving…",
+  /** Footer label after a successful PATCH (auto-clears when section switches). */
+  statusSaved: "All changes saved",
+  /** Prefix prepended to the error message on PATCH failure. */
+  statusErrorPrefix: "Failed to save: ",
+  /** Fallback when the error has no message string. */
+  statusErrorGeneric: "Failed to save.",
+} as const;
+
+/**
  * Keybinding-context discriminator — context the chord is *allowed* to
  * fire in. The dispatch routes a chord by inspecting two focus flags
  * (composer focused, modal open) per
