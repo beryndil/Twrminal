@@ -182,6 +182,7 @@ A non-2xx response from `POST /api/shell/exec` surfaces a transient error toast 
 
 ## Where context menus do NOT appear
 
+* **On the Bearings context menu itself.** Right-clicking the open menu's own surface (a menu row, the padding area, or the bottom-sheet) does not open the browser's native Inspect/Save/Reload menu — the `contextmenu` event is `preventDefault()`-ed by the `<ul>` container, leaving the Bearings menu open and in place. Right-clicking outside the menu (on the backdrop) closes the Bearings menu in the normal way.
 * **Inside the cheat-sheet modal.** Right-clicking inside it opens the browser's native menu — Bearings does not own that surface.
 * **Inside iframes.** The browser's native menu fires.
 * **On native browser scroll bars / OS-drawn window chrome.** Bearings cannot intercept those.

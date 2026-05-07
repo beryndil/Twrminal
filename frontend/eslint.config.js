@@ -65,6 +65,10 @@ export default [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
+      // TypeScript's own type-checker owns undefined-reference detection
+      // for TS files; the base no-undef rule doesn't understand type-only
+      // references (e.g. `as MouseEventInit`) and produces false positives.
+      "no-undef": "off",
     },
   },
   ...svelte.configs["flat/recommended"],
@@ -96,6 +100,7 @@ export default [
     languageOptions: {
       globals: {
         ...globals.node,
+        ...globals.browser,
       },
     },
   },

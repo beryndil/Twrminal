@@ -588,6 +588,7 @@
         data-coarse="true"
         tabindex="-1"
         onclick={(event) => event.stopPropagation()}
+        oncontextmenu={(event) => event.preventDefault()}
         onkeydown={(event) => {
           handleKeyDown(event);
           event.stopPropagation();
@@ -613,6 +614,7 @@
       style:left="{menuPosition.left}px"
       style:top="{menuPosition.top}px"
       onclick={(event) => event.stopPropagation()}
+      oncontextmenu={(event) => event.preventDefault()}
       onkeydown={(event) => {
         handleKeyDown(event);
         event.stopPropagation();

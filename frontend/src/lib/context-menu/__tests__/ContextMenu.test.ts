@@ -987,6 +987,47 @@ describe("ContextMenu", () => {
   });
 
   // -------------------------------------------------------------------------
+  // No native context menu on the menu's own surface (gap-cycle-15-003)
+  // -------------------------------------------------------------------------
+
+  describe("no native context menu on menu surface (gap-cycle-15-003)", () => {
+    it("contextmenu event on a <li role='menuitem'> has defaultPrevented=true and menu stays open", async () => {
+      const { getAllByTestId, getByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+
+      const row = getAllByTestId("context-menu-row")[0] as HTMLElement;
+      const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+      row.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(getByTestId("context-menu")).toBeTruthy();
+      expect(contextMenuStore.open).not.toBeNull();
+    });
+
+    it("contextmenu event on the menu <ul> itself has defaultPrevented=true", async () => {
+      const { getByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+
+      const menu = getByTestId("context-menu") as HTMLElement;
+      const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+      menu.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(contextMenuStore.open).not.toBeNull();
+    });
+
+    it("contextmenu on backdrop still closes the menu", async () => {
+      const { getByTestId, queryByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+
+      const backdrop = getByTestId("context-menu-backdrop") as HTMLElement;
+      await fireEvent(backdrop, new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+
+      expect(queryByTestId("context-menu")).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Viewport-edge clamping (gap-cycle-15-002)
   // -------------------------------------------------------------------------
 
