@@ -985,4 +985,124 @@ describe("ContextMenu", () => {
       expect(queryByTestId("context-menu")).toBeNull();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Viewport-edge clamping (gap-cycle-15-002)
+  // -------------------------------------------------------------------------
+
+  describe("viewport-edge clamping (gap-cycle-15-002)", () => {
+    let savedInnerWidth: number;
+    let savedInnerHeight: number;
+
+    beforeEach(() => {
+      savedInnerWidth = window.innerWidth;
+      savedInnerHeight = window.innerHeight;
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window, "innerWidth", { value: savedInnerWidth, writable: true });
+      Object.defineProperty(window, "innerHeight", { value: savedInnerHeight, writable: true });
+    });
+
+    it("menu clamped at right/bottom edge — left is pulled left of the cursor", () => {
+      // Small viewport so the default fallback dimensions (220×48) trigger
+      // clamping when the cursor is near the bottom-right corner.
+      Object.defineProperty(window, "innerWidth", { value: 400, writable: true });
+      Object.defineProperty(window, "innerHeight", { value: 300, writable: true });
+
+      const { getByTestId } = render(ContextMenu);
+      // Open near the bottom-right corner.
+      flushSync(() => {
+        openMenu({
+          target: MENU_TARGET_CHECKPOINT,
+          x: 390, // 10 px from right edge of 400 px viewport
+          y: 290, // 10 px from bottom edge of 300 px viewport
+          handlers: {},
+          advancedRevealed: false,
+          stale: false,
+          data: null,
+        });
+      });
+
+      const menu = getByTestId("context-menu") as HTMLElement;
+      const left = parseFloat(menu.style.left);
+      const top = parseFloat(menu.style.top);
+
+      // jsdom does not do layout; offsetWidth/Height are 0, so the component
+      // falls back to MENU_DEFAULT_WIDTH=220 and MENU_DEFAULT_HEIGHT=48.
+      const menuWidth = menu.offsetWidth || 220;
+      const menuHeight = menu.offsetHeight || 48;
+
+      // Right and bottom edges must not escape the viewport.
+      expect(left + menuWidth + 4).toBeLessThanOrEqual(400);
+      expect(top + menuHeight + 4).toBeLessThanOrEqual(300);
+
+      // Clamping must have moved the menu left/up relative to the raw cursor.
+      expect(left).toBeLessThan(390);
+      expect(top).toBeLessThan(290);
+    });
+
+    it("menu inside viewport — cursor position preserved unchanged", () => {
+      // Large viewport: cursor at (100, 200) with default dimensions fits easily.
+      Object.defineProperty(window, "innerWidth", { value: 1920, writable: true });
+      Object.defineProperty(window, "innerHeight", { value: 1080, writable: true });
+
+      const { getByTestId } = render(ContextMenu);
+      flushSync(() => {
+        openMenu({
+          target: MENU_TARGET_CHECKPOINT,
+          x: 100,
+          y: 200,
+          handlers: {},
+          advancedRevealed: false,
+          stale: false,
+          data: null,
+        });
+      });
+
+      const menu = getByTestId("context-menu") as HTMLElement;
+      // 100 and 200 are well inside a 1920×1080 viewport with 220×48 defaults.
+      expect(menu.style.left).toBe("100px");
+      expect(menu.style.top).toBe("200px");
+    });
+
+    it("coarse bottom-sheet is exempt from cursor clamping", () => {
+      Object.defineProperty(window, "innerWidth", { value: 400, writable: true });
+      Object.defineProperty(window, "innerHeight", { value: 300, writable: true });
+      Object.defineProperty(window, "matchMedia", {
+        writable: true,
+        value: (query: string) => ({
+          matches: query === "(pointer: coarse)",
+          media: query,
+          onchange: null,
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }),
+      });
+
+      const { getByTestId } = render(ContextMenu);
+      flushSync(() => {
+        openMenu({
+          target: MENU_TARGET_CHECKPOINT,
+          x: 390,
+          y: 290,
+          handlers: {},
+          advancedRevealed: false,
+          stale: false,
+          data: null,
+        });
+      });
+
+      // Coarse menu is a bottom sheet — no inline left/top styles.
+      const menu = getByTestId("context-menu") as HTMLElement;
+      expect(menu.style.left).toBe("");
+      expect(menu.style.top).toBe("");
+
+      // Cleanup matchMedia stub.
+      Object.defineProperty(window, "matchMedia", { writable: true, value: undefined });
+    });
+  });
 });

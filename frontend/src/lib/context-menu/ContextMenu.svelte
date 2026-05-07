@@ -51,6 +51,7 @@
   import { actionsForTarget, type MenuActionDescriptor } from "./registry";
   import { closeMenu, contextMenuStore, isActionSuppressed, suppressAction } from "./store.svelte";
   import { isCoarsePointer } from "./touch";
+  import { placeAtCursor } from "./positioning";
   import ConfirmDialog from "../components/sidebar/ConfirmDialog.svelte";
 
   const open = $derived(contextMenuStore.open);
@@ -117,6 +118,39 @@
    * Resets to ``false`` on close.
    */
   let coarse: boolean = $state(false);
+
+  /**
+   * Fallback menu dimensions for first-frame placement before the
+   * browser has laid out the element and ``menuContainerRef`` is
+   * populated.  Values match v17's defaults and cover a typical
+   * action list comfortably.
+   */
+  const MENU_DEFAULT_WIDTH = 220;
+  const MENU_DEFAULT_HEIGHT = 48;
+
+  /**
+   * Clamped ``position: fixed`` origin for the fine-pointer floating
+   * panel.  Reads ``menuContainerRef`` so the derived re-runs after
+   * the menu element mounts — the second pass uses the actual rendered
+   * dimensions rather than the first-frame defaults.
+   *
+   * Coarse (bottom-sheet) layout is exempt: its position is governed
+   * by CSS, not by this derived.
+   */
+  const menuPosition = $derived.by(() => {
+    if (open === null || coarse) return { left: 0, top: 0 };
+    const el = menuContainerRef;
+    const menuWidth = el !== null && el.offsetWidth > 0 ? el.offsetWidth : MENU_DEFAULT_WIDTH;
+    const menuHeight = el !== null && el.offsetHeight > 0 ? el.offsetHeight : MENU_DEFAULT_HEIGHT;
+    return placeAtCursor({
+      x: open.x,
+      y: open.y,
+      menuWidth,
+      menuHeight,
+      viewportWidth: typeof window !== "undefined" ? window.innerWidth : 1920,
+      viewportHeight: typeof window !== "undefined" ? window.innerHeight : 1080,
+    });
+  });
 
   $effect(() => {
     if (open !== null) {
@@ -576,8 +610,8 @@
       data-target={open.target}
       data-coarse="false"
       tabindex="-1"
-      style:left="{open.x}px"
-      style:top="{open.y}px"
+      style:left="{menuPosition.left}px"
+      style:top="{menuPosition.top}px"
       onclick={(event) => event.stopPropagation()}
       onkeydown={(event) => {
         handleKeyDown(event);
