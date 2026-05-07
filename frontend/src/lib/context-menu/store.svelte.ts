@@ -83,9 +83,18 @@ interface OpenMenu {
 
 interface ContextMenuState {
   open: OpenMenu | null;
+  /**
+   * Per-session suppression set. When the user ticks "Don't ask again
+   * this session" and confirms a destructive action, the action's id is
+   * added here. Subsequent activations of the same action skip the
+   * confirmation dialog and fire the handler directly.
+   *
+   * In-memory only — a hard refresh resets it (no localStorage).
+   */
+  suppressedActionIds: Set<string>;
 }
 
-const state: ContextMenuState = $state({ open: null });
+const state: ContextMenuState = $state({ open: null, suppressedActionIds: new Set() });
 
 /**
  * Reactive snapshot. Read ``contextMenuStore.open`` inside ``$derived``
@@ -106,7 +115,24 @@ export function closeMenu(): void {
   state.open = null;
 }
 
-/** Test seam — drop any open menu without invoking close handlers. */
+/**
+ * Mark an action as suppressed for this session. Subsequent destructive
+ * activations of ``id`` will bypass the confirmation dialog.
+ */
+export function suppressAction(id: string): void {
+  state.suppressedActionIds.add(id);
+}
+
+/**
+ * Returns ``true`` when the action ``id`` has been suppressed by the
+ * user for this session (i.e. they previously ticked "Don't ask again").
+ */
+export function isActionSuppressed(id: string): boolean {
+  return state.suppressedActionIds.has(id);
+}
+
+/** Test seam — drop any open menu and clear the suppression set. */
 export function _resetForTests(): void {
   state.open = null;
+  state.suppressedActionIds.clear();
 }

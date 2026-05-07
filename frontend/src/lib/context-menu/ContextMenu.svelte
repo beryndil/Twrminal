@@ -49,7 +49,7 @@
   import { CONTEXT_MENU_STRINGS, MENU_SECTION_ORDER, type MenuSectionId } from "../config";
   import { ESC_PRIORITY_CONTEXT_MENU, registerEscEntry } from "../keyboard/escCascade";
   import { actionsForTarget, type MenuActionDescriptor } from "./registry";
-  import { closeMenu, contextMenuStore } from "./store.svelte";
+  import { closeMenu, contextMenuStore, isActionSuppressed, suppressAction } from "./store.svelte";
   import ConfirmDialog from "../components/sidebar/ConfirmDialog.svelte";
 
   const open = $derived(contextMenuStore.open);
@@ -98,6 +98,8 @@
     handler: () => void;
     message: string;
     confirmLabel: string;
+    /** Action id — used to record a suppression when the user ticks the checkbox. */
+    actionId: string;
   }
   let pendingConfirm: PendingConfirm | null = $state(null);
 
@@ -244,6 +246,13 @@
     }
 
     if (action.destructive === true && !skipMenuConfirm) {
+      // If the user previously ticked "Don't ask again this session" for
+      // this action, skip the dialog and fire the handler directly.
+      if (isActionSuppressed(action.id)) {
+        handler();
+        closeMenu();
+        return;
+      }
       // Close the menu first (matching v17: "every destructive click closed
       // the menu, then called confirmStore.request(...)").
       closeMenu();
@@ -251,6 +260,7 @@
         handler,
         message: confirmMessage ?? `${actionLabel(action.id)}?`,
         confirmLabel: confirmLabel ?? "Confirm",
+        actionId: action.id,
       };
     } else {
       handler();
@@ -403,9 +413,16 @@
   <ConfirmDialog
     message={pendingConfirm.message}
     confirmLabel={pendingConfirm.confirmLabel}
+    showSuppressCheckbox={true}
     onConfirm={() => {
       const { handler } = pendingConfirm!;
       pendingConfirm = null;
+      handler();
+    }}
+    onConfirmAndSuppress={() => {
+      const { handler, actionId } = pendingConfirm!;
+      pendingConfirm = null;
+      suppressAction(actionId);
       handler();
     }}
     onCancel={() => {

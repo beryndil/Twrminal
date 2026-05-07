@@ -2700,6 +2700,7 @@ export const CONTEXT_MENU_STRINGS = {
   destructiveConfirmTitle: "Confirm",
   destructiveCancelLabel: "Cancel",
   destructiveConfirmLabel: "Confirm",
+  confirmSuppressCheckboxLabel: "Don't ask again this session",
   actionLabels: {
     [MENU_ACTION_SESSION_OPEN_IN_NEW_TAB]: "Open in new tab",
     [MENU_ACTION_SESSION_EDIT]: "Edit session…",

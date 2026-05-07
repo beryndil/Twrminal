@@ -621,6 +621,93 @@ describe("ContextMenu", () => {
     });
   });
 
+  describe("don't-ask-again suppression (gap-cycle-10-004)", () => {
+    it("unticked confirm fires handler without suppressing; second invocation shows dialog again", async () => {
+      const del = vi.fn();
+      const { getAllByTestId, queryByTestId, getByTestId, unmount } = render(ContextMenu);
+
+      // First invocation — open dialog.
+      openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_DELETE]: del } });
+      const deleteRow = () =>
+        getAllByTestId("context-menu-row").find(
+          (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_DELETE,
+        )!;
+      await fireEvent.click(deleteRow());
+      expect(queryByTestId("confirm-dialog")).not.toBeNull();
+
+      // Confirm WITHOUT ticking the checkbox.
+      await fireEvent.click(getByTestId("confirm-dialog-confirm"));
+      expect(del).toHaveBeenCalledOnce();
+      expect(queryByTestId("confirm-dialog")).toBeNull();
+
+      // Second invocation — dialog must appear again (no suppression recorded).
+      openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_DELETE]: del } });
+      await fireEvent.click(deleteRow());
+      expect(queryByTestId("confirm-dialog")).not.toBeNull();
+
+      unmount();
+    });
+
+    it("ticked confirm adds action to suppression set; second invocation skips dialog and fires handler directly", async () => {
+      const del = vi.fn();
+      const { getAllByTestId, queryByTestId, getByTestId, unmount } = render(ContextMenu);
+
+      // First invocation — open dialog.
+      openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_DELETE]: del } });
+      const deleteRow = () =>
+        getAllByTestId("context-menu-row").find(
+          (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_DELETE,
+        )!;
+      await fireEvent.click(deleteRow());
+      expect(queryByTestId("confirm-dialog")).not.toBeNull();
+
+      // Tick "Don't ask again" then confirm.
+      const checkbox = getByTestId("confirm-dialog-suppress-checkbox") as HTMLInputElement;
+      await fireEvent.click(checkbox);
+      expect(checkbox.checked).toBe(true);
+      await fireEvent.click(getByTestId("confirm-dialog-confirm"));
+      expect(del).toHaveBeenCalledOnce();
+      expect(queryByTestId("confirm-dialog")).toBeNull();
+
+      // Second invocation — suppressed: dialog must NOT appear; handler fires directly.
+      openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_DELETE]: del } });
+      await fireEvent.click(deleteRow());
+      expect(queryByTestId("confirm-dialog")).toBeNull();
+      expect(del).toHaveBeenCalledTimes(2);
+
+      unmount();
+    });
+
+    it("cancel does NOT suppress; second invocation still shows the dialog", async () => {
+      const del = vi.fn();
+      const { getAllByTestId, queryByTestId, getByTestId, unmount } = render(ContextMenu);
+
+      // First invocation — open dialog, tick checkbox, then cancel.
+      openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_DELETE]: del } });
+      const deleteRow = () =>
+        getAllByTestId("context-menu-row").find(
+          (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_DELETE,
+        )!;
+      await fireEvent.click(deleteRow());
+      expect(queryByTestId("confirm-dialog")).not.toBeNull();
+
+      // Tick checkbox but cancel — suppression must NOT be recorded.
+      const checkbox = getByTestId("confirm-dialog-suppress-checkbox") as HTMLInputElement;
+      await fireEvent.click(checkbox);
+      expect(checkbox.checked).toBe(true);
+      await fireEvent.click(getByTestId("confirm-dialog-cancel"));
+      expect(del).not.toHaveBeenCalled();
+      expect(queryByTestId("confirm-dialog")).toBeNull();
+
+      // Second invocation — NOT suppressed; dialog appears again.
+      openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_DELETE]: del } });
+      await fireEvent.click(deleteRow());
+      expect(queryByTestId("confirm-dialog")).not.toBeNull();
+
+      unmount();
+    });
+  });
+
   describe("ArrowRight / ArrowLeft submenu keyboard handling", () => {
     // Session non-advanced flat order (MENU_SECTION_ORDER: primary, navigate, create,
     // edit, view, copy, organize, destructive):

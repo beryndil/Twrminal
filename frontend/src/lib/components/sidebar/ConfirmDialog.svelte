@@ -10,18 +10,57 @@
    * dialog states what is about to happen and offers Cancel / Confirm.
    * The user's confirm action is the commit point; closing the dialog
    * with Esc cancels."
+   *
+   * When ``showSuppressCheckbox`` is ``true`` a "Don't ask again this
+   * session" checkbox renders below the message. If the user ticks the
+   * box and clicks Confirm, ``onConfirmAndSuppress`` is called instead
+   * of ``onConfirm``; the caller is responsible for recording the
+   * suppression. Cancelling (with or without the box ticked) always
+   * calls ``onCancel`` and never triggers suppression.
    */
+
+  import { CONTEXT_MENU_STRINGS } from "../../config";
 
   interface Props {
     /** Short sentence describing the irreversible action. */
     message: string;
     /** Label for the confirm button (default: "Confirm"). */
     confirmLabel?: string;
+    /**
+     * When ``true``, a "Don't ask again this session" checkbox renders
+     * below the message. Defaults to ``false`` for backwards
+     * compatibility with callers that manage their own suppress logic.
+     */
+    showSuppressCheckbox?: boolean;
     onConfirm: () => void;
+    /**
+     * Called instead of ``onConfirm`` when the user ticks the suppress
+     * checkbox and clicks Confirm. Only invoked when
+     * ``showSuppressCheckbox`` is ``true`` and the box is checked.
+     * Falls back to ``onConfirm`` when not provided.
+     */
+    onConfirmAndSuppress?: () => void;
     onCancel: () => void;
   }
 
-  const { message, confirmLabel = "Confirm", onConfirm, onCancel }: Props = $props();
+  const {
+    message,
+    confirmLabel = "Confirm",
+    showSuppressCheckbox = false,
+    onConfirm,
+    onConfirmAndSuppress,
+    onCancel,
+  }: Props = $props();
+
+  let dontAskAgain = $state(false);
+
+  function handleConfirm(): void {
+    if (showSuppressCheckbox && dontAskAgain && onConfirmAndSuppress !== undefined) {
+      onConfirmAndSuppress();
+    } else {
+      onConfirm();
+    }
+  }
 
   function handleKeyDown(event: KeyboardEvent): void {
     if (event.key === "Escape") {
@@ -49,6 +88,17 @@
     onkeydown={(e) => e.stopPropagation()}
   >
     <p class="confirm-dialog__message" data-testid="confirm-dialog-message">{message}</p>
+    {#if showSuppressCheckbox}
+      <label class="confirm-dialog__suppress" data-testid="confirm-dialog-suppress-label">
+        <input
+          type="checkbox"
+          class="confirm-dialog__suppress-checkbox"
+          data-testid="confirm-dialog-suppress-checkbox"
+          bind:checked={dontAskAgain}
+        />
+        {CONTEXT_MENU_STRINGS.confirmSuppressCheckboxLabel}
+      </label>
+    {/if}
     <div class="confirm-dialog__actions">
       <button
         type="button"
@@ -62,7 +112,7 @@
         type="button"
         class="confirm-dialog__btn confirm-dialog__btn--confirm"
         data-testid="confirm-dialog-confirm"
-        onclick={onConfirm}
+        onclick={handleConfirm}
       >
         {confirmLabel}
       </button>
@@ -99,6 +149,21 @@
     font-size: 0.875rem;
     color: rgb(var(--bearings-fg));
     margin: 0;
+  }
+
+  .confirm-dialog__suppress {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8125rem;
+    color: rgb(var(--bearings-fg-muted));
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .confirm-dialog__suppress-checkbox {
+    cursor: pointer;
+    accent-color: rgb(var(--bearings-accent, 99 102 241));
   }
 
   .confirm-dialog__actions {
