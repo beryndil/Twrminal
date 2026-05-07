@@ -32,6 +32,7 @@ import {
   type TagClass,
   type TagOut,
 } from "../api/tags";
+import { TAG_FILTER_PANEL_COLLAPSED_KEY } from "../config";
 
 interface TagsState {
   /** Last successful response from ``GET /api/tags``. */
@@ -49,6 +50,13 @@ interface TagsState {
    * (gap-cycle-18-003).
    */
   selectedSeverityNone: boolean;
+  /**
+   * ``true`` when the chip-body cluster is collapsed (user's sidebar
+   * density preference). Persisted to ``localStorage`` via
+   * :func:`toggleTagPanel`; hydrated from storage on module load via
+   * :func:`_hydrateTagPanelFromStorage`.
+   */
+  panelCollapsed: boolean;
   /** ``true`` while a refresh is in flight. */
   loading: boolean;
   /** Last error from a refresh attempt (cleared on success). */
@@ -61,6 +69,7 @@ const state: TagsState = $state({
   selectedSeverityIds: new Set<number>(),
   selectedOtherIds: new Set<number>(),
   selectedSeverityNone: false,
+  panelCollapsed: false,
   loading: false,
   error: null,
 });
@@ -159,6 +168,61 @@ export function clearTagFilter(): void {
   state.selectedSeverityNone = false;
 }
 
+// ---------------------------------------------------------------------------
+// Tag-filter panel collapse — localStorage persistence
+// ---------------------------------------------------------------------------
+
+/**
+ * Re-hydrate ``state.panelCollapsed`` from ``localStorage``.
+ *
+ * Called once at module load so the sidebar respects the user's last
+ * density choice immediately on page boot. Exported as a named function
+ * so unit tests can reset state via :func:`_resetForTests` and then
+ * re-apply a stored value without reloading the module.
+ *
+ * SSR-safe: a no-op when ``window`` is absent. ``localStorage``
+ * exceptions (private browsing, quota) are caught silently — the
+ * in-memory default (``false`` = expanded) applies for that page life.
+ */
+export function _hydrateTagPanelFromStorage(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    state.panelCollapsed =
+      window.localStorage.getItem(TAG_FILTER_PANEL_COLLAPSED_KEY) === "true";
+  } catch {
+    // Private browsing / storage quota — in-memory default applies.
+  }
+}
+
+// Hydrate once at module load.
+_hydrateTagPanelFromStorage();
+
+/**
+ * Toggle the tag-filter panel between collapsed and expanded.
+ *
+ * Persists the new boolean to ``localStorage`` under
+ * :data:`TAG_FILTER_PANEL_COLLAPSED_KEY` so the sidebar density
+ * preference survives page reloads. ``localStorage`` failures (private
+ * browsing, quota) are caught silently — the in-memory toggle is still
+ * effective for the current page life.
+ */
+export function toggleTagPanel(): void {
+  state.panelCollapsed = !state.panelCollapsed;
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(
+      TAG_FILTER_PANEL_COLLAPSED_KEY,
+      state.panelCollapsed ? "true" : "false",
+    );
+  } catch {
+    // Private browsing / quota — in-memory toggle still effective.
+  }
+}
+
 /**
  * The three-section filter snapshot — one ``ReadonlySet<number>``
  * per class, plus the ``severityNone`` synthetic flag. Components
@@ -237,6 +301,7 @@ export function _resetForTests(): void {
   state.selectedSeverityIds = new Set<number>();
   state.selectedOtherIds = new Set<number>();
   state.selectedSeverityNone = false;
+  state.panelCollapsed = false;
   state.loading = false;
   state.error = null;
   refreshController?.abort();

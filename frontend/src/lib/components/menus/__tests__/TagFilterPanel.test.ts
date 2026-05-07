@@ -5,10 +5,16 @@
  * selection; the three compose AND-across at the query layer.
  */
 import { fireEvent, render } from "@testing-library/svelte";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import TagFilterPanel from "../TagFilterPanel.svelte";
 import type { TagClass, TagOut } from "../../../api/tags";
+import {
+  tagsStore,
+  _resetForTests,
+  _hydrateTagPanelFromStorage,
+} from "../../../stores/tags.svelte";
+import { TAG_FILTER_PANEL_COLLAPSED_KEY } from "../../../config";
 
 const tag = (id: number, name: string, klass: TagClass = "general"): TagOut => ({
   id,
@@ -37,6 +43,32 @@ const emptySets = (): {
   selectedOtherIds: new Set<number>(),
   selectedSeverityNone: false,
 });
+
+// ---------------------------------------------------------------------------
+// Shared setup helpers
+// ---------------------------------------------------------------------------
+
+interface PanelProps {
+  tags: TagOut[];
+  selectedProjectIds: ReadonlySet<number>;
+  selectedSeverityIds: ReadonlySet<number>;
+  selectedOtherIds: ReadonlySet<number>;
+  selectedSeverityNone: boolean;
+  onToggle: ReturnType<typeof vi.fn>;
+  onToggleSeverityNone: ReturnType<typeof vi.fn>;
+  onClear: ReturnType<typeof vi.fn>;
+}
+
+function baseProps(overrides: Partial<PanelProps> = {}): PanelProps {
+  return {
+    tags: [tag(1, "bearings", "project")],
+    ...emptySets(),
+    onToggle: vi.fn(),
+    onToggleSeverityNone: vi.fn(),
+    onClear: vi.fn(),
+    ...overrides,
+  };
+}
 
 describe("TagFilterPanel", () => {
   it("renders one chip per tag, bucketed by class", () => {
@@ -446,5 +478,163 @@ describe("TagFilterPanel", () => {
       },
     });
     expect(getByTestId("tag-filter-clear")).toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Collapse toggle — gap-cycle-18-004
+  // ---------------------------------------------------------------------------
+
+  describe("collapse toggle", () => {
+    beforeEach(() => {
+      _resetForTests();
+      localStorage.clear();
+    });
+
+    afterEach(() => {
+      _resetForTests();
+      localStorage.clear();
+    });
+
+    it("renders the toggle button when tags exist", () => {
+      const { getByTestId } = render(TagFilterPanel, { props: baseProps() });
+      expect(getByTestId("tag-filter-collapse-toggle")).toBeInTheDocument();
+    });
+
+    it("does NOT render the toggle when tags list is empty", () => {
+      const { queryByTestId } = render(TagFilterPanel, {
+        props: baseProps({ tags: [] }),
+      });
+      expect(queryByTestId("tag-filter-collapse-toggle")).toBeNull();
+    });
+
+    it("chip body is visible by default (panel expanded)", () => {
+      const { getByTestId } = render(TagFilterPanel, { props: baseProps() });
+      // When expanded, at least one chip section is present.
+      expect(getByTestId("tag-filter-section-project")).toBeInTheDocument();
+    });
+
+    it("clicking the toggle hides the chip body", async () => {
+      const { getByTestId, queryByTestId } = render(TagFilterPanel, { props: baseProps() });
+      await fireEvent.click(getByTestId("tag-filter-collapse-toggle"));
+      expect(queryByTestId("tag-filter-section-project")).toBeNull();
+    });
+
+    it("clicking the toggle twice restores the chip body", async () => {
+      const { getByTestId } = render(TagFilterPanel, { props: baseProps() });
+      await fireEvent.click(getByTestId("tag-filter-collapse-toggle"));
+      await fireEvent.click(getByTestId("tag-filter-collapse-toggle"));
+      expect(getByTestId("tag-filter-section-project")).toBeInTheDocument();
+    });
+
+    it("toggle button shows 'Hide tags' when expanded", () => {
+      const { getByTestId } = render(TagFilterPanel, { props: baseProps() });
+      expect(getByTestId("tag-filter-collapse-toggle")).toHaveTextContent("Hide tags");
+    });
+
+    it("toggle button shows 'Show tags' when collapsed", async () => {
+      const { getByTestId } = render(TagFilterPanel, { props: baseProps() });
+      await fireEvent.click(getByTestId("tag-filter-collapse-toggle"));
+      expect(getByTestId("tag-filter-collapse-toggle")).toHaveTextContent("Show tags");
+    });
+
+    it("aria-expanded is true when panel is expanded", () => {
+      const { getByTestId } = render(TagFilterPanel, { props: baseProps() });
+      expect(getByTestId("tag-filter-collapse-toggle")).toHaveAttribute("aria-expanded", "true");
+    });
+
+    it("aria-expanded is false when panel is collapsed", async () => {
+      const { getByTestId } = render(TagFilterPanel, { props: baseProps() });
+      await fireEvent.click(getByTestId("tag-filter-collapse-toggle"));
+      expect(getByTestId("tag-filter-collapse-toggle")).toHaveAttribute("aria-expanded", "false");
+    });
+
+    it("aria-controls points at tag-filter-chip-body", () => {
+      const { getByTestId } = render(TagFilterPanel, { props: baseProps() });
+      expect(getByTestId("tag-filter-collapse-toggle")).toHaveAttribute(
+        "aria-controls",
+        "tag-filter-chip-body",
+      );
+    });
+
+    it("toggle persists collapsed=true to localStorage", async () => {
+      const { getByTestId } = render(TagFilterPanel, { props: baseProps() });
+      await fireEvent.click(getByTestId("tag-filter-collapse-toggle"));
+      expect(localStorage.getItem(TAG_FILTER_PANEL_COLLAPSED_KEY)).toBe("true");
+    });
+
+    it("toggle persists collapsed=false to localStorage on second click", async () => {
+      const { getByTestId } = render(TagFilterPanel, { props: baseProps() });
+      await fireEvent.click(getByTestId("tag-filter-collapse-toggle"));
+      await fireEvent.click(getByTestId("tag-filter-collapse-toggle"));
+      expect(localStorage.getItem(TAG_FILTER_PANEL_COLLAPSED_KEY)).toBe("false");
+    });
+
+    it("re-hydration from localStorage starts panel collapsed", () => {
+      localStorage.setItem(TAG_FILTER_PANEL_COLLAPSED_KEY, "true");
+      _hydrateTagPanelFromStorage();
+      // tagsStore.panelCollapsed should now be true.
+      expect(tagsStore.panelCollapsed).toBe(true);
+      // A freshly-rendered component should reflect the hydrated state.
+      const { queryByTestId } = render(TagFilterPanel, { props: baseProps() });
+      expect(queryByTestId("tag-filter-section-project")).toBeNull();
+    });
+
+    it("re-hydration from missing key leaves panel expanded", () => {
+      // localStorage is already clear from beforeEach.
+      _hydrateTagPanelFromStorage();
+      expect(tagsStore.panelCollapsed).toBe(false);
+      const { getByTestId } = render(TagFilterPanel, { props: baseProps() });
+      expect(getByTestId("tag-filter-section-project")).toBeInTheDocument();
+    });
+
+    it("active-filter breadcrumb hidden when expanded even with selection", () => {
+      const { queryByTestId } = render(TagFilterPanel, {
+        props: baseProps({ selectedProjectIds: new Set([1]) }),
+      });
+      expect(queryByTestId("tag-filter-collapsed-active-count")).toBeNull();
+    });
+
+    it("active-filter breadcrumb hidden when collapsed but no selection", async () => {
+      const { getByTestId, queryByTestId } = render(TagFilterPanel, { props: baseProps() });
+      await fireEvent.click(getByTestId("tag-filter-collapse-toggle"));
+      expect(queryByTestId("tag-filter-collapsed-active-count")).toBeNull();
+    });
+
+    it("active-filter breadcrumb visible when collapsed AND a project tag is selected", async () => {
+      const { getByTestId } = render(TagFilterPanel, {
+        props: baseProps({ selectedProjectIds: new Set([1]) }),
+      });
+      await fireEvent.click(getByTestId("tag-filter-collapse-toggle"));
+      expect(getByTestId("tag-filter-collapsed-active-count")).toBeInTheDocument();
+      expect(getByTestId("tag-filter-collapsed-active-count")).toHaveTextContent("1 on");
+    });
+
+    it("active-filter breadcrumb shows correct count for multiple selections", async () => {
+      const { getByTestId } = render(TagFilterPanel, {
+        props: baseProps({
+          tags: [
+            tag(1, "bearings", "project"),
+            tag(2, "urgent", "severity"),
+            tag(3, "misc", "general"),
+          ],
+          selectedProjectIds: new Set([1]),
+          selectedSeverityIds: new Set([2]),
+          selectedOtherIds: new Set([3]),
+        }),
+      });
+      await fireEvent.click(getByTestId("tag-filter-collapse-toggle"));
+      expect(getByTestId("tag-filter-collapsed-active-count")).toHaveTextContent("3 on");
+    });
+
+    it("active-filter breadcrumb counts severityNone as a selection", async () => {
+      const { getByTestId } = render(TagFilterPanel, {
+        props: baseProps({
+          tags: [tag(1, "urgent", "severity")],
+          selectedSeverityNone: true,
+        }),
+      });
+      await fireEvent.click(getByTestId("tag-filter-collapse-toggle"));
+      expect(getByTestId("tag-filter-collapsed-active-count")).toHaveTextContent("1 on");
+    });
   });
 });

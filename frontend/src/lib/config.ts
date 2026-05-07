@@ -866,6 +866,10 @@ export const SIDEBAR_STRINGS = {
   tagFilterClearLabel: "Clear filter",
   tagFilterSeverityNoneLabel: "No severity",
   tagFilterSeverityNoneAriaLabel: "Sessions with no severity tag",
+  /** Collapse-toggle footer — label when chip body is currently visible. */
+  tagFilterHideLabel: "Hide tags",
+  /** Collapse-toggle footer — label when chip body is currently hidden. */
+  tagFilterShowLabel: "Show tags",
   tagPinnedIndicatorAriaLabel: "Pinned",
   emptySessionList: "No sessions match the current filter.",
   emptySessionListUnfiltered: "No sessions yet.",
@@ -2258,6 +2262,16 @@ export const COMPOSER_DRAFT_KEY_PREFIX = "bearings-v1:draft:";
  * ``SESSION_SORT_LAST_ACTION`` when absent.
  */
 export const SESSION_SORT_STORAGE_KEY = "bearings-v1:session-sort";
+
+/**
+ * localStorage key for the tag-filter panel collapsed state.
+ *
+ * Value ``"true"`` means the chip body is collapsed; absence or any
+ * other value means expanded. The in-memory toggle still works when
+ * localStorage is unavailable (private browsing) — the preference is
+ * simply not persisted for that page life.
+ */
+export const TAG_FILTER_PANEL_COLLAPSED_KEY = "bearings-v1:tag-filter-collapsed";
 
 /** Sort sessions as a flat list ordered by ``updated_at DESC``. */
 export const SESSION_SORT_LAST_ACTION = "last_action" as const;

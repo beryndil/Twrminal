@@ -62,6 +62,7 @@ const fakeStores = (sessions: readonly SessionOut[]) => ({
     selectedSeverityIds: new Set<number>(),
     selectedOtherIds: new Set<number>(),
     selectedSeverityNone: false,
+    panelCollapsed: false,
     loading: false,
     error: null as Error | null,
   },
