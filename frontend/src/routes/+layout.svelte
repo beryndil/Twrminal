@@ -67,6 +67,7 @@
   import ShellOpNotification from "$lib/components/feedback/ShellOpNotification.svelte";
   import UndoToast from "$lib/components/context-menu/UndoToast.svelte";
   import UserIdentityBlock from "$lib/components/identity/UserIdentityBlock.svelte";
+  import SystemStatusCard from "$lib/components/feedback/SystemStatusCard.svelte";
   import { preferencesStore, refreshPreferences } from "$lib/stores/preferences.svelte";
 
   interface Props {
@@ -614,6 +615,10 @@
           <div class="app-shell__sidebar-body" data-testid="app-shell-sidebar-body">
             <SessionList {selectedSessionId} onSelect={handleSelectSession} />
           </div>
+
+          <!-- System-status card — pinned above identity block (gap-cycle-08-006).
+               shrink-0 keeps it from being squeezed by the session list. -->
+          <SystemStatusCard />
 
           <!-- Identity block — pinned at sidebar bottom; opens Settings on click
                (gap-cycle-08-002). flex-shrink:0 keeps it from being squeezed

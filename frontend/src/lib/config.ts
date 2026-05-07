@@ -813,6 +813,32 @@ export const SIDEBAR_STRINGS = {
   identityBlockFallbackName: "Operator",
 } as const;
 
+/**
+ * UI strings for the sidebar system-status card (gap-cycle-08-006).
+ *
+ * The card pins two always-visible health rows at the sidebar bottom
+ * (above the identity block) so users dwelling in the sidebar can
+ * answer "system OK?" without scanning the full-width status bar.
+ *
+ * Behavior anchor: ``docs/behavior/chat.md`` §"Sidebar system-status card".
+ */
+export const SYSTEM_STATUS_CARD_STRINGS = {
+  /** ``aria-label`` for the card container. */
+  cardAriaLabel: "System status",
+  /** Label for the WebSocket connection row. */
+  connectionRowLabel: "Connection",
+  /** Connection value when WS state is ``'open'``. */
+  connectionConnected: "Connected",
+  /** Connection value when WS state is ``'closed'`` or ``'error'``. */
+  connectionDisconnected: "Disconnected",
+  /** Label for the Claude reachability row. */
+  claudeRowLabel: "Claude",
+  /** Claude-reachability value when WS state is ``'open'``. */
+  claudeReachable: "Reachable",
+  /** Claude-reachability value when WS state is ``'closed'`` or ``'error'``. */
+  claudeUnreachable: "Unreachable",
+} as const;
+
 // ---- Routing preview + quota guard tunings --------------------------------
 
 /**

@@ -216,6 +216,21 @@ When the agent invokes a tool that requires user approval, a centred modal opens
 
 The modal stays visible until the backend's `approval_resolved` event arrives over the WebSocket; submit-button errors render inline (red text) without closing the modal. There is no client-side timeout — a stuck approval is a UX bug, not a security gate.
 
+## Sidebar system-status card (gap-cycle-08-006)
+
+A card-shaped container is pinned at the sidebar bottom, above the identity block. It exposes two always-visible health rows so users dwelling in the sidebar can answer "system OK?" without scanning the full-width status strip at the bottom of the app shell.
+
+| Row | Condition | Dot colour | Label |
+|---|---|---|---|
+| **Connection** | WebSocket `'open'` | accent green | Connected |
+| **Connection** | WebSocket `'closed'` or `'error'` | rose | Disconnected |
+| **Claude** | WebSocket `'open'` | accent green | Reachable |
+| **Claude** | WebSocket `'closed'` or `'error'` | rose | Unreachable |
+
+Both rows are derived from the sessions-broadcast `wsConnectionStatus.state`. The card is intentionally redundant with the bottom status strip — the strip is the at-a-glance full-width row; the card is the at-rest read for sidebar dwell.
+
+Note: v17 exposed an amber "Connecting…" state from `agent.state`. v18's `wsConnectionStatus` transitions directly from `'closed'` to `'open'` with no intermediate connecting state; amber is unused in v18.
+
 ## Error states
 
 * **Agent error mid-turn.** The current assistant bubble closes with a red error block stating the underlying error message. The session row in the sidebar gains a red flashing pip ("needs attention now"). The user can post another message; if the next turn completes successfully the red flag clears.
