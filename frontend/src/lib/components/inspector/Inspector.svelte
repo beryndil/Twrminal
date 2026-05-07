@@ -43,6 +43,9 @@
     type InspectorTabId,
   } from "../../config";
   import type { SessionOut } from "../../api/sessions";
+  import { listMessages } from "../../api/messages";
+  import { getQuotaHistory } from "../../api/quota";
+  import { getOverrideRates, getUsageByModel } from "../../api/usage";
   import {
     inspectorStore as inspectorStoreDefault,
     setInspectorTab as setInspectorTabDefault,
@@ -68,12 +71,30 @@
      */
     inspectorStore?: typeof inspectorStoreDefault;
     setInspectorTab?: typeof setInspectorTabDefault;
+    /**
+     * Test seams — passed through to :class:`InspectorRouting`.
+     * Production callers omit; the subsection falls through to its own
+     * default (the typed API client).
+     */
+    fetchMessages?: typeof listMessages;
+    /**
+     * Test seams — passed through to :class:`InspectorUsage`.
+     * Production callers omit; the subsection falls through to its own
+     * defaults.
+     */
+    fetchHistory?: typeof getQuotaHistory;
+    fetchByModel?: typeof getUsageByModel;
+    fetchOverrideRates?: typeof getOverrideRates;
   }
 
   const {
     session = null,
     inspectorStore = inspectorStoreDefault,
     setInspectorTab = setInspectorTabDefault,
+    fetchMessages,
+    fetchHistory,
+    fetchByModel,
+    fetchOverrideRates,
   }: Props = $props();
 
   const activeTabId = $derived(inspectorStore.activeTabId);
@@ -116,16 +137,30 @@
       <p class="text-fg-muted" data-testid="inspector-empty">
         {INSPECTOR_STRINGS.emptySession}
       </p>
-    {:else if activeTabId === INSPECTOR_TAB_AGENT}
-      <InspectorAgent {session} />
-    {:else if activeTabId === INSPECTOR_TAB_CONTEXT}
-      <InspectorContext {session} />
-    {:else if activeTabId === INSPECTOR_TAB_INSTRUCTIONS}
-      <InspectorInstructions {session} />
-    {:else if activeTabId === INSPECTOR_TAB_ROUTING}
-      <InspectorRouting {session} />
-    {:else if activeTabId === INSPECTOR_TAB_USAGE}
-      <InspectorUsage {session} />
+    {:else}
+      <!--
+        All five tabs stay mounted; inactive ones hide via the `hidden`
+        attribute. This preserves transient state (expandedReasons set,
+        scroll positions, already-loaded fetch data) across tab switches —
+        silent data loss was the cycle-09 audit's headline regression here.
+        Screen-readers skip hidden subtrees, so only the active tab is
+        announced.
+      -->
+      <div hidden={activeTabId !== INSPECTOR_TAB_AGENT}>
+        <InspectorAgent {session} />
+      </div>
+      <div hidden={activeTabId !== INSPECTOR_TAB_CONTEXT}>
+        <InspectorContext {session} />
+      </div>
+      <div hidden={activeTabId !== INSPECTOR_TAB_INSTRUCTIONS}>
+        <InspectorInstructions {session} />
+      </div>
+      <div hidden={activeTabId !== INSPECTOR_TAB_ROUTING}>
+        <InspectorRouting {session} {fetchMessages} />
+      </div>
+      <div hidden={activeTabId !== INSPECTOR_TAB_USAGE}>
+        <InspectorUsage {session} {fetchHistory} {fetchByModel} {fetchOverrideRates} />
+      </div>
     {/if}
   </div>
 </div>

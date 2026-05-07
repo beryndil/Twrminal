@@ -8,8 +8,8 @@
  * reactive subscription path. Each test resets the singleton in
  * ``beforeEach`` so cross-test state doesn't leak.
  */
-import { fireEvent, render } from "@testing-library/svelte";
-import { beforeEach, describe, expect, it } from "vitest";
+import { fireEvent, render, waitFor } from "@testing-library/svelte";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import Inspector from "../Inspector.svelte";
 import {
@@ -23,6 +23,7 @@ import {
   KNOWN_INSPECTOR_TABS,
   type InspectorTabId,
 } from "../../../config";
+import type { MessageOut, MessagePage } from "../../../api/messages";
 import type { SessionOut } from "../../../api/sessions";
 import { _resetForTests, inspectorStore, setInspectorTab } from "../../../stores/inspector.svelte";
 
@@ -91,14 +92,35 @@ describe("Inspector shell — tab strip", () => {
 describe("Inspector shell — default-tab landing", () => {
   it("renders the Agent subsection when the store carries the default tab id", () => {
     const { getByTestId, queryByTestId } = render(Inspector, {
-      props: { session: fakeSession() },
+      props: {
+        session: fakeSession(),
+        // Provide pending seams so Routing/Usage never resolve — keeps
+        // the test from touching the real network.
+        fetchMessages: () => new Promise(() => {}),
+        fetchHistory: () => new Promise(() => {}),
+        fetchByModel: () => new Promise(() => {}),
+        fetchOverrideRates: () => new Promise(() => {}),
+      },
     });
     expect(inspectorStore.activeTabId).toBe(DEFAULT_INSPECTOR_TAB);
-    expect(getByTestId("inspector-agent")).toBeInTheDocument();
-    expect(queryByTestId("inspector-context")).toBeNull();
-    expect(queryByTestId("inspector-instructions")).toBeNull();
-    expect(queryByTestId("inspector-routing")).toBeNull();
-    expect(queryByTestId("inspector-usage")).toBeNull();
+    // Active tab wrapper is NOT hidden.
+    const agentEl = getByTestId("inspector-agent");
+    expect(agentEl).toBeInTheDocument();
+    expect(agentEl.parentElement?.hasAttribute("hidden")).toBe(false);
+    // All other subsections are mounted but wrapped in hidden divs so
+    // they don't announce stale content to screen-readers.
+    const ctxEl = queryByTestId("inspector-context");
+    expect(ctxEl).not.toBeNull();
+    expect(ctxEl!.parentElement?.hasAttribute("hidden")).toBe(true);
+    const instrEl = queryByTestId("inspector-instructions");
+    expect(instrEl).not.toBeNull();
+    expect(instrEl!.parentElement?.hasAttribute("hidden")).toBe(true);
+    const routingEl = queryByTestId("inspector-routing");
+    expect(routingEl).not.toBeNull();
+    expect(routingEl!.parentElement?.hasAttribute("hidden")).toBe(true);
+    const usageEl = queryByTestId("inspector-usage");
+    expect(usageEl).not.toBeNull();
+    expect(usageEl!.parentElement?.hasAttribute("hidden")).toBe(true);
   });
 });
 
@@ -119,20 +141,35 @@ describe("Inspector shell — tab switching", () => {
     expect(receivedId).toBe(INSPECTOR_TAB_CONTEXT);
   });
 
-  it("re-renders the matching subsection when the store flips tab id", async () => {
-    const { findByTestId, queryByTestId } = render(Inspector, {
-      props: { session: fakeSession() },
+  it("shows the matching subsection when the store flips tab id; prior tab is hidden not removed", async () => {
+    const { findByTestId, getByTestId } = render(Inspector, {
+      props: {
+        session: fakeSession(),
+        fetchMessages: () => new Promise(() => {}),
+        fetchHistory: () => new Promise(() => {}),
+        fetchByModel: () => new Promise(() => {}),
+        fetchOverrideRates: () => new Promise(() => {}),
+      },
     });
     expect(await findByTestId("inspector-agent")).toBeInTheDocument();
 
     setInspectorTab(INSPECTOR_TAB_INSTRUCTIONS);
-    expect(await findByTestId("inspector-instructions")).toBeInTheDocument();
-    expect(queryByTestId("inspector-agent")).toBeNull();
+    const instrEl = await findByTestId("inspector-instructions");
+    expect(instrEl.parentElement?.hasAttribute("hidden")).toBe(false);
+    // Agent is still in the DOM, just hidden.
+    const agentEl = getByTestId("inspector-agent");
+    expect(agentEl.parentElement?.hasAttribute("hidden")).toBe(true);
   });
 
   it("clicking through the production store rotates the rendered subsection", async () => {
     const { findByTestId, getAllByTestId } = render(Inspector, {
-      props: { session: fakeSession() },
+      props: {
+        session: fakeSession(),
+        fetchMessages: () => new Promise(() => {}),
+        fetchHistory: () => new Promise(() => {}),
+        fetchByModel: () => new Promise(() => {}),
+        fetchOverrideRates: () => new Promise(() => {}),
+      },
     });
     const tabs = getAllByTestId("inspector-tab");
     const contextTab = tabs.find((el) => el.dataset.tabId === INSPECTOR_TAB_CONTEXT)!;
@@ -142,6 +179,160 @@ describe("Inspector shell — tab switching", () => {
     const instructionsTab = tabs.find((el) => el.dataset.tabId === INSPECTOR_TAB_INSTRUCTIONS)!;
     await fireEvent.click(instructionsTab);
     expect(await findByTestId("inspector-instructions")).toBeInTheDocument();
+  });
+});
+
+describe("Inspector shell — tab state persistence (gap-cycle-09-001)", () => {
+  /**
+   * Helper: build a routed assistant MessageOut that triggers the
+   * timeline row + "Why this model?" toggle in InspectorRouting.
+   */
+  function routedMsg(overrides: Partial<MessageOut> = {}): MessageOut {
+    return {
+      id: "msg_r1",
+      session_id: "ses_a",
+      role: "assistant",
+      content: "",
+      created_at: "2026-01-01T00:00:00Z",
+      executor_model: "sonnet",
+      advisor_model: "opus",
+      effort_level: "auto",
+      routing_source: "tag_rule",
+      routing_reason: "test rule fired",
+      matched_rule_id: 1,
+      executor_input_tokens: 10,
+      executor_output_tokens: 5,
+      advisor_input_tokens: 3,
+      advisor_output_tokens: 2,
+      advisor_calls_count: 1,
+      cache_read_tokens: 0,
+      input_tokens: null,
+      output_tokens: null,
+      seq: 1,
+      pinned: false,
+      hidden_from_context: false,
+      ...overrides,
+    };
+  }
+
+  it("inactive tab wrappers carry the hidden attribute; active wrapper does not", () => {
+    // Default active tab is Agent.
+    const { getByTestId, queryByTestId } = render(Inspector, {
+      props: {
+        session: fakeSession(),
+        fetchMessages: () => new Promise(() => {}),
+        fetchHistory: () => new Promise(() => {}),
+        fetchByModel: () => new Promise(() => {}),
+        fetchOverrideRates: () => new Promise(() => {}),
+      },
+    });
+    expect(getByTestId("inspector-agent").parentElement?.hasAttribute("hidden")).toBe(false);
+    expect(queryByTestId("inspector-context")!.parentElement?.hasAttribute("hidden")).toBe(true);
+    expect(queryByTestId("inspector-instructions")!.parentElement?.hasAttribute("hidden")).toBe(
+      true,
+    );
+    expect(queryByTestId("inspector-routing")!.parentElement?.hasAttribute("hidden")).toBe(true);
+    expect(queryByTestId("inspector-usage")!.parentElement?.hasAttribute("hidden")).toBe(true);
+  });
+
+  it("DOM node for Routing tab persists (same reference) across a tab switch and back", async () => {
+    setInspectorTab(INSPECTOR_TAB_ROUTING);
+    const { getByTestId } = render(Inspector, {
+      props: {
+        session: fakeSession(),
+        fetchMessages: () => new Promise(() => {}),
+        fetchHistory: () => new Promise(() => {}),
+        fetchByModel: () => new Promise(() => {}),
+        fetchOverrideRates: () => new Promise(() => {}),
+      },
+    });
+    const routingEl = getByTestId("inspector-routing");
+
+    setInspectorTab(INSPECTOR_TAB_USAGE);
+    // Routing is still in the document tree, just wrapped in a hidden div.
+    await waitFor(() => {
+      expect(document.body.contains(routingEl)).toBe(true);
+    });
+
+    setInspectorTab(INSPECTOR_TAB_ROUTING);
+    // Same node identity after coming back — component was never unmounted.
+    await waitFor(() => {
+      expect(getByTestId("inspector-routing")).toBe(routingEl);
+    });
+  });
+
+  it("expandedReasons in the Routing tab survive a round-trip to another tab and back", async () => {
+    const page: MessagePage = { items: [routedMsg()], has_more: false };
+    const fetchMessages = vi.fn(async () => page);
+
+    setInspectorTab(INSPECTOR_TAB_ROUTING);
+    const { findByTestId, getByTestId } = render(Inspector, {
+      props: {
+        session: fakeSession(),
+        fetchMessages,
+        fetchHistory: () => new Promise(() => {}),
+        fetchByModel: () => new Promise(() => {}),
+        fetchOverrideRates: () => new Promise(() => {}),
+      },
+    });
+
+    // Wait for Routing to load and the why-toggle to appear.
+    const toggle = await findByTestId("inspector-routing-why-toggle");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    // Switch away to Context tab.
+    setInspectorTab(INSPECTOR_TAB_CONTEXT);
+    await waitFor(() => {
+      expect(getByTestId("inspector-context").parentElement?.hasAttribute("hidden")).toBe(false);
+    });
+
+    // Switch back to Routing.
+    setInspectorTab(INSPECTOR_TAB_ROUTING);
+    await waitFor(() => {
+      expect(getByTestId("inspector-routing").parentElement?.hasAttribute("hidden")).toBe(false);
+    });
+
+    // expandedReasons survived: the same toggle is still marked expanded.
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("Usage fetches fire once on mount and are NOT re-triggered by tab switches", async () => {
+    // Spy functions that resolve immediately and count calls.
+    const fetchHistory = vi.fn(async () => []);
+    const fetchByModel = vi.fn(async () => []);
+    const fetchOverrideRates = vi.fn(async () => []);
+
+    render(Inspector, {
+      props: {
+        session: fakeSession(),
+        fetchMessages: () => new Promise(() => {}),
+        fetchHistory,
+        fetchByModel,
+        fetchOverrideRates,
+      },
+    });
+
+    // Wait for InspectorUsage's $effect to fire and all three fetches to
+    // resolve (the empty-state node appears once loadState hits "ready").
+    await waitFor(() => {
+      expect(fetchHistory).toHaveBeenCalledTimes(1);
+      expect(fetchByModel).toHaveBeenCalledTimes(1);
+      expect(fetchOverrideRates).toHaveBeenCalledTimes(1);
+    });
+
+    // Switching tabs does not unmount InspectorUsage, so no re-fetch.
+    setInspectorTab(INSPECTOR_TAB_ROUTING);
+    setInspectorTab(INSPECTOR_TAB_AGENT);
+    setInspectorTab(INSPECTOR_TAB_USAGE);
+
+    // A brief settle — if counts rise above 1 this will catch it.
+    await waitFor(() => {
+      expect(fetchHistory).toHaveBeenCalledTimes(1);
+      expect(fetchByModel).toHaveBeenCalledTimes(1);
+      expect(fetchOverrideRates).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
