@@ -251,6 +251,26 @@
       event.preventDefault();
       const action = flatActions[highlightIndex];
       if (action !== undefined) activate(action);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      const firstEnabled = flatActions.findIndex((a) => isActionEnabled(a));
+      if (firstEnabled !== -1) {
+        highlightIndex = firstEnabled;
+        syncFocus(highlightIndex);
+      }
+    } else if (event.key === "End") {
+      event.preventDefault();
+      let lastEnabled = -1;
+      for (let i = flatActions.length - 1; i >= 0; i--) {
+        if (isActionEnabled(flatActions[i]!)) {
+          lastEnabled = i;
+          break;
+        }
+      }
+      if (lastEnabled !== -1) {
+        highlightIndex = lastEnabled;
+        syncFocus(highlightIndex);
+      }
     } else if (/^[a-zA-Z0-9]$/.test(event.key)) {
       const lowerKey = event.key.toLowerCase();
       const matches: number[] = [];

@@ -337,6 +337,104 @@ describe("ContextMenu", () => {
     });
   });
 
+  describe("Home / End keyboard navigation", () => {
+    // Checkpoint non-advanced flat order (primary → copy → destructive):
+    //   0 = FORK, 1 = COPY_LABEL, 2 = DELETE
+
+    it("Home key highlights and focuses the first enabled action", async () => {
+      const { getAllByTestId } = render(ContextMenu);
+      openCheckpointMenu({
+        handlers: {
+          [MENU_ACTION_CHECKPOINT_FORK]: vi.fn(),
+          [MENU_ACTION_CHECKPOINT_COPY_LABEL]: vi.fn(),
+          [MENU_ACTION_CHECKPOINT_DELETE]: vi.fn(),
+        },
+      });
+
+      // Move highlight away from index 0 first.
+      await fireEvent.keyDown(window, { key: "ArrowDown" });
+      await fireEvent.keyDown(window, { key: "ArrowDown" });
+
+      // Home must jump back to index 0 (FORK).
+      await fireEvent.keyDown(window, { key: "Home" });
+      const rows = getAllByTestId("context-menu-row");
+      expect(document.activeElement).toBe(rows[0]);
+      expect(rows[0]).toHaveClass("context-menu__row--highlighted");
+    });
+
+    it("End key highlights and focuses the last enabled action", async () => {
+      const { getAllByTestId } = render(ContextMenu);
+      openCheckpointMenu({
+        handlers: {
+          [MENU_ACTION_CHECKPOINT_FORK]: vi.fn(),
+          [MENU_ACTION_CHECKPOINT_COPY_LABEL]: vi.fn(),
+          [MENU_ACTION_CHECKPOINT_DELETE]: vi.fn(),
+        },
+      });
+
+      await fireEvent.keyDown(window, { key: "End" });
+      const rows = getAllByTestId("context-menu-row");
+      // Last row is DELETE at index 2.
+      expect(document.activeElement).toBe(rows[2]);
+      expect(rows[2]).toHaveClass("context-menu__row--highlighted");
+    });
+
+    it("Home skips leading disabled rows and lands on the first enabled action", async () => {
+      const { getAllByTestId } = render(ContextMenu);
+      // FORK disabled (no handler), COPY_LABEL and DELETE enabled.
+      openCheckpointMenu({
+        handlers: {
+          [MENU_ACTION_CHECKPOINT_COPY_LABEL]: vi.fn(),
+          [MENU_ACTION_CHECKPOINT_DELETE]: vi.fn(),
+        },
+      });
+
+      // Move to End first so we are not already at index 0.
+      await fireEvent.keyDown(window, { key: "End" });
+      // Home → first enabled is COPY_LABEL at flat index 1 (FORK at 0 is disabled).
+      await fireEvent.keyDown(window, { key: "Home" });
+      const rows = getAllByTestId("context-menu-row");
+      expect(document.activeElement).toBe(rows[1]);
+      expect(rows[1]).toHaveClass("context-menu__row--highlighted");
+      expect(rows[0]).not.toHaveClass("context-menu__row--highlighted");
+    });
+
+    it("End skips trailing disabled rows and lands on the last enabled action", async () => {
+      const { getAllByTestId } = render(ContextMenu);
+      // FORK and COPY_LABEL enabled; DELETE disabled (no handler).
+      openCheckpointMenu({
+        handlers: {
+          [MENU_ACTION_CHECKPOINT_FORK]: vi.fn(),
+          [MENU_ACTION_CHECKPOINT_COPY_LABEL]: vi.fn(),
+        },
+      });
+
+      await fireEvent.keyDown(window, { key: "End" });
+      const rows = getAllByTestId("context-menu-row");
+      // Last enabled is COPY_LABEL at flat index 1; DELETE at 2 is disabled.
+      expect(document.activeElement).toBe(rows[1]);
+      expect(rows[1]).toHaveClass("context-menu__row--highlighted");
+      expect(rows[2]).not.toHaveClass("context-menu__row--highlighted");
+    });
+
+    it("Home has no effect when all actions are disabled (no crash)", async () => {
+      render(ContextMenu);
+      openCheckpointMenu({ handlers: {} }); // all disabled
+
+      // Should not throw; menu stays open.
+      await fireEvent.keyDown(window, { key: "Home" });
+      expect(contextMenuStore.open).not.toBeNull();
+    });
+
+    it("End has no effect when all actions are disabled (no crash)", async () => {
+      render(ContextMenu);
+      openCheckpointMenu({ handlers: {} }); // all disabled
+
+      await fireEvent.keyDown(window, { key: "End" });
+      expect(contextMenuStore.open).not.toBeNull();
+    });
+  });
+
   describe("editable-outside-menu auto-close guard", () => {
     it("focusin on an outside INPUT closes the menu", async () => {
       const input = document.createElement("input");
