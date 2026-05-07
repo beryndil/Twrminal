@@ -18,7 +18,7 @@ import {
   MENU_TARGET_CHECKPOINT,
   MENU_TARGET_SESSION,
 } from "../../config";
-import { _resetForTests as resetEsc } from "../../keyboard/escCascade";
+import { _resetForTests as resetEsc, runEscCascade } from "../../keyboard/escCascade";
 import ContextMenu from "../ContextMenu.svelte";
 import { _resetForTests, closeMenu, contextMenuStore, openMenu } from "../store.svelte";
 import type { HandlerEntry } from "../store.svelte";
@@ -854,6 +854,135 @@ describe("ContextMenu", () => {
 
       // Focus should have advanced to row 1 (COPY_LABEL).
       expect(document.activeElement).toBe(rows[1]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Coarse-pointer bottom-sheet layout (gap-cycle-15-001)
+  // -------------------------------------------------------------------------
+
+  describe("coarse-pointer bottom-sheet layout (gap-cycle-15-001)", () => {
+    /** Install a matchMedia stub for the duration of the test. */
+    function mockCoarsePointer(coarse: boolean): void {
+      Object.defineProperty(window, "matchMedia", {
+        writable: true,
+        value: (query: string) => ({
+          matches: coarse && query === "(pointer: coarse)",
+          media: query,
+          onchange: null,
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }),
+      });
+    }
+
+    afterEach(() => {
+      // Remove the stub so subsequent tests start with jsdom's default
+      // (matchMedia undefined → isCoarsePointer() returns false via catch).
+      Object.defineProperty(window, "matchMedia", {
+        writable: true,
+        value: undefined,
+      });
+    });
+
+    it("data-coarse='true' on the menu element when matchMedia reports coarse", () => {
+      mockCoarsePointer(true);
+      const { getByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+      expect(getByTestId("context-menu")).toHaveAttribute("data-coarse", "true");
+    });
+
+    it("data-coarse='false' on the menu element when matchMedia reports fine", () => {
+      mockCoarsePointer(false);
+      const { getByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+      expect(getByTestId("context-menu")).toHaveAttribute("data-coarse", "false");
+    });
+
+    it("drag handle is rendered when coarse", () => {
+      mockCoarsePointer(true);
+      const { queryByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+      expect(queryByTestId("context-menu-drag-handle")).not.toBeNull();
+    });
+
+    it("drag handle is absent when fine (non-coarse)", () => {
+      mockCoarsePointer(false);
+      const { queryByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+      expect(queryByTestId("context-menu-drag-handle")).toBeNull();
+    });
+
+    it("coarse menu has row elements reachable via [data-coarse='true'] [role='menuitem'] selector", () => {
+      // Verifies the data-coarse attribute is wired correctly so the
+      // CSS min-height: 44px rule applies.  jsdom does not compute
+      // stylesheet-applied styles; the selector presence is the unit
+      // gate and visual regression is an E2E / Playwright concern.
+      mockCoarsePointer(true);
+      const { getByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+      const menu = getByTestId("context-menu");
+      expect(menu).toHaveAttribute("data-coarse", "true");
+      // querySelectorAll('[data-coarse="true"] [role="menuitem"]' from
+      // the menu's parent should surface the rows.
+      const rows = menu.querySelectorAll('[role="menuitem"]');
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    it("coarse menu does not carry cursor-anchored inline left/top styles", () => {
+      // The floating-panel positions itself via style:left / style:top.
+      // The bottom-sheet must NOT carry those, since it is pinned by CSS.
+      mockCoarsePointer(true);
+      const { getByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+      const menu = getByTestId("context-menu") as HTMLElement;
+      expect(menu.style.left).toBe("");
+      expect(menu.style.top).toBe("");
+    });
+
+    it("fine menu carries cursor-anchored inline left/top styles", () => {
+      mockCoarsePointer(false);
+      const { getByTestId } = render(ContextMenu);
+      openCheckpointMenu(); // x:100, y:200
+      const menu = getByTestId("context-menu") as HTMLElement;
+      expect(menu.style.left).toBe("100px");
+      expect(menu.style.top).toBe("200px");
+    });
+
+    it("keyboard nav (ArrowDown, Enter) works identically in coarse mode", async () => {
+      const fork = vi.fn();
+      mockCoarsePointer(true);
+      render(ContextMenu);
+      openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_FORK]: fork } });
+
+      // Highlight defaults to index 0 (FORK). Enter activates it.
+      await fireEvent.keyDown(window, { key: "Enter" });
+      expect(fork).toHaveBeenCalledOnce();
+    });
+
+    it("Esc closes the coarse bottom-sheet via the Esc cascade", () => {
+      mockCoarsePointer(true);
+      const { queryByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+      expect(queryByTestId("context-menu")).not.toBeNull();
+
+      // The Esc cascade is invoked by the dispatch layer, not a raw keydown.
+      // Call it directly to verify the registered entry closes the coarse menu.
+      flushSync(() => {
+        runEscCascade();
+      });
+      expect(queryByTestId("context-menu")).toBeNull();
+    });
+
+    it("backdrop click closes the coarse bottom-sheet", async () => {
+      mockCoarsePointer(true);
+      const { getByTestId, queryByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+      await fireEvent.click(getByTestId("context-menu-backdrop"));
+      expect(queryByTestId("context-menu")).toBeNull();
     });
   });
 });

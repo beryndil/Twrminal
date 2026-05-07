@@ -66,6 +66,31 @@ if (typeof window !== "undefined" && !("ResizeObserver" in window)) {
   } as unknown as typeof ResizeObserver;
 }
 
+// PointerEvent polyfill — jsdom does not implement PointerEvent.
+// The polyfill extends MouseEvent and exposes the ``pointerType``,
+// ``pointerId``, ``pressure``, ``width``, and ``height`` fields that
+// the long-press action and its unit tests depend on.
+if (typeof window !== "undefined" && !("PointerEvent" in window)) {
+  class PointerEventPolyfill extends MouseEvent {
+    readonly pointerType: string;
+    readonly pointerId: number;
+    readonly pressure: number;
+    readonly width: number;
+    readonly height: number;
+
+    constructor(type: string, init: Record<string, unknown> = {}) {
+      super(type, init as MouseEventInit);
+      this.pointerType = (init["pointerType"] as string | undefined) ?? "mouse";
+      this.pointerId = (init["pointerId"] as number | undefined) ?? 0;
+      this.pressure = (init["pressure"] as number | undefined) ?? 0;
+      this.width = (init["width"] as number | undefined) ?? 1;
+      this.height = (init["height"] as number | undefined) ?? 1;
+    }
+  }
+
+  (window as unknown as Record<string, unknown>)["PointerEvent"] = PointerEventPolyfill;
+}
+
 class MemoryStorage {
   private store = new Map<string, string>();
   get length(): number {

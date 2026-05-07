@@ -28,6 +28,7 @@
 import type { MenuTargetId } from "../config";
 import { openMenu } from "../context-menu/store.svelte";
 import type { HandlerEntry } from "../context-menu/store.svelte";
+import { longpress } from "../context-menu/touch";
 
 interface ContextMenuActionParams {
   readonly target: MenuTargetId;
@@ -74,7 +75,21 @@ export function contextMenu(node: HTMLElement, initial: ContextMenuActionParams)
     });
   }
 
+  function handleLongPress(x: number, y: number): void {
+    if (params.disabled === true) return;
+    openMenu({
+      target: params.target,
+      handlers: params.handlers,
+      data: params.data ?? null,
+      x,
+      y,
+      advancedRevealed: false,
+      stale: params.stale ?? false,
+    });
+  }
+
   node.addEventListener("contextmenu", handleContextMenu);
+  const { destroy: destroyLongPress } = longpress(node, { onLongPress: handleLongPress });
 
   return {
     update(next: ContextMenuActionParams): void {
@@ -82,6 +97,7 @@ export function contextMenu(node: HTMLElement, initial: ContextMenuActionParams)
     },
     destroy(): void {
       node.removeEventListener("contextmenu", handleContextMenu);
+      destroyLongPress();
     },
   };
 }

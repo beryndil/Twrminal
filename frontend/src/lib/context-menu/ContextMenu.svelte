@@ -50,6 +50,7 @@
   import { ESC_PRIORITY_CONTEXT_MENU, registerEscEntry } from "../keyboard/escCascade";
   import { actionsForTarget, type MenuActionDescriptor } from "./registry";
   import { closeMenu, contextMenuStore, isActionSuppressed, suppressAction } from "./store.svelte";
+  import { isCoarsePointer } from "./touch";
   import ConfirmDialog from "../components/sidebar/ConfirmDialog.svelte";
 
   const open = $derived(contextMenuStore.open);
@@ -109,16 +110,26 @@
    */
   let savedFocus: Element | null = null;
 
+  /**
+   * True when the menu was opened on a coarse-pointer device (touch /
+   * pen). Latched at open time via :func:`isCoarsePointer` so the
+   * layout stays stable for the duration the menu is visible.
+   * Resets to ``false`` on close.
+   */
+  let coarse: boolean = $state(false);
+
   $effect(() => {
     if (open !== null) {
       savedFocus = document.activeElement;
       highlightIndex = 0;
+      coarse = isCoarsePointer();
       syncFocus(0);
     } else {
       if (savedFocus instanceof HTMLElement) {
         savedFocus.focus();
       }
       savedFocus = null;
+      coarse = false;
     }
   });
 
@@ -431,40 +442,8 @@
   />
 {/if}
 
-{#if open !== null}
-  <!-- Backdrop — clicking outside closes the menu. -->
-  <div
-    class="context-menu-backdrop"
-    role="presentation"
-    data-testid="context-menu-backdrop"
-    onclick={closeMenu}
-    onkeydown={(event) => {
-      if (event.key === "Enter" || event.key === " ") closeMenu();
-    }}
-    oncontextmenu={(event) => {
-      // A second right-click outside the menu closes the existing menu.
-      // The browser's native menu will not fire because the action's
-      // preventDefault path on the host element already runs first.
-      event.preventDefault();
-      closeMenu();
-    }}
-  ></div>
-  <ul
-    bind:this={menuContainerRef}
-    class="context-menu"
-    role="menu"
-    aria-label={CONTEXT_MENU_STRINGS.rootAriaLabel}
-    data-testid="context-menu"
-    data-target={open.target}
-    tabindex="-1"
-    style:left="{open.x}px"
-    style:top="{open.y}px"
-    onclick={(event) => event.stopPropagation()}
-    onkeydown={(event) => {
-      handleKeyDown(event);
-      event.stopPropagation();
-    }}
-  >
+{#snippet menuBody()}
+  {#if open !== null}
     {#if open.stale}
       <li
         class="context-menu__caption"
@@ -526,7 +505,88 @@
         {CONTEXT_MENU_STRINGS.advancedRevealedCaption}
       </li>
     {/if}
-  </ul>
+  {/if}
+{/snippet}
+
+{#if open !== null}
+  <!--
+    Backdrop — clicking outside closes the menu.
+    In coarse (touch) mode the backdrop is opaque (slate-950/60) to
+    visually separate the bottom sheet from the page content beneath.
+  -->
+  <div
+    class="context-menu-backdrop"
+    class:context-menu-backdrop--coarse={coarse}
+    role="presentation"
+    data-testid="context-menu-backdrop"
+    onclick={closeMenu}
+    onkeydown={(event) => {
+      if (event.key === "Enter" || event.key === " ") closeMenu();
+    }}
+    oncontextmenu={(event) => {
+      // A second right-click outside the menu closes the existing menu.
+      // The browser's native menu will not fire because the action's
+      // preventDefault path on the host element already runs first.
+      event.preventDefault();
+      closeMenu();
+    }}
+  ></div>
+
+  {#if coarse}
+    <!--
+      Coarse (touch / pen) layout: full-width bottom sheet with a
+      drag-handle affordance and 44 px minimum touch-target rows.
+      iOS/Android HIG compliant for thumb interaction.
+    -->
+    <div class="context-menu-sheet">
+      <div
+        class="context-menu-sheet__handle"
+        data-testid="context-menu-drag-handle"
+        aria-hidden="true"
+      ></div>
+      <ul
+        bind:this={menuContainerRef}
+        class="context-menu context-menu--sheet"
+        role="menu"
+        aria-label={CONTEXT_MENU_STRINGS.rootAriaLabel}
+        data-testid="context-menu"
+        data-target={open.target}
+        data-coarse="true"
+        tabindex="-1"
+        onclick={(event) => event.stopPropagation()}
+        onkeydown={(event) => {
+          handleKeyDown(event);
+          event.stopPropagation();
+        }}
+      >
+        {@render menuBody()}
+      </ul>
+    </div>
+  {:else}
+    <!--
+      Fine (mouse / trackpad) layout: cursor-anchored floating panel.
+      Preserves the existing v18 layout verbatim.
+    -->
+    <ul
+      bind:this={menuContainerRef}
+      class="context-menu"
+      role="menu"
+      aria-label={CONTEXT_MENU_STRINGS.rootAriaLabel}
+      data-testid="context-menu"
+      data-target={open.target}
+      data-coarse="false"
+      tabindex="-1"
+      style:left="{open.x}px"
+      style:top="{open.y}px"
+      onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => {
+        handleKeyDown(event);
+        event.stopPropagation();
+      }}
+    >
+      {@render menuBody()}
+    </ul>
+  {/if}
 {/if}
 
 <style>
@@ -585,5 +645,50 @@
   .context-menu__mnemonic {
     text-decoration-line: underline;
     text-underline-offset: 2px;
+  }
+
+  /* ---- Coarse (touch / pen) backdrop ---- */
+  .context-menu-backdrop--coarse {
+    /* Opaque backdrop per iOS/Android HIG for modal bottom sheets. */
+    background: rgba(2, 6, 23, 0.6); /* slate-950 / 60 % */
+  }
+
+  /* ---- Coarse bottom-sheet container ---- */
+  .context-menu-sheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 120;
+    background: rgb(var(--bearings-surface-1));
+    border-radius: 1rem 1rem 0 0;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.35);
+    max-height: 75vh;
+    overflow-y: auto;
+  }
+
+  /* Drag-handle affordance — centered pill at the top of the sheet. */
+  .context-menu-sheet__handle {
+    width: 2.5rem;
+    height: 0.25rem;
+    background: rgb(var(--bearings-border));
+    border-radius: 0.125rem;
+    margin: 0.75rem auto 0.5rem;
+  }
+
+  /* Bottom-sheet menu list — no border / shadow (handled by the wrapper). */
+  .context-menu--sheet {
+    position: static;
+    box-shadow: none;
+    border: none;
+    border-radius: 0;
+    min-width: 0;
+    width: 100%;
+  }
+
+  /* 44 px minimum touch-target for coarse-mode rows (Apple / Material HIG). */
+  [data-coarse="true"] [role="menuitem"] {
+    min-height: 44px;
+    padding: 0.625rem 0.75rem;
   }
 </style>
