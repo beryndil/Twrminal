@@ -60,6 +60,7 @@
   import { reopenSession, getPairedChatInfo, type PairedChatInfo } from "$lib/api/sessions";
   import BackendStatusBanner from "$lib/components/feedback/BackendStatusBanner.svelte";
   import AuthGate from "$lib/components/feedback/AuthGate.svelte";
+  import StatusBar from "$lib/components/feedback/StatusBar.svelte";
 
   interface Props {
     children?: Snippet;
@@ -573,13 +574,12 @@
           <Inspector session={activeSession} />
         </aside>
 
-        <!-- Status bar — spans full width -->
+        <!-- Status bar — spans full width (gap-cycle-01-018) -->
         <footer
           class="app-shell__statusbar border-t border-border bg-surface-0 px-3"
           data-testid="status-bar"
-          aria-label="Status bar"
         >
-          <span class="text-fg-muted">{SIDEBAR_STRINGS.heading} {SIDEBAR_STRINGS.versionTag}</span>
+          <StatusBar workingDir={activeWorkingDir} sessionId={selectedSessionId} />
         </footer>
       </div>
       <!-- Backend-unreachable sticky banner (gap-cycle-01-006).

@@ -2395,6 +2395,35 @@ export const TAG_EDIT_STRINGS = {
   cancelLabel: "Cancel",
 } as const;
 
+/**
+ * How often the ``versionWatcher`` store re-fetches the Bearings version
+ * from ``GET /api/diag/server`` (gap-cycle-01-018).
+ *
+ * One minute is long enough to be invisible to users and short enough to
+ * pick up a hot-reload server restart within a reasonable window.
+ */
+export const STATUS_BAR_VERSION_POLL_INTERVAL_MS = 60_000;
+
+/**
+ * UI strings for the bottom status strip (gap-cycle-01-018).
+ *
+ * Behavior anchor: ``docs/behavior/chat.md`` §"App chrome" "Status strip".
+ */
+export const STATUS_BAR_STRINGS = {
+  /** ``aria-label`` for the status bar container. */
+  ariaLabel: "Status bar",
+  /** Placeholder shown while the version is being fetched. */
+  versionLoading: "v…",
+  /** ``aria-label`` for the recovery-armed dot. */
+  recoveryAriaLabel: "Recovery armed",
+  /** ``aria-label`` for the auto-save dot. */
+  autoSaveAriaLabel: "Auto-save active",
+  /** Connection label when the WebSocket is open. */
+  connectionConnected: "connected",
+  /** Connection label when the WebSocket is closed or errored. */
+  connectionDisconnected: "disconnected",
+} as const;
+
 // ---- Derivations -----------------------------------------------------------
 
 /**
