@@ -17,7 +17,16 @@
    * of ``onConfirm``; the caller is responsible for recording the
    * suppression. Cancelling (with or without the box ticked) always
    * calls ``onCancel`` and never triggers suppression.
+   *
+   * Focus management: when the dialog opens, focus lands on Cancel for
+   * destructive actions (so a stray Enter cancels rather than
+   * confirming) or on Confirm for non-destructive informational
+   * confirms. Focus is queued via ``queueMicrotask`` after Svelte's
+   * pending changes to ensure the buttons are mounted. See
+   * ``docs/behavior/modals.md`` §"ConfirmDialog focus".
    */
+
+  import { onMount } from "svelte";
 
   import { CONTEXT_MENU_STRINGS } from "../../config";
 
@@ -26,6 +35,13 @@
     message: string;
     /** Label for the confirm button (default: "Confirm"). */
     confirmLabel?: string;
+    /**
+     * When ``true`` (default), focus lands on Cancel on open so a stray
+     * Enter cancels rather than confirming. When ``false`` (informational
+     * confirms), focus lands on Confirm for faster keyboard-confirm
+     * without mouse travel.
+     */
+    destructive?: boolean;
     /**
      * When ``true``, a "Don't ask again this session" checkbox renders
      * below the message. Defaults to ``false`` for backwards
@@ -46,11 +62,21 @@
   const {
     message,
     confirmLabel = "Confirm",
+    destructive = true,
     showSuppressCheckbox = false,
     onConfirm,
     onConfirmAndSuppress,
     onCancel,
   }: Props = $props();
+
+  let cancelBtn = $state<HTMLButtonElement | null>(null);
+  let confirmBtn = $state<HTMLButtonElement | null>(null);
+
+  onMount(() => {
+    queueMicrotask(() => {
+      (destructive ? cancelBtn : confirmBtn)?.focus();
+    });
+  });
 
   let dontAskAgain = $state(false);
 
@@ -104,6 +130,7 @@
         type="button"
         class="confirm-dialog__btn confirm-dialog__btn--cancel"
         data-testid="confirm-dialog-cancel"
+        bind:this={cancelBtn}
         onclick={onCancel}
       >
         Cancel
@@ -112,6 +139,7 @@
         type="button"
         class="confirm-dialog__btn confirm-dialog__btn--confirm"
         data-testid="confirm-dialog-confirm"
+        bind:this={confirmBtn}
         onclick={handleConfirm}
       >
         {confirmLabel}
