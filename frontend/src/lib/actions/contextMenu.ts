@@ -27,10 +27,11 @@
  */
 import type { MenuTargetId } from "../config";
 import { openMenu } from "../context-menu/store.svelte";
+import type { HandlerEntry } from "../context-menu/store.svelte";
 
 interface ContextMenuActionParams {
   readonly target: MenuTargetId;
-  readonly handlers: Readonly<Record<string, () => void>>;
+  readonly handlers: Readonly<Record<string, HandlerEntry>>;
   /**
    * When ``true`` the right-click is suppressed and no menu opens.
    * Used by consumers that conditionally show / hide the menu (e.g.

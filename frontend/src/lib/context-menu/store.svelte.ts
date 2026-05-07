@@ -12,14 +12,30 @@
 import type { MenuTargetId } from "../config";
 
 /**
+ * A value in the consumer handler map.
+ *
+ * - ``() => void`` — the action is enabled; calling it fires the behaviour.
+ * - ``{ disabledReason }`` — the action is explicitly disabled and the menu
+ *   renders a native browser tooltip (via the ``title`` HTML attribute)
+ *   explaining why it is unavailable.  Use this instead of omitting the key
+ *   when you want the user to understand the precondition.
+ *
+ * Absent key (no entry) → disabled with no tooltip, matching the previous
+ * behaviour for actions that have no applicable state context to explain.
+ */
+export type HandlerEntry = (() => void) | { readonly disabledReason: string };
+
+/**
  * Open-menu state. ``null`` when no menu is open.
  *
  * Fields:
  *
  * - ``target`` — which per-target action list to walk.
- * - ``handlers`` — action-id → handler map; the consumer passes this
- *   on the right-click event so the menu can fire the right code.
- *   Actions whose id is absent from the map render disabled.
+ * - ``handlers`` — action-id → :type:`HandlerEntry` map; the consumer
+ *   passes this on the right-click event so the menu can fire the right
+ *   code.  Actions whose id is absent from the map render disabled with
+ *   no tooltip; actions mapped to ``{ disabledReason }`` render disabled
+ *   with a native tooltip explaining why.
  * - ``x`` / ``y`` — viewport coordinates the menu opens at.
  * - ``advancedRevealed`` — Shift was held during the right-click.
  * - ``stale`` — the right-clicked target no longer exists. The menu
@@ -34,7 +50,7 @@ interface OpenMenu {
   readonly target: MenuTargetId;
   readonly x: number;
   readonly y: number;
-  readonly handlers: Readonly<Record<string, () => void>>;
+  readonly handlers: Readonly<Record<string, HandlerEntry>>;
   readonly advancedRevealed: boolean;
   readonly stale: boolean;
   readonly data: unknown;

@@ -45,6 +45,7 @@
   import {
     MENU_ACTION_SESSION_ARCHIVE,
     MENU_ACTION_SESSION_COPY_ID,
+    MENU_ACTION_SESSION_COPY_SHARE_LINK,
     MENU_ACTION_SESSION_COPY_TITLE,
     MENU_ACTION_SESSION_DELETE,
     MENU_ACTION_SESSION_DUPLICATE,
@@ -297,6 +298,9 @@
     [MENU_ACTION_SESSION_COPY_TITLE]: () => {
       void navigator.clipboard.writeText(session.title);
     },
+    // Share links are not implemented in v1; the entry renders disabled with
+    // a tooltip explaining the deferral (gap-cycle-05-001 disabled-reason fill).
+    [MENU_ACTION_SESSION_COPY_SHARE_LINK]: { disabledReason: "Share links land in v0.10.x" },
     [MENU_ACTION_SESSION_EXPORT_JSON]: () => {
       void exportSessionJson(session);
     },

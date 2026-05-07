@@ -220,7 +220,8 @@ describe("MessageTurn — Regenerate from here context-menu entry", () => {
     );
     const handler = contextMenuStore.open?.handlers[MENU_ACTION_MESSAGE_REGENERATE];
     expect(handler).toBeDefined();
-    handler?.();
+    // Narrow to callable — all MessageTurn handlers are functions (none use disabledReason).
+    (handler as (() => void) | undefined)?.();
 
     // Dialog should appear with discard count = turnsAfterCount + 1 = 3.
     await waitFor(() => {
@@ -242,7 +243,7 @@ describe("MessageTurn — Regenerate from here context-menu entry", () => {
     article.dispatchEvent(
       new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
     );
-    contextMenuStore.open?.handlers[MENU_ACTION_MESSAGE_REGENERATE]?.();
+    (contextMenuStore.open?.handlers[MENU_ACTION_MESSAGE_REGENERATE] as (() => void) | undefined)?.();
     await waitFor(() => expect(queryByTestId("confirm-dialog")).not.toBeNull());
 
     getByTestId("confirm-dialog-cancel").click();

@@ -21,10 +21,11 @@ import {
 import { _resetForTests as resetEsc } from "../../keyboard/escCascade";
 import ContextMenu from "../ContextMenu.svelte";
 import { _resetForTests, closeMenu, contextMenuStore, openMenu } from "../store.svelte";
+import type { HandlerEntry } from "../store.svelte";
 
 function openSessionMenu(
   opts: {
-    handlers?: Record<string, () => void>;
+    handlers?: Record<string, HandlerEntry>;
   } = {},
 ): void {
   flushSync(() => {
@@ -42,7 +43,7 @@ function openSessionMenu(
 
 function openCheckpointMenu(
   opts: {
-    handlers?: Record<string, () => void>;
+    handlers?: Record<string, HandlerEntry>;
     advanced?: boolean;
     stale?: boolean;
   } = {},
@@ -125,6 +126,55 @@ describe("ContextMenu", () => {
     for (const row of rows) {
       expect(row).toHaveAttribute("aria-disabled", "true");
     }
+  });
+
+  describe("disabled-reason tooltip (gap-cycle-05-001)", () => {
+    it("row gets a title attribute when the handler entry supplies a disabledReason", () => {
+      const { getAllByTestId } = render(ContextMenu);
+      openCheckpointMenu({
+        handlers: {
+          [MENU_ACTION_CHECKPOINT_FORK]: { disabledReason: "Cannot fork — no checkpoint yet" },
+        },
+      });
+      const forkRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_FORK,
+      );
+      expect(forkRow).toBeDefined();
+      expect(forkRow).toHaveAttribute("title", "Cannot fork — no checkpoint yet");
+    });
+
+    it("row has no title attribute when the action is disabled by omission (absent from handler map)", () => {
+      const { getAllByTestId } = render(ContextMenu);
+      // No handler for FORK → disabled by omission, no tooltip.
+      openCheckpointMenu({ handlers: {} });
+      const forkRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_FORK,
+      );
+      expect(forkRow).toBeDefined();
+      expect(forkRow).not.toHaveAttribute("title");
+    });
+
+    it("row with disabledReason is aria-disabled and clicking it does not fire a handler", async () => {
+      const fork = vi.fn();
+      const { getAllByTestId } = render(ContextMenu);
+      openCheckpointMenu({
+        handlers: {
+          [MENU_ACTION_CHECKPOINT_FORK]: { disabledReason: "Not available" },
+          // Register a real handler for a different action so the menu isn't
+          // entirely empty of callable entries.
+          [MENU_ACTION_CHECKPOINT_COPY_LABEL]: fork,
+        },
+      });
+      const forkRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_FORK,
+      );
+      expect(forkRow).toHaveAttribute("aria-disabled", "true");
+      await fireEvent.click(forkRow as HTMLElement);
+      // The stub fn registered on a different action must not have been called.
+      expect(fork).not.toHaveBeenCalled();
+      // Menu stays open — no handler fired, so closeMenu was not called.
+      expect(contextMenuStore.open).not.toBeNull();
+    });
   });
 
   it("backdrop click closes the menu", async () => {

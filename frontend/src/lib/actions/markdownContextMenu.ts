@@ -229,18 +229,17 @@ export function markdownContextMenu(container: HTMLElement): { destroy: () => vo
             window.open(href, "_blank", "noopener,noreferrer");
           },
           // MENU_ACTION_LINK_OPEN_IN_EDITOR — advanced, wired for file://
-          // URLs and bare absolute paths; greyed for http(s):// links.
-          ...(localHrefPath !== null
-            ? {
-                [MENU_ACTION_LINK_OPEN_IN_EDITOR]: () => {
+          // URLs and bare absolute paths; disabled with tooltip for http(s):// links.
+          [MENU_ACTION_LINK_OPEN_IN_EDITOR]:
+            localHrefPath !== null
+              ? () => {
                   void shellOpenInEditor(localHrefPath).catch((err: unknown) => {
                     const detail =
                       err instanceof Error ? err.message : "unknown error";
                     showShellOpError(detail);
                   });
-                },
-              }
-            : {}),
+                }
+              : { disabledReason: "Editor open only works for file:// URLs" },
         },
         data: { href, text },
         x: event.clientX,

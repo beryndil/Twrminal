@@ -56,10 +56,16 @@
       void navigator.clipboard.writeText(call.inputJson);
     },
 
-    /** Copy the streamed / truncated output text to the clipboard. */
-    [MENU_ACTION_TOOL_CALL_COPY_OUTPUT]: () => {
-      void navigator.clipboard.writeText(call.output);
-    },
+    /**
+     * Copy the streamed / truncated output text to the clipboard.
+     * Disabled with tooltip while the tool is still running —
+     * matches ``docs/behavior/context-menus.md`` §"Disabled entries".
+     */
+    [MENU_ACTION_TOOL_CALL_COPY_OUTPUT]: call.done
+      ? () => {
+          void navigator.clipboard.writeText(call.output);
+        }
+      : { disabledReason: "No output yet — the tool is still running" },
 
     /** Copy the tool-call ID.  Advanced action. */
     [MENU_ACTION_TOOL_CALL_COPY_ID]: () => {

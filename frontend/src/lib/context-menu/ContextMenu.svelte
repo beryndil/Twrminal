@@ -159,24 +159,35 @@
   function isActionEnabled(action: MenuActionDescriptor): boolean {
     if (open === null) return false;
     if (open.stale) return false;
-    return action.id in open.handlers;
+    const entry = open.handlers[action.id];
+    return typeof entry === "function";
+  }
+
+  /**
+   * Returns the disabled-reason tooltip string for ``action``, or
+   * ``undefined`` when no reason is available.  Only populated for
+   * actions that are disabled because the consumer explicitly mapped
+   * them to a ``{ disabledReason }`` entry (as opposed to simply
+   * omitting them from the handler map).  Stale menus suppress
+   * per-row reasons — the stale caption already explains the state.
+   */
+  function actionDisabledReason(action: MenuActionDescriptor): string | undefined {
+    if (open === null || open.stale) return undefined;
+    const entry = open.handlers[action.id];
+    if (entry === undefined || typeof entry === "function") return undefined;
+    return entry.disabledReason;
   }
 
   function activate(action: MenuActionDescriptor): void {
     if (!isActionEnabled(action)) return;
     if (open === null) return;
-    const handler = open.handlers[action.id];
-    if (handler === undefined) return;
-    if (action.destructive === true) {
-      // The destructive confirmation dialog is the consumer's
-      // responsibility — the consumer's handler should open it. The
-      // menu only routes the click through; closing the menu here
-      // matches the doc §"Common behavior" — "Picking an action
-      // closes after the action fires."
-      handler();
-    } else {
-      handler();
-    }
+    const entry = open.handlers[action.id];
+    if (typeof entry !== "function") return;
+    // The destructive confirmation dialog is the consumer's responsibility —
+    // the consumer's handler should open it.  The menu only routes the click
+    // through; closing the menu here matches §"Common behavior" — "Picking an
+    // action closes after the action fires."
+    entry();
     closeMenu();
   }
 
@@ -375,6 +386,7 @@
           role="menuitem"
           tabindex="-1"
           aria-disabled={!isActionEnabled(action)}
+          title={actionDisabledReason(action)}
           data-testid="context-menu-row"
           data-action={action.id}
           data-section={action.section}
