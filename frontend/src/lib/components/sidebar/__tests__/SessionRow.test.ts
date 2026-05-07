@@ -1,15 +1,27 @@
 /**
  * Component tests for ``SessionRow`` — title, kind indicator, tag
  * chips, status indicators (pinned / closed / error / unviewed dot),
- * and the finder-click behavior (clicking a tag chip on the row
- * triggers the onToggleTag callback with that tag's id).
+ * the finder-click behavior (clicking a tag chip on the row triggers
+ * the onToggleTag callback with that tag's id), and the stale-target
+ * detection (right-clicking a row whose session was deleted from the
+ * store between mouse-down and menu-open passes ``stale: true`` per
+ * ``docs/behavior/context-menus.md`` §"Failure modes").
  */
 import { fireEvent, render } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { flushSync } from "svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import SessionRow from "../SessionRow.svelte";
 import type { SessionOut } from "../../../api/sessions";
 import type { TagOut } from "../../../api/tags";
+import {
+  sessionsStore,
+  _resetForTests as resetSessionsStore,
+} from "../../../stores/sessions.svelte";
+import {
+  contextMenuStore,
+  _resetForTests as resetContextMenu,
+} from "../../../context-menu/store.svelte";
 
 // Mock the sessions API so ``markSessionViewed`` doesn't hit the network.
 vi.mock("../../../api/sessions", async (importOriginal) => {
@@ -391,5 +403,81 @@ describe("SessionRow", () => {
     });
     await fireEvent.click(getByTestId("session-row"));
     expect(markSessionViewed).toHaveBeenCalledWith("ses_a");
+  });
+});
+
+// ---- Stale-target detection (gap-cycle-05-004) --------------------------
+
+describe("SessionRow stale-target detection", () => {
+  beforeEach(() => {
+    resetSessionsStore();
+    resetContextMenu();
+  });
+
+  afterEach(() => {
+    resetSessionsStore();
+    resetContextMenu();
+  });
+
+  it("right-clicking when session is absent from sessionsStore passes stale: true", async () => {
+    // sessionsStore.sessions is [] after reset — the session does not exist
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: baseSession,
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    // Flush so the use:contextMenu action receives the derived stale value
+    flushSync();
+    await fireEvent.contextMenu(getByTestId("session-row"));
+    expect(contextMenuStore.open?.stale).toBe(true);
+  });
+
+  it("right-clicking when session is present in sessionsStore passes stale: false", async () => {
+    // Seed the session before mounting so the derived value starts false
+    flushSync(() => {
+      sessionsStore.sessions = [baseSession];
+    });
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: baseSession,
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    flushSync();
+    await fireEvent.contextMenu(getByTestId("session-row"));
+    expect(contextMenuStore.open?.stale).toBe(false);
+  });
+
+  it("stale flag transitions to true when session is removed from the store after mount", async () => {
+    // Start with the session present
+    flushSync(() => {
+      sessionsStore.sessions = [baseSession];
+    });
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: baseSession,
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    flushSync();
+    // Simulate deletion (WS session_delete removes the row from the store)
+    flushSync(() => {
+      sessionsStore.sessions = [];
+    });
+    await fireEvent.contextMenu(getByTestId("session-row"));
+    expect(contextMenuStore.open?.stale).toBe(true);
   });
 });

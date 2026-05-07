@@ -71,7 +71,7 @@
   import { goto } from "$app/navigation";
   import { shellOpenInTerminal } from "../../api/shell";
   import { showShellOpError } from "../../stores/shellOpNotification.svelte";
-  import { refreshSessions } from "../../stores/sessions.svelte";
+  import { refreshSessions, sessionsStore } from "../../stores/sessions.svelte";
   import { currentFilter } from "../../stores/tags.svelte";
   import { undoStore } from "../../stores/undo.svelte";
   import {
@@ -151,6 +151,18 @@
   const isInSelection = $derived(multiSelectionStore.ids.has(session.id));
 
   const sessionHref = $derived(`/sessions/${encodeURIComponent(session.id)}`);
+
+  /**
+   * True when the session was deleted from the store between
+   * mouse-down and the context menu opening — drives the stale-target
+   * caption per ``docs/behavior/context-menus.md`` §"Failure modes".
+   * The sessions store is updated reactively via the WS broadcast
+   * (``session_delete`` event), so this flag becomes true in all open
+   * tabs within the same broadcast tick.
+   */
+  const isSessionStale = $derived(
+    !sessionsStore.sessions.some((s) => s.id === session.id),
+  );
 
   const isClosed = $derived(session.closed_at !== null);
 
@@ -459,6 +471,7 @@
       target: isInSelection ? MENU_TARGET_MULTI_SELECT : MENU_TARGET_SESSION,
       handlers: isInSelection ? multiSelectHandlers : menuHandlers,
       data: { sessionId: session.id },
+      stale: isSessionStale,
     }}
   >
     <span class="flex items-center gap-2">
