@@ -1580,12 +1580,35 @@ export const INSPECTOR_STRINGS = {
   contextAssembledHeading: "Assembled context",
   contextAssembledPlaceholder:
     "System prompt, tag-default overlays, and vault attachments surface here once the assembled-context API lands (items 1.4 / 1.5 / 1.7).",
-  // Instructions subsection — exposes ``session_instructions`` from
-  // the SessionOut shape. ``null`` / empty renders the empty-state copy.
+  // Instructions subsection — system-prompt layer breakdown
+  // (gap-cycle-13-004).  Each layer kind renders as a collapsible row
+  // with kind label + source_path + token count.  Absent kinds show an
+  // empty-state row.  The ``session_instructions`` layer keeps the
+  // ``Edit…`` button that opens ``SessionEdit``.
   instructionsHeading: "Instructions",
   instructionsBodyLabel: "Session instructions",
   instructionsEmpty: "No per-session instructions set.",
   instructionsEditButton: "Edit…",
+  instructionsLoadingLayers: "Loading system-prompt layers…",
+  instructionsLayersError: "Couldn't load system-prompt layers.",
+  instructionsLayerKindLabels: {
+    baseline: "Bearings baseline",
+    project_claude_md: "Project CLAUDE.md",
+    tag_memory: "Tag memory",
+    session_instructions: "Session instructions",
+    template_baseline: "Template baseline",
+  } as const,
+  instructionsLayerTokensLabel: (n: number): string => `~${n} tokens`,
+  instructionsLayerEmptyState: {
+    baseline: "No baseline loaded.",
+    project_claude_md: "No project CLAUDE.md found in working directory walk-up.",
+    tag_memory: "No tag memories attached.",
+    session_instructions: "No per-session instructions set.",
+    template_baseline: "No template baseline.",
+  } as const,
+  instructionsLayerSourceLabel: "Source:",
+  instructionsLayerExpand: "Expand",
+  instructionsLayerCollapse: "Collapse",
   // Files subsection (gap-cycle-09-003) — derives rows from
   // conversationStore.turns via path-key extraction on each
   // ToolCallView. The three path keys (file_path, notebook_path,

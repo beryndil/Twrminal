@@ -57,6 +57,7 @@ from typing import Annotated, cast
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 
+from bearings.agent.prompt_assembler import assemble_system_prompt_layers
 from bearings.agent.prompt_dispatch import (
     PromptDispatchOutcome,
     RateLimiter,
@@ -90,6 +91,8 @@ from bearings.web.models.sessions import (
     SessionPinnedUpdate,
     SessionTodosOut,
     SessionUpdate,
+    SystemPromptLayerOut,
+    SystemPromptLayersOut,
     TokenTotalsOut,
     ToolCallOut,
 )
@@ -891,6 +894,63 @@ async def get_session_todos(
     except (ValueError, AttributeError):
         todos_json = "[]"
     return SessionTodosOut(todos_json=todos_json)
+
+
+# ---- system-prompt layer breakdown (gap-cycle-13-004) ----------------------
+
+
+@router.get(
+    "/api/sessions/{session_id}/system_prompt",
+    response_model=SystemPromptLayersOut,
+)
+async def get_session_system_prompt(
+    session_id: str,
+    request: Request,
+) -> SystemPromptLayersOut:
+    """Return the assembled system-prompt layer breakdown for a session.
+
+    Per ``docs/behavior/chat.md`` §"System-prompt layers contract"
+    (gap-cycle-13-004).  The Inspector Instructions tab calls this to
+    render the full set of layers the agent sees — baseline, project
+    CLAUDE.md walk-up, tag memories, and per-session instructions.
+
+    * ``200`` — :class:`SystemPromptLayersOut` with the ordered layer
+      list and total approximate token count.
+    * ``404`` — session not found.
+
+    Layer kinds in response order:
+
+    1. ``session_instructions`` — omitted when ``None`` or empty.
+    2. ``baseline`` — always present.
+    3. ``project_claude_md`` — one row per CLAUDE.md found walking up
+       from the session's ``working_dir``; omitted section when none
+       found.
+    4. ``tag_memory`` — one row per tag-attached CLAUDE.md; omitted
+       section when none found.
+
+    Token counts are approximated as ``len(body) // 4``; the response
+    documents this via ``token_count_approximate: true``.
+    """
+    db = _db(request)
+    result = await assemble_system_prompt_layers(db, session_id)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no session matches {session_id!r}",
+        )
+    return SystemPromptLayersOut(
+        layers=[
+            SystemPromptLayerOut(
+                kind=layer.kind,
+                body=layer.body,
+                token_count=layer.token_count,
+                source_path=layer.source_path,
+            )
+            for layer in result.layers
+        ],
+        total_tokens=result.total_tokens,
+        token_count_approximate=True,
+    )
 
 
 # ---- token totals hydration (gap-cycle-13-003) -----------------------------

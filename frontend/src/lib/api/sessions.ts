@@ -732,3 +732,56 @@ export async function getSessionTodos(
   const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}/todos`;
   return await getJson<SessionTodosOut | null>(path, options);
 }
+
+// ---- system-prompt layer breakdown (gap-cycle-13-004) --------------------
+
+/**
+ * Wire shape for one layer of the assembled system prompt.
+ *
+ * Per ``docs/behavior/chat.md`` §"System-prompt layers contract".
+ * Mirrors :class:`bearings.web.models.sessions.SystemPromptLayerOut`.
+ */
+export interface SystemPromptLayer {
+  /** Layer kind — one of the LAYER_KIND_* values. */
+  kind: "baseline" | "project_claude_md" | "tag_memory" | "session_instructions" | "template_baseline";
+  /** Text body of the layer. Non-empty for every returned layer. */
+  body: string;
+  /** Approximate token count (len(body) // 4). */
+  token_count: number;
+  /** Absolute filesystem path for project_claude_md / tag_memory layers; null otherwise. */
+  source_path: string | null;
+}
+
+/**
+ * Wire shape for ``GET /api/sessions/{id}/system_prompt``.
+ *
+ * Per ``docs/behavior/chat.md`` §"System-prompt layers contract".
+ * Mirrors :class:`bearings.web.models.sessions.SystemPromptLayersOut`.
+ */
+export interface SystemPromptLayersOut {
+  /** Ordered layers in splice order. Absent kinds are omitted (frontend shows empty-state per section). */
+  layers: SystemPromptLayer[];
+  /** Sum of all layer token_count values. */
+  total_tokens: number;
+  /** Always true — token counts are len(body) // 4 approximations. */
+  token_count_approximate: boolean;
+}
+
+/**
+ * Fetch the assembled system-prompt layer breakdown for a session.
+ *
+ * Called by ``InspectorInstructions`` on session selection to render
+ * the full set of layers the agent sees.
+ *
+ * Per ``docs/behavior/chat.md`` §"System-prompt layers contract"
+ * (gap-cycle-13-004).
+ *
+ * @throws :class:`ApiError` on 404 (session not found) or 5xx.
+ */
+export async function getSessionSystemPrompt(
+  sessionId: string,
+  options: RequestOptions = {},
+): Promise<SystemPromptLayersOut> {
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}/system_prompt`;
+  return await getJson<SystemPromptLayersOut>(path, options);
+}

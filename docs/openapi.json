@@ -2483,7 +2483,7 @@
           "sessions"
         ],
         "summary": "Patch Session",
-        "description": "Title-only PATCH for v0.18.0; description editor lands later.",
+        "description": "Full-field PATCH for a session.\n\nAccepts any subset of ``title``, ``description``, ``max_budget_usd``,\n``session_instructions``, and ``tag_ids`` \u2014 only supplied fields are\nwritten (true PATCH semantics via ``model_fields_set``).  When\n``tag_ids`` is present the session's tag set is replaced wholesale.\n\nGap: gap-cycle-10-001 (SessionEdit modal).",
         "operationId": "patch_session_api_sessions__session_id__patch",
         "parameters": [
           {
@@ -2501,7 +2501,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SessionTitleUpdate"
+                "$ref": "#/components/schemas/SessionUpdate"
               }
             }
           }
@@ -3063,6 +3063,92 @@
         }
       }
     },
+    "/api/sessions/{session_id}/system_prompt": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Get Session System Prompt",
+        "description": "Return the assembled system-prompt layer breakdown for a session.\n\nPer ``docs/behavior/chat.md`` \u00a7\"System-prompt layers contract\"\n(gap-cycle-13-004).  The Inspector Instructions tab calls this to\nrender the full set of layers the agent sees \u2014 baseline, project\nCLAUDE.md walk-up, tag memories, and per-session instructions.\n\n* ``200`` \u2014 :class:`SystemPromptLayersOut` with the ordered layer\n  list and total approximate token count.\n* ``404`` \u2014 session not found.\n\nLayer kinds in response order:\n\n1. ``session_instructions`` \u2014 omitted when ``None`` or empty.\n2. ``baseline`` \u2014 always present.\n3. ``project_claude_md`` \u2014 one row per CLAUDE.md found walking up\n   from the session's ``working_dir``; omitted section when none\n   found.\n4. ``tag_memory`` \u2014 one row per tag-attached CLAUDE.md; omitted\n   section when none found.\n\nToken counts are approximated as ``len(body) // 4``; the response\ndocuments this via ``token_count_approximate: true``.",
+        "operationId": "get_session_system_prompt_api_sessions__session_id__system_prompt_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemPromptLayersOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{session_id}/tokens": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Get Session Tokens",
+        "description": "Return aggregated lifetime token totals for a session.\n\nPer ``docs/behavior/chat.md`` \u00a7\"Token totals hydration contract\"\n(gap-cycle-13-003), the conversation pane calls this once on\nsession open alongside ``listMessagesPage`` / ``hydrateToolCalls`` /\n``hydrateTodos`` so the Inspector Metrics tab and the header\ndollar/token meter paint non-zero totals on first render instead of\nstarting from zero and waiting for WebSocket replay.\n\n* ``200`` \u2014 :class:`TokenTotalsOut` with ``input``, ``output``,\n  ``cache_read``, and ``cache_creation`` summed across all\n  assistant-role message rows for the session.  ``cache_creation``\n  is always ``0`` in v18 (no ``cache_creation_tokens`` column).\n* ``404`` \u2014 session not found.\n\nReturns ``0`` for all fields when the session exists but has no\nassistant turns yet (newly created session, first prompt not yet\ncompleted).",
+        "operationId": "get_session_tokens_api_sessions__session_id__tokens_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenTotalsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{session_id}/export": {
       "get": {
         "tags": [
@@ -3316,6 +3402,46 @@
         },
         "responses": {
           "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/bulk": {
+      "post": {
+        "tags": [
+          "sessions-bulk"
+        ],
+        "summary": "Run Sessions Bulk",
+        "description": "Atomic batch operation across multiple sessions.\n\nPer ``docs/behavior/sessions.md`` \u00a7\"Bulk operations contract\"\n(gap-cycle-13-001):\n\n* **close / delete / tag / untag** \u2014 executes in a single DB\n  transaction with per-ID savepoints; returns\n  ``{\"op\": ..., \"results\": [{session_id, ok, detail?}, \u2026]}`` with\n  HTTP 200. Inspect each ``ok`` field for partial failures.\n* **export** \u2014 read-only; returns\n  ``{\"sessions\": [SessionExport|null, \u2026]}`` as\n  ``application/json``.  A ``null`` entry means the session was not\n  found; callers filter those out before triggering the download.\n\n``tag_id`` is required for ``tag`` and ``untag`` ops. Missing\n``tag_id`` for those ops \u2192 422.\n\nUnknown ``op`` values \u2192 422. Empty ``session_ids`` \u2192 422 (Pydantic\nenforces ``min_length=1`` on the list field).",
+        "operationId": "run_sessions_bulk_api_sessions_bulk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkSessionsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
@@ -4397,13 +4523,143 @@
         }
       }
     },
+    "/api/sessions/{src_id}/reorg/split": {
+      "post": {
+        "tags": [
+          "reorg"
+        ],
+        "summary": "Split Session",
+        "description": "Split ``src_id`` at ``from_seq`` into ``target`` atomically.\n\nRe-parents all messages in ``src_id`` with ``rowid >= from_seq`` to\n``target`` in a single transaction and writes a ``kind='split'`` audit\nrow.  The divider will live in ``src_id``; ``target`` is the\ndestination that received the content.\n\nReturns 200 with the audit row and the list of moved message ids.\nReturns 409 when ``src_id == target`` (self-split is not permitted).\nReturns 404 when either session does not exist.",
+        "operationId": "split_session_api_sessions__src_id__reorg_split_post",
+        "parameters": [
+          {
+            "name": "src_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Src Id"
+            }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Destination session id",
+              "title": "Target"
+            },
+            "description": "Destination session id"
+          },
+          {
+            "name": "from_seq",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "Rowid of the first message to re-parent",
+              "title": "From Seq"
+            },
+            "description": "Rowid of the first message to re-parent"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReorgSplitOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{src_id}/reorg/move": {
+      "post": {
+        "tags": [
+          "reorg"
+        ],
+        "summary": "Move Message",
+        "description": "Move a single message from ``src_id`` to ``target`` atomically.\n\nRe-parents the message in a single transaction and writes a\n``kind='move'`` audit row.  The divider lives in ``src_id``.\n\nReturns 200 with the audit row.\nReturns 409 when ``src_id == target``.\nReturns 404 when either session or the message is not found in ``src_id``.",
+        "operationId": "move_message_api_sessions__src_id__reorg_move_post",
+        "parameters": [
+          {
+            "name": "src_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Src Id"
+            }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Destination session id",
+              "title": "Target"
+            },
+            "description": "Destination session id"
+          },
+          {
+            "name": "message_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Id of the message to move",
+              "title": "Message Id"
+            },
+            "description": "Id of the message to move"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReorgAuditOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{dst_id}/reorg/audits": {
       "get": {
         "tags": [
           "reorg"
         ],
         "summary": "List Reorg Audits",
-        "description": "Return all merge audit rows for ``dst_id``, oldest-first.\n\nUsed by the frontend on conversation load to hydrate persistent\ndivider rows.  Returns an empty list when no merges have been made\ninto this session.",
+        "description": "Return all reorg audit rows for ``dst_id`` (all kinds), oldest-first.\n\n``dst_id`` is the session that hosts the divider for each kind.\nUsed by the frontend on conversation load to hydrate persistent\ndivider rows.  Returns an empty list when no reorg operations have\nbeen recorded for this session.",
         "operationId": "list_reorg_audits_api_sessions__dst_id__reorg_audits_get",
         "parameters": [
           {
@@ -4446,7 +4702,7 @@
           "reorg"
         ],
         "summary": "Undo Reorg Audit",
-        "description": "Atomically reverse a merge and delete the audit row.\n\nRe-creates the source session with its original title, moves the\nmerged messages back, updates message counts on both sessions, and\nremoves the audit row \u2014 all inside a single transaction.\n\nReturns 200 with ``new_session_id`` on success.\nReturns 404 when ``audit_id`` is absent or does not belong to ``dst_id``.\nReturns 409 when messages have been added to ``dst_id`` after the merge,\nor when the boundary message has been moved away.",
+        "description": "Atomically reverse any reorg operation and delete the audit row.\n\nDispatches based on the audit row's ``kind``:\n\n* ``merge``: re-creates the source session, moves merged messages back.\n* ``split``: moves split messages from the target back to ``dst_id``.\n* ``move``: moves the single message from the target back to ``dst_id``.\n\nReturns 200 with ``new_session_id`` on success.\nReturns 404 when ``audit_id`` is absent or does not belong to ``dst_id``.\nReturns 409 when the relevant session has been mutated since the operation.",
         "operationId": "undo_reorg_audit_api_sessions__dst_id__reorg_audits__audit_id__delete",
         "parameters": [
           {
@@ -4474,7 +4730,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UndoMergeOut"
+                  "$ref": "#/components/schemas/UndoReorgOut"
                 }
               }
             }
@@ -5686,6 +5942,41 @@
           "file"
         ],
         "title": "Body_upload_avatar_api_preferences_avatar_post"
+      },
+      "BulkSessionsIn": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "title": "Op"
+          },
+          "session_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Session Ids"
+          },
+          "tag_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "op",
+          "session_ids"
+        ],
+        "title": "BulkSessionsIn",
+        "description": "Request shape for ``POST /api/sessions/bulk`` (gap-cycle-13-001).\n\n``op`` selects the operation: ``close``, ``delete``, ``export``, ``tag``,\nor ``untag``. ``session_ids`` carries the IDs to act on; the list must be\nnon-empty. ``tag_id`` is required for ``tag`` and ``untag`` ops and ignored\nfor the others.\n\nExtra fields are ignored (defensive against future client additions).\nThe :data:`bearings.config.constants.KNOWN_BULK_OPS` validator in the\nroute rejects unknown ``op`` values before the DB layer is touched."
       },
       "ChecklistItemIn": {
         "properties": {
@@ -7543,6 +7834,10 @@
               }
             ],
             "title": "Boundary Msg Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
           }
         },
         "additionalProperties": false,
@@ -7553,10 +7848,33 @@
           "src_session_id",
           "merged_at",
           "src_title",
-          "boundary_msg_id"
+          "boundary_msg_id",
+          "kind"
         ],
         "title": "ReorgAuditOut",
-        "description": "Response body for one merge-operation audit record."
+        "description": "Response body for one reorg-operation audit record.\n\n``kind`` is one of ``'merge'``, ``'split'``, or ``'move'``.  See\n:mod:`bearings.db.reorg` for the ``dst_session_id`` / ``src_session_id``\nsemantics across each kind."
+      },
+      "ReorgSplitOut": {
+        "properties": {
+          "audit": {
+            "$ref": "#/components/schemas/ReorgAuditOut"
+          },
+          "moved_message_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Moved Message Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "audit",
+          "moved_message_ids"
+        ],
+        "title": "ReorgSplitOut",
+        "description": "Response body for ``POST /api/sessions/{src}/reorg/split``.\n\n``audit`` is the committed audit row.  ``moved_message_ids`` is the\nordered list of message ids that were re-parented to the target\nsession (empty when no messages fell at or after ``from_seq``)."
       },
       "RoutingPreviewIn": {
         "properties": {
@@ -8465,23 +8783,6 @@
         "title": "SessionPinnedUpdate",
         "description": "Request shape for ``PATCH /api/sessions/{id}/pinned``.\n\n``pinned=true`` pins the session row; ``pinned=false`` unpins it."
       },
-      "SessionTitleUpdate": {
-        "properties": {
-          "title": {
-            "type": "string",
-            "maxLength": 500,
-            "minLength": 1,
-            "title": "Title"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "title"
-        ],
-        "title": "SessionTitleUpdate",
-        "description": "Request shape for ``PATCH /api/sessions/{id}`` \u2014 title-only."
-      },
       "SessionTodosOut": {
         "properties": {
           "todos_json": {
@@ -8496,6 +8797,76 @@
         ],
         "title": "SessionTodosOut",
         "description": "Response shape for ``GET /api/sessions/{id}/todos`` (gap-cycle-03-013).\n\n``todos_json`` is the serialised ``todos`` array extracted from the\nmost-recent ``TodoWrite`` tool-call input \u2014 identical in shape to the\n``todos_json`` field on the ``todo_write_update`` WebSocket event so\nthe frontend can use the same ``JSON.parse`` path for both the hydration\nseed and live updates."
+      },
+      "SessionUpdate": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 30000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "max_budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Budget Usd"
+          },
+          "session_instructions": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 30000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Instructions"
+          },
+          "tag_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SessionUpdate",
+        "description": "Request shape for the full ``PATCH /api/sessions/{id}`` surface.\n\nAll fields are optional; omitted fields are not written (true PATCH\nsemantics, gated by ``model_fields_set``).  Nullable fields (\n``description``, ``max_budget_usd``, ``session_instructions``) may\nbe sent as ``null`` to clear the column.  ``title`` must be a\nnon-empty string when present.\n\n``tag_ids`` when present replaces the session's tag set wholesale via\n:func:`bearings.db.tags.set_for_session`. Omitting ``tag_ids``\nleaves existing tags unchanged.\n\nSupersedes :class:`SessionTitleUpdate` \u2014 existing callers that send\nonly ``{\"title\": \"\u2026\"}`` are still served correctly because ``title``\nis the only field in their ``model_fields_set``.\n\nGap: gap-cycle-10-001 (SessionEdit modal \u2014 full PATCH surface)."
       },
       "ShellExecIn": {
         "properties": {
@@ -8610,6 +8981,70 @@
         "type": "object",
         "title": "StartRunIn",
         "description": "Request shape for ``POST /api/checklists/{id}/run/start``.\n\nPer behavior/checklists.md \u00a7\"Run-control surface\" the user picks\nfailure_policy \u2208 {halt, skip} (default halt) and the\nvisit_existing toggle before pressing Start."
+      },
+      "SystemPromptLayerOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "token_count": {
+            "type": "integer",
+            "title": "Token Count"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "body",
+          "token_count"
+        ],
+        "title": "SystemPromptLayerOut",
+        "description": "One layer of the assembled system prompt.\n\nPer ``docs/behavior/chat.md`` \u00a7\"System-prompt layers contract\"\n(gap-cycle-13-004).  Each layer carries its ``kind``, the text\n``body``, an approximate ``token_count`` (``len(body) // 4``), and\nan optional ``source_path`` for filesystem-sourced layers\n(``project_claude_md``, ``tag_memory``)."
+      },
+      "SystemPromptLayersOut": {
+        "properties": {
+          "layers": {
+            "items": {
+              "$ref": "#/components/schemas/SystemPromptLayerOut"
+            },
+            "type": "array",
+            "title": "Layers"
+          },
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens"
+          },
+          "token_count_approximate": {
+            "type": "boolean",
+            "title": "Token Count Approximate",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "layers",
+          "total_tokens"
+        ],
+        "title": "SystemPromptLayersOut",
+        "description": "Response shape for ``GET /api/sessions/{id}/system_prompt``.\n\nPer ``docs/behavior/chat.md`` \u00a7\"System-prompt layers contract\"\n(gap-cycle-13-004).\n\n``layers`` is ordered in the same splice order the SDK executor\nsees: ``session_instructions`` \u2192 ``baseline`` \u2192\n``project_claude_md`` (walk-up) \u2192 ``tag_memory``.  Layers with no\ncontent are omitted from the list; the frontend renders per-kind\nempty-state rows when a kind is absent.\n\n``token_count_approximate`` is always ``true`` \u2014 counts are\ncomputed as ``len(body) // 4`` with no tokenizer."
       },
       "SystemRoutingRuleIn": {
         "properties": {
@@ -9374,6 +9809,36 @@
         "title": "TemplatePatch",
         "description": "Request body for ``PATCH /api/templates/{id}``.\n\nEvery field is optional; missing fields are filled from the existing\nrow so the caller only has to send the delta. The route layer fetches\nthe existing row, merges, and calls :func:`bearings.db.templates.update`\nwith the full field set."
       },
+      "TokenTotalsOut": {
+        "properties": {
+          "input": {
+            "type": "integer",
+            "title": "Input"
+          },
+          "output": {
+            "type": "integer",
+            "title": "Output"
+          },
+          "cache_read": {
+            "type": "integer",
+            "title": "Cache Read"
+          },
+          "cache_creation": {
+            "type": "integer",
+            "title": "Cache Creation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "input",
+          "output",
+          "cache_read",
+          "cache_creation"
+        ],
+        "title": "TokenTotalsOut",
+        "description": "Response shape for ``GET /api/sessions/{id}/tokens`` (gap-cycle-13-003).\n\nAggregated lifetime token totals from persisted ``message_complete``\nrows for the session.  All fields are non-negative integers; NULLs in\nthe token columns are treated as 0 by the ``COALESCE(SUM(...), 0)``\naggregate.\n\n``cache_creation`` is always ``0`` in v18 \u2014 the ``messages`` table has\nno ``cache_creation_tokens`` column yet.  The field is included so the\nresponse shape is stable when the backend surface lands."
+      },
       "ToolCallOut": {
         "properties": {
           "id": {
@@ -9455,7 +9920,7 @@
         "title": "ToolCallOut",
         "description": "Response shape for ``GET /api/sessions/{id}/tool_calls`` (gap-cycle-03-012).\n\nOne row per tool invocation attached to an assistant message. The\n``message_id`` field lets the frontend group tool calls by their\nowning assistant turn without a separate join request."
       },
-      "UndoMergeOut": {
+      "UndoReorgOut": {
         "properties": {
           "new_session_id": {
             "type": "string",
@@ -9467,8 +9932,8 @@
         "required": [
           "new_session_id"
         ],
-        "title": "UndoMergeOut",
-        "description": "Response body for a successful undo (``DELETE /api/sessions/{id}/reorg/audits/{auditId}``).\n\n``new_session_id`` is the id of the newly created session that\nholds the re-parented messages from the reversed merge."
+        "title": "UndoReorgOut",
+        "description": "Response body for a successful undo (``DELETE /api/sessions/{id}/reorg/audits/{auditId}``).\n\n``new_session_id`` carries the session the client should navigate to:\n\n* ``kind='merge'``: id of the newly re-created source session.\n* ``kind='split'`` / ``kind='move'``: id of the original source session\n  (already exists; content was moved back there)."
       },
       "UploadListOut": {
         "properties": {

@@ -305,3 +305,11 @@ Blocks the dual-persist contract in `~/.claude/skills/persisting-plans`
 into `SessionMetadataUpdate` accepting both fields. Surfaced while
 authoring `~/.claude/plans/resolute-restructuring-projects.md` from
 session `ses_3794490d13075208149c2903fed6b8c0`.
+
+## gap-cycle-13-004: template_baseline layer deferred
+
+`GET /api/sessions/{id}/system_prompt` defines `template_baseline` as a layer kind
+but never emits it. Template `system_prompt_baseline` is baked into
+`session_instructions` at session-creation time and there is no `template_id` FK
+on the session row to recover the original text. Emit `template_baseline` when
+sessions gain a `template_id` column.

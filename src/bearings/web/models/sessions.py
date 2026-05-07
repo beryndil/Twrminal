@@ -260,6 +260,47 @@ class PairedChatInfo(BaseModel):
     item_label: str
 
 
+class SystemPromptLayerOut(BaseModel):
+    """One layer of the assembled system prompt.
+
+    Per ``docs/behavior/chat.md`` §"System-prompt layers contract"
+    (gap-cycle-13-004).  Each layer carries its ``kind``, the text
+    ``body``, an approximate ``token_count`` (``len(body) // 4``), and
+    an optional ``source_path`` for filesystem-sourced layers
+    (``project_claude_md``, ``tag_memory``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    body: str
+    token_count: int
+    source_path: str | None = None
+
+
+class SystemPromptLayersOut(BaseModel):
+    """Response shape for ``GET /api/sessions/{id}/system_prompt``.
+
+    Per ``docs/behavior/chat.md`` §"System-prompt layers contract"
+    (gap-cycle-13-004).
+
+    ``layers`` is ordered in the same splice order the SDK executor
+    sees: ``session_instructions`` → ``baseline`` →
+    ``project_claude_md`` (walk-up) → ``tag_memory``.  Layers with no
+    content are omitted from the list; the frontend renders per-kind
+    empty-state rows when a kind is absent.
+
+    ``token_count_approximate`` is always ``true`` — counts are
+    computed as ``len(body) // 4`` with no tokenizer.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    layers: list[SystemPromptLayerOut]
+    total_tokens: int
+    token_count_approximate: bool = True
+
+
 class TokenTotalsOut(BaseModel):
     """Response shape for ``GET /api/sessions/{id}/tokens`` (gap-cycle-13-003).
 
@@ -488,6 +529,8 @@ __all__ = [
     "SessionTitleUpdate",
     "SessionTodosOut",
     "SessionUpdate",
+    "SystemPromptLayerOut",
+    "SystemPromptLayersOut",
     "TokenTotalsOut",
     "ToolCallOut",
 ]

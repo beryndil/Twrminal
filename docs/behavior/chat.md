@@ -592,3 +592,78 @@ When the WS delivers the synthetic `runner_status` frame (emitted after ring-buf
 **Failure handling**: If the `/tokens` fetch fails, `hydrateTokens` is never called, `_tokensHydratedPending` stays `false`, and the counters fall back to the previous WS-replay-only behaviour (starts at zero, grows with replay). Non-fatal.
 
 **Session-switch**: `resetConversation()` zeros all four token counters and clears `_tokensHydratedPending`. The hydration flow runs fresh for each session selection.
+
+---
+
+## Addendum — gap-cycle-13-004: system-prompt layers contract
+
+### Overview
+
+The Inspector Instructions tab renders the **full assembled system
+prompt** for the active session as a list of typed layer rows.  Each row
+shows: the layer kind label, the optional filesystem source path, an
+approximate token count, and a collapsed/expanded body toggle.
+
+### Endpoint
+
+`GET /api/sessions/{id}/system_prompt` returns:
+
+```json
+{
+  "layers": [
+    {
+      "kind": "session_instructions",
+      "body": "You are an executor.",
+      "token_count": 5,
+      "source_path": null
+    },
+    {
+      "kind": "baseline",
+      "body": "<CLOSE_SESSION_INSTRUCTION text>",
+      "token_count": 42,
+      "source_path": null
+    },
+    {
+      "kind": "project_claude_md",
+      "body": "<CLAUDE.md contents>",
+      "token_count": 310,
+      "source_path": "/home/user/project/CLAUDE.md"
+    }
+  ],
+  "total_tokens": 357,
+  "token_count_approximate": true
+}
+```
+
+* `404` when the session is not found.
+* `token_count_approximate` is always `true` — token counts use the
+  `len(body) // 4` approximation (no tokenizer dependency).
+
+### Layer kinds and display order
+
+| Kind | Description | source_path |
+|---|---|---|
+| `session_instructions` | Per-session steering from the session row's `session_instructions` column. Omitted when null or empty. | null |
+| `baseline` | Bearings core surface (`CLOSE_SESSION_INSTRUCTION`). Always present. | null |
+| `project_claude_md` | One row per `CLAUDE.md` found walking up from the session's `working_dir` to the filesystem root. | Absolute path to the file |
+| `tag_memory` | One row per tag whose `working_dir` yields a readable `CLAUDE.md`. Ordered lowest-precedence first (mirrors `resolve_claude_md_blocks`). | Absolute path to the file |
+| `template_baseline` | Not emitted in v18 — the template baseline is baked into `session_instructions` at session creation. Reserved for API-shape stability. | null |
+
+### Empty-state rules
+
+Layers with no content are **omitted** from the `layers` array.  The
+frontend (`InspectorInstructions.svelte`) renders a per-kind empty-state
+row when no layers of that kind appear in the response.  The `baseline`
+layer is always non-empty.
+
+### Frontend behaviour
+
+* `InspectorInstructions` fetches `GET /api/sessions/{id}/system_prompt`
+  on mount and on session-id change via a `$effect`.
+* Each kind appears as a collapsible section with its label.  The
+  `session_instructions` section retains the `Edit…` button that opens
+  `SessionEdit` scrolled to the instructions textarea.
+* Body collapse default: layers whose body exceeds 500 chars are
+  collapsed; shorter layers are expanded.
+* After a `SessionEdit` save, the component re-fetches layers so the
+  updated `session_instructions` is visible immediately.
