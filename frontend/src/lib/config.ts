@@ -417,6 +417,29 @@ export const WS_CLOSE_CODE_AUTH_FAILURE = 4401;
  */
 export const BACKEND_UNREACHABLE_THRESHOLD_MS = 5_000;
 
+/**
+ * Duration (ms) of the stop-undo grace window — clicking Stop arms this
+ * window instead of POSTing ``/stop`` immediately. The countdown chip
+ * ticks until the window expires, at which point the stop commits
+ * irrevocably.
+ *
+ * Behavior anchor: ``docs/behavior/chat.md``
+ * §"Stopping or interrupting a turn".
+ *
+ * Gap: gap-cycle-11-002.
+ */
+export const STOP_UNDO_GRACE_MS = 3_000;
+
+/**
+ * Interval (ms) at which the stop-undo countdown chip re-renders the
+ * seconds-remaining display. Must be ≥ 500 ms per the behavior spec
+ * acceptance criteria so the tick cadence is predictable to the user.
+ *
+ * Behavior anchor: ``docs/behavior/chat.md``
+ * §"Stopping or interrupting a turn".
+ */
+export const STOP_UNDO_TICK_MS = 500;
+
 // ---- Session-kind alphabet (mirrors backend ``KNOWN_SESSION_KINDS``) ------
 
 /** Chat-kind session — composer + transcript per ``docs/behavior/chat.md``. */
@@ -476,6 +499,10 @@ export const CONVERSATION_STRINGS = {
   scrollToBottomLabel: "↓ Jump to bottom",
   stopTurnLabel: "■ Stop",
   stopTurnAriaLabel: "Stop the current turn",
+  /** Stop-undo grace window: "Undo" button label (gap-cycle-11-002). */
+  stopUndoLabel: "Undo",
+  /** Stop-undo grace window: "Undo" button aria-label. */
+  stopUndoAriaLabel: "Undo stop",
   // Item 1.3 pagination affordance.
   loadOlderLabel: "Load older messages",
   loadingOlder: "Loading…",

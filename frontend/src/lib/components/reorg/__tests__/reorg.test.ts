@@ -875,7 +875,7 @@ describe("SessionPickerModal — inline create form (gap-cycle-10-011)", () => {
   it("create-then-merge: creates session then immediately merges", async () => {
     const onMerged = vi.fn();
     const onCancel = vi.fn();
-    const { getByTestId, queryByTestId } = render(SessionPickerModal, {
+    const { getByTestId } = render(SessionPickerModal, {
       props: { srcSession: SESSION_FIXTURES[0]!, onMerged, onCancel },
     });
 
