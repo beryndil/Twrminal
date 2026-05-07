@@ -769,6 +769,8 @@ export const SIDEBAR_STRINGS = {
   navSessions: "Sessions",
   navTags: "Tags",
   navMemories: "Memories",
+  navVault: "Vault",
+  navVaultAriaLabel: "Open vault (plans + TODOs)",
   navAnalytics: "Analytics",
   navSettings: "Settings",
   sessionsLabel: "Session list",

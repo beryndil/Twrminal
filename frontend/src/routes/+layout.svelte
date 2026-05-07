@@ -425,6 +425,34 @@
             </a>
 
             <a
+              href="/vault"
+              class="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors"
+              class:nav-link--active={currentPath === "/vault"}
+              class:text-accent={currentPath === "/vault"}
+              class:text-fg-muted={currentPath !== "/vault"}
+              class:hover:bg-surface-2={currentPath !== "/vault"}
+              class:hover:text-fg={currentPath !== "/vault"}
+              aria-label={SIDEBAR_STRINGS.navVaultAriaLabel}
+              data-testid="sidebar-nav-vault"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              </svg>
+              {SIDEBAR_STRINGS.navVault}
+            </a>
+
+            <a
               href="/analytics"
               class="flex items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors"
               class:nav-link--active={currentPath === "/analytics"}

@@ -68,6 +68,30 @@ describe("app shell layout", () => {
   });
 });
 
+describe("sidebar nav vault link (gap-cycle-08-003)", () => {
+  it("renders the vault nav link inside the sidebar nav", () => {
+    const { getByTestId } = render(Layout);
+
+    const nav = getByTestId("sidebar-nav");
+    const link = nav.querySelector('[data-testid="sidebar-nav-vault"]');
+    expect(link).toBeInTheDocument();
+  });
+
+  it("vault nav link points to /vault", () => {
+    const { getByTestId } = render(Layout);
+
+    const link = getByTestId("sidebar-nav-vault") as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("/vault");
+  });
+
+  it("vault nav link carries the Open vault aria-label", () => {
+    const { getByTestId } = render(Layout);
+
+    const link = getByTestId("sidebar-nav-vault");
+    expect(link.getAttribute("aria-label")).toBe("Open vault (plans + TODOs)");
+  });
+});
+
 describe("sidebar identity block (gap-cycle-08-002)", () => {
   it("renders user-identity-block inside the sidebar", () => {
     const { getByTestId } = render(Layout);

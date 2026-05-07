@@ -27,7 +27,7 @@ The user cannot create, edit, rename, or delete vault docs from inside Bearings.
 
 ## When the user opens the vault
 
-The vault sits in the app shell as a separate pane (a sidebar tab or a top-level navigation entry). On first open, the user sees:
+The user opens the vault by clicking the **Vault** entry in the sidebar's primary nav rail (between Memories and Analytics). The link carries `data-testid="sidebar-nav-vault"`, `href="/vault"`, and `aria-label="Open vault (plans + TODOs)"`. SvelteKit navigates to the `/vault` route, which renders `VaultPanel`. On first open, the user sees:
 
 * **Plans** section — every plan-root markdown, sorted most-recent-mtime first. Each row shows the title (or, when no `# heading` exists, the slug), the parent directory short name, and a relative mtime ("2 days ago").
 * **Todos** section — every matched `TODO.md`, also sorted most-recent-mtime first, with the project directory name as the visible label.
