@@ -46,11 +46,19 @@
     /** Selected general-class tag ids (OR within; AND with other sections). */
     selectedOtherIds: ReadonlySet<number>;
     /**
+     * Whether the synthetic "No severity" chip is active. Composes
+     * OR with ``selectedSeverityIds`` within the severity section
+     * (gap-cycle-18-003).
+     */
+    selectedSeverityNone: boolean;
+    /**
      * Chip click — flips ``tagId`` in or out of its class section.
      * The class is taken from ``TagOut.class_`` at the click site so
      * the parent doesn't need to look it up.
      */
     onToggle: (tagId: number, klass: TagClass) => void;
+    /** Toggle the "No severity" synthetic chip on or off. */
+    onToggleSeverityNone: () => void;
     /** Clear button — empties every section. */
     onClear: () => void;
   }
@@ -60,13 +68,16 @@
     selectedProjectIds,
     selectedSeverityIds,
     selectedOtherIds,
+    selectedSeverityNone,
     onToggle,
+    onToggleSeverityNone,
     onClear,
   }: Props = $props();
 
   const buckets = $derived(tagsByClass(tags));
   const hasSelection = $derived(
-    selectedProjectIds.size + selectedSeverityIds.size + selectedOtherIds.size > 0,
+    selectedProjectIds.size + selectedSeverityIds.size + selectedOtherIds.size > 0 ||
+      selectedSeverityNone,
   );
 
   function selectionFor(klass: TagClass): ReadonlySet<number> {
@@ -232,6 +243,34 @@
                 {/if}
               </button>
             {/each}
+            {#if section.klass === "severity"}
+              <!--
+                Synthetic "No severity" chip — surfaces sessions with no
+                severity-class tag (gap-cycle-18-003). Rendered only when
+                the severity section is non-empty so the chip doesn't
+                appear as a lone entry in an otherwise-empty section.
+                Composes OR with selected real severity ids.
+              -->
+              <div
+                class="my-0.5 w-full border-t border-border/40"
+                role="separator"
+                aria-hidden="true"
+              ></div>
+              <button
+                type="button"
+                class="rounded px-1.5 py-0.5 text-xs italic transition-colors"
+                class:bg-accent={selectedSeverityNone}
+                class:text-fg-strong={selectedSeverityNone}
+                class:bg-surface-2={!selectedSeverityNone}
+                class:text-fg-muted={!selectedSeverityNone}
+                aria-pressed={selectedSeverityNone}
+                aria-label={SIDEBAR_STRINGS.tagFilterSeverityNoneAriaLabel}
+                data-testid="tag-filter-chip-severity-none"
+                onclick={onToggleSeverityNone}
+              >
+                {SIDEBAR_STRINGS.tagFilterSeverityNoneLabel}
+              </button>
+            {/if}
           </div>
         {/if}
       </div>

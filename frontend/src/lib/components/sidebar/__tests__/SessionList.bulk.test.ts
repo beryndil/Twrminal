@@ -63,6 +63,7 @@ const fakeStores = (sessions: readonly SessionOut[]) => ({
     selectedProjectIds: new Set<number>(),
     selectedSeverityIds: new Set<number>(),
     selectedOtherIds: new Set<number>(),
+    selectedSeverityNone: false,
     loading: false,
     error: null as Error | null,
   },

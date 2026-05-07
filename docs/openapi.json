@@ -2363,7 +2363,7 @@
           "sessions"
         ],
         "summary": "List Sessions",
-        "description": "List sessions filtered by ``kind`` + ``include_closed`` + tag filters.\n\nTwo filter shapes coexist:\n\n* ``tag_ids`` \u2014 legacy flat OR (back-compat). Returns sessions\n  attached to **at least one** of the listed tags regardless of\n  class. Repeat the parameter for multi-select.\n* ``tag_ids_project`` / ``tag_ids_severity`` / ``tag_ids_other`` \u2014\n  three-section faceted filter from the tag-class feature. OR\n  within each class; AND across classes. An omitted (or empty)\n  section means \"no constraint from this class,\" NOT \"exclude\n  everything\" \u2014 the empty-section state lets the filter panel\n  render an empty section without blanking out results.\n\nAll four can be combined; each is an additional AND constraint at\nthe SQL layer (legacy ``tag_ids`` joins; per-class params use\ncorrelated EXISTS subqueries). A frontend that only uses the new\nsurface should leave ``tag_ids`` empty.",
+        "description": "List sessions filtered by ``kind`` + ``include_closed`` + tag filters.\n\nTwo filter shapes coexist:\n\n* ``tag_ids`` \u2014 legacy flat OR (back-compat). Returns sessions\n  attached to **at least one** of the listed tags regardless of\n  class. Repeat the parameter for multi-select.\n* ``tag_ids_project`` / ``tag_ids_severity`` / ``tag_ids_other`` \u2014\n  three-section faceted filter from the tag-class feature. OR\n  within each class; AND across classes. An omitted (or empty)\n  section means \"no constraint from this class,\" NOT \"exclude\n  everything\" \u2014 the empty-section state lets the filter panel\n  render an empty section without blanking out results.\n\nAll four can be combined; each is an additional AND constraint at\nthe SQL layer (legacy ``tag_ids`` joins; per-class params use\ncorrelated EXISTS subqueries). A frontend that only uses the new\nsurface should leave ``tag_ids`` empty.\n\n``severity_none=true`` activates the \"No severity\" synthetic filter\n(gap-cycle-18-003): returns sessions that have no severity-class tag\nattached. When combined with ``tag_ids_severity``, the two compose\nOR within the severity section (sessions with no severity OR sessions\nmatching the listed severity ids).",
         "operationId": "list_sessions_api_sessions_get",
         "parameters": [
           {
@@ -2466,6 +2466,16 @@
                 }
               ],
               "title": "Tag Ids Other"
+            }
+          },
+          {
+            "name": "severity_none",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Severity None"
             }
           }
         ],

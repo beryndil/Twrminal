@@ -104,6 +104,13 @@ interface ListSessionsParams {
   tagIdsSeverity?: Iterable<number>;
   /** General-class (other) faceted filter; same OR-within / AND-across shape. */
   tagIdsOther?: Iterable<number>;
+  /**
+   * "No severity" synthetic filter (gap-cycle-18-003). When ``true``,
+   * maps to ``?severity_none=true`` on the wire. Composes OR with
+   * ``tagIdsSeverity`` within the severity section — sessions with no
+   * severity OR sessions matching the listed severity ids are returned.
+   */
+  severityNone?: boolean;
   signal?: AbortSignal;
 }
 
@@ -275,6 +282,9 @@ export async function listSessions(params: ListSessionsParams = {}): Promise<Ses
     for (const id of params.tagIdsOther) {
       query.push(["tag_ids_other", String(id)]);
     }
+  }
+  if (params.severityNone) {
+    query.push(["severity_none", "true"]);
   }
   const options: RequestOptions = {};
   if (query.length > 0) {

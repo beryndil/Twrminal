@@ -204,6 +204,7 @@ export async function refreshSessions(filter: {
   project: ReadonlySet<number>;
   severity: ReadonlySet<number>;
   other: ReadonlySet<number>;
+  severityNone?: boolean;
 }): Promise<void> {
   refreshController?.abort();
   const controller = new AbortController();
@@ -219,6 +220,9 @@ export async function refreshSessions(filter: {
     }
     if (filter.other.size > 0) {
       params.tagIdsOther = filter.other;
+    }
+    if (filter.severityNone) {
+      params.severityNone = true;
     }
     const sessions = await listSessions(params);
     if (controller.signal.aborted) {

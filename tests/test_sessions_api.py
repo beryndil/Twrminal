@@ -1136,3 +1136,60 @@ async def test_get_tokens_user_rows_excluded(
     assert body["input"] == 10
     assert body["output"] == 5
     assert body["cache_read"] == 20
+
+
+# ---------------------------------------------------------------------------
+# severity_none filter — gap-cycle-18-003
+# ---------------------------------------------------------------------------
+
+
+async def test_list_sessions_severity_none_returns_unseveritied(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """``?severity_none=true`` returns sessions with no severity-class tag."""
+    from bearings.db import tags as tags_db
+
+    app, conn = app_and_db
+    sev = await tags_db.create(conn, name="high", class_="severity")
+
+    has_sev = await _new_chat(conn, "has-severity")
+    await tags_db.attach(conn, session_id=has_sev, tag_id=sev.id)
+
+    no_sev = await _new_chat(conn, "no-severity")
+
+    with TestClient(app) as client:
+        response = client.get("/api/sessions", params={"severity_none": "true"})
+    assert response.status_code == 200
+    ids = {row["id"] for row in response.json()}
+    assert no_sev in ids
+    assert has_sev not in ids
+
+
+async def test_list_sessions_severity_none_or_with_tag_ids_severity(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Combining ``severity_none=true`` with ``tag_ids_severity`` applies OR."""
+    from bearings.db import tags as tags_db
+
+    app, conn = app_and_db
+    sev_high = await tags_db.create(conn, name="high", class_="severity")
+    sev_low = await tags_db.create(conn, name="low", class_="severity")
+
+    has_high = await _new_chat(conn, "has-high")
+    await tags_db.attach(conn, session_id=has_high, tag_id=sev_high.id)
+
+    has_low = await _new_chat(conn, "has-low")
+    await tags_db.attach(conn, session_id=has_low, tag_id=sev_low.id)
+
+    no_sev = await _new_chat(conn, "no-severity")
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/sessions",
+            params=[("severity_none", "true"), ("tag_ids_severity", str(sev_high.id))],
+        )
+    assert response.status_code == 200
+    ids = {row["id"] for row in response.json()}
+    # OR: sessions with no severity OR sessions tagged high.
+    assert ids == {no_sev, has_high}
+    assert has_low not in ids

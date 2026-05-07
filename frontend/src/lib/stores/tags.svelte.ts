@@ -42,6 +42,13 @@ interface TagsState {
   selectedSeverityIds: ReadonlySet<number>;
   /** Selected general-class tag ids. OR within; AND with other sections. */
   selectedOtherIds: ReadonlySet<number>;
+  /**
+   * ``true`` when the "No severity" synthetic chip is active. Composes
+   * OR with ``selectedSeverityIds`` within the severity section so
+   * selecting it alongside a real severity tag returns the union
+   * (gap-cycle-18-003).
+   */
+  selectedSeverityNone: boolean;
   /** ``true`` while a refresh is in flight. */
   loading: boolean;
   /** Last error from a refresh attempt (cleared on success). */
@@ -53,6 +60,7 @@ const state: TagsState = $state({
   selectedProjectIds: new Set<number>(),
   selectedSeverityIds: new Set<number>(),
   selectedOtherIds: new Set<number>(),
+  selectedSeverityNone: false,
   loading: false,
   error: null,
 });
@@ -123,6 +131,15 @@ export function toggleTag(tagId: number, klass: TagClass): void {
 }
 
 /**
+ * Toggle the "No severity" synthetic chip. The chip composes OR-within
+ * the severity section alongside any real severity ids — selecting it
+ * broadens rather than replaces (gap-cycle-18-003).
+ */
+export function toggleSeverityNone(): void {
+  state.selectedSeverityNone = !state.selectedSeverityNone;
+}
+
+/**
  * Clear every section's filter set (sidebar's "Clear filter" button
  * + the user's Esc-while-filter-focused path per
  * ``keyboard-shortcuts.md`` §"Esc cascade" once that wiring lands).
@@ -131,31 +148,35 @@ export function clearTagFilter(): void {
   if (
     state.selectedProjectIds.size === 0 &&
     state.selectedSeverityIds.size === 0 &&
-    state.selectedOtherIds.size === 0
+    state.selectedOtherIds.size === 0 &&
+    !state.selectedSeverityNone
   ) {
     return;
   }
   state.selectedProjectIds = new Set<number>();
   state.selectedSeverityIds = new Set<number>();
   state.selectedOtherIds = new Set<number>();
+  state.selectedSeverityNone = false;
 }
 
 /**
  * The three-section filter snapshot — one ``ReadonlySet<number>``
- * per class. Components forward this to
- * :func:`refreshSessions` instead of accessing the store's three
- * fields independently (which would also work, but couples every
- * call site to the field names).
+ * per class, plus the ``severityNone`` synthetic flag. Components
+ * forward this to :func:`refreshSessions` instead of accessing the
+ * store's fields independently (which would also work, but couples
+ * every call site to the field names).
  */
 export function currentFilter(): {
   project: ReadonlySet<number>;
   severity: ReadonlySet<number>;
   other: ReadonlySet<number>;
+  severityNone: boolean;
 } {
   return {
     project: state.selectedProjectIds,
     severity: state.selectedSeverityIds,
     other: state.selectedOtherIds,
+    severityNone: state.selectedSeverityNone,
   };
 }
 
@@ -215,6 +236,7 @@ export function _resetForTests(): void {
   state.selectedProjectIds = new Set<number>();
   state.selectedSeverityIds = new Set<number>();
   state.selectedOtherIds = new Set<number>();
+  state.selectedSeverityNone = false;
   state.loading = false;
   state.error = null;
   refreshController?.abort();

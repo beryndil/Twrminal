@@ -71,6 +71,7 @@ interface StubTagsStore {
   selectedProjectIds: ReadonlySet<number>;
   selectedSeverityIds: ReadonlySet<number>;
   selectedOtherIds: ReadonlySet<number>;
+  selectedSeverityNone: boolean;
   loading: boolean;
   error: Error | null;
 }
@@ -92,6 +93,7 @@ function makeStubStores(
       selectedProjectIds: new Set<number>(),
       selectedSeverityIds: new Set<number>(),
       selectedOtherIds: new Set<number>(),
+      selectedSeverityNone: false,
       loading: false,
       error: null,
     },

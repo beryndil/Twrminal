@@ -468,6 +468,7 @@ async def list_all(
     tag_ids_project: tuple[int, ...] | None = None,
     tag_ids_severity: tuple[int, ...] | None = None,
     tag_ids_other: tuple[int, ...] | None = None,
+    severity_none: bool = False,
 ) -> list[Session]:
     """Every session row matching the filters; newest-first.
 
@@ -494,6 +495,14 @@ async def list_all(
     caller bug rather than an "exclude everything" intent. The
     per-class params permit the empty / ``None`` distinction (both
     mean "no constraint from this section").
+
+    ``severity_none=True`` adds the "No severity" synthetic filter from
+    the tag-filter panel (gap-cycle-18-003). When combined with
+    ``tag_ids_severity``, the two compose **OR within the severity
+    section** (sessions with no severity OR sessions matching the listed
+    severity ids) rather than AND — matching v17 additive semantics.
+    When used alone it returns only sessions with no severity-class tag
+    attached.
     """
     if kind is not None and kind not in KNOWN_SESSION_KINDS:
         raise ValueError(f"list_all: kind {kind!r} not in {sorted(KNOWN_SESSION_KINDS)}")
@@ -512,18 +521,53 @@ async def list_all(
         placeholders = ",".join(["?"] * len(tag_ids))
         clauses.append(f"session_tags.tag_id IN ({placeholders})")
         args.extend(tag_ids)
-    # Three-section faceted filter: each non-empty per-class tuple
-    # contributes one EXISTS subquery; empty / None contributes nothing
-    # ("no constraint from this section"). Sections compose with AND.
-    for section_ids in (tag_ids_project, tag_ids_severity, tag_ids_other):
-        if section_ids:
-            placeholders = ",".join(["?"] * len(section_ids))
-            clauses.append(
-                "EXISTS (SELECT 1 FROM session_tags st_section "
-                "WHERE st_section.session_id = sessions.id "
-                f"AND st_section.tag_id IN ({placeholders}))"
-            )
-            args.extend(section_ids)
+    # Project section: plain EXISTS.
+    if tag_ids_project:
+        placeholders = ",".join(["?"] * len(tag_ids_project))
+        clauses.append(
+            "EXISTS (SELECT 1 FROM session_tags st_section "
+            "WHERE st_section.session_id = sessions.id "
+            f"AND st_section.tag_id IN ({placeholders}))"
+        )
+        args.extend(tag_ids_project)
+    # Severity section: severity_none and tag_ids_severity compose OR-within
+    # so that selecting "No severity" alongside a real severity tag returns
+    # the union rather than the (impossible) intersection.
+    _no_sev_clause = (
+        "NOT EXISTS ("
+        "SELECT 1 FROM session_tags st_sv "
+        "JOIN tags t_sv ON t_sv.id = st_sv.tag_id "
+        "WHERE st_sv.session_id = sessions.id AND t_sv.class = 'severity'"
+        ")"
+    )
+    if severity_none and tag_ids_severity:
+        placeholders = ",".join(["?"] * len(tag_ids_severity))
+        clauses.append(
+            f"({_no_sev_clause} OR EXISTS ("
+            "SELECT 1 FROM session_tags st_sv2 "
+            "WHERE st_sv2.session_id = sessions.id "
+            f"AND st_sv2.tag_id IN ({placeholders})))"
+        )
+        args.extend(tag_ids_severity)
+    elif severity_none:
+        clauses.append(_no_sev_clause)
+    elif tag_ids_severity:
+        placeholders = ",".join(["?"] * len(tag_ids_severity))
+        clauses.append(
+            "EXISTS (SELECT 1 FROM session_tags st_section "
+            "WHERE st_section.session_id = sessions.id "
+            f"AND st_section.tag_id IN ({placeholders}))"
+        )
+        args.extend(tag_ids_severity)
+    # Other section: plain EXISTS.
+    if tag_ids_other:
+        placeholders = ",".join(["?"] * len(tag_ids_other))
+        clauses.append(
+            "EXISTS (SELECT 1 FROM session_tags st_section "
+            "WHERE st_section.session_id = sessions.id "
+            f"AND st_section.tag_id IN ({placeholders}))"
+        )
+        args.extend(tag_ids_other)
     join = (
         " INNER JOIN session_tags ON session_tags.session_id = sessions.id"
         if tag_ids is not None

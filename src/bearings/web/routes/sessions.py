@@ -256,6 +256,7 @@ async def list_sessions(
     tag_ids_project: Annotated[list[int] | None, Query()] = None,
     tag_ids_severity: Annotated[list[int] | None, Query()] = None,
     tag_ids_other: Annotated[list[int] | None, Query()] = None,
+    severity_none: bool = False,
 ) -> list[SessionOut]:
     """List sessions filtered by ``kind`` + ``include_closed`` + tag filters.
 
@@ -275,6 +276,12 @@ async def list_sessions(
     the SQL layer (legacy ``tag_ids`` joins; per-class params use
     correlated EXISTS subqueries). A frontend that only uses the new
     surface should leave ``tag_ids`` empty.
+
+    ``severity_none=true`` activates the "No severity" synthetic filter
+    (gap-cycle-18-003): returns sessions that have no severity-class tag
+    attached. When combined with ``tag_ids_severity``, the two compose
+    OR within the severity section (sessions with no severity OR sessions
+    matching the listed severity ids).
     """
     db = _db(request)
     if kind is not None and kind not in KNOWN_SESSION_KINDS:
@@ -298,6 +305,7 @@ async def list_sessions(
         tag_ids_project=project_filter,
         tag_ids_severity=severity_filter,
         tag_ids_other=other_filter,
+        severity_none=severity_none,
     )
     # Fetch paired-chat parent titles for chat rows (sidebar annotation).
     # Build a map of session_id → parent_title for efficient lookup.

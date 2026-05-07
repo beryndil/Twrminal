@@ -312,3 +312,100 @@ async def test_list_all_three_section_filter_returns_each_session_once(
     )
     assert [r.id for r in rows] == [s.id]
     assert len(rows) == 1, "EXISTS path returns each row once even with multi-tag matches"
+
+
+# ---------------------------------------------------------------------------
+# severity_none filter — gap-cycle-18-003
+# ---------------------------------------------------------------------------
+
+
+async def test_list_all_severity_none_matches_unseveritied_sessions(
+    conn: aiosqlite.Connection,
+) -> None:
+    """severity_none=True returns sessions with no severity-class tag attached."""
+    from bearings.db import tags as tags_db
+
+    sev_tag = await tags_db.create(conn, name="high", class_="severity")
+    proj_tag = await tags_db.create(conn, name="proj", class_="project")
+
+    # Session with a severity tag.
+    with_severity = await sessions_db.create(
+        conn, kind="chat", title="has-severity", working_dir="/wd", model="sonnet"
+    )
+    await tags_db.attach(conn, session_id=with_severity.id, tag_id=sev_tag.id)
+
+    # Session with only a project tag — no severity.
+    no_severity_proj = await sessions_db.create(
+        conn, kind="chat", title="proj-only", working_dir="/wd", model="sonnet"
+    )
+    await tags_db.attach(conn, session_id=no_severity_proj.id, tag_id=proj_tag.id)
+
+    # Completely untagged session — also no severity.
+    untagged = await sessions_db.create(
+        conn, kind="chat", title="untagged", working_dir="/wd", model="sonnet"
+    )
+
+    rows = await sessions_db.list_all(conn, severity_none=True)
+    ids = {r.id for r in rows}
+    assert ids == {no_severity_proj.id, untagged.id}, (
+        "severity_none should return sessions with no severity tag, regardless of other tags"
+    )
+    assert with_severity.id not in ids
+
+
+async def test_list_all_severity_none_false_does_not_filter(
+    conn: aiosqlite.Connection,
+) -> None:
+    """severity_none=False (default) applies no severity constraint."""
+    from bearings.db import tags as tags_db
+
+    sev_tag = await tags_db.create(conn, name="high", class_="severity")
+    a = await sessions_db.create(conn, kind="chat", title="a", working_dir="/wd", model="sonnet")
+    b = await sessions_db.create(conn, kind="chat", title="b", working_dir="/wd", model="sonnet")
+    await tags_db.attach(conn, session_id=a.id, tag_id=sev_tag.id)
+
+    rows = await sessions_db.list_all(conn, severity_none=False)
+    assert {r.id for r in rows} == {a.id, b.id}
+
+
+async def test_list_all_severity_none_combines_or_with_tag_ids_severity(
+    conn: aiosqlite.Connection,
+) -> None:
+    """severity_none=True + tag_ids_severity returns the union (OR-within).
+
+    Selecting "No severity" alongside a real severity tag should broaden
+    the result to include sessions with no severity OR sessions that have
+    the specified severity tag. The two cannot AND (their intersection is
+    empty because a session cannot simultaneously have and not have a
+    severity tag).
+    """
+    from bearings.db import tags as tags_db
+
+    sev_high = await tags_db.create(conn, name="high", class_="severity")
+    sev_low = await tags_db.create(conn, name="low", class_="severity")
+
+    has_high = await sessions_db.create(
+        conn, kind="chat", title="has-high", working_dir="/wd", model="sonnet"
+    )
+    await tags_db.attach(conn, session_id=has_high.id, tag_id=sev_high.id)
+
+    has_low = await sessions_db.create(
+        conn, kind="chat", title="has-low", working_dir="/wd", model="sonnet"
+    )
+    await tags_db.attach(conn, session_id=has_low.id, tag_id=sev_low.id)
+
+    no_severity = await sessions_db.create(
+        conn, kind="chat", title="no-severity", working_dir="/wd", model="sonnet"
+    )
+
+    # OR-within: no-severity OR has-high.
+    rows = await sessions_db.list_all(
+        conn,
+        severity_none=True,
+        tag_ids_severity=(sev_high.id,),
+    )
+    ids = {r.id for r in rows}
+    assert ids == {no_severity.id, has_high.id}, (
+        "severity_none + tag_ids_severity should OR-compose, not AND"
+    )
+    assert has_low.id not in ids

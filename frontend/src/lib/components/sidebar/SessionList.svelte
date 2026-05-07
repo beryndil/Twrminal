@@ -81,6 +81,7 @@
     currentFilter,
     refreshTags as refreshTagsDefault,
     tagsStore as tagsStoreDefault,
+    toggleSeverityNone as toggleSeverityNoneDefault,
     toggleTag as toggleTagDefault,
   } from "../../stores/tags.svelte";
   import { clearSelection, multiSelectionStore, setIds } from "../../stores/multiSelection.svelte";
@@ -106,6 +107,7 @@
     refreshSessions?: typeof refreshSessionsDefault;
     refreshTags?: typeof refreshTagsDefault;
     toggleTag?: typeof toggleTagDefault;
+    toggleSeverityNone?: typeof toggleSeverityNoneDefault;
     clearTagFilter?: typeof clearTagFilterDefault;
     /**
      * API client for the reopen-button on closed rows. Injected so
@@ -125,6 +127,7 @@
     refreshSessions = refreshSessionsDefault,
     refreshTags = refreshTagsDefault,
     toggleTag = toggleTagDefault,
+    toggleSeverityNone = toggleSeverityNoneDefault,
     clearTagFilter = clearTagFilterDefault,
     reopenSession = reopenSessionDefault,
     sessionSortStore = sessionSortStoreDefault,
@@ -232,6 +235,7 @@
     void tagsStore.selectedProjectIds;
     void tagsStore.selectedSeverityIds;
     void tagsStore.selectedOtherIds;
+    void tagsStore.selectedSeverityNone;
     showClosed = false;
   });
 
@@ -574,7 +578,9 @@
     selectedProjectIds={tagsStore.selectedProjectIds}
     selectedSeverityIds={tagsStore.selectedSeverityIds}
     selectedOtherIds={tagsStore.selectedOtherIds}
+    selectedSeverityNone={tagsStore.selectedSeverityNone}
     onToggle={toggleTag}
+    onToggleSeverityNone={toggleSeverityNone}
     onClear={clearTagFilter}
   />
 

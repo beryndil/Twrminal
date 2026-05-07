@@ -30,10 +30,12 @@ const emptySets = (): {
   selectedProjectIds: ReadonlySet<number>;
   selectedSeverityIds: ReadonlySet<number>;
   selectedOtherIds: ReadonlySet<number>;
+  selectedSeverityNone: boolean;
 } => ({
   selectedProjectIds: new Set<number>(),
   selectedSeverityIds: new Set<number>(),
   selectedOtherIds: new Set<number>(),
+  selectedSeverityNone: false,
 });
 
 describe("TagFilterPanel", () => {
@@ -47,6 +49,7 @@ describe("TagFilterPanel", () => {
         ],
         ...emptySets(),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -59,6 +62,7 @@ describe("TagFilterPanel", () => {
         tags: [tag(1, "bearings", "project")],
         ...emptySets(),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -73,6 +77,7 @@ describe("TagFilterPanel", () => {
         tags: [],
         ...emptySets(),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -85,6 +90,7 @@ describe("TagFilterPanel", () => {
         tags: [tag(1, "bearings", "project")],
         ...emptySets(),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -100,6 +106,7 @@ describe("TagFilterPanel", () => {
         tags: [tag(7, "bearings", "project")],
         ...emptySets(),
         onToggle,
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -114,6 +121,7 @@ describe("TagFilterPanel", () => {
         tags: [tag(9, "urgent", "severity")],
         ...emptySets(),
         onToggle,
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -127,6 +135,7 @@ describe("TagFilterPanel", () => {
         tags: [tag(1, "freeform")],
         ...emptySets(),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -140,6 +149,7 @@ describe("TagFilterPanel", () => {
         ...emptySets(),
         selectedOtherIds: new Set([1]),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -154,6 +164,7 @@ describe("TagFilterPanel", () => {
         ...emptySets(),
         selectedOtherIds: new Set([1]),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear,
       },
     });
@@ -168,6 +179,7 @@ describe("TagFilterPanel", () => {
         ...emptySets(),
         selectedProjectIds: new Set([1]),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -185,6 +197,7 @@ describe("TagFilterPanel", () => {
         tags: [tag(1, "bearings", "project")],
         ...emptySets(),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -197,6 +210,7 @@ describe("TagFilterPanel", () => {
         tags: [{ ...tag(1, "bearings", "project"), pinned: true }],
         ...emptySets(),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -211,6 +225,7 @@ describe("TagFilterPanel", () => {
         tags: [{ ...tag(1, "bearings", "project"), pinned: true }],
         ...emptySets(),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -230,6 +245,7 @@ describe("TagFilterPanel", () => {
         ],
         ...emptySets(),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -245,6 +261,7 @@ describe("TagFilterPanel", () => {
         ],
         ...emptySets(),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -266,6 +283,7 @@ describe("TagFilterPanel", () => {
         ],
         ...emptySets(),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -279,6 +297,7 @@ describe("TagFilterPanel", () => {
         tags: [{ ...tag(1, "bearings", "project"), open_session_count: 3, session_count: 5 }],
         ...emptySets(),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -296,6 +315,7 @@ describe("TagFilterPanel", () => {
         tags: [{ ...tag(1, "bearings", "project"), open_session_count: 0, session_count: 2 }],
         ...emptySets(),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -313,6 +333,7 @@ describe("TagFilterPanel", () => {
         tags: [{ ...tag(1, "bearings", "project"), open_session_count: 1, session_count: 7 }],
         ...emptySets(),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
@@ -332,11 +353,98 @@ describe("TagFilterPanel", () => {
         tags: [{ ...tag(1, "bearings", "project"), open_session_count: 0, session_count: 0 }],
         ...emptySets(),
         onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
         onClear: vi.fn(),
       },
     });
     const countPair = getAllByTestId("tag-filter-chip-counts")[0];
     expect(countPair.textContent).toContain("0");
     expect(countPair.textContent).toContain("/0");
+  });
+
+  // ---------------------------------------------------------------------------
+  // "No severity" synthetic chip — gap-cycle-18-003
+  // ---------------------------------------------------------------------------
+
+  it("renders the No severity chip when the severity section is non-empty", () => {
+    const { getByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [tag(1, "urgent", "severity")],
+        ...emptySets(),
+        onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
+        onClear: vi.fn(),
+      },
+    });
+    expect(getByTestId("tag-filter-chip-severity-none")).toBeInTheDocument();
+  });
+
+  it("does NOT render the No severity chip when the severity section is empty", () => {
+    const { queryByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [tag(1, "bearings", "project")],
+        ...emptySets(),
+        onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
+        onClear: vi.fn(),
+      },
+    });
+    expect(queryByTestId("tag-filter-chip-severity-none")).toBeNull();
+  });
+
+  it("clicking the No severity chip fires onToggleSeverityNone", async () => {
+    const onToggleSeverityNone = vi.fn();
+    const { getByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [tag(1, "urgent", "severity")],
+        ...emptySets(),
+        onToggle: vi.fn(),
+        onToggleSeverityNone,
+        onClear: vi.fn(),
+      },
+    });
+    await fireEvent.click(getByTestId("tag-filter-chip-severity-none"));
+    expect(onToggleSeverityNone).toHaveBeenCalled();
+  });
+
+  it("No severity chip shows aria-pressed=true when selectedSeverityNone is true", () => {
+    const { getByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [tag(1, "urgent", "severity")],
+        ...emptySets(),
+        selectedSeverityNone: true,
+        onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
+        onClear: vi.fn(),
+      },
+    });
+    expect(getByTestId("tag-filter-chip-severity-none")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("No severity chip shows aria-pressed=false when selectedSeverityNone is false", () => {
+    const { getByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [tag(1, "urgent", "severity")],
+        ...emptySets(),
+        onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
+        onClear: vi.fn(),
+      },
+    });
+    expect(getByTestId("tag-filter-chip-severity-none")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("selectedSeverityNone=true makes the clear button visible", () => {
+    const { getByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [tag(1, "urgent", "severity")],
+        ...emptySets(),
+        selectedSeverityNone: true,
+        onToggle: vi.fn(),
+        onToggleSeverityNone: vi.fn(),
+        onClear: vi.fn(),
+      },
+    });
+    expect(getByTestId("tag-filter-clear")).toBeInTheDocument();
   });
 });
