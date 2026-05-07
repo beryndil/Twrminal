@@ -257,9 +257,9 @@ The agent loop for a chat is implicit:
 
 ## Inspector pane (non-routing subsections)
 
-The right column of the app shell hosts the **Inspector** pane: a tabbed surface that exposes the active session's per-row metadata in long form. Five tabs are wired today, in the order they render: **Agent**, **Context**, **Instructions**, **Routing**, **Usage**. The first three are described here; the routing-and-usage pair belongs to §"What the user does NOT see in chat" because it is governed by the routing spec.
+The right column of the app shell hosts the **Inspector** pane: a tabbed surface that exposes the active session's per-row metadata in long form. Six tabs are wired today, in the order they render: **Agent**, **Context**, **Instructions**, **Files**, **Routing**, **Usage**. The first four are described here; the routing-and-usage pair belongs to §"What the user does NOT see in chat" because it is governed by the routing spec.
 
-The pane is empty-state when no session is selected (boot, tag filter empties the list, sidebar selection cleared). Picking a session activates the last-selected tab; **the active-tab choice is sticky across page reloads** — it is persisted to `localStorage` under the key `bearings-v1:inspector-tab` and re-hydrated on boot, falling back to the Agent tab when the value is absent or unrecognised. Persistence is best-effort: a `localStorage` exception (private-browsing mode, storage quota exceeded) is caught silently — the in-memory selection still flips for the lifetime of that page load. **State survives tab switches**: all five subsection components stay mounted at all times (inactive ones hidden via the HTML `hidden` attribute); switching tabs never destroys a subtree, so per-tab transient state — expanded "Why this model?" panels, scroll positions, already-loaded fetch data — is intact when the user returns to a tab they visited earlier in the same session.
+The pane is empty-state when no session is selected (boot, tag filter empties the list, sidebar selection cleared). Picking a session activates the last-selected tab; **the active-tab choice is sticky across page reloads** — it is persisted to `localStorage` under the key `bearings-v1:inspector-tab` and re-hydrated on boot, falling back to the Agent tab when the value is absent or unrecognised. Persistence is best-effort: a `localStorage` exception (private-browsing mode, storage quota exceeded) is caught silently — the in-memory selection still flips for the lifetime of that page load. **State survives tab switches**: all six subsection components stay mounted at all times (inactive ones hidden via the HTML `hidden` attribute); switching tabs never destroys a subtree, so per-tab transient state — expanded "Why this model?" panels, scroll positions, already-loaded fetch data — is intact when the user returns to a tab they visited earlier in the same session.
 
 The shape the Inspector reads from the selected row mirrors the API's `SessionOut` envelope (the fields the conversation header band already summarises): `id`, `kind`, `title`, `description`, `session_instructions`, `working_dir`, `model`, `permission_mode`, `max_budget_usd`, `total_cost_usd`, `message_count`, `last_context_pct`, `last_context_tokens`, `last_context_max`, plus the housekeeping timestamps (`created_at`, `updated_at`, `last_viewed_at`, `last_completed_at`, `closed_at`) and flags (`pinned`, `error_pending`, `checklist_item_id`).
 
@@ -293,6 +293,29 @@ Below the grid is an **Assembled context** section. Today it renders a placehold
 Exposes the per-session free-text instructions (`session_instructions` on `SessionOut`). When the value is a non-empty (post-trim) string, the body renders inside a monospace pre-block with whitespace-preserving wrap. When the value is null, empty, or whitespace-only, the user sees the empty-state copy `No per-session instructions set.` — the renderer treats whitespace-only as empty so a stray newline does not masquerade as content.
 
 The Instructions subsection is read-only in v0.18.0 — the editor surface for the field lives in the SessionEdit modal (per arch §1.2 `components/modals/`), not in the Inspector body. Inspector renders a faithful view of the persisted value; round-tripping back through the editor preserves the exact text including leading/trailing whitespace inside the bubble.
+
+### Files
+
+Aggregated view of every file path the agent has touched in the active session (gap-cycle-09-003). The header strip shows **Files Touched** with a count badge (the number of distinct paths recorded so far).
+
+**Data source**: `conversationStore.turns` — the in-memory turn list maintained by the conversation store reducer. No network call is made; the list updates reactively as new tool events arrive on the WebSocket.
+
+**Path-key precedence** (applied to each `ToolCallView.inputJson`):
+1. `file_path` — used by `Read`, `Write`, and `Edit`.
+2. `notebook_path` — used by `NotebookEdit`.
+3. `path` — used by `Grep`.
+
+`Bash` and `Glob` tool calls are skipped entirely — they do not address a specific file path in a way that is meaningful for the file-touch log.
+
+**Row shape**: each row shows:
+* Home-shortened path in monospace (`/home/<user>/…` shortened to `~/…` for column fit; the full path is preserved in the `title` tooltip attribute).
+* Last action verb (`Read` / `Write` / `Edit` / `NotebookEdit` / `Grep`).
+* Touch count as `× N` when the same path was touched more than once; omitted when `N = 1`.
+* Last-touch time formatted by `formatAbsolute` (respects the user's display-timezone preference).
+
+Rows are sorted most-recent touch first. Entries with no recoverable timestamp (hydrated calls whose parent turn has no `createdAt` and whose `startedAt` is `0`) sort after all timestamped rows.
+
+**Empty state**: when no file-touching tool calls have been recorded yet, the subsection shows the heading "No files touched yet" with a one-sentence explanation: "A row appears each time the agent reads, writes, edits, or greps a specific file path."
 
 ## CollapsibleBody
 

@@ -1354,6 +1354,12 @@ export const INSPECTOR_TAB_AGENT = "agent";
 export const INSPECTOR_TAB_CONTEXT = "context";
 export const INSPECTOR_TAB_INSTRUCTIONS = "instructions";
 /**
+ * Files subsection — aggregated view of every file path the agent
+ * has touched in the active session (gap-cycle-09-003). The shell
+ * switches on this id to render :class:`InspectorFiles`.
+ */
+export const INSPECTOR_TAB_FILES = "files";
+/**
  * Routing subsection (spec §10 "Modified: Inspector 'Routing'
  * subsection"). Lit by item 2.6 — the Inspector shell switches on
  * the id to render :class:`InspectorRouting`.
@@ -1376,6 +1382,7 @@ export const KNOWN_INSPECTOR_TABS = [
   INSPECTOR_TAB_AGENT,
   INSPECTOR_TAB_CONTEXT,
   INSPECTOR_TAB_INSTRUCTIONS,
+  INSPECTOR_TAB_FILES,
   INSPECTOR_TAB_ROUTING,
   INSPECTOR_TAB_USAGE,
 ] as const;
@@ -1437,6 +1444,7 @@ export const INSPECTOR_STRINGS = {
     [INSPECTOR_TAB_AGENT]: "Agent",
     [INSPECTOR_TAB_CONTEXT]: "Context",
     [INSPECTOR_TAB_INSTRUCTIONS]: "Instructions",
+    [INSPECTOR_TAB_FILES]: "Files",
     [INSPECTOR_TAB_ROUTING]: "Routing",
     [INSPECTOR_TAB_USAGE]: "Usage",
   } as const satisfies Record<InspectorTabId, string>,
@@ -1475,6 +1483,14 @@ export const INSPECTOR_STRINGS = {
   instructionsHeading: "Instructions",
   instructionsBodyLabel: "Session instructions",
   instructionsEmpty: "No per-session instructions set.",
+  // Files subsection (gap-cycle-09-003) — derives rows from
+  // conversationStore.turns via path-key extraction on each
+  // ToolCallView. The three path keys (file_path, notebook_path,
+  // path) mirror the v17 FilesTab logic; Bash and Glob are skipped.
+  filesHeading: "Files Touched",
+  filesEmptyHeading: "No files touched yet",
+  filesEmptyBody:
+    "A row appears each time the agent reads, writes, edits, or greps a specific file path.",
   // Routing subsection (spec §10 "Modified: Inspector 'Routing'
   // subsection"). The current-decision card surfaces the four
   // routing-decision fields the spec lists; the timeline + advisor

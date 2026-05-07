@@ -36,6 +36,7 @@
     INSPECTOR_STRINGS,
     INSPECTOR_TAB_AGENT,
     INSPECTOR_TAB_CONTEXT,
+    INSPECTOR_TAB_FILES,
     INSPECTOR_TAB_INSTRUCTIONS,
     INSPECTOR_TAB_ROUTING,
     INSPECTOR_TAB_USAGE,
@@ -52,6 +53,7 @@
   } from "../../stores/inspector.svelte";
   import InspectorAgent from "./InspectorAgent.svelte";
   import InspectorContext from "./InspectorContext.svelte";
+  import InspectorFiles from "./InspectorFiles.svelte";
   import InspectorInstructions from "./InspectorInstructions.svelte";
   import InspectorRouting from "./InspectorRouting.svelte";
   import InspectorUsage from "./InspectorUsage.svelte";
@@ -154,6 +156,9 @@
       </div>
       <div hidden={activeTabId !== INSPECTOR_TAB_INSTRUCTIONS}>
         <InspectorInstructions {session} />
+      </div>
+      <div hidden={activeTabId !== INSPECTOR_TAB_FILES}>
+        <InspectorFiles {session} />
       </div>
       <div hidden={activeTabId !== INSPECTOR_TAB_ROUTING}>
         <InspectorRouting {session} {fetchMessages} />

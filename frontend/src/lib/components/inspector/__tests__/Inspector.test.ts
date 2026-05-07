@@ -17,6 +17,7 @@ import {
   INSPECTOR_STRINGS,
   INSPECTOR_TAB_AGENT,
   INSPECTOR_TAB_CONTEXT,
+  INSPECTOR_TAB_FILES,
   INSPECTOR_TAB_INSTRUCTIONS,
   INSPECTOR_TAB_ROUTING,
   INSPECTOR_TAB_USAGE,
@@ -116,6 +117,9 @@ describe("Inspector shell — default-tab landing", () => {
     const instrEl = queryByTestId("inspector-instructions");
     expect(instrEl).not.toBeNull();
     expect(instrEl!.parentElement?.hasAttribute("hidden")).toBe(true);
+    const filesEl = queryByTestId("inspector-files");
+    expect(filesEl).not.toBeNull();
+    expect(filesEl!.parentElement?.hasAttribute("hidden")).toBe(true);
     const routingEl = queryByTestId("inspector-routing");
     expect(routingEl).not.toBeNull();
     expect(routingEl!.parentElement?.hasAttribute("hidden")).toBe(true);
@@ -160,6 +164,12 @@ describe("Inspector shell — tab switching", () => {
     // Agent is still in the DOM, just hidden.
     const agentEl = getByTestId("inspector-agent");
     expect(agentEl.parentElement?.hasAttribute("hidden")).toBe(true);
+
+    // Files tab works the same way.
+    setInspectorTab(INSPECTOR_TAB_FILES);
+    const filesEl = await findByTestId("inspector-files");
+    expect(filesEl.parentElement?.hasAttribute("hidden")).toBe(false);
+    expect(instrEl.parentElement?.hasAttribute("hidden")).toBe(true);
   });
 
   it("clicking through the production store rotates the rendered subsection", async () => {
@@ -232,6 +242,7 @@ describe("Inspector shell — tab state persistence (gap-cycle-09-001)", () => {
     expect(queryByTestId("inspector-instructions")!.parentElement?.hasAttribute("hidden")).toBe(
       true,
     );
+    expect(queryByTestId("inspector-files")!.parentElement?.hasAttribute("hidden")).toBe(true);
     expect(queryByTestId("inspector-routing")!.parentElement?.hasAttribute("hidden")).toBe(true);
     expect(queryByTestId("inspector-usage")!.parentElement?.hasAttribute("hidden")).toBe(true);
   });
@@ -357,15 +368,17 @@ describe("Inspector shell — empty session", () => {
     expect(getAllByTestId("inspector-tab")).toHaveLength(KNOWN_INSPECTOR_TABS.length);
   });
 
-  it("agrees with the documented Agent / Context / Instructions / Routing / Usage tab ids", () => {
+  it("agrees with the documented Agent / Context / Instructions / Files / Routing / Usage tab ids", () => {
     // Keeps the shell honest against ``KNOWN_INSPECTOR_TABS`` — any
     // re-ordering or rename without touching this assertion is loud.
-    // Item 2.6 appended Routing + Usage; the order is the on-screen
-    // order of the tab strip and the spec §10 inspector enumeration.
+    // Item 2.6 appended Routing + Usage; gap-cycle-09-003 inserted
+    // Files between Instructions and Routing. The order is the
+    // on-screen order of the tab strip.
     expect(KNOWN_INSPECTOR_TABS).toEqual([
       INSPECTOR_TAB_AGENT,
       INSPECTOR_TAB_CONTEXT,
       INSPECTOR_TAB_INSTRUCTIONS,
+      INSPECTOR_TAB_FILES,
       INSPECTOR_TAB_ROUTING,
       INSPECTOR_TAB_USAGE,
     ]);
