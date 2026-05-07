@@ -1360,6 +1360,13 @@ export const INSPECTOR_TAB_INSTRUCTIONS = "instructions";
  */
 export const INSPECTOR_TAB_FILES = "files";
 /**
+ * Changes subsection (gap-cycle-09-004) — lists every WRITE-side
+ * tool call (``Edit`` / ``Write`` / ``NotebookEdit``) made in the
+ * active session, sorted most-recent first. The shell switches on
+ * this id to render :class:`InspectorChanges`.
+ */
+export const INSPECTOR_TAB_CHANGES = "changes";
+/**
  * Routing subsection (spec §10 "Modified: Inspector 'Routing'
  * subsection"). Lit by item 2.6 — the Inspector shell switches on
  * the id to render :class:`InspectorRouting`.
@@ -1383,6 +1390,7 @@ export const KNOWN_INSPECTOR_TABS = [
   INSPECTOR_TAB_CONTEXT,
   INSPECTOR_TAB_INSTRUCTIONS,
   INSPECTOR_TAB_FILES,
+  INSPECTOR_TAB_CHANGES,
   INSPECTOR_TAB_ROUTING,
   INSPECTOR_TAB_USAGE,
 ] as const;
@@ -1445,6 +1453,7 @@ export const INSPECTOR_STRINGS = {
     [INSPECTOR_TAB_CONTEXT]: "Context",
     [INSPECTOR_TAB_INSTRUCTIONS]: "Instructions",
     [INSPECTOR_TAB_FILES]: "Files",
+    [INSPECTOR_TAB_CHANGES]: "Changes",
     [INSPECTOR_TAB_ROUTING]: "Routing",
     [INSPECTOR_TAB_USAGE]: "Usage",
   } as const satisfies Record<InspectorTabId, string>,
@@ -1491,6 +1500,12 @@ export const INSPECTOR_STRINGS = {
   filesEmptyHeading: "No files touched yet",
   filesEmptyBody:
     "A row appears each time the agent reads, writes, edits, or greps a specific file path.",
+  // Changes subsection (gap-cycle-09-004) — one row per Write-side tool
+  // call (Edit / Write / NotebookEdit), sorted most-recent first.
+  changesHeading: "Changes",
+  changesEmptyHeading: "No changes yet",
+  changesEmptyBody:
+    "A row appears each time the agent writes a new file, edits an existing file, or modifies a notebook cell.",
   // Routing subsection (spec §10 "Modified: Inspector 'Routing'
   // subsection"). The current-decision card surfaces the four
   // routing-decision fields the spec lists; the timeline + advisor

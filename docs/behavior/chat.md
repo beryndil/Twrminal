@@ -257,9 +257,9 @@ The agent loop for a chat is implicit:
 
 ## Inspector pane (non-routing subsections)
 
-The right column of the app shell hosts the **Inspector** pane: a tabbed surface that exposes the active session's per-row metadata in long form. Six tabs are wired today, in the order they render: **Agent**, **Context**, **Instructions**, **Files**, **Routing**, **Usage**. The first four are described here; the routing-and-usage pair belongs to §"What the user does NOT see in chat" because it is governed by the routing spec.
+The right column of the app shell hosts the **Inspector** pane: a tabbed surface that exposes the active session's per-row metadata in long form. Seven tabs are wired today, in the order they render: **Agent**, **Context**, **Instructions**, **Files**, **Changes**, **Routing**, **Usage**. The first five are described here; the routing-and-usage pair belongs to §"What the user does NOT see in chat" because it is governed by the routing spec.
 
-The pane is empty-state when no session is selected (boot, tag filter empties the list, sidebar selection cleared). Picking a session activates the last-selected tab; **the active-tab choice is sticky across page reloads** — it is persisted to `localStorage` under the key `bearings-v1:inspector-tab` and re-hydrated on boot, falling back to the Agent tab when the value is absent or unrecognised. Persistence is best-effort: a `localStorage` exception (private-browsing mode, storage quota exceeded) is caught silently — the in-memory selection still flips for the lifetime of that page load. **State survives tab switches**: all six subsection components stay mounted at all times (inactive ones hidden via the HTML `hidden` attribute); switching tabs never destroys a subtree, so per-tab transient state — expanded "Why this model?" panels, scroll positions, already-loaded fetch data — is intact when the user returns to a tab they visited earlier in the same session.
+The pane is empty-state when no session is selected (boot, tag filter empties the list, sidebar selection cleared). Picking a session activates the last-selected tab; **the active-tab choice is sticky across page reloads** — it is persisted to `localStorage` under the key `bearings-v1:inspector-tab` and re-hydrated on boot, falling back to the Agent tab when the value is absent or unrecognised. Persistence is best-effort: a `localStorage` exception (private-browsing mode, storage quota exceeded) is caught silently — the in-memory selection still flips for the lifetime of that page load. **State survives tab switches**: all seven subsection components stay mounted at all times (inactive ones hidden via the HTML `hidden` attribute); switching tabs never destroys a subtree, so per-tab transient state — expanded "Why this model?" panels, scroll positions, already-loaded fetch data — is intact when the user returns to a tab they visited earlier in the same session.
 
 The shape the Inspector reads from the selected row mirrors the API's `SessionOut` envelope (the fields the conversation header band already summarises): `id`, `kind`, `title`, `description`, `session_instructions`, `working_dir`, `model`, `permission_mode`, `max_budget_usd`, `total_cost_usd`, `message_count`, `last_context_pct`, `last_context_tokens`, `last_context_max`, plus the housekeeping timestamps (`created_at`, `updated_at`, `last_viewed_at`, `last_completed_at`, `closed_at`) and flags (`pinned`, `error_pending`, `checklist_item_id`).
 
@@ -316,6 +316,37 @@ Aggregated view of every file path the agent has touched in the active session (
 Rows are sorted most-recent touch first. Entries with no recoverable timestamp (hydrated calls whose parent turn has no `createdAt` and whose `startedAt` is `0`) sort after all timestamped rows.
 
 **Empty state**: when no file-touching tool calls have been recorded yet, the subsection shows the heading "No files touched yet" with a one-sentence explanation: "A row appears each time the agent reads, writes, edits, or greps a specific file path."
+
+### Changes
+
+Chronological list of every WRITE-side tool call the agent made in the active session (gap-cycle-09-004). The header strip shows **Changes** with a count badge (the number of change rows recorded so far).
+
+**Data source**: `conversationStore.turns` — the same in-memory turn list used by the Files tab. No network call is made; the list updates reactively as new tool events arrive on the WebSocket.
+
+**Verb mapping** — only three tool names produce rows:
+
+| Tool name | Verb badge | Badge colour |
+|---|---|---|
+| `Write` | Created | Emerald |
+| `Edit` | Edited | Amber |
+| `NotebookEdit` | Notebook-edited | Indigo |
+
+All other tool names (`Read`, `Grep`, `Glob`, `Bash`, …) are ignored.
+
+**Path extraction**:
+* `Write` / `Edit` → `file_path` key of `inputJson`.
+* `NotebookEdit` → `notebook_path` key of `inputJson`.
+
+**Excerpt extraction**: the excerpt shown beneath the path line is derived from the new-content field of the tool call's `inputJson`:
+* `Write` → `content` field.
+* `Edit` → `new_string` field.
+* `NotebookEdit` → `new_source` field.
+
+Processing: split on `\n`, take line 0, trim leading whitespace, clip to 120 characters. An empty excerpt (absent field, parse failure, or blank first line after trimming) suppresses the excerpt row entirely.
+
+**Row shape**: unlike the Files tab (which deduplicates by path), the Changes tab records one row per individual tool call — each `Edit` or `Write` or `NotebookEdit` call is a discrete change event. Rows sorted most-recent first. Entries with no recoverable timestamp sort after all timestamped rows (same derivation as Files: `startedAt` first, `turn.createdAt` fallback, `null` when neither).
+
+**Empty state**: "No changes yet" with the explanation: "A row appears each time the agent writes a new file, edits an existing file, or modifies a notebook cell."
 
 ## CollapsibleBody
 

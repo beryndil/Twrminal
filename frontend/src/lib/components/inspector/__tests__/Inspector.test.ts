@@ -16,6 +16,7 @@ import {
   DEFAULT_INSPECTOR_TAB,
   INSPECTOR_STRINGS,
   INSPECTOR_TAB_AGENT,
+  INSPECTOR_TAB_CHANGES,
   INSPECTOR_TAB_CONTEXT,
   INSPECTOR_TAB_FILES,
   INSPECTOR_TAB_INSTRUCTIONS,
@@ -368,17 +369,19 @@ describe("Inspector shell — empty session", () => {
     expect(getAllByTestId("inspector-tab")).toHaveLength(KNOWN_INSPECTOR_TABS.length);
   });
 
-  it("agrees with the documented Agent / Context / Instructions / Files / Routing / Usage tab ids", () => {
+  it("agrees with the documented Agent / Context / Instructions / Files / Changes / Routing / Usage tab ids", () => {
     // Keeps the shell honest against ``KNOWN_INSPECTOR_TABS`` — any
     // re-ordering or rename without touching this assertion is loud.
     // Item 2.6 appended Routing + Usage; gap-cycle-09-003 inserted
-    // Files between Instructions and Routing. The order is the
+    // Files between Instructions and Routing; gap-cycle-09-004
+    // inserted Changes between Files and Routing. The order is the
     // on-screen order of the tab strip.
     expect(KNOWN_INSPECTOR_TABS).toEqual([
       INSPECTOR_TAB_AGENT,
       INSPECTOR_TAB_CONTEXT,
       INSPECTOR_TAB_INSTRUCTIONS,
       INSPECTOR_TAB_FILES,
+      INSPECTOR_TAB_CHANGES,
       INSPECTOR_TAB_ROUTING,
       INSPECTOR_TAB_USAGE,
     ]);

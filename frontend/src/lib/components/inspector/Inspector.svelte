@@ -35,6 +35,7 @@
   import {
     INSPECTOR_STRINGS,
     INSPECTOR_TAB_AGENT,
+    INSPECTOR_TAB_CHANGES,
     INSPECTOR_TAB_CONTEXT,
     INSPECTOR_TAB_FILES,
     INSPECTOR_TAB_INSTRUCTIONS,
@@ -52,6 +53,7 @@
     setInspectorTab as setInspectorTabDefault,
   } from "../../stores/inspector.svelte";
   import InspectorAgent from "./InspectorAgent.svelte";
+  import InspectorChanges from "./InspectorChanges.svelte";
   import InspectorContext from "./InspectorContext.svelte";
   import InspectorFiles from "./InspectorFiles.svelte";
   import InspectorInstructions from "./InspectorInstructions.svelte";
@@ -141,7 +143,7 @@
       </p>
     {:else}
       <!--
-        All five tabs stay mounted; inactive ones hide via the `hidden`
+        All six tabs stay mounted; inactive ones hide via the `hidden`
         attribute. This preserves transient state (expandedReasons set,
         scroll positions, already-loaded fetch data) across tab switches —
         silent data loss was the cycle-09 audit's headline regression here.
@@ -159,6 +161,9 @@
       </div>
       <div hidden={activeTabId !== INSPECTOR_TAB_FILES}>
         <InspectorFiles {session} />
+      </div>
+      <div hidden={activeTabId !== INSPECTOR_TAB_CHANGES}>
+        <InspectorChanges {session} />
       </div>
       <div hidden={activeTabId !== INSPECTOR_TAB_ROUTING}>
         <InspectorRouting {session} {fetchMessages} />
