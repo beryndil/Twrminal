@@ -58,6 +58,7 @@
   import SidebarSearch from "$lib/components/sidebar/SidebarSearch.svelte";
   import PairedChatIndicator from "$lib/components/conversation/PairedChatIndicator.svelte";
   import { reopenSession, getPairedChatInfo, type PairedChatInfo } from "$lib/api/sessions";
+  import { sidebarNavNext, sidebarNavPrev } from "$lib/keyboard/sidebarNav";
   import BackendStatusBanner from "$lib/components/feedback/BackendStatusBanner.svelte";
   import AuthGate from "$lib/components/feedback/AuthGate.svelte";
   import StatusBar from "$lib/components/feedback/StatusBar.svelte";
@@ -183,29 +184,13 @@
   // ---- Keyboard handler wiring (item 4.1) ---------------------------
 
   function sidebarMoveDown(): void {
-    const sessions = sessionsStore.sessions;
-    if (sessions.length === 0) return;
-    const current = inspectorStore.activeSessionId;
-    if (current === null) {
-      void goto(`/sessions/${encodeURIComponent(sessions[0].id)}`);
-      return;
-    }
-    const idx = sessions.findIndex((s) => s.id === current);
-    if (idx < 0 || idx >= sessions.length - 1) return;
-    void goto(`/sessions/${encodeURIComponent(sessions[idx + 1].id)}`);
+    const target = sidebarNavNext(sessionsStore.sessions, inspectorStore.activeSessionId);
+    if (target !== null) void goto(`/sessions/${encodeURIComponent(target)}`);
   }
 
   function sidebarMoveUp(): void {
-    const sessions = sessionsStore.sessions;
-    if (sessions.length === 0) return;
-    const current = inspectorStore.activeSessionId;
-    if (current === null) {
-      void goto(`/sessions/${encodeURIComponent(sessions[sessions.length - 1].id)}`);
-      return;
-    }
-    const idx = sessions.findIndex((s) => s.id === current);
-    if (idx <= 0) return;
-    void goto(`/sessions/${encodeURIComponent(sessions[idx - 1].id)}`);
+    const target = sidebarNavPrev(sessionsStore.sessions, inspectorStore.activeSessionId);
+    if (target !== null) void goto(`/sessions/${encodeURIComponent(target)}`);
   }
 
   onMount(() => {
