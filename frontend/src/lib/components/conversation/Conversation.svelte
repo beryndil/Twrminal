@@ -123,6 +123,28 @@
   );
 
   /**
+   * Streaming-content length signal: sum of assistant body lengths plus all
+   * tool-output lengths across every turn.
+   *
+   * ``token`` and ``tool_output_delta`` events each return a same-length
+   * turns array (the reducer maps in place) so ``turns.length`` does NOT
+   * change — the auto-scroll effect would never refire. Reading this derived
+   * value instead gives the effect a dependency that changes on every
+   * streaming chunk.
+   *
+   * Behavior anchor: ``docs/behavior/tool-output-streaming.md``
+   * §"Scroll-anchor behavior" bullet 1 ("each new chunk" guarantee).
+   * Gap: gap-cycle-16-001.
+   */
+  const streamingContentLength = $derived(
+    conversationStore.turns.reduce(
+      (sum, t) =>
+        sum + t.body.length + t.toolCalls.reduce((s, tc) => s + tc.output.length, 0),
+      0,
+    ),
+  );
+
+  /**
    * Working directory of the active session, read from the sessions store
    * so ``ToolOutput`` rows can linkify workspace-relative file paths.
    * Per ``docs/behavior/tool-output-streaming.md``
@@ -212,16 +234,30 @@
     };
   });
 
-  // Auto-scroll on each turn-list change while the user is at the
-  // bottom (per behavior doc §"Scroll-anchor behavior"). The
-  // ``conversationStore.turns`` proxy read inside the effect makes
-  // this reactive without explicit subscriptions.
+  // Auto-scroll on each turn-list change OR streaming content growth while
+  // the user is at the bottom (per behavior doc §"Scroll-anchor behavior").
+  //
+  // Two intentional dependency-tracking reads:
+  //   - ``turns.length`` refires on new user/assistant turn arrivals.
+  //   - ``streamingContentLength`` refires on every ``token`` /
+  //     ``tool_output_delta`` chunk that extends content inside an existing
+  //     turn (those events return a same-length array so ``turns.length``
+  //     alone would not refire the effect).
+  //
+  // ``queueMicrotask`` defers the assignment past Svelte's DOM patch so
+  // ``scrollHeight`` reflects the freshly-rendered content, matching v17's
+  // pattern. The ``atBottom`` guard inside the microtask re-checks the
+  // current scroll position in case the user scrolled up in the narrow gap
+  // between effect scheduling and microtask execution.
   $effect(() => {
-    // Reactive read — without it Svelte 5 doesn't track this
-    // dependency.
     void conversationStore.turns.length;
+    void streamingContentLength;
     if (bodyEl !== null && atBottom) {
-      bodyEl.scrollTop = bodyEl.scrollHeight;
+      queueMicrotask(() => {
+        if (bodyEl !== null && atBottom) {
+          bodyEl.scrollTop = bodyEl.scrollHeight;
+        }
+      });
     }
   });
 

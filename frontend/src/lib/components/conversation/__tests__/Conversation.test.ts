@@ -1,13 +1,14 @@
 /**
  * Component tests for ``Conversation`` — history hydration on
  * session-id change, empty state, error surface, basic list
- * rendering.
+ * rendering, and streaming auto-scroll behavior (gap-cycle-16-001).
  *
  * The WebSocket subscription side of the pane is stubbed by mocking
  * the agent module — we don't open a real socket in jsdom. The
  * fetch is stubbed via ``vi.stubGlobal``.
  */
-import { render, waitFor } from "@testing-library/svelte";
+import { fireEvent, render, waitFor } from "@testing-library/svelte";
+import { flushSync } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../agent.svelte", () => ({
@@ -21,7 +22,12 @@ vi.mock("../../../utils/appInfo", () => ({
 }));
 
 import Conversation from "../Conversation.svelte";
-import { _resetForTests } from "../../../stores/conversation.svelte";
+import {
+  _resetForTests,
+  ingestFrame,
+  resetConversation,
+} from "../../../stores/conversation.svelte";
+import { WS_FRAME_KIND_EVENT } from "../../../config";
 
 const fetchMock = vi.fn();
 
@@ -150,5 +156,155 @@ describe("Conversation — hydration", () => {
     });
     const { findByTestId } = render(Conversation, { props: { sessionId: "ses_a" } });
     expect(await findByTestId("conversation-error")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Streaming auto-scroll (gap-cycle-16-001)
+//
+// These tests drive state through ``ingestFrame`` (the conversation.svelte.ts
+// ingestFrame harness) and observe whether ``bodyEl.scrollTop`` gets written.
+// jsdom has no real layout so we mock ``scrollHeight`` via
+// ``Object.defineProperty`` and intercept the ``scrollTop`` setter.
+// ---------------------------------------------------------------------------
+
+/**
+ * Install scroll-property mocks on ``bodyEl`` and return a getter for the
+ * most recent ``scrollTop`` assignment value.
+ */
+function mockScrollProps(el: HTMLElement): { getScrollTop: () => number } {
+  let scrollTopValue = 0;
+  Object.defineProperty(el, "scrollHeight", {
+    get: () => 1000,
+    configurable: true,
+  });
+  Object.defineProperty(el, "scrollTop", {
+    get: () => scrollTopValue,
+    set: (v: number) => {
+      scrollTopValue = v;
+    },
+    configurable: true,
+  });
+  return { getScrollTop: () => scrollTopValue };
+}
+
+/** Flush Svelte reactive effects then drain the microtask queue. */
+async function flushAll(): Promise<void> {
+  flushSync();
+  await new Promise<void>((r) => queueMicrotask(r));
+}
+
+describe("Conversation — streaming auto-scroll (gap-cycle-16-001)", () => {
+  it("(a) token event re-fires auto-scroll while atBottom=true", async () => {
+    setMessagesResponse("ses_sc1", {
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ items: [], has_more: false }),
+    });
+    const { getByTestId } = render(Conversation, { props: { sessionId: "ses_sc1" } });
+    await waitFor(() => expect(getByTestId("conversation-body")).toBeTruthy());
+    const bodyEl = getByTestId("conversation-body");
+    const { getScrollTop } = mockScrollProps(bodyEl);
+
+    // Open an in-flight assistant turn.
+    resetConversation("ses_sc1");
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 1,
+      event: { session_id: "ses_sc1", type: "message_start", message_id: "a1" },
+    });
+    await flushAll();
+
+    // Dispatch a token — extends body without changing turns.length.
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 2,
+      event: { session_id: "ses_sc1", type: "token", message_id: "a1", delta: "hello" },
+    });
+    await flushAll();
+
+    // auto-scroll effect must have written scrollTop = scrollHeight (1000).
+    expect(getScrollTop()).toBe(1000);
+  });
+
+  it("(b) tool_output_delta event re-fires auto-scroll while atBottom=true", async () => {
+    setMessagesResponse("ses_sc2", {
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ items: [], has_more: false }),
+    });
+    const { getByTestId } = render(Conversation, { props: { sessionId: "ses_sc2" } });
+    await waitFor(() => expect(getByTestId("conversation-body")).toBeTruthy());
+    const bodyEl = getByTestId("conversation-body");
+    const { getScrollTop } = mockScrollProps(bodyEl);
+
+    resetConversation("ses_sc2");
+    // Open assistant turn with a tool call.
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 1,
+      event: { session_id: "ses_sc2", type: "message_start", message_id: "a2" },
+    });
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 2,
+      event: {
+        session_id: "ses_sc2",
+        type: "tool_call_start",
+        message_id: "a2",
+        tool_call_id: "tc1",
+        tool_name: "Bash",
+        tool_input_json: "{}",
+      },
+    });
+    await flushAll();
+
+    // Dispatch a tool_output_delta — extends output without changing turns.length.
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 3,
+      event: {
+        session_id: "ses_sc2",
+        type: "tool_output_delta",
+        tool_call_id: "tc1",
+        delta: "line1\n",
+      },
+    });
+    await flushAll();
+
+    expect(getScrollTop()).toBe(1000);
+  });
+
+  it("(c) token event does NOT write scrollTop when user has scrolled up (atBottom=false)", async () => {
+    setMessagesResponse("ses_sc3", {
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ items: [], has_more: false }),
+    });
+    const { getByTestId } = render(Conversation, { props: { sessionId: "ses_sc3" } });
+    await waitFor(() => expect(getByTestId("conversation-body")).toBeTruthy());
+    const bodyEl = getByTestId("conversation-body");
+    const { getScrollTop } = mockScrollProps(bodyEl);
+
+    // Simulate user scrolling up: scrollHeight=1000, scrollTop=0, clientHeight=0
+    // → dist = 1000 >= 16 → atBottom=false.
+    fireEvent.scroll(bodyEl);
+    flushSync();
+
+    resetConversation("ses_sc3");
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 1,
+      event: { session_id: "ses_sc3", type: "message_start", message_id: "a3" },
+    });
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 2,
+      event: { session_id: "ses_sc3", type: "token", message_id: "a3", delta: "hi" },
+    });
+    await flushAll();
+
+    // scrollTop must remain 0 — effect must not yank the viewport.
+    expect(getScrollTop()).toBe(0);
   });
 });
