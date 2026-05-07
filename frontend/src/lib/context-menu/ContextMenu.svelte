@@ -271,6 +271,25 @@
         highlightIndex = lastEnabled;
         syncFocus(highlightIndex);
       }
+    } else if (event.key === "ArrowRight") {
+      const action = flatActions[highlightIndex];
+      if (action !== undefined && action.submenu === true) {
+        event.preventDefault();
+        // Forward-compat: v18 has no submenu rendering host yet. Activating
+        // the action lets the consumer's handler open whatever picker / modal
+        // the submenu entry would surface (e.g. the model picker for
+        // ``session.change_model``). When the submenu component lands, this
+        // branch will open the child menu rather than activating immediately.
+        activate(action);
+      }
+      // Non-submenu rows: ArrowRight is intentionally a no-op — no
+      // preventDefault so browser horizontal scroll / focus trap is preserved.
+    } else if (event.key === "ArrowLeft") {
+      // Forward-compat stub: when a child submenu is open, ArrowLeft should
+      // close it and return highlight to the parent row. v18 has no submenu
+      // rendering host, so this is a no-op. preventDefault prevents
+      // horizontal scroll while the root menu is open.
+      event.preventDefault();
     } else if (/^[a-zA-Z0-9]$/.test(event.key)) {
       const lowerKey = event.key.toLowerCase();
       const matches: number[] = [];

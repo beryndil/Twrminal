@@ -12,6 +12,7 @@ import {
   MENU_ACTION_CHECKPOINT_COPY_LABEL,
   MENU_ACTION_CHECKPOINT_DELETE,
   MENU_ACTION_CHECKPOINT_FORK,
+  MENU_ACTION_SESSION_CHANGE_MODEL,
   MENU_ACTION_SESSION_RENAME,
   MENU_ACTION_SESSION_REOPEN,
   MENU_TARGET_CHECKPOINT,
@@ -431,6 +432,64 @@ describe("ContextMenu", () => {
       openCheckpointMenu({ handlers: {} }); // all disabled
 
       await fireEvent.keyDown(window, { key: "End" });
+      expect(contextMenuStore.open).not.toBeNull();
+    });
+  });
+
+  describe("ArrowRight / ArrowLeft submenu keyboard handling", () => {
+    // Session non-advanced flat order (MENU_SECTION_ORDER: primary, navigate, create,
+    // edit, view, copy, organize, destructive):
+    //   0 = SESSION_OPEN_IN_NEW_TAB                (navigate)
+    //   1 = SESSION_DUPLICATE                      (create)
+    //   2 = SESSION_SAVE_AS_TEMPLATE               (create; FORK is advanced, hidden)
+    //   3 = SESSION_RENAME                         (edit)
+    //   4 = SESSION_EDIT_TAGS                      (edit)
+    //   5 = SESSION_CHANGE_MODEL   (edit, submenu:true)  ← target
+    //   6 = SESSION_COPY_TITLE                     (copy; advanced ones hidden)
+    //   7 = SESSION_PIN, 8 = SESSION_UNPIN, 9 = SESSION_ARCHIVE, 10 = SESSION_REOPEN
+    //   11 = SESSION_DELETE                        (destructive)
+
+    it("ArrowRight on a submenu row activates the action (forward-compat: no submenu rendering host)", async () => {
+      const changeModel = vi.fn();
+      render(ContextMenu);
+      openSessionMenu({ handlers: { [MENU_ACTION_SESSION_CHANGE_MODEL]: changeModel } });
+
+      // Navigate to flat index 5 — SESSION_CHANGE_MODEL (submenu: true).
+      await fireEvent.keyDown(window, { key: "ArrowDown" }); // 0 → 1
+      await fireEvent.keyDown(window, { key: "ArrowDown" }); // 1 → 2
+      await fireEvent.keyDown(window, { key: "ArrowDown" }); // 2 → 3
+      await fireEvent.keyDown(window, { key: "ArrowDown" }); // 3 → 4
+      await fireEvent.keyDown(window, { key: "ArrowDown" }); // 4 → 5
+
+      await fireEvent.keyDown(window, { key: "ArrowRight" });
+      expect(changeModel).toHaveBeenCalledOnce();
+    });
+
+    it("ArrowRight on a non-submenu row is a no-op (handler not called, menu stays open)", async () => {
+      const fork = vi.fn();
+      render(ContextMenu);
+      // CHECKPOINT_FORK at flat index 0 has no submenu flag.
+      openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_FORK]: fork } });
+
+      await fireEvent.keyDown(window, { key: "ArrowRight" });
+
+      expect(fork).not.toHaveBeenCalled();
+      expect(contextMenuStore.open).not.toBeNull();
+    });
+
+    it("ArrowLeft is a no-op at root menu level (menu stays open, highlight unchanged)", async () => {
+      const { getAllByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+
+      // Move to index 1 so we can confirm index didn't change.
+      await fireEvent.keyDown(window, { key: "ArrowDown" }); // 0 → 1
+      const rows = getAllByTestId("context-menu-row");
+      expect(document.activeElement).toBe(rows[1]);
+
+      await fireEvent.keyDown(window, { key: "ArrowLeft" });
+
+      // Highlight and focus must remain on index 1; menu must stay open.
+      expect(document.activeElement).toBe(rows[1]);
       expect(contextMenuStore.open).not.toBeNull();
     });
   });
