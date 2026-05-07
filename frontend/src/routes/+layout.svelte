@@ -58,7 +58,7 @@
   import SidebarSearch from "$lib/components/sidebar/SidebarSearch.svelte";
   import PairedChatIndicator from "$lib/components/conversation/PairedChatIndicator.svelte";
   import { reopenSession, getPairedChatInfo, type PairedChatInfo } from "$lib/api/sessions";
-  import { sidebarNavNext, sidebarNavPrev } from "$lib/keyboard/sidebarNav";
+  import { sidebarNavNext, sidebarNavPrev, sidebarNavSlot } from "$lib/keyboard/sidebarNav";
   import BackendStatusBanner from "$lib/components/feedback/BackendStatusBanner.svelte";
   import AuthGate from "$lib/components/feedback/AuthGate.svelte";
   import StatusBar from "$lib/components/feedback/StatusBar.svelte";
@@ -181,15 +181,38 @@
   /** Current URL path as a plain string for nav-active comparisons. */
   const currentPath: string = $derived(page.url.pathname as string);
 
+  /**
+   * Reactive open-session list — the canonical source for keyboard
+   * navigation (gap-cycle-02-002).
+   *
+   * Mirrors the same ``closed_at === null`` filter that
+   * ``SessionList.svelte`` applies when building its ``openSessions``
+   * derived value. Keyboard handlers (``j``/``k``, ``Alt+N`` slot jumps)
+   * walk this list so that closed rows are invisible to navigation, matching
+   * what the user sees in the sidebar.
+   *
+   * Must live here (component scope) rather than in the store module
+   * because Svelte prohibits exporting ``$derived`` from a ``.svelte.ts``
+   * module (see: https://svelte.dev/e/derived_invalid_export).
+   */
+  const openSessionsList = $derived(
+    sessionsStore.sessions.filter((s) => s.closed_at === null),
+  );
+
   // ---- Keyboard handler wiring (item 4.1) ---------------------------
+  //
+  // All sidebar navigation handlers use ``openSessionsList`` (open sessions
+  // only) rather than ``sessionsStore.sessions`` (the raw unfiltered cache).
+  // This matches the visible sidebar list, which filters out closed sessions
+  // per docs/behavior/keyboard-shortcuts.md §Navigate. Fix: gap-cycle-02-002.
 
   function sidebarMoveDown(): void {
-    const target = sidebarNavNext(sessionsStore.sessions, inspectorStore.activeSessionId);
+    const target = sidebarNavNext(openSessionsList, inspectorStore.activeSessionId);
     if (target !== null) void goto(`/sessions/${encodeURIComponent(target)}`);
   }
 
   function sidebarMoveUp(): void {
-    const target = sidebarNavPrev(sessionsStore.sessions, inspectorStore.activeSessionId);
+    const target = sidebarNavPrev(openSessionsList, inspectorStore.activeSessionId);
     if (target !== null) void goto(`/sessions/${encodeURIComponent(target)}`);
   }
 
@@ -206,9 +229,11 @@
       const slot = n;
       releases.push(
         bindHandler(`${KEYBINDING_ACTION_SIDEBAR_JUMP_PREFIX}${slot}`, () => {
-          const session = sessionsStore.sessions[slot - 1];
-          if (session !== undefined) {
-            void goto(`/sessions/${encodeURIComponent(session.id)}`);
+          // Slot N is the Nth visible row (1-indexed) in the open sidebar list,
+          // not the Nth entry of the raw sessions cache. Out-of-range → no-op.
+          const sessionId = sidebarNavSlot(openSessionsList, slot);
+          if (sessionId !== null) {
+            void goto(`/sessions/${encodeURIComponent(sessionId)}`);
           }
         }),
       );

@@ -55,3 +55,21 @@ export function sidebarNavPrev(
   if (idx < 0) return sessions[sessions.length - 1].id;
   return sessions[(idx - 1 + sessions.length) % sessions.length].id;
 }
+
+/**
+ * Return the session id for sidebar slot ``N`` (``Alt+1``..``Alt+9``), where
+ * slot numbers are **1-indexed positions in the visible open-session list**.
+ *
+ * Returns ``null`` when ``slot`` is out of range so the call site can treat
+ * it as a no-op. Callers must pass the pre-filtered open-session list
+ * (``openSessionsList`` from the sessions store) — this function operates on
+ * whatever list it receives and does not perform any closed-session filtering
+ * itself.
+ *
+ * @param sessions - The open sessions list in sidebar display order.
+ * @param slot - 1-indexed slot number (1–9).
+ */
+export function sidebarNavSlot(sessions: readonly SessionOut[], slot: number): string | null {
+  if (slot < 1 || slot > sessions.length) return null;
+  return sessions[slot - 1].id;
+}
