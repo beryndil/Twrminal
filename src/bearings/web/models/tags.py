@@ -74,6 +74,15 @@ class TagOut(BaseModel):
     ``group`` is the deprecated slash-prefix carrier (parsed from
     ``name``); retained for back-compat with v0.18.x frontend builds
     that still consume it. New consumers should use ``class_``.
+
+    ``open_session_count`` is the number of sessions carrying this tag
+    whose ``closed_at`` is NULL (i.e. open). ``session_count`` is the
+    total number of sessions carrying this tag regardless of close
+    state. Both fields are populated for the ``GET /api/tags`` listing
+    via a single LEFT JOIN aggregation in
+    :func:`bearings.db.tags.list_all_with_counts`; single-tag endpoints
+    default to ``0`` (counts are a listing concern, not a per-tag
+    concern).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -89,6 +98,8 @@ class TagOut(BaseModel):
     group: str | None
     created_at: str
     updated_at: str
+    open_session_count: int = 0
+    session_count: int = 0
 
 
 class TagPinnedUpdate(BaseModel):

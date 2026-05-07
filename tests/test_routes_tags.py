@@ -341,3 +341,47 @@ def test_get_tag_groups_still_works_for_back_compat(app_client: TestClient) -> N
     response = app_client.get("/api/tag-groups")
     assert response.status_code == 200
     assert response.json() == ["bearings", "research"]
+
+
+# ---------------------------------------------------------------------------
+# Session count fields — open_session_count + session_count on GET /api/tags
+# ---------------------------------------------------------------------------
+
+
+def test_get_tags_includes_zero_counts_for_unattached_tag(app_client: TestClient) -> None:
+    """A tag with no sessions gets ``open_session_count=0, session_count=0``."""
+    app_client.post("/api/tags", json={"name": "empty-tag"})
+    body = {t["name"]: t for t in app_client.get("/api/tags").json()}
+    assert body["empty-tag"]["open_session_count"] == 0
+    assert body["empty-tag"]["session_count"] == 0
+
+
+def test_get_tags_counts_reflect_attached_open_session(app_client: TestClient) -> None:
+    """Attaching the tag to the pre-seeded open session increments both counts."""
+    created = app_client.post("/api/tags", json={"name": "counted-tag"}).json()
+    tag_id = created["id"]
+    # sess1 is pre-seeded in the fixture with closed_at=NULL (open).
+    app_client.put(f"/api/sessions/sess1/tags/{tag_id}")
+    body = {t["name"]: t for t in app_client.get("/api/tags").json()}
+    assert body["counted-tag"]["open_session_count"] == 1
+    assert body["counted-tag"]["session_count"] == 1
+
+
+def test_get_tags_counts_are_zero_after_detach(app_client: TestClient) -> None:
+    """Detaching the tag from the session resets counts to 0."""
+    created = app_client.post("/api/tags", json={"name": "detach-count-tag"}).json()
+    tag_id = created["id"]
+    app_client.put(f"/api/sessions/sess1/tags/{tag_id}")
+    app_client.delete(f"/api/sessions/sess1/tags/{tag_id}")
+    body = {t["name"]: t for t in app_client.get("/api/tags").json()}
+    assert body["detach-count-tag"]["open_session_count"] == 0
+    assert body["detach-count-tag"]["session_count"] == 0
+
+
+def test_single_tag_endpoint_returns_zero_counts(app_client: TestClient) -> None:
+    """``GET /api/tags/{id}`` returns 0 for both count fields (listing concern only)."""
+    created = app_client.post("/api/tags", json={"name": "single-tag"}).json()
+    app_client.put(f"/api/sessions/sess1/tags/{created['id']}")
+    single = app_client.get(f"/api/tags/{created['id']}").json()
+    assert single["open_session_count"] == 0
+    assert single["session_count"] == 0

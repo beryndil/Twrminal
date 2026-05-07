@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Auto-rsync the rebuilt dist/ bundle to the live v1 server's read path.
+# Keeps http://127.0.0.1:8788/ reflecting the worktree's current bundle.
+SRC="/home/beryndil/Projects/active/bearings/src/bearings/web/dist/"
+DST="/home/beryndil/Projects/archive/bearings-v0.18.0/src/bearings/web/dist/"
+if [ -d "$SRC" ] && [ -d "$DST" ]; then
+    rsync -a --delete "$SRC" "$DST" 2>/dev/null || true
+fi

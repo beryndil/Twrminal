@@ -39,6 +39,7 @@ from bearings.db.tags import (
     get,
     get_by_name,
     list_all,
+    list_all_with_counts,
     list_for_session,
     list_for_session_ordered,
     list_groups,
@@ -546,3 +547,136 @@ async def test_update_to_severity_strips_inheritance_via_validator(
             working_dir=None,
             class_=TAG_CLASS_SEVERITY,
         )
+
+
+# ---------------------------------------------------------------------------
+# list_all_with_counts — session-count aggregate query used by GET /api/tags
+# to populate open_session_count + session_count on each TagOut wire shape.
+# ---------------------------------------------------------------------------
+
+
+async def _seed_closed_session(
+    connection: aiosqlite.Connection,
+    *,
+    session_id: str,
+) -> str:
+    """Insert one session with ``closed_at`` stamped; return its id."""
+    timestamp = "2026-04-28T12:00:00+00:00"
+    closed_ts = "2026-04-28T13:00:00+00:00"
+    await connection.execute(
+        "INSERT INTO sessions (id, kind, title, working_dir, model, "
+        "created_at, updated_at, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (session_id, "chat", "Closed", "/tmp/closed", "sonnet", timestamp, timestamp, closed_ts),
+    )
+    await connection.commit()
+    return session_id
+
+
+async def test_list_all_with_counts_empty_tag_returns_zeros(
+    connection: aiosqlite.Connection,
+) -> None:
+    """A tag with no sessions attached returns ``(tag, 0, 0)``."""
+    tag = await create(connection, name="lonely")
+    rows = await list_all_with_counts(connection)
+    assert len(rows) == 1
+    t, open_count, total_count = rows[0]
+    assert t.id == tag.id
+    assert open_count == 0
+    assert total_count == 0
+
+
+async def test_list_all_with_counts_open_sessions(
+    connection: aiosqlite.Connection,
+) -> None:
+    """N open sessions → open_session_count=N, session_count=N."""
+    tag = await create(connection, name="active-proj", class_=TAG_CLASS_PROJECT)
+    await _seed_session(connection, session_id="open-a")
+    await _seed_session(connection, session_id="open-b")
+    await attach(connection, session_id="open-a", tag_id=tag.id)
+    await attach(connection, session_id="open-b", tag_id=tag.id)
+
+    rows = await list_all_with_counts(connection)
+    assert len(rows) == 1
+    _, open_count, total_count = rows[0]
+    assert open_count == 2
+    assert total_count == 2
+
+
+async def test_list_all_with_counts_mixed_open_and_closed(
+    connection: aiosqlite.Connection,
+) -> None:
+    """2 open + 1 closed → open_session_count=2, session_count=3."""
+    tag = await create(connection, name="mixed-proj", class_=TAG_CLASS_PROJECT)
+    await _seed_session(connection, session_id="open-1")
+    await _seed_session(connection, session_id="open-2")
+    await _seed_closed_session(connection, session_id="closed-1")
+    await attach(connection, session_id="open-1", tag_id=tag.id)
+    await attach(connection, session_id="open-2", tag_id=tag.id)
+    await attach(connection, session_id="closed-1", tag_id=tag.id)
+
+    rows = await list_all_with_counts(connection)
+    assert len(rows) == 1
+    _, open_count, total_count = rows[0]
+    assert open_count == 2
+    assert total_count == 3
+
+
+async def test_list_all_with_counts_all_closed(
+    connection: aiosqlite.Connection,
+) -> None:
+    """All attached sessions closed → open_session_count=0, session_count=M."""
+    tag = await create(connection, name="dormant")
+    await _seed_closed_session(connection, session_id="c1")
+    await _seed_closed_session(connection, session_id="c2")
+    await attach(connection, session_id="c1", tag_id=tag.id)
+    await attach(connection, session_id="c2", tag_id=tag.id)
+
+    rows = await list_all_with_counts(connection)
+    assert len(rows) == 1
+    _, open_count, total_count = rows[0]
+    assert open_count == 0
+    assert total_count == 2
+
+
+async def test_list_all_with_counts_multiple_tags_independent(
+    connection: aiosqlite.Connection,
+) -> None:
+    """Counts are per-tag and do not bleed across tags."""
+    tag_a = await create(connection, name="a-tag")
+    tag_b = await create(connection, name="b-tag")
+    await _seed_session(connection, session_id="s1")
+    await _seed_session(connection, session_id="s2")
+    await _seed_closed_session(connection, session_id="s3")
+    # tag_a: 2 open, tag_b: 1 closed
+    await attach(connection, session_id="s1", tag_id=tag_a.id)
+    await attach(connection, session_id="s2", tag_id=tag_a.id)
+    await attach(connection, session_id="s3", tag_id=tag_b.id)
+
+    rows = await list_all_with_counts(connection)
+    by_name = {t.name: (open_c, total_c) for t, open_c, total_c in rows}
+    assert by_name["a-tag"] == (2, 2)
+    assert by_name["b-tag"] == (0, 1)
+
+
+async def test_list_all_with_counts_class_filter_applied(
+    connection: aiosqlite.Connection,
+) -> None:
+    """``class_`` filter narrows result to the requested class only."""
+    proj = await create(connection, name="proj", class_=TAG_CLASS_PROJECT)
+    await create(connection, name="gen")  # general — excluded by filter
+    await _seed_session(connection, session_id="s1")
+    await attach(connection, session_id="s1", tag_id=proj.id)
+
+    rows = await list_all_with_counts(connection, class_=TAG_CLASS_PROJECT)
+    assert len(rows) == 1
+    t, open_count, total_count = rows[0]
+    assert t.id == proj.id
+    assert open_count == 1
+    assert total_count == 1
+
+
+async def test_list_all_with_counts_rejects_unknown_class(
+    connection: aiosqlite.Connection,
+) -> None:
+    with pytest.raises(ValueError, match="class_"):
+        await list_all_with_counts(connection, class_="milestone")

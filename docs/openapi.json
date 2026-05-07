@@ -52,7 +52,7 @@
           "tags"
         ],
         "summary": "List Tags",
-        "description": "Every tag, ordered ``(class, sort_order, name)``; optional filters.\n\n``?class_=`` filters to ``project`` / ``severity`` / ``general``;\n422 on an unknown value. ``?group=`` is the deprecated slash-prefix\nfilter, retained for one release. Both compose via AND when set.",
+        "description": "Every tag, ordered ``(class, sort_order, name)``; optional filters.\n\n``?class_=`` filters to ``project`` / ``severity`` / ``general``;\n422 on an unknown value. ``?group=`` is the deprecated slash-prefix\nfilter, retained for one release. Both compose via AND when set.\n\nEach tag carries ``open_session_count`` (sessions with\n``closed_at IS NULL``) and ``session_count`` (all sessions) via a\nsingle LEFT JOIN aggregation \u2014 one round-trip, no per-tag fetch.",
         "operationId": "list_tags_api_tags_get",
         "parameters": [
           {
@@ -592,6 +592,54 @@
                     "$ref": "#/components/schemas/TagMemoryOut"
                   },
                   "title": "Response List Memories For Tag Api Tags  Tag Id  Memories Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/memories": {
+      "get": {
+        "tags": [
+          "memories"
+        ],
+        "summary": "List All Memories",
+        "description": "Every memory across every tag, sorted by tag name then memory title.\n\nReturns a flat list of :class:`AllMemoriesOut` rows \u2014 each row\ncarries enough tag context for the global-index view to render\nwithout a second round-trip. ``memory_body_preview`` is the body\ntruncated to\n:data:`bearings.config.constants.MEMORY_BODY_PREVIEW_MAX_LENGTH`\nchars; the full body is still available via ``GET /api/memories/{id}``.\n\n``?only_enabled=true`` restricts to enabled memories \u2014 mirrors the\nsame query param supported by the per-tag list endpoint.",
+        "operationId": "list_all_memories_api_memories_get",
+        "parameters": [
+          {
+            "name": "only_enabled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Only Enabled"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AllMemoriesOut"
+                  },
+                  "title": "Response List All Memories Api Memories Get"
                 }
               }
             }
@@ -2242,6 +2290,59 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates/{template_id}/instantiate": {
+      "post": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "Create Session From Template",
+        "description": "Create a new session from a template (gap-cycle-13-006).\n\nCopies all template fields into a new session row in one sequence of\nDB calls.  The caller may supply an optional override body to replace\nany inherited field; omitted fields use the template's stored values.\n\nField mapping (template field \u2192 session field):\n\n* ``name`` \u2192 ``title`` (override: ``payload.title``).\n* ``model`` \u2192 ``model`` (override: ``payload.model``).\n* ``description`` \u2192 ``description`` (override: ``payload.description``).\n* ``working_dir_default`` \u2192 ``working_dir`` (override: ``payload.working_dir``).\n* ``system_prompt_baseline`` \u2192 ``session_instructions``\n  (override: ``payload.session_instructions``).\n* ``permission_profile`` \u2192 ``permission_mode`` \u2014 empty string maps to\n  ``None`` (override: ``payload.permission_mode``).\n* ``advisor_model`` \u2192 ``routing_advisor_model``\n  (override: ``payload.advisor_model``).\n* ``advisor_max_uses`` \u2192 ``routing_advisor_max_uses``\n  (override: ``payload.advisor_max_uses``).\n* ``effort_level`` \u2192 ``routing_effort_level``\n  (override: ``payload.effort_level``).\n* ``tag_names`` \u2192 resolved to tag ids and attached after session creation.\n  Names that do not match an existing tag are silently skipped.\n\n``working_dir`` resolution order: payload override \u2192 template\n``working_dir_default`` \u2192 first resolved tag whose ``working_dir`` is\nset \u2192 422 if none provide a directory.\n\nResponses:\n\n* ``201`` \u2014 new session row; ``Location: /api/sessions/<id>``.\n* ``404`` \u2014 template not found.\n* ``422`` \u2014 no working_dir resolvable, or routing fields out of range.",
+        "operationId": "create_session_from_template_api_templates__template_id__instantiate_post",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateInstantiateIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -5160,19 +5261,49 @@
           "commands"
         ],
         "summary": "List Commands",
-        "description": "Return all discovered slash-commands from user + project locations.",
+        "description": "Return all discovered slash-commands from user + project locations.\n\nWhen ``cwd`` is supplied the project-commands scan is rooted there,\nso the response is scoped to that session's working directory.\nOmitting ``cwd`` preserves the previous behaviour (server process cwd).",
         "operationId": "list_commands_api_commands_get",
+        "parameters": [
+          {
+            "name": "cwd",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Working directory used to scope project-level commands (.claude/commands/**/*.md walk-up from this path). Omit to use the server's launch directory (backward compat).",
+              "title": "Cwd"
+            },
+            "description": "Working directory used to scope project-level commands (.claude/commands/**/*.md walk-up from this path). Omit to use the server's launch directory (backward compat)."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/CommandOut"
                   },
-                  "type": "array",
                   "title": "Response List Commands Api Commands Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -5764,6 +5895,63 @@
   },
   "components": {
     "schemas": {
+      "AllMemoriesOut": {
+        "properties": {
+          "tag_id": {
+            "type": "integer",
+            "title": "Tag Id"
+          },
+          "tag_name": {
+            "type": "string",
+            "title": "Tag Name"
+          },
+          "tag_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag Color"
+          },
+          "memory_id": {
+            "type": "integer",
+            "title": "Memory Id"
+          },
+          "memory_title": {
+            "type": "string",
+            "title": "Memory Title"
+          },
+          "memory_body_preview": {
+            "type": "string",
+            "title": "Memory Body Preview"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tag_id",
+          "tag_name",
+          "tag_color",
+          "memory_id",
+          "memory_title",
+          "memory_body_preview",
+          "enabled",
+          "updated_at"
+        ],
+        "title": "AllMemoriesOut",
+        "description": "Response body for ``GET /api/memories`` \u2014 global flat-list.\n\nEach row is a denormalised join of one tag-memory with its parent\ntag so the frontend global-index view can display tag context\nwithout a second round-trip. ``memory_body_preview`` is the body\ntruncated to\n:data:`bearings.config.constants.MEMORY_BODY_PREVIEW_MAX_LENGTH`\nchars; the full body is available via ``GET /api/memories/{id}``.\n\nThe list is sorted by ``(tag_name, memory_title)`` \u2014 grouping by\ntag is implied by the alphabetical sort."
+      },
       "ApprovalResolution": {
         "properties": {
           "approved": {
@@ -9425,6 +9613,16 @@
           "updated_at": {
             "type": "string",
             "title": "Updated At"
+          },
+          "open_session_count": {
+            "type": "integer",
+            "title": "Open Session Count",
+            "default": 0
+          },
+          "session_count": {
+            "type": "integer",
+            "title": "Session Count",
+            "default": 0
           }
         },
         "additionalProperties": false,
@@ -9443,7 +9641,7 @@
           "updated_at"
         ],
         "title": "TagOut",
-        "description": "Response body for tag endpoints.\n\n``class_`` partitions the tag into project / severity / general\n(see :data:`bearings.config.constants.KNOWN_TAG_CLASSES`).\n``sort_order`` is the per-class display order. ``pinned`` floats\nthe tag to the top of its class section per context-menus \u00a7\"Tag\".\n\n``group`` is the deprecated slash-prefix carrier (parsed from\n``name``); retained for back-compat with v0.18.x frontend builds\nthat still consume it. New consumers should use ``class_``."
+        "description": "Response body for tag endpoints.\n\n``class_`` partitions the tag into project / severity / general\n(see :data:`bearings.config.constants.KNOWN_TAG_CLASSES`).\n``sort_order`` is the per-class display order. ``pinned`` floats\nthe tag to the top of its class section per context-menus \u00a7\"Tag\".\n\n``group`` is the deprecated slash-prefix carrier (parsed from\n``name``); retained for back-compat with v0.18.x frontend builds\nthat still consume it. New consumers should use ``class_``.\n\n``open_session_count`` is the number of sessions carrying this tag\nwhose ``closed_at`` is NULL (i.e. open). ``session_count`` is the\ntotal number of sessions carrying this tag regardless of close\nstate. Both fields are populated for the ``GET /api/tags`` listing\nvia a single LEFT JOIN aggregation in\n:func:`bearings.db.tags.list_all_with_counts`; single-tag endpoints\ndefault to ``0`` (counts are a listing concern, not a per-tag\nconcern)."
       },
       "TagPinnedUpdate": {
         "properties": {
@@ -9577,6 +9775,119 @@
         ],
         "title": "TemplateIn",
         "description": "Request body for ``POST /api/templates``.\n\nThe DB layer's :func:`bearings.db.templates.create` validates the\nrouting-alphabet fields in :class:`bearings.db.templates.Template.__post_init__`;\na bad payload surfaces as a 422 from the route.\n``model_config`` forbids extra fields so a typo (e.g. ``permissionProfile``\ninstead of ``permission_profile``) is rejected at the wire boundary."
+      },
+      "TemplateInstantiateIn": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 30000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "working_dir": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Dir"
+          },
+          "session_instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Instructions"
+          },
+          "permission_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Mode"
+          },
+          "advisor_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advisor Model"
+          },
+          "advisor_max_uses": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advisor Max Uses"
+          },
+          "effort_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort Level"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TemplateInstantiateIn",
+        "description": "Request body for ``POST /api/templates/{id}/instantiate`` (gap-cycle-13-006).\n\nAll fields are optional caller-side overrides. Omitted fields inherit\nthe template's stored values:\n\n* ``title`` \u2014 defaults to the template name.\n* ``model`` \u2014 defaults to ``template.model``.\n* ``description`` \u2014 defaults to ``template.description``.\n* ``working_dir`` \u2014 defaults to ``template.working_dir_default``.\n* ``session_instructions`` \u2014 defaults to ``template.system_prompt_baseline``.\n* ``permission_mode`` \u2014 defaults to ``template.permission_profile``\n  (empty string in the template maps to ``None``).\n* ``advisor_model`` / ``advisor_max_uses`` / ``effort_level`` \u2014\n  default to the corresponding ``template.advisor_*`` / ``template.effort_level`` fields.\n\nThe route validates routing-alphabet fields via\n:class:`Session.__post_init__`; a bad override surfaces as 422.\n``model_config`` forbids extra fields so a typo is caught at the wire\nboundary."
       },
       "TemplateOut": {
         "properties": {

@@ -22,6 +22,8 @@ const tag = (id: number, name: string, klass: TagClass = "general"): TagOut => (
   group: name.includes("/") ? name.split("/")[0] : null,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
+  open_session_count: 0,
+  session_count: 0,
 });
 
 const emptySets = (): {
@@ -248,5 +250,93 @@ describe("TagFilterPanel", () => {
     });
     expect(queryAllByTestId("tag-filter-chip-pinned-indicator")).toHaveLength(1);
     expect(getAllByTestId("tag-filter-chip")).toHaveLength(2);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Session count pair display
+  // ---------------------------------------------------------------------------
+
+  it("renders a count pair element on every chip", () => {
+    const { getAllByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [
+          { ...tag(1, "bearings", "project"), open_session_count: 2, session_count: 3 },
+          { ...tag(2, "urgent", "severity"), open_session_count: 0, session_count: 1 },
+          { ...tag(3, "misc"), open_session_count: 0, session_count: 0 },
+        ],
+        ...emptySets(),
+        onToggle: vi.fn(),
+        onClear: vi.fn(),
+      },
+    });
+    // One count pair per chip.
+    expect(getAllByTestId("tag-filter-chip-counts")).toHaveLength(3);
+  });
+
+  it("open count span has emerald tint when open_session_count > 0", () => {
+    const { getAllByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [{ ...tag(1, "bearings", "project"), open_session_count: 3, session_count: 5 }],
+        ...emptySets(),
+        onToggle: vi.fn(),
+        onClear: vi.fn(),
+      },
+    });
+    const countPair = getAllByTestId("tag-filter-chip-counts")[0];
+    const openSpan = countPair.querySelector(".session-count--open");
+    expect(openSpan).not.toBeNull();
+    expect(openSpan!.classList.contains("text-emerald-500")).toBe(true);
+    expect(openSpan!.classList.contains("text-fg-muted")).toBe(false);
+    expect(openSpan!.textContent).toBe("3");
+  });
+
+  it("open count span is muted when open_session_count is 0", () => {
+    const { getAllByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [{ ...tag(1, "bearings", "project"), open_session_count: 0, session_count: 2 }],
+        ...emptySets(),
+        onToggle: vi.fn(),
+        onClear: vi.fn(),
+      },
+    });
+    const countPair = getAllByTestId("tag-filter-chip-counts")[0];
+    const openSpan = countPair.querySelector(".session-count--open");
+    expect(openSpan).not.toBeNull();
+    expect(openSpan!.classList.contains("text-fg-muted")).toBe(true);
+    expect(openSpan!.classList.contains("text-emerald-500")).toBe(false);
+    expect(openSpan!.textContent).toBe("0");
+  });
+
+  it("total count span shows the session_count value", () => {
+    const { getAllByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [{ ...tag(1, "bearings", "project"), open_session_count: 1, session_count: 7 }],
+        ...emptySets(),
+        onToggle: vi.fn(),
+        onClear: vi.fn(),
+      },
+    });
+    const countPair = getAllByTestId("tag-filter-chip-counts")[0];
+    // Total count span: the second .session-count (not .session-count--open)
+    const allCountSpans = countPair.querySelectorAll(".session-count");
+    const totalSpan = Array.from(allCountSpans).find(
+      (s) => !s.classList.contains("session-count--open"),
+    );
+    expect(totalSpan).not.toBeNull();
+    expect(totalSpan!.textContent).toBe("/7");
+  });
+
+  it("both counts visible for empty tag (0, 0)", () => {
+    const { getAllByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [{ ...tag(1, "bearings", "project"), open_session_count: 0, session_count: 0 }],
+        ...emptySets(),
+        onToggle: vi.fn(),
+        onClear: vi.fn(),
+      },
+    });
+    const countPair = getAllByTestId("tag-filter-chip-counts")[0];
+    expect(countPair.textContent).toContain("0");
+    expect(countPair.textContent).toContain("/0");
   });
 });

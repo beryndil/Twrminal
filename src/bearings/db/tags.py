@@ -339,6 +339,85 @@ async def list_all(
     return [_row_to_tag(row) for row in rows]
 
 
+async def list_all_with_counts(
+    connection: aiosqlite.Connection,
+    *,
+    class_: str | None = None,
+    group: str | None = None,
+) -> list[tuple[Tag, int, int]]:
+    """Every tag with session-count aggregates, ordered for filter-panel rendering.
+
+    Returns ``(tag, open_session_count, session_count)`` tuples where
+    ``open_session_count`` is the count of attached sessions with
+    ``sessions.closed_at IS NULL`` and ``session_count`` is all
+    attached sessions regardless of close state. One round-trip via a
+    single LEFT JOIN + GROUP BY over ``session_tags`` and ``sessions``;
+    no per-tag fetch.
+
+    ``open_session_count == 0`` for tags with no sessions; ``session_count
+    == 0`` likewise. Empty tags return ``(tag, 0, 0)``.
+
+    ``class_`` / ``group`` semantics match :func:`list_all`.
+
+    Used by :func:`bearings.web.routes.tags.list_tags` to populate the
+    ``open_session_count`` + ``session_count`` fields on the
+    :class:`bearings.web.models.tags.TagOut` wire shape for the sidebar
+    tag-filter panel.
+    """
+    clauses: list[str] = []
+    params: list[object] = []
+    if class_ is not None:
+        if class_ not in KNOWN_TAG_CLASSES:
+            raise ValueError(
+                f"list_all_with_counts: class_ {class_!r} not in {sorted(KNOWN_TAG_CLASSES)}"
+            )
+        clauses.append("tags.class = ?")
+        params.append(class_)
+    if group:
+        clauses.append("tags.name LIKE ?")
+        params.append(f"{group}{TAG_GROUP_SEPARATOR}%")
+    where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    # COUNT(st.session_id) counts non-NULL values — naturally 0 for
+    # tags with no session attachments (LEFT JOIN yields NULL for the
+    # tag-side row). SUM returns 0 (not NULL) for no-session tags
+    # because the LEFT JOIN always produces at least one row per tag
+    # and the CASE expression evaluates to 0 for that NULL-padded row.
+    query = (
+        "SELECT tags.id, tags.name, tags.color, tags.default_model, tags.working_dir, "
+        "tags.pinned, tags.class, tags.sort_order, tags.created_at, tags.updated_at, "
+        "COUNT(st.session_id) AS session_count, "
+        "SUM(CASE WHEN s.closed_at IS NULL AND st.session_id IS NOT NULL THEN 1 ELSE 0 END) "
+        "AS open_session_count "
+        "FROM tags "
+        "LEFT JOIN session_tags st ON st.tag_id = tags.id "
+        "LEFT JOIN sessions s ON s.id = st.session_id" + where_sql + " GROUP BY tags.id"
+        " ORDER BY tags.class ASC, tags.sort_order ASC, tags.name ASC"
+    )
+    cursor = await connection.execute(query, tuple(params))
+    try:
+        rows = await cursor.fetchall()
+    finally:
+        await cursor.close()
+    result: list[tuple[Tag, int, int]] = []
+    for row in rows:
+        tag = Tag(
+            id=int(str(row[0])),
+            name=str(row[1]),
+            color=None if row[2] is None else str(row[2]),
+            default_model=None if row[3] is None else str(row[3]),
+            working_dir=None if row[4] is None else str(row[4]),
+            pinned=bool(row[5]),
+            class_=str(row[6]),
+            sort_order=int(str(row[7])),
+            created_at=str(row[8]),
+            updated_at=str(row[9]),
+        )
+        session_count = int(str(row[10])) if row[10] is not None else 0
+        open_session_count = int(str(row[11])) if row[11] is not None else 0
+        result.append((tag, open_session_count, session_count))
+    return result
+
+
 async def list_for_session(
     connection: aiosqlite.Connection,
     session_id: str,
@@ -727,6 +806,7 @@ __all__ = [
     "get",
     "get_by_name",
     "list_all",
+    "list_all_with_counts",
     "list_for_session",
     "list_for_session_ordered",
     "list_groups",

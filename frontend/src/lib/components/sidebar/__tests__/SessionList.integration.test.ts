@@ -71,6 +71,8 @@ const tag = (id: number, name: string): TagOut => ({
   group: name.includes("/") ? name.split("/")[0] : null,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
+  open_session_count: 0,
+  session_count: 0,
 });
 
 const TAG_1 = tag(1, "bearings/architect");

@@ -61,8 +61,18 @@ def _db(request: Request) -> aiosqlite.Connection:
     return db  # type: ignore[no-any-return]
 
 
-def _to_out(tag: Tag) -> TagOut:
-    """Wire shape for a tag — ``group`` derived via the dataclass property."""
+def _to_out(
+    tag: Tag,
+    *,
+    open_session_count: int = 0,
+    session_count: int = 0,
+) -> TagOut:
+    """Wire shape for a tag — ``group`` derived via the dataclass property.
+
+    ``open_session_count`` / ``session_count`` are only populated by
+    :func:`list_tags` (which uses :func:`bearings.db.tags.list_all_with_counts`);
+    all other endpoints default to ``0``.
+    """
     return TagOut(
         id=tag.id,
         name=tag.name,
@@ -75,6 +85,8 @@ def _to_out(tag: Tag) -> TagOut:
         group=tag.group,
         created_at=tag.created_at,
         updated_at=tag.updated_at,
+        open_session_count=open_session_count,
+        session_count=session_count,
     )
 
 
@@ -115,6 +127,10 @@ async def list_tags(
     ``?class_=`` filters to ``project`` / ``severity`` / ``general``;
     422 on an unknown value. ``?group=`` is the deprecated slash-prefix
     filter, retained for one release. Both compose via AND when set.
+
+    Each tag carries ``open_session_count`` (sessions with
+    ``closed_at IS NULL``) and ``session_count`` (all sessions) via a
+    single LEFT JOIN aggregation — one round-trip, no per-tag fetch.
     """
     db = _db(request)
     if class_ is not None and class_ not in KNOWN_TAG_CLASSES:
@@ -122,8 +138,11 @@ async def list_tags(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"class_ {class_!r} is not in {sorted(KNOWN_TAG_CLASSES)}",
         )
-    rows = await tags_db.list_all(db, class_=class_, group=group)
-    return [_to_out(tag) for tag in rows]
+    rows = await tags_db.list_all_with_counts(db, class_=class_, group=group)
+    return [
+        _to_out(tag, open_session_count=open_count, session_count=total_count)
+        for tag, open_count, total_count in rows
+    ]
 
 
 @router.put("/api/tags/sort-order", status_code=status.HTTP_204_NO_CONTENT)

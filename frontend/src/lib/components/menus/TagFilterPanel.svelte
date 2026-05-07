@@ -215,6 +215,14 @@
                 }}
               >
                 {tag.name}
+                <span data-testid="tag-filter-chip-counts">
+                  <span
+                    class="session-count session-count--open"
+                    class:text-emerald-500={tag.open_session_count > 0}
+                    class:text-fg-muted={tag.open_session_count === 0}
+                  >{tag.open_session_count}</span
+                  ><span class="session-count text-fg-muted">/{tag.session_count}</span>
+                </span>
                 {#if tag.pinned}
                   <span
                     class="ml-0.5 text-accent"

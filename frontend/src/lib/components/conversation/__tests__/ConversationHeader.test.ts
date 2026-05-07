@@ -114,6 +114,8 @@ function makeTag(overrides: Partial<TagOut> & { id: number; name: string; class_
     group: null,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
+    open_session_count: 0,
+    session_count: 0,
     ...overrides,
   };
 }

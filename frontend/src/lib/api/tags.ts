@@ -37,6 +37,11 @@ export const TAG_CLASS_SEVERITY: TagClass = "severity";
  * The ``group`` field is the deprecated slash-prefix carrier
  * (parsed from ``name`` on the backend); retained for back-compat
  * with v0.18.x consumers and dropped in a future release.
+ *
+ * ``open_session_count`` is the number of sessions carrying this tag
+ * with ``closed_at == null`` (open); ``session_count`` is the total
+ * regardless of close state. Both are populated by ``GET /api/tags``;
+ * single-tag endpoints return ``0`` for both.
  */
 export interface TagOut {
   id: number;
@@ -50,6 +55,8 @@ export interface TagOut {
   group: string | null;
   created_at: string;
   updated_at: string;
+  open_session_count: number;
+  session_count: number;
 }
 
 interface ListTagsParams {

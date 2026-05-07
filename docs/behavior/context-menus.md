@@ -89,6 +89,18 @@ indicator appears and disappears within the same broadcast tick as
 the `tag.pin` / `tag.unpin` context-menu actions (the `onRefresh →
 refreshTags` flow already triggers a re-render).
 
+Each chip renders a session-count pair immediately after the tag name
+(`data-testid="tag-filter-chip-counts"`): the first number
+(`class="session-count session-count--open"`) is the count of **open**
+sessions carrying the tag (`open_session_count`), rendered emerald when
+> 0 and muted otherwise; the second number (`class="session-count"`) is
+the total session count regardless of close state (`session_count`),
+always muted. Format: `{open}/{total}`. Both counts come from the
+`GET /api/tags` listing response (single aggregation query — no
+per-chip fetch). This lets a user tell at a glance which tags are
+"currently active workstreams" vs. "historically heavy but quiet" vs.
+"unused", without toggling chips to observe list shrinkage.
+
 ### Tag chip (attached to a session, inside SessionEdit / NewSessionForm)
 
 | Section | Label | ID |
