@@ -79,11 +79,47 @@
   /** Flat list — used for keyboard nav (Up / Down across sections). */
   const flatActions = $derived(grouped?.flatMap((g) => g.actions) ?? []);
 
+  /**
+   * Ref to the ``<ul role="menu">`` element — used by :func:`syncFocus`
+   * to query ``<li role="menuitem">`` rows and call ``.focus()`` on the
+   * target row after each navigation step.
+   */
+  let menuContainerRef: HTMLUListElement | null = $state(null);
+
+  /**
+   * The element that held DOM focus when the menu opened. Restored on
+   * close (best-effort — only HTMLElement targets can receive focus).
+   */
+  let savedFocus: Element | null = null;
+
   $effect(() => {
     if (open !== null) {
+      savedFocus = document.activeElement;
       highlightIndex = 0;
+      syncFocus(0);
+    } else {
+      if (savedFocus instanceof HTMLElement) {
+        savedFocus.focus();
+      }
+      savedFocus = null;
     }
   });
+
+  /**
+   * Moves DOM focus to the ``<li role="menuitem">`` at ``index`` inside
+   * the open menu. Falls back to the container itself when no action
+   * rows exist (e.g. a stale-target menu with every row stripped).
+   */
+  function syncFocus(index: number): void {
+    if (menuContainerRef === null) return;
+    const rows = menuContainerRef.querySelectorAll<HTMLElement>('li[role="menuitem"]');
+    if (rows.length === 0) {
+      menuContainerRef.focus();
+      return;
+    }
+    const row = rows[index];
+    if (row !== undefined) row.focus();
+  }
 
   function actionLabel(id: string): string {
     const labels = CONTEXT_MENU_STRINGS.actionLabels as Record<string, string>;
@@ -149,10 +185,12 @@
     if (event.key === "ArrowDown") {
       event.preventDefault();
       highlightIndex = (highlightIndex + 1) % Math.max(1, flatActions.length);
+      syncFocus(highlightIndex);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       highlightIndex =
         (highlightIndex - 1 + Math.max(1, flatActions.length)) % Math.max(1, flatActions.length);
+      syncFocus(highlightIndex);
     } else if (event.key === "Enter") {
       event.preventDefault();
       const action = flatActions[highlightIndex];
@@ -168,6 +206,7 @@
         const currentPos = matches.indexOf(highlightIndex);
         highlightIndex =
           currentPos >= 0 ? matches[(currentPos + 1) % matches.length]! : matches[0]!;
+        syncFocus(highlightIndex);
       }
     }
   }
@@ -202,15 +241,20 @@
     }}
   ></div>
   <ul
+    bind:this={menuContainerRef}
     class="context-menu"
     role="menu"
     aria-label={CONTEXT_MENU_STRINGS.rootAriaLabel}
     data-testid="context-menu"
     data-target={open.target}
+    tabindex="-1"
     style:left="{open.x}px"
     style:top="{open.y}px"
     onclick={(event) => event.stopPropagation()}
-    onkeydown={(event) => event.stopPropagation()}
+    onkeydown={(event) => {
+      handleKeyDown(event);
+      event.stopPropagation();
+    }}
   >
     {#if open.stale}
       <li
@@ -245,6 +289,7 @@
           onkeydown={(event) => {
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
+              event.stopPropagation();
               activate(action);
             }
           }}

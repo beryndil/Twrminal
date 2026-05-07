@@ -256,4 +256,84 @@ describe("ContextMenu", () => {
       expect(forkRow).toHaveClass("context-menu__row--highlighted");
     });
   });
+
+  describe("DOM focus management", () => {
+    // Checkpoint non-advanced flat order (primary → copy → destructive):
+    //   0 = FORK, 1 = COPY_LABEL, 2 = DELETE
+
+    it("first action row receives DOM focus when the menu opens", () => {
+      const { getAllByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+      const rows = getAllByTestId("context-menu-row");
+      expect(document.activeElement).toBe(rows[0]);
+    });
+
+    it("ArrowDown moves DOM focus to the next row", async () => {
+      const { getAllByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+
+      await fireEvent.keyDown(window, { key: "ArrowDown" });
+
+      const rows = getAllByTestId("context-menu-row");
+      // Flat index 0 → 1 (FORK → COPY_LABEL)
+      expect(document.activeElement).toBe(rows[1]);
+    });
+
+    it("ArrowUp wraps DOM focus to the last row when on the first row", async () => {
+      const { getAllByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+
+      await fireEvent.keyDown(window, { key: "ArrowUp" });
+
+      const rows = getAllByTestId("context-menu-row");
+      // Wraps from index 0 to last (DELETE)
+      expect(document.activeElement).toBe(rows[rows.length - 1]);
+    });
+
+    it("mnemonic navigation moves DOM focus to the matching row", async () => {
+      const { getAllByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+
+      // 'c' → COPY_LABEL ("Copy label") — flat index 1
+      await fireEvent.keyDown(window, { key: "c" });
+
+      const copyRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_COPY_LABEL,
+      );
+      expect(copyRow).toBeDefined();
+      expect(document.activeElement).toBe(copyRow);
+    });
+
+    it("closing the menu restores DOM focus to the element focused before opening", () => {
+      const trigger = document.createElement("button");
+      document.body.appendChild(trigger);
+      trigger.focus();
+
+      render(ContextMenu);
+      openCheckpointMenu(); // savedFocus = trigger; first row focused
+
+      flushSync(() => {
+        closeMenu();
+      });
+
+      expect(document.activeElement).toBe(trigger);
+      trigger.remove();
+    });
+
+    it("Enter on a focused row fires the handler exactly once (no double-handling)", async () => {
+      const fork = vi.fn();
+      const { getAllByTestId } = render(ContextMenu);
+      openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_FORK]: fork } });
+
+      // First row (FORK) is focused after open. Fire Enter directly on it —
+      // the <li> handler activates and stopPropagation prevents the <ul>
+      // onkeydown from also calling handleKeyDown(Enter).
+      const forkRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_FORK,
+      )!;
+      await fireEvent.keyDown(forkRow, { key: "Enter" });
+
+      expect(fork).toHaveBeenCalledOnce();
+    });
+  });
 });
