@@ -265,8 +265,11 @@
     [MENU_ACTION_MESSAGE_REGENERATE_IN_PLACE]: () => void handleRegenerate(),
 
     /** Show the delete confirmation dialog. Advanced + destructive action. */
-    [MENU_ACTION_MESSAGE_DELETE]: () => {
-      showDeleteConfirm = true;
+    [MENU_ACTION_MESSAGE_DELETE]: {
+      handler: () => {
+        showDeleteConfirm = true;
+      },
+      skipMenuConfirm: true,
     },
   });
 

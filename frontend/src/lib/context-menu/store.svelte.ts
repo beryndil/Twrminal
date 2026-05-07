@@ -14,16 +14,41 @@ import type { MenuTargetId } from "../config";
 /**
  * A value in the consumer handler map.
  *
- * - ``() => void`` — the action is enabled; calling it fires the behaviour.
- * - ``{ disabledReason }`` — the action is explicitly disabled and the menu
- *   renders a native browser tooltip (via the ``title`` HTML attribute)
- *   explaining why it is unavailable.  Use this instead of omitting the key
- *   when you want the user to understand the precondition.
+ * - ``() => void`` — enabled; fires immediately (non-destructive), or
+ *   routes through the central confirmation bridge when
+ *   ``action.destructive === true``.  The bridge supplies a generic
+ *   message derived from the action label.
+ * - ``{ disabledReason }`` — explicitly disabled; the menu renders a
+ *   native browser tooltip explaining why it is unavailable.  Use this
+ *   instead of omitting the key when you want the user to understand the
+ *   precondition.
+ * - ``{ handler, skipMenuConfirm?, confirmMessage?, confirmLabel? }`` —
+ *   enabled with metadata for the central confirmation bridge.
+ *
+ *   - ``skipMenuConfirm: true`` — consumer owns the confirmation dialog
+ *     (e.g. ``session.delete`` opens its own ``<ConfirmDialog>``).  The
+ *     central bridge skips its own dialog and calls ``handler()`` directly
+ *     so the user never sees two confirmation dialogs in a row.
+ *   - ``confirmMessage`` — override the default message shown by the
+ *     central bridge (e.g. ``"Dismiss \"foo\"?"``).
+ *   - ``confirmLabel`` — override the confirm-button label (default:
+ *     ``"Confirm"``).
  *
  * Absent key (no entry) → disabled with no tooltip, matching the previous
  * behaviour for actions that have no applicable state context to explain.
  */
-export type HandlerEntry = (() => void) | { readonly disabledReason: string };
+export type HandlerEntry =
+  | (() => void)
+  | { readonly disabledReason: string }
+  | {
+      readonly handler: () => void;
+      /** When true the central bridge skips the confirm dialog entirely. */
+      readonly skipMenuConfirm?: boolean;
+      /** Message shown in the central confirm dialog. */
+      readonly confirmMessage?: string;
+      /** Label for the confirm button (default: "Confirm"). */
+      readonly confirmLabel?: string;
+    };
 
 /**
  * Open-menu state. ``null`` when no menu is open.

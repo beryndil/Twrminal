@@ -39,8 +39,13 @@
     CHECKPOINT_GUTTER_STRINGS,
     COMPOSER_ATTACHMENT_STRINGS,
     COMPOSER_STRINGS,
+    MENU_ACTION_ATTACHMENT_COPY_FILENAME,
+    MENU_ACTION_ATTACHMENT_COPY_PATH,
+    MENU_ACTION_ATTACHMENT_REMOVE,
+    MENU_TARGET_ATTACHMENT,
     PROMPT_CONTENT_MAX_CHARS,
   } from "../../config";
+  import { contextMenu } from "../../actions/contextMenu";
   import { clearDraft, loadDraft, saveDraft } from "../../composer/draftStore.svelte";
   import { InputHistory } from "../../composer/inputHistory";
   import { bumpCheckpointRefresh } from "../../stores/checkpointBus.svelte";
@@ -549,6 +554,23 @@
             data-testid="composer-attachment-chip"
             data-chip-id={chip.id}
             data-chip-status={chip.status}
+            use:contextMenu={{
+              target: MENU_TARGET_ATTACHMENT,
+              handlers: {
+                [MENU_ACTION_ATTACHMENT_COPY_PATH]: () => {
+                  void navigator.clipboard.writeText(chip.filename);
+                },
+                [MENU_ACTION_ATTACHMENT_COPY_FILENAME]: () => {
+                  void navigator.clipboard.writeText(chip.filename);
+                },
+                [MENU_ACTION_ATTACHMENT_REMOVE]: {
+                  handler: () => removeChip(chip.id),
+                  confirmMessage: `Remove "${chip.filename}"?`,
+                  confirmLabel: "Remove",
+                },
+              },
+              data: { chipId: chip.id },
+            }}
           >
             {#if chip.status === "uploading"}
               <span

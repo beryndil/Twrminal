@@ -486,6 +486,141 @@ describe("ContextMenu", () => {
     });
   });
 
+  describe("central destructive-confirmation bridge (gap-cycle-05-003)", () => {
+    it("clicking a destructive action with a plain handler shows ConfirmDialog, not calling handler yet", async () => {
+      const del = vi.fn();
+      const { getAllByTestId, queryByTestId } = render(ContextMenu);
+      openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_DELETE]: del } });
+
+      const deleteRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_DELETE,
+      );
+      expect(deleteRow).toBeDefined();
+      await fireEvent.click(deleteRow as HTMLElement);
+
+      // Menu must have closed.
+      expect(queryByTestId("context-menu")).toBeNull();
+      // ConfirmDialog must be open.
+      expect(queryByTestId("confirm-dialog")).not.toBeNull();
+      // Handler must NOT have fired yet.
+      expect(del).not.toHaveBeenCalled();
+    });
+
+    it("clicking Confirm in the central bridge fires the handler and closes the dialog", async () => {
+      const del = vi.fn();
+      const { getAllByTestId, queryByTestId, getByTestId } = render(ContextMenu);
+      openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_DELETE]: del } });
+
+      const deleteRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_DELETE,
+      );
+      await fireEvent.click(deleteRow as HTMLElement);
+      expect(queryByTestId("confirm-dialog")).not.toBeNull();
+
+      await fireEvent.click(getByTestId("confirm-dialog-confirm"));
+      expect(del).toHaveBeenCalledOnce();
+      expect(queryByTestId("confirm-dialog")).toBeNull();
+    });
+
+    it("clicking Cancel in the central bridge skips the handler", async () => {
+      const del = vi.fn();
+      const { getAllByTestId, queryByTestId, getByTestId } = render(ContextMenu);
+      openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_DELETE]: del } });
+
+      const deleteRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_DELETE,
+      );
+      await fireEvent.click(deleteRow as HTMLElement);
+
+      await fireEvent.click(getByTestId("confirm-dialog-cancel"));
+      expect(del).not.toHaveBeenCalled();
+      expect(queryByTestId("confirm-dialog")).toBeNull();
+    });
+
+    it("Esc on the confirm-dialog-backdrop skips the handler", async () => {
+      const del = vi.fn();
+      const { getAllByTestId, queryByTestId } = render(ContextMenu);
+      openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_DELETE]: del } });
+
+      const deleteRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_DELETE,
+      );
+      await fireEvent.click(deleteRow as HTMLElement);
+      expect(queryByTestId("confirm-dialog")).not.toBeNull();
+
+      await fireEvent.keyDown(queryByTestId("confirm-dialog-backdrop") as HTMLElement, {
+        key: "Escape",
+      });
+      expect(del).not.toHaveBeenCalled();
+      expect(queryByTestId("confirm-dialog")).toBeNull();
+    });
+
+    it("destructive action with { handler, confirmMessage } shows the custom message", async () => {
+      const del = vi.fn();
+      const { getAllByTestId, getByTestId } = render(ContextMenu);
+      openCheckpointMenu({
+        handlers: {
+          [MENU_ACTION_CHECKPOINT_DELETE]: {
+            handler: del,
+            confirmMessage: 'Delete checkpoint "my-cp"?',
+            confirmLabel: "Delete",
+          },
+        },
+      });
+
+      const deleteRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_DELETE,
+      );
+      await fireEvent.click(deleteRow as HTMLElement);
+
+      expect(getByTestId("confirm-dialog-message")).toHaveTextContent(
+        'Delete checkpoint "my-cp"?',
+      );
+      expect(getByTestId("confirm-dialog-confirm")).toHaveTextContent("Delete");
+    });
+
+    it("destructive action with skipMenuConfirm fires handler directly without showing dialog", async () => {
+      const del = vi.fn();
+      const { getAllByTestId, queryByTestId } = render(ContextMenu);
+      openCheckpointMenu({
+        handlers: {
+          [MENU_ACTION_CHECKPOINT_DELETE]: {
+            handler: del,
+            skipMenuConfirm: true,
+          },
+        },
+      });
+
+      const deleteRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_DELETE,
+      );
+      await fireEvent.click(deleteRow as HTMLElement);
+
+      // Handler fires immediately, no dialog.
+      expect(del).toHaveBeenCalledOnce();
+      expect(queryByTestId("confirm-dialog")).toBeNull();
+      expect(queryByTestId("context-menu")).toBeNull();
+    });
+
+    it("non-destructive action with { handler } fires directly without showing dialog", async () => {
+      const fork = vi.fn();
+      const { getAllByTestId, queryByTestId } = render(ContextMenu);
+      openCheckpointMenu({
+        handlers: {
+          [MENU_ACTION_CHECKPOINT_FORK]: { handler: fork },
+        },
+      });
+
+      const forkRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_FORK,
+      );
+      await fireEvent.click(forkRow as HTMLElement);
+
+      expect(fork).toHaveBeenCalledOnce();
+      expect(queryByTestId("confirm-dialog")).toBeNull();
+    });
+  });
+
   describe("ArrowRight / ArrowLeft submenu keyboard handling", () => {
     // Session non-advanced flat order (MENU_SECTION_ORDER: primary, navigate, create,
     // edit, view, copy, organize, destructive):

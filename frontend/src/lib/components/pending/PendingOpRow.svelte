@@ -87,7 +87,11 @@
 
   const menuHandlers = $derived({
     [MENU_ACTION_PENDING_OPERATION_RESOLVE]: () => onResolve(op.name),
-    [MENU_ACTION_PENDING_OPERATION_DISMISS]: () => onDismiss(op.name),
+    [MENU_ACTION_PENDING_OPERATION_DISMISS]: {
+      handler: () => onDismiss(op.name),
+      confirmMessage: `Dismiss "${op.name}"?`,
+      confirmLabel: "Dismiss",
+    },
     [MENU_ACTION_PENDING_OPERATION_COPY_NAME]: handleCopyName,
     [MENU_ACTION_PENDING_OPERATION_COPY_COMMAND]: handleCopyCommand,
     // Open-in-editor only wired when op.dir is present; absent handler

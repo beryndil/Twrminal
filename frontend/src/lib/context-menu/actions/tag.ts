@@ -21,6 +21,7 @@ import {
 } from "../../config";
 import type { TagOut } from "../../api/tags";
 import { deleteTag, patchTagPinned } from "../../api/tags";
+import type { HandlerEntry } from "../store.svelte";
 
 /**
  * Callbacks the consumer supplies to :func:`createTagMenuHandlers`.
@@ -57,16 +58,21 @@ export interface TagMenuCallbacks {
 export function createTagMenuHandlers(
   tag: TagOut,
   callbacks: TagMenuCallbacks,
-): Readonly<Record<string, () => void>> {
-  const handlers: Record<string, () => void> = {
+): Readonly<Record<string, HandlerEntry>> {
+  const handlers: Record<string, HandlerEntry> = {
     [MENU_ACTION_TAG_COPY_NAME]: () => {
       void navigator.clipboard.writeText(tag.name);
     },
     [MENU_ACTION_TAG_EDIT]: () => {
       callbacks.onEdit(tag);
     },
-    [MENU_ACTION_TAG_DELETE]: () => {
-      callbacks.onRequestDelete(tag);
+    // tag.delete: consumer owns the confirm dialog via onRequestDelete, so
+    // the central bridge skips its own dialog (skipMenuConfirm: true).
+    [MENU_ACTION_TAG_DELETE]: {
+      handler: () => {
+        callbacks.onRequestDelete(tag);
+      },
+      skipMenuConfirm: true,
     },
   };
 

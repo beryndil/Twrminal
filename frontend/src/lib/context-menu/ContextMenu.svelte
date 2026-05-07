@@ -50,6 +50,7 @@
   import { ESC_PRIORITY_CONTEXT_MENU, registerEscEntry } from "../keyboard/escCascade";
   import { actionsForTarget, type MenuActionDescriptor } from "./registry";
   import { closeMenu, contextMenuStore } from "./store.svelte";
+  import ConfirmDialog from "../components/sidebar/ConfirmDialog.svelte";
 
   const open = $derived(contextMenuStore.open);
 
@@ -85,6 +86,20 @@
    * target row after each navigation step.
    */
   let menuContainerRef: HTMLUListElement | null = $state(null);
+
+  /**
+   * Pending destructive confirmation — set by :func:`activate` when a
+   * destructive action fires and the consumer has not opted out of the
+   * central bridge (``skipMenuConfirm !== true``). The menu is already
+   * closed at this point; the ConfirmDialog renders in its place.
+   * ``null`` when no confirmation is pending.
+   */
+  interface PendingConfirm {
+    handler: () => void;
+    message: string;
+    confirmLabel: string;
+  }
+  let pendingConfirm: PendingConfirm | null = $state(null);
 
   /**
    * The element that held DOM focus when the menu opened. Restored on
@@ -160,7 +175,11 @@
     if (open === null) return false;
     if (open.stale) return false;
     const entry = open.handlers[action.id];
-    return typeof entry === "function";
+    if (typeof entry === "function") return true;
+    // Object entries with a `handler` field are enabled; `{ disabledReason }`
+    // entries and absent keys are disabled.
+    if (entry !== undefined && typeof entry === "object" && "handler" in entry) return true;
+    return false;
   }
 
   /**
@@ -175,20 +194,68 @@
     if (open === null || open.stale) return undefined;
     const entry = open.handlers[action.id];
     if (entry === undefined || typeof entry === "function") return undefined;
+    // Only { disabledReason } entries carry a tooltip; handler-object entries do not.
+    if (!("disabledReason" in entry)) return undefined;
     return entry.disabledReason;
   }
 
+  /**
+   * Central activation bridge — implements the v17 contract restored by
+   * gap-cycle-05-003:
+   *
+   * - Non-destructive actions: fire the handler and close the menu.
+   * - Destructive actions (``action.destructive === true``):
+   *   - If the consumer has set ``skipMenuConfirm: true`` on the entry the
+   *     handler is called directly (consumer manages its own dialog).
+   *   - Otherwise: close the menu and show :component:`ConfirmDialog`.
+   *     The handler fires only when the user clicks Confirm; Cancel /
+   *     Esc skips it.
+   *
+   * Behaviour anchor: ``docs/behavior/context-menus.md`` §"Common
+   * behavior — Destructive entries".
+   */
   function activate(action: MenuActionDescriptor): void {
     if (!isActionEnabled(action)) return;
     if (open === null) return;
+
     const entry = open.handlers[action.id];
-    if (typeof entry !== "function") return;
-    // The destructive confirmation dialog is the consumer's responsibility —
-    // the consumer's handler should open it.  The menu only routes the click
-    // through; closing the menu here matches §"Common behavior" — "Picking an
-    // action closes after the action fires."
-    entry();
-    closeMenu();
+
+    // Extract the raw handler and any bridge metadata.
+    let handler: () => void;
+    let skipMenuConfirm = false;
+    let confirmMessage: string | undefined;
+    let confirmLabel: string | undefined;
+
+    if (typeof entry === "function") {
+      handler = entry;
+    } else if (entry !== undefined && typeof entry === "object" && "handler" in entry) {
+      const obj = entry as {
+        handler: () => void;
+        skipMenuConfirm?: boolean;
+        confirmMessage?: string;
+        confirmLabel?: string;
+      };
+      handler = obj.handler;
+      skipMenuConfirm = obj.skipMenuConfirm === true;
+      confirmMessage = obj.confirmMessage;
+      confirmLabel = obj.confirmLabel;
+    } else {
+      return;
+    }
+
+    if (action.destructive === true && !skipMenuConfirm) {
+      // Close the menu first (matching v17: "every destructive click closed
+      // the menu, then called confirmStore.request(...)").
+      closeMenu();
+      pendingConfirm = {
+        handler,
+        message: confirmMessage ?? `${actionLabel(action.id)}?`,
+        confirmLabel: confirmLabel ?? "Confirm",
+      };
+    } else {
+      handler();
+      closeMenu();
+    }
   }
 
   /**
@@ -327,6 +394,25 @@
 </script>
 
 <svelte:window onkeydown={handleKeyDown} onfocusin={handleFocusIn} />
+
+{#if pendingConfirm !== null}
+  <!--
+    Central destructive-confirmation bridge (gap-cycle-05-003).
+    The menu has already been closed; this dialog sits on top.
+  -->
+  <ConfirmDialog
+    message={pendingConfirm.message}
+    confirmLabel={pendingConfirm.confirmLabel}
+    onConfirm={() => {
+      const { handler } = pendingConfirm!;
+      pendingConfirm = null;
+      handler();
+    }}
+    onCancel={() => {
+      pendingConfirm = null;
+    }}
+  />
+{/if}
 
 {#if open !== null}
   <!-- Backdrop — clicking outside closes the menu. -->

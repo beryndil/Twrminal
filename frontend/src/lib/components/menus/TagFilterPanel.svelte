@@ -111,7 +111,7 @@
 
   // ---- context menu handlers per tag --------------------------------------
 
-  function menuHandlersForTag(tag: TagOut): Readonly<Record<string, () => void>> {
+  function menuHandlersForTag(tag: TagOut): Readonly<Record<string, import("../../context-menu/store.svelte").HandlerEntry>> {
     return createTagMenuHandlers(tag, {
       onEdit: (t) => {
         editingTag = t;

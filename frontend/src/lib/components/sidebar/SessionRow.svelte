@@ -123,7 +123,7 @@
      * Provided by :class:`SessionList` so all selected-row menus
      * share the same wired actions.
      */
-    multiSelectHandlers?: Readonly<Record<string, () => void>>;
+    multiSelectHandlers?: Readonly<Record<string, import("../../context-menu/store.svelte").HandlerEntry>>;
     /**
      * Called on plain click and ctrl/cmd-click so :class:`SessionList`
      * can track the last non-shift click as the anchor for the next
@@ -317,8 +317,11 @@
     [MENU_ACTION_SESSION_EXPORT_JSON]: () => {
       void exportSessionJson(session);
     },
-    [MENU_ACTION_SESSION_DELETE]: () => {
-      showDeleteConfirm = true;
+    [MENU_ACTION_SESSION_DELETE]: {
+      handler: () => {
+        showDeleteConfirm = true;
+      },
+      skipMenuConfirm: true,
     },
     [MENU_ACTION_SESSION_MERGE_INTO]: () => {
       showMergePicker = true;
@@ -601,19 +604,23 @@
                 [MENU_ACTION_TAG_CHIP_COPY_NAME]: () => {
                   void navigator.clipboard.writeText(tag.name);
                 },
-                [MENU_ACTION_TAG_CHIP_DETACH]: () => {
-                  const { id: tagId } = tag;
-                  const sessionId = session.id;
-                  void detachTagFromSession(sessionId, tagId).then(() => {
-                    void refreshSessions(currentFilter());
-                    undoStore.push({
-                      message: UNDO_TOAST_STRINGS.tagRemoved,
-                      inverse: () =>
-                        attachTagToSession(sessionId, tagId).then(() =>
-                          refreshSessions(currentFilter()),
-                        ),
+                [MENU_ACTION_TAG_CHIP_DETACH]: {
+                  handler: () => {
+                    const { id: tagId } = tag;
+                    const sessionId = session.id;
+                    void detachTagFromSession(sessionId, tagId).then(() => {
+                      void refreshSessions(currentFilter());
+                      undoStore.push({
+                        message: UNDO_TOAST_STRINGS.tagRemoved,
+                        inverse: () =>
+                          attachTagToSession(sessionId, tagId).then(() =>
+                            refreshSessions(currentFilter()),
+                          ),
+                      });
                     });
-                  });
+                  },
+                  confirmMessage: `Remove tag "${tag.name}" from session?`,
+                  confirmLabel: "Remove",
                 },
               },
               data: { tagId: tag.id },

@@ -158,7 +158,7 @@
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
-  function makeMenuHandlers(cp: CheckpointOut): Record<string, () => void> {
+  function makeMenuHandlers(cp: CheckpointOut): Record<string, import("../../context-menu/store.svelte").HandlerEntry> {
     return {
       [MENU_ACTION_CHECKPOINT_FORK]: () => {
         void (async () => {
@@ -177,28 +177,32 @@
       [MENU_ACTION_CHECKPOINT_COPY_ID]: () => {
         void navigator.clipboard.writeText(cp.id);
       },
-      [MENU_ACTION_CHECKPOINT_DELETE]: () => {
-        // Capture snapshot before deletion so the inverse can recreate it.
-        const snapshot: CheckpointOut = { ...cp };
-        void (async () => {
-          try {
-            await deleteCheckpoint(snapshot.id);
-            checkpoints = checkpoints.filter((row) => row.id !== snapshot.id);
-            undoStore.push({
-              message: UNDO_TOAST_STRINGS.checkpointDeleted,
-              inverse: async () => {
-                const restored = await createCheckpoint({
-                  sessionId: snapshot.session_id,
-                  messageId: snapshot.message_id,
-                  label: snapshot.label,
-                });
-                checkpoints = [...checkpoints, restored];
-              },
-            });
-          } catch (err) {
-            console.error("deleteCheckpoint failed:", err);
-          }
-        })();
+      [MENU_ACTION_CHECKPOINT_DELETE]: {
+        handler: () => {
+          // Capture snapshot before deletion so the inverse can recreate it.
+          const snapshot: CheckpointOut = { ...cp };
+          void (async () => {
+            try {
+              await deleteCheckpoint(snapshot.id);
+              checkpoints = checkpoints.filter((row) => row.id !== snapshot.id);
+              undoStore.push({
+                message: UNDO_TOAST_STRINGS.checkpointDeleted,
+                inverse: async () => {
+                  const restored = await createCheckpoint({
+                    sessionId: snapshot.session_id,
+                    messageId: snapshot.message_id,
+                    label: snapshot.label,
+                  });
+                  checkpoints = [...checkpoints, restored];
+                },
+              });
+            } catch (err) {
+              console.error("deleteCheckpoint failed:", err);
+            }
+          })();
+        },
+        confirmMessage: `Delete checkpoint "${cp.label}"?`,
+        confirmLabel: "Delete",
       },
     };
   }

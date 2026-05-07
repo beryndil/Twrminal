@@ -443,14 +443,21 @@
     [MENU_ACTION_MULTI_SELECT_UNTAG]: () => {
       void openTagPicker("remove");
     },
-    [MENU_ACTION_MULTI_SELECT_CLOSE]: () => {
-      void handleMultiClose();
+    [MENU_ACTION_MULTI_SELECT_CLOSE]: {
+      handler: () => {
+        void handleMultiClose();
+      },
+      confirmMessage: `Close ${multiSelectionStore.ids.size} session${multiSelectionStore.ids.size === 1 ? "" : "s"}?`,
+      confirmLabel: "Close",
     },
     [MENU_ACTION_MULTI_SELECT_EXPORT]: () => {
       void handleMultiExport();
     },
-    [MENU_ACTION_MULTI_SELECT_DELETE]: () => {
-      showMultiDeleteConfirm = true;
+    [MENU_ACTION_MULTI_SELECT_DELETE]: {
+      handler: () => {
+        showMultiDeleteConfirm = true;
+      },
+      skipMenuConfirm: true,
     },
   });
 

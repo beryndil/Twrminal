@@ -237,7 +237,7 @@ const MULTI_SELECT_ACTIONS: readonly MenuActionDescriptor[] = [
     submenu: true,
     advanced: true,
   },
-  { id: MENU_ACTION_MULTI_SELECT_CLOSE, section: MENU_SECTION_ORGANIZE },
+  { id: MENU_ACTION_MULTI_SELECT_CLOSE, section: MENU_SECTION_ORGANIZE, destructive: true },
   { id: MENU_ACTION_MULTI_SELECT_EXPORT, section: MENU_SECTION_COPY },
   { id: MENU_ACTION_MULTI_SELECT_DELETE, section: MENU_SECTION_DESTRUCTIVE, destructive: true },
 ];
