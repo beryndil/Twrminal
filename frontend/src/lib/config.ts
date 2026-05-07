@@ -1404,6 +1404,18 @@ export type InspectorTabId = (typeof KNOWN_INSPECTOR_TABS)[number];
 export const DEFAULT_INSPECTOR_TAB = "agent" as InspectorTabId;
 
 /**
+ * ``localStorage`` key that persists the user's active inspector tab
+ * across page reloads (gap-cycle-09-002). Value is one of the
+ * :data:`KNOWN_INSPECTOR_TABS` literals; defaults to
+ * :data:`DEFAULT_INSPECTOR_TAB` when absent or unrecognised.
+ *
+ * Uses the ``bearings-v1:`` namespace to match the other per-device
+ * preference keys (:data:`SESSION_SORT_STORAGE_KEY`,
+ * :data:`AUTH_TOKEN_STORAGE_KEY`).
+ */
+export const INSPECTOR_TAB_STORAGE_KEY = "bearings-v1:inspector-tab";
+
+/**
  * Inspector string table — chat.md §"opens an existing chat" cites
  * the inspector as a sibling pane to the conversation; chat.md
  * §"What the user does NOT see in chat" enumerates Routing + Usage

@@ -22,7 +22,62 @@
  * tags/sessions/conversation store conventions already established in
  * items 2.2 + 2.3.
  */
-import { DEFAULT_INSPECTOR_TAB, KNOWN_INSPECTOR_TABS, type InspectorTabId } from "../config";
+import {
+  DEFAULT_INSPECTOR_TAB,
+  INSPECTOR_TAB_STORAGE_KEY,
+  KNOWN_INSPECTOR_TABS,
+  type InspectorTabId,
+} from "../config";
+
+// ---------------------------------------------------------------------------
+// localStorage helpers (SSR-safe)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the persisted inspector tab from ``localStorage``.
+ *
+ * Returns :data:`DEFAULT_INSPECTOR_TAB` when:
+ *
+ * - no value is stored,
+ * - the stored value is not in :data:`KNOWN_INSPECTOR_TABS`, or
+ * - ``localStorage`` is unavailable / throws (private-browsing, quota).
+ */
+function loadTabPref(): InspectorTabId {
+  if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+    return DEFAULT_INSPECTOR_TAB;
+  }
+  try {
+    const raw = window.localStorage.getItem(INSPECTOR_TAB_STORAGE_KEY);
+    if (raw !== null && (KNOWN_INSPECTOR_TABS as readonly string[]).includes(raw)) {
+      return raw as InspectorTabId;
+    }
+    return DEFAULT_INSPECTOR_TAB;
+  } catch {
+    return DEFAULT_INSPECTOR_TAB;
+  }
+}
+
+/**
+ * Persist the active tab id to ``localStorage``.
+ *
+ * Best-effort — private-browsing / quota errors are caught and swallowed
+ * so the in-memory selection still flips even when storage is unavailable.
+ */
+function saveTabPref(id: InspectorTabId): void {
+  if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(INSPECTOR_TAB_STORAGE_KEY, id);
+  } catch {
+    // Quota / private-mode — degrade silently; the in-memory state still
+    // reflects the user's choice for this page load.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Store
+// ---------------------------------------------------------------------------
 
 interface InspectorState {
   /**
@@ -43,7 +98,7 @@ interface InspectorState {
 }
 
 const state: InspectorState = $state({
-  activeTabId: DEFAULT_INSPECTOR_TAB,
+  activeTabId: loadTabPref(),
   activeSessionId: null,
 });
 
@@ -67,6 +122,7 @@ export function setInspectorTab(id: InspectorTabId): void {
     return;
   }
   state.activeTabId = id;
+  saveTabPref(id);
 }
 
 /**
@@ -77,8 +133,15 @@ export function setActiveSession(sessionId: string | null): void {
   state.activeSessionId = sessionId;
 }
 
-/** Test seam — restores the boot state without re-importing the module. */
+/**
+ * Test seam — re-hydrates the store from ``localStorage`` (just as the
+ * module initialiser does at boot) and clears ``activeSessionId``.
+ *
+ * Callers should call ``window.localStorage.clear()`` **before** this to
+ * start from a blank slate, or seed specific keys **before** this to
+ * exercise hydration paths.
+ */
 export function _resetForTests(): void {
-  state.activeTabId = DEFAULT_INSPECTOR_TAB;
+  state.activeTabId = loadTabPref();
   state.activeSessionId = null;
 }

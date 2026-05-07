@@ -57,6 +57,7 @@ function fakeSession(overrides: Partial<SessionOut> = {}): SessionOut {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
   _resetForTests();
 });
 
