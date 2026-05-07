@@ -16,6 +16,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from bearings.config.constants import (
+    BULK_SESSION_IDS_MAX,
     DEFAULT_TEMPLATE_ADVISOR_MAX_USES,
     DEFAULT_TEMPLATE_EFFORT_LEVEL,
     PROMPT_CONTENT_MAX_CHARS,
@@ -380,7 +381,77 @@ class SessionExport(BaseModel):
     attachments: list[dict]  # type: ignore[type-arg]
 
 
+class BulkSessionsIn(BaseModel):
+    """Request shape for ``POST /api/sessions/bulk`` (gap-cycle-13-001).
+
+    ``op`` selects the operation: ``close``, ``delete``, ``export``, ``tag``,
+    or ``untag``. ``session_ids`` carries the IDs to act on; the list must be
+    non-empty. ``tag_id`` is required for ``tag`` and ``untag`` ops and ignored
+    for the others.
+
+    Extra fields are ignored (defensive against future client additions).
+    The :data:`bearings.config.constants.KNOWN_BULK_OPS` validator in the
+    route rejects unknown ``op`` values before the DB layer is touched.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    op: str
+    session_ids: list[str] = Field(min_length=1, max_length=BULK_SESSION_IDS_MAX)
+    tag_id: int | None = None
+
+
+class BulkResultItem(BaseModel):
+    """Per-ID result entry returned by ``POST /api/sessions/bulk``.
+
+    ``ok=True`` means the operation succeeded for this ID. ``ok=False``
+    means it failed; ``detail`` carries the human-readable reason (e.g.
+    ``"no session matches 'bad-id'"``, ``"tag not found"``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str
+    ok: bool
+    detail: str | None = None
+
+
+class BulkSessionsOut(BaseModel):
+    """Response shape for ``POST /api/sessions/bulk`` non-export ops.
+
+    ``op`` echoes the requested operation. ``results`` is a per-ID list in
+    the same order as the request's ``session_ids``. The HTTP status is
+    always 200 — the caller must inspect each ``BulkResultItem.ok`` to
+    detect partial failures.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    op: str
+    results: list[BulkResultItem]
+
+
+class BulkExportOut(BaseModel):
+    """Response shape for ``POST /api/sessions/bulk`` with ``op="export"``.
+
+    ``sessions`` is an array of full :class:`SessionExport` objects — one per
+    ID in the request, in the same order. IDs that were not found produce a
+    ``None`` entry so the array length always equals ``len(session_ids)``.
+    Missing entries are omitted client-side (the downloader skips ``null``).
+
+    Per ``docs/behavior/sessions.md`` §"Bulk export contract".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    sessions: list[SessionExport | None]
+
+
 __all__ = [
+    "BulkExportOut",
+    "BulkResultItem",
+    "BulkSessionsIn",
+    "BulkSessionsOut",
     "CheckpointExport",
     "MessageExport",
     "PairedChatInfo",

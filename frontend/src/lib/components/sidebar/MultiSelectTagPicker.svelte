@@ -13,7 +13,8 @@
    * Mode ``add``: shows all available tags.
    * Mode ``remove``: shows only tags common to ALL selected sessions.
    */
-  import { attachTagToSession, detachTagFromSession, type TagOut } from "../../api/tags";
+  import type { TagOut } from "../../api/tags";
+  import { bulkTagSessions, bulkUntagSessions } from "../../api/sessionsBulk";
 
   interface Props {
     /** Determines whether the action is an attach or detach. */
@@ -40,13 +41,22 @@
     working = true;
     errorMsg = null;
     try {
-      await Promise.all(
-        Array.from(selectedSessionIds).map((sessionId) =>
-          mode === "add"
-            ? attachTagToSession(sessionId, tagId)
-            : detachTagFromSession(sessionId, tagId),
-        ),
-      );
+      const ids = Array.from(selectedSessionIds);
+      const result =
+        mode === "add"
+          ? await bulkTagSessions(ids, tagId)
+          : await bulkUntagSessions(ids, tagId);
+      const failed = result.results.filter((r) => !r.ok);
+      if (failed.length > 0) {
+        const details = failed
+          .map((r) => r.detail ?? "unknown error")
+          .slice(0, 3)
+          .join("; ");
+        const suffix = failed.length > 3 ? ` (+${failed.length - 3} more)` : "";
+        errorMsg = `${failed.length} failed: ${details}${suffix}`;
+        working = false;
+        return;
+      }
       onDone();
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : String(err);

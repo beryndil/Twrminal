@@ -1213,6 +1213,22 @@ ROUTE_TAG_CHECKPOINTS: Final[str] = "checkpoints"
 ROUTE_TAG_TEMPLATES: Final[str] = "templates"
 ROUTE_TAG_REORG: Final[str] = "reorg"
 ROUTE_TAG_PENDING: Final[str] = "pending"
+ROUTE_TAG_SESSIONS_BULK: Final[str] = "sessions-bulk"
+
+# Bulk-session operation alphabet (gap-cycle-13-001).
+# These string constants feed the ``op`` field of ``POST /api/sessions/bulk``
+# so both the route validator and the frontend share a single source of truth.
+BULK_OP_CLOSE: Final[str] = "close"
+BULK_OP_DELETE: Final[str] = "delete"
+BULK_OP_EXPORT: Final[str] = "export"
+BULK_OP_TAG: Final[str] = "tag"
+BULK_OP_UNTAG: Final[str] = "untag"
+KNOWN_BULK_OPS: Final[frozenset[str]] = frozenset(
+    {BULK_OP_CLOSE, BULK_OP_DELETE, BULK_OP_EXPORT, BULK_OP_TAG, BULK_OP_UNTAG}
+)
+# Maximum number of session IDs accepted per /bulk request. Prevents unbounded
+# DB round-trips; the frontend always has far fewer selected sessions than this.
+BULK_SESSION_IDS_MAX: Final[int] = 500
 
 # History search result hard cap. The search endpoint returns at most this
 # many hits (sessions + messages combined) per query to keep response sizes
@@ -1284,6 +1300,12 @@ __all__ = [
     "BEARINGS_TODO_FILENAME",
     "BEARINGS_TODO_RECENT_DEFAULT_DAYS",
     "BEARINGS_TODO_WALK_MAX_DEPTH",
+    "BULK_OP_CLOSE",
+    "BULK_OP_DELETE",
+    "BULK_OP_EXPORT",
+    "BULK_OP_TAG",
+    "BULK_OP_UNTAG",
+    "BULK_SESSION_IDS_MAX",
     "CHECKLIST_DRIVER_MAX_FOLLOWUP_DEPTH",
     "CHECKLIST_DRIVER_MAX_ITEMS_PER_RUN",
     "CHECKLIST_DRIVER_MAX_LEGS_PER_ITEM",
@@ -1350,6 +1372,7 @@ __all__ = [
     "ITEM_OUTCOME_SKIPPED",
     "KNOWN_AUTO_DRIVER_FAILURE_POLICIES",
     "KNOWN_AUTO_DRIVER_STATES",
+    "KNOWN_BULK_OPS",
     "KNOWN_EFFORT_LEVELS",
     "KNOWN_EXECUTOR_MODELS",
     "KNOWN_FS_ENTRY_KINDS",
@@ -1426,6 +1449,7 @@ __all__ = [
     "ROUTE_TAG_REORG",
     "ROUTE_TAG_ROUTING",
     "ROUTE_TAG_SESSIONS",
+    "ROUTE_TAG_SESSIONS_BULK",
     "ROUTE_TAG_SHELL",
     "ROUTE_TAG_TAGS",
     "ROUTE_TAG_TEMPLATES",

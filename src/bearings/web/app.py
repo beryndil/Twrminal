@@ -65,6 +65,7 @@ from bearings.config.constants import (
     ROUTE_TAG_REORG,
     ROUTE_TAG_ROUTING,
     ROUTE_TAG_SESSIONS,
+    ROUTE_TAG_SESSIONS_BULK,
     ROUTE_TAG_SHELL,
     ROUTE_TAG_TAGS,
     ROUTE_TAG_TEMPLATES,
@@ -98,6 +99,7 @@ from bearings.web.routes.quota import router as quota_router
 from bearings.web.routes.reorg import router as reorg_router
 from bearings.web.routes.routing import router as routing_router
 from bearings.web.routes.sessions import router as sessions_router
+from bearings.web.routes.sessions_bulk import router as sessions_bulk_router
 from bearings.web.routes.shell import router as shell_router
 from bearings.web.routes.spawn_from_reply import router as spawn_from_reply_router
 from bearings.web.routes.tags import router as tags_router
@@ -380,6 +382,11 @@ def create_app(
     # G7 — templates CRUD (new-session template picker + save_as_template action).
     app.include_router(templates_router, tags=[ROUTE_TAG_TEMPLATES])
     app.include_router(sessions_router, tags=[ROUTE_TAG_SESSIONS])
+    # gap-cycle-13-001 — atomic bulk close/delete/export/tag/untag.
+    # ``/api/sessions/bulk`` is a concrete path; FastAPI always ranks concrete
+    # path segments before ``{session_id}`` path-param routes regardless of
+    # registration order.
+    app.include_router(sessions_bulk_router, tags=[ROUTE_TAG_SESSIONS_BULK])
     app.include_router(approvals_router, tags=[ROUTE_TAG_APPROVALS])
     app.include_router(messages_router, tags=[ROUTE_TAG_MESSAGES])
     app.include_router(paired_chats_router, tags=[ROUTE_TAG_PAIRED_CHATS])

@@ -19,6 +19,13 @@ export const API_BASE = "/api";
 /** ``GET /api/sessions`` — sidebar list source per ``docs/behavior/chat.md``. */
 export const API_SESSIONS_ENDPOINT = `${API_BASE}/sessions`;
 
+/**
+ * ``POST /api/sessions/bulk`` — atomic multi-select batch operation.
+ * Accepts ``{op, session_ids, tag_id?}``; returns per-ID results or an
+ * export bundle depending on the op. Gap-cycle-13-001.
+ */
+export const API_SESSIONS_BULK_ENDPOINT = `${API_BASE}/sessions/bulk`;
+
 /** ``GET /api/tags`` — tag list source per ``docs/behavior/chat.md`` §"creates a chat". */
 export const API_TAGS_ENDPOINT = `${API_BASE}/tags`;
 

@@ -252,6 +252,99 @@ canonical way to bulk-import sessions without repeating the dialog flow.
 
 ---
 
+---
+
+## Bulk operations contract
+
+**Gap-cycle-13-001.** The multi-select context-menu actions (Close
+sessions / Delete sessions / Export as JSON / Add tag / Remove tag)
+execute as a single atomic server batch via `POST /api/sessions/bulk`
+instead of N independent HTTP requests.
+
+### Endpoint
+
+```
+POST /api/sessions/bulk
+```
+
+#### Request body
+
+```json
+{
+  "op": "close" | "delete" | "export" | "tag" | "untag",
+  "session_ids": ["id1", "id2", …],
+  "tag_id": 42
+}
+```
+
+`tag_id` is required for `tag` and `untag` ops; ignored for others.
+`session_ids` must be non-empty and at most
+`BULK_SESSION_IDS_MAX` (500) entries.
+
+#### Response — mutating ops (close / delete / tag / untag)
+
+```json
+{
+  "op": "close",
+  "results": [
+    { "session_id": "id1", "ok": true },
+    { "session_id": "id2", "ok": false, "detail": "no session matches 'id2'" }
+  ]
+}
+```
+
+HTTP status is always **200**. Callers inspect each `ok` field for
+partial failures. Mutating ops run in a **single DB transaction** with
+per-ID SQLite savepoints: a failure on one ID rolls back only that
+ID's changes without aborting the rest of the batch.
+
+#### Response — export op
+
+`Content-Type: application/json` with body:
+
+```json
+{
+  "sessions": [
+    { ...SessionExport shape... },
+    null
+  ]
+}
+```
+
+`null` slots represent session IDs that were not found. The frontend
+filters them out before triggering the download. The bundle is
+streamed once from the server — no per-session message limit, no
+client-side concat.
+
+### Frontend observable behavior
+
+* **Close**: calls `/bulk` once; on any `ok=true` entries, pushes an
+  undo toast (`"N sessions archived"`) backed by per-session `/reopen`
+  calls. Partial failures surface as an inline error banner above the
+  session list.
+* **Delete**: calls `/bulk` once; partial failures surface as an inline
+  error banner.
+* **Export**: calls `/bulk` once with `op="export"`; triggers a browser
+  download of the full bundle named
+  `bearings-export-YYYY-MM-DD.json`.
+* **Add tag / Remove tag**: calls `/bulk` once with `op="tag"` or
+  `op="untag"` inside `MultiSelectTagPicker`; partial failures surface
+  as an inline error in the picker dialog.
+
+### Frontend implementation notes
+
+`bulkCloseSessions` / `bulkDeleteSessions` / `bulkExportSessions` /
+`bulkTagSessions` / `bulkUntagSessions` in
+`frontend/src/lib/api/sessionsBulk.ts`:
+
+1. POST to `/api/sessions/bulk` with the appropriate body.
+2. For mutating ops: return the `BulkSessionsOut` object (callers
+   inspect `results[*].ok`).
+3. For export: return a `Blob` (caller creates an object URL and
+   triggers `<a download>`).
+
+---
+
 ### Frontend implementation notes
 
 `importSessionJson(exportJson, options?)` in

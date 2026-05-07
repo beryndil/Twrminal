@@ -222,7 +222,7 @@ sidebar").
 The audit flagged 12 spec'd route modules absent from
 ``src/bearings/web/routes/``:
 
-* ``sessions_bulk.py`` — bulk close/reopen/delete/tag.
+* ~~``sessions_bulk.py`` — bulk close/reopen/delete/tag.~~ (resolved: gap-cycle-13-001)
 * ``checkpoints.py`` — chat-undo checkpoint CRUD.
 * ``templates.py`` — Templates CRUD.
 * ``reorg.py`` — session-reorg analyze + apply.

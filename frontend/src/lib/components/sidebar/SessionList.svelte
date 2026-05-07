@@ -44,13 +44,17 @@
   import { onMount } from "svelte";
 
   import {
-    closeSession,
-    deleteSession,
     markSessionViewed,
     reopenSession as reopenSessionDefault,
     type SessionOut,
   } from "../../api/sessions";
-  import { listMessages } from "../../api/messages";
+  import {
+    bulkCloseSessions,
+    bulkDeleteSessions,
+    bulkExportSessions,
+    type BulkSessionsOut,
+  } from "../../api/sessionsBulk";
+  import { undoStore } from "../../stores/undo.svelte";
   import {
     MENU_ACTION_MULTI_SELECT_CLEAR,
     MENU_ACTION_MULTI_SELECT_CLOSE,
@@ -61,6 +65,7 @@
     SESSION_SORT_GROUPED,
     SESSION_SORT_LAST_ACTION,
     SIDEBAR_STRINGS,
+    UNDO_TOAST_STRINGS,
   } from "../../config";
   import {
     sessionSortStore as sessionSortStoreDefault,
@@ -373,14 +378,41 @@
     clearSelection();
   }
 
+  // ---- Bulk-operation shared state ----------------------------------------
+
+  /**
+   * Failure summary from the most-recent bulk operation. Shown as an
+   * inline message in the sidebar when the batch had partial failures.
+   * Cleared at the start of each new bulk call.
+   */
+  let bulkError = $state<string | null>(null);
+
+  /**
+   * Format a ``BulkSessionsOut`` partial-failure summary.
+   * Returns ``null`` when all results are ``ok``.
+   */
+  function _bulkFailureSummary(result: BulkSessionsOut): string | null {
+    const failed = result.results.filter((r) => !r.ok);
+    if (failed.length === 0) return null;
+    const details = failed
+      .map((r) => r.detail ?? "unknown error")
+      .slice(0, 3)
+      .join("; ");
+    const suffix = failed.length > 3 ? ` (+${failed.length - 3} more)` : "";
+    return `${failed.length} failed: ${details}${suffix}`;
+  }
+
   // ---- Multi-select delete confirm ----------------------------------------
 
   let showMultiDeleteConfirm = $state(false);
 
   async function handleMultiDeleteConfirm(): Promise<void> {
     showMultiDeleteConfirm = false;
+    bulkError = null;
     const ids = Array.from(multiSelectionStore.ids);
-    await Promise.allSettled(ids.map((id) => deleteSession(id)));
+    const result = await bulkDeleteSessions(ids);
+    const summary = _bulkFailureSummary(result);
+    if (summary !== null) bulkError = summary;
     clearSelection();
     await refreshSessions(currentFilter());
   }
@@ -388,38 +420,39 @@
   // ---- Multi-select close -------------------------------------------------
 
   async function handleMultiClose(): Promise<void> {
+    bulkError = null;
     const ids = Array.from(multiSelectionStore.ids);
-    await Promise.allSettled(ids.map((id) => closeSession(id)));
+    const result = await bulkCloseSessions(ids);
+    const succeeded = result.results.filter((r) => r.ok).map((r) => r.session_id);
+    const summary = _bulkFailureSummary(result);
+    if (summary !== null) bulkError = summary;
     clearSelection();
     await refreshSessions(currentFilter());
+    if (succeeded.length > 0) {
+      undoStore.push({
+        message: UNDO_TOAST_STRINGS.sessionsArchived(succeeded.length),
+        inverse: async () => {
+          await Promise.allSettled(succeeded.map((id) => reopenSession(id)));
+          await refreshSessions(currentFilter());
+        },
+      });
+    }
   }
 
   // ---- Multi-select export ------------------------------------------------
 
   /**
-   * Export selected sessions as a JSON file. Each entry is a
-   * ``{ session, messages }`` object. Messages are fetched with a
-   * large limit (best-effort all-messages; sessions with >10 000
-   * messages will be truncated at the last 10 000).
+   * Export selected sessions as a single bundled JSON file via the
+   * ``POST /api/sessions/bulk`` endpoint with ``op="export"``.
+   *
+   * The server assembles the full ``{sessions: [...]}`` bundle in one
+   * pass — no client-side per-session fetch loop, no 10 000-message
+   * truncation.
    */
   async function handleMultiExport(): Promise<void> {
+    bulkError = null;
     const ids = Array.from(multiSelectionStore.ids);
-    const sessionMap = new Map(sessionsStore.sessions.map((s) => [s.id, s]));
-    const entries = await Promise.all(
-      ids.map(async (id) => {
-        const session = sessionMap.get(id);
-        let messages: unknown[] = [];
-        try {
-          const page = await listMessages(id, { limit: 10000 });
-          messages = page.items;
-        } catch {
-          // Non-fatal — export the session metadata without messages.
-        }
-        return { session, messages };
-      }),
-    );
-    const json = JSON.stringify(entries, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
+    const blob = await bulkExportSessions(ids);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -582,6 +615,16 @@
     Gives the user a clear affordance for the active selection count
     and a one-click escape hatch.
   -->
+  {#if bulkError !== null}
+    <p
+      class="session-list__bulk-error"
+      role="alert"
+      data-testid="session-list-bulk-error"
+    >
+      {bulkError}
+    </p>
+  {/if}
+
   {#if multiSelectionStore.ids.size > 0}
     <div
       class="session-list__selection-bar"
@@ -793,6 +836,14 @@
     background: rgb(var(--bearings-surface-2));
     color: rgb(var(--bearings-fg-strong));
     border-color: rgb(var(--bearings-border));
+  }
+
+  .session-list__bulk-error {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.7rem;
+    color: #f87171;
+    border-bottom: 1px solid rgb(var(--bearings-border));
+    margin: 0;
   }
 
   .session-list__selection-bar {
