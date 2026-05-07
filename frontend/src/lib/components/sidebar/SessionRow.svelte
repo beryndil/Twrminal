@@ -38,7 +38,7 @@
     reopenSession,
   } from "../../api/sessions";
   import type { SessionOut } from "../../api/sessions";
-  import { listTags } from "../../api/tags";
+  import { attachTagToSession, detachTagFromSession, listTags } from "../../api/tags";
   import type { TagOut } from "../../api/tags";
   import { createTemplate } from "../../api/templates";
   import { contextMenu } from "../../actions/contextMenu";
@@ -59,16 +59,21 @@
     MENU_ACTION_SESSION_REOPEN,
     MENU_ACTION_SESSION_SAVE_AS_TEMPLATE,
     MENU_ACTION_SESSION_UNPIN,
+    MENU_ACTION_TAG_CHIP_COPY_NAME,
+    MENU_ACTION_TAG_CHIP_DETACH,
     MENU_TARGET_MULTI_SELECT,
     MENU_TARGET_SESSION,
+    MENU_TARGET_TAG_CHIP,
     SESSION_KIND_CHAT,
     SIDEBAR_STRINGS,
+    UNDO_TOAST_STRINGS,
   } from "../../config";
   import { goto } from "$app/navigation";
   import { shellOpenInTerminal } from "../../api/shell";
   import { showShellOpError } from "../../stores/shellOpNotification.svelte";
   import { refreshSessions } from "../../stores/sessions.svelte";
   import { currentFilter } from "../../stores/tags.svelte";
+  import { undoStore } from "../../stores/undo.svelte";
   import {
     clearSelection,
     multiSelectionStore,
@@ -289,7 +294,15 @@
         }
       : {
           [MENU_ACTION_SESSION_ARCHIVE]: () => {
-            void closeSession(session.id).then(() => refreshSessions(currentFilter()));
+            const id = session.id;
+            void closeSession(id).then(() => {
+              void refreshSessions(currentFilter());
+              undoStore.push({
+                message: UNDO_TOAST_STRINGS.sessionArchived,
+                inverse: () =>
+                  reopenSession(id).then(() => refreshSessions(currentFilter())),
+              });
+            });
           },
         }),
     [MENU_ACTION_SESSION_COPY_ID]: () => {
@@ -581,6 +594,29 @@
                 event.stopPropagation();
                 onToggleTag(tag.id, tag.class_);
               }
+            }}
+            use:contextMenu={{
+              target: MENU_TARGET_TAG_CHIP,
+              handlers: {
+                [MENU_ACTION_TAG_CHIP_COPY_NAME]: () => {
+                  void navigator.clipboard.writeText(tag.name);
+                },
+                [MENU_ACTION_TAG_CHIP_DETACH]: () => {
+                  const { id: tagId } = tag;
+                  const sessionId = session.id;
+                  void detachTagFromSession(sessionId, tagId).then(() => {
+                    void refreshSessions(currentFilter());
+                    undoStore.push({
+                      message: UNDO_TOAST_STRINGS.tagRemoved,
+                      inverse: () =>
+                        attachTagToSession(sessionId, tagId).then(() =>
+                          refreshSessions(currentFilter()),
+                        ),
+                    });
+                  });
+                },
+              },
+              data: { tagId: tag.id },
             }}
           >
             {tag.name}

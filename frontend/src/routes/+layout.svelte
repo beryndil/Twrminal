@@ -64,6 +64,7 @@
   import AuthGate from "$lib/components/feedback/AuthGate.svelte";
   import StatusBar from "$lib/components/feedback/StatusBar.svelte";
   import ShellOpNotification from "$lib/components/feedback/ShellOpNotification.svelte";
+  import UndoToast from "$lib/components/context-menu/UndoToast.svelte";
 
   interface Props {
     children?: Snippet;
@@ -625,6 +626,10 @@
            Rendered as position:fixed so it overlays without disturbing
            the grid. Visible only when a shell action returns non-2xx. -->
       <ShellOpNotification />
+      <!-- General-purpose undo toast (gap-cycle-05-002).
+           Rendered as position:fixed at bottom-right, above ReorgUndoToast.
+           Visible only when undoStore.stack is non-empty. -->
+      <UndoToast />
     </ContextMenuProvider>
     <!-- Item 2.4 — sidebar search overlay. Mounted inside KeybindingsProvider
          so its bindHandler call has access to the live keybindings store. -->

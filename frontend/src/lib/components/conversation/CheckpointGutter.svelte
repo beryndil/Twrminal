@@ -31,6 +31,7 @@
    */
   import { onMount, untrack } from "svelte";
   import {
+    createCheckpoint,
     deleteCheckpoint,
     forkCheckpoint,
     listCheckpoints,
@@ -44,8 +45,10 @@
     MENU_ACTION_CHECKPOINT_DELETE,
     MENU_ACTION_CHECKPOINT_FORK,
     MENU_TARGET_CHECKPOINT,
+    UNDO_TOAST_STRINGS,
   } from "../../config";
   import { goto } from "$app/navigation";
+  import { undoStore } from "../../stores/undo.svelte";
 
   interface Props {
     /** Active session id; ``null`` clears the gutter. */
@@ -175,10 +178,23 @@
         void navigator.clipboard.writeText(cp.id);
       },
       [MENU_ACTION_CHECKPOINT_DELETE]: () => {
+        // Capture snapshot before deletion so the inverse can recreate it.
+        const snapshot: CheckpointOut = { ...cp };
         void (async () => {
           try {
-            await deleteCheckpoint(cp.id);
-            checkpoints = checkpoints.filter((row) => row.id !== cp.id);
+            await deleteCheckpoint(snapshot.id);
+            checkpoints = checkpoints.filter((row) => row.id !== snapshot.id);
+            undoStore.push({
+              message: UNDO_TOAST_STRINGS.checkpointDeleted,
+              inverse: async () => {
+                const restored = await createCheckpoint({
+                  sessionId: snapshot.session_id,
+                  messageId: snapshot.message_id,
+                  label: snapshot.label,
+                });
+                checkpoints = [...checkpoints, restored];
+              },
+            });
           } catch (err) {
             console.error("deleteCheckpoint failed:", err);
           }

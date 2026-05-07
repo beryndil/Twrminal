@@ -886,6 +886,30 @@ export const SHELL_OP_NOTIFICATION_STRINGS = {
   dismissAriaLabel: "Dismiss notification",
 } as const;
 
+// ---- General-purpose undo toast (gap-cycle-05-002) -------------------------
+
+/**
+ * UI strings for the general-purpose undo toast (``UndoToast.svelte``).
+ *
+ * Action-specific messages (e.g. "Session archived") are plain strings
+ * passed directly to ``undoStore.push({ message, inverse })``.  The
+ * constants below are the per-action message strings so each call site
+ * has a single source of truth.
+ */
+export const UNDO_TOAST_STRINGS = {
+  undoLabel: "Undo",
+  undoingLabel: "Undoing…",
+  dismissAriaLabel: "Dismiss",
+  /** Message shown after session.archive completes. */
+  sessionArchived: "Session archived",
+  /** Message shown after checkpoint.delete completes. */
+  checkpointDeleted: "Checkpoint deleted",
+  /** Message shown after tag_chip.detach completes. */
+  tagRemoved: "Tag removed",
+  /** Message shown after multi_select.close completes. */
+  sessionsArchived: (count: number) => `${count} session${count === 1 ? "" : "s"} archived`,
+} as const;
+
 // ---- Template picker (gap-cycle-01-002; keyboard-shortcuts §Create) --------
 
 /**
