@@ -15,7 +15,7 @@
     <!--
       No-flash boot script — reads the persisted theme (or falls back to
       the OS color-scheme) and writes data-theme + meta[theme-color]
-      synchronously BEFORE %sveltekit.head% so the user sees their
+      synchronously BEFORE the SvelteKit head-injection point so the user sees their
       chosen theme on frame 1 with no evergreen flash.
 
       Logic mirrors src/lib/themes/boot.ts:runBootScript() exactly.
