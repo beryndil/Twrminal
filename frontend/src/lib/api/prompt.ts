@@ -35,15 +35,29 @@ interface PromptAck {
  * the backend prepends the advisor-override instruction to the content
  * it sends to the SDK executor, directing it to call the advisor tool
  * for this turn only.  Set by the ``/advisor`` composer slash-command.
+ *
+ * ``uploadIds`` carries the upload-row ids from files the user attached
+ * via drag-drop before sending (gap-cycle-03-001). The ``PromptIn``
+ * model uses ``extra="ignore"`` so the backend silently ignores the
+ * field today — it is sent as a forward-compatible placeholder pending
+ * the prompt-dispatch integration that will wire attachments into the
+ * SDK session context. The design choice is recorded in
+ * ``docs/behavior/chat.md`` §"Composer — attachment ingestion".
  */
 export async function sendPrompt(
   sessionId: string,
   content: string,
-  { forceAdvisor = false }: { forceAdvisor?: boolean } = {},
+  {
+    forceAdvisor = false,
+    uploadIds = [],
+  }: { forceAdvisor?: boolean; uploadIds?: number[] } = {},
 ): Promise<PromptAck> {
   const body: Record<string, unknown> = { content };
   if (forceAdvisor) {
     body["force_advisor"] = true;
+  }
+  if (uploadIds.length > 0) {
+    body["upload_ids"] = uploadIds;
   }
   return await postJson<PromptAck>(sessionPromptEndpoint(sessionId), body);
 }

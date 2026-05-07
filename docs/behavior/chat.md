@@ -50,6 +50,45 @@ The body uses Markdown (CommonMark + GFM) with syntax-highlighted code blocks. I
 
 Long lines wrap; pre-formatted code blocks scroll horizontally inside their own container. The conversation auto-scrolls to the bottom on a new turn unless the user has scrolled up — see [tool-output-streaming](tool-output-streaming.md) for the scroll-anchor rules.
 
+## Composer — attachment ingestion
+
+*Added in gap-cycle-03-001.*
+
+The composer accepts files via drag-and-drop onto the textarea. Pasting files via Ctrl+V is not wired in v1.0.
+
+### Drop behaviour
+
+When the user drops one or more files onto the composer:
+
+1. Each file is uploaded immediately and independently via `POST /api/uploads` (multipart/form-data with a single `file` part per request). Multiple files trigger one request each, all fired concurrently — the backend exposes no `/api/uploads/batch` route in v18.
+2. While a file upload is in-flight, a chip appears in the composer's attachment row (above the textarea) showing the filename and a spinner. The chip's status cycles: `uploading` → `done` (server id assigned) or `error` (inline warning shown on the chip).
+
+### Upload error
+
+If a single file upload fails (non-2xx from `/api/uploads`), the chip changes to the error style and shows a warning glyph with the server's `detail` message as a tooltip. The error chip does not block the Send button; the user can remove it and retry the drop. Other in-flight uploads from the same drop batch are not affected.
+
+### Remove before send
+
+Clicking the × button on a chip removes it immediately. If the upload is still in-flight, the `AbortController` signal fires and the request is cancelled; the byte stream is dropped. The chip disappears from the UI before the abort round-trip completes.
+
+### Send gate
+
+The Send button is disabled while any chip has `status === "uploading"`. Once all chips in the row reach `"done"` or `"error"` state, the gate lifts — the user may then send with the text draft.
+
+### Prompt body — attachment id list
+
+When the user submits, the ids of all `"done"` chips are collected and sent as `upload_ids: number[]` in the `POST /api/sessions/{id}/prompt` body alongside `content`. The backend's `PromptIn` model uses `extra="ignore"`, so the field is silently discarded server-side today. This is a **forward-compatible placeholder** — the field shape is intentionally pinned here so a future `PromptIn` revision can activate it without a client change. The design choice is: pass the ids eagerly; don't wait for the backend to formally declare the field.
+
+On a successful prompt send, all attachment chips are cleared from the composer row.
+
+### Chip lifecycle summary
+
+| Chip state | Spinner | Error glyph | Remove button | Blocks Send |
+|---|---|---|---|---|
+| `uploading` | yes | no | yes (aborts) | **yes** |
+| `done` | no | no | yes (no abort needed) | no |
+| `error` | no | yes | yes (no abort) | no |
+
 ## Slash commands in the composer
 
 Typing `/` at the start of the composer opens a filter popup of available commands. The user picks one with arrow keys + Enter, or by clicking. The two slash commands the user observes from the chat surface:

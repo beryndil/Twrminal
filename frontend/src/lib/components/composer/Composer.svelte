@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * Chat composer — multi-line textarea + Send button.
+   * Chat composer — multi-line textarea + Send button + attachment chips.
    *
    * Behavior anchors:
    *
@@ -8,6 +8,11 @@
    *   Enter sends, Shift+Enter inserts a newline (mirrors the v0.17.x
    *   convention; sign-off decision 2026-05-01 in
    *   ``~/.claude/plans/unblocking-v1-dogfood.md``).
+   * - ``docs/behavior/chat.md`` §"Composer — attachment ingestion" —
+   *   dragging files onto the composer uploads each file via
+   *   ``POST /api/uploads``, shows per-chip progress, blocks submit
+   *   while uploads are in-flight, and includes the resolved upload ids
+   *   in the prompt POST body (gap-cycle-03-001).
    * - ``docs/behavior/prompt-endpoint.md`` — submit POSTs to
    *   ``/api/sessions/{id}/prompt`` and awaits the 202 ack before
    *   clearing the draft. Failure modes (404 / 409 / 413 / 422 / 429)
@@ -29,8 +34,10 @@
   import { ApiError } from "../../api/client";
   import { createCheckpoint } from "../../api/checkpoints";
   import { sendPrompt } from "../../api/prompt";
+  import { uploadFile } from "../../api/uploads";
   import {
     CHECKPOINT_GUTTER_STRINGS,
+    COMPOSER_ATTACHMENT_STRINGS,
     COMPOSER_STRINGS,
     PROMPT_CONTENT_MAX_CHARS,
   } from "../../config";
@@ -65,9 +72,51 @@
   // cross-session — see inputHistory.ts for the design rationale).
   const history = new InputHistory();
 
+  // ---------------------------------------------------------------------------
+  // Attachment chip state (gap-cycle-03-001)
+  //
+  // Each dropped file gets a PendingChip. The chip lives in state from
+  // first drop through either successful prompt send (cleared in bulk)
+  // or explicit removal (cleared individually). AbortControllers are
+  // stored outside $state in a Map to avoid Svelte proxy interference
+  // with the browser built-in.
+  // ---------------------------------------------------------------------------
+
+  /** Local discriminator for a pending composer attachment. */
+  interface PendingChip {
+    id: string;
+    filename: string;
+    status: "uploading" | "done" | "error";
+    /** Server-assigned id once the upload resolves. */
+    uploadId: number | null;
+    /** Inline error text when ``status === "error"``. */
+    errorMessage: string | null;
+  }
+
+  let pendingChips = $state<PendingChip[]>([]);
+
+  /**
+   * AbortControllers for in-flight uploads — keyed by chip id, outside
+   * $state so Svelte's proxy doesn't wrap the browser built-in.
+   */
+  const chipAborts = new Map<string, AbortController>();
+
+  function generateChipId(): string {
+    return `chip-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  }
+
+  const hasPendingUploads = $derived(pendingChips.some((c) => c.status === "uploading"));
+
   const overCap = $derived(draft.length > PROMPT_CONTENT_MAX_CHARS);
   const trimmed = $derived(draft.trim());
-  const canSend = $derived(!disabled && !inflight && !overCap && trimmed.length > 0);
+  /**
+   * Submit gate:
+   * - not disabled, not already sending, content within cap, non-empty
+   * - no chips are still uploading (block until all settle, per behavior doc)
+   */
+  const canSend = $derived(
+    !disabled && !inflight && !overCap && trimmed.length > 0 && !hasPendingUploads,
+  );
 
   // ---------------------------------------------------------------------------
   // Draft persistence (item 2.5)
@@ -250,6 +299,68 @@
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Attachment upload logic (gap-cycle-03-001)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Kick off an upload for one dropped file. Creates a chip in
+   * ``"uploading"`` state, fires ``POST /api/uploads``, then updates
+   * the chip to ``"done"`` (with the server's upload id) or ``"error"``
+   * (with the detail string).
+   *
+   * An ``AbortError`` thrown when the user clicks the chip's remove
+   * button is silently swallowed — the chip is already gone from the
+   * array at that point.
+   */
+  async function startFileUpload(file: File): Promise<void> {
+    const chipId = generateChipId();
+    const abort = new AbortController();
+    chipAborts.set(chipId, abort);
+    pendingChips = [
+      ...pendingChips,
+      {
+        id: chipId,
+        filename: file.name,
+        status: "uploading",
+        uploadId: null,
+        errorMessage: null,
+      },
+    ];
+    try {
+      const result = await uploadFile(file, abort.signal);
+      chipAborts.delete(chipId);
+      pendingChips = pendingChips.map((c) =>
+        c.id === chipId ? { ...c, status: "done" as const, uploadId: result.id } : c,
+      );
+    } catch (error) {
+      chipAborts.delete(chipId);
+      if (error instanceof Error && error.name === "AbortError") {
+        // The chip was removed by removeChip() — nothing left to update.
+        return;
+      }
+      const detail =
+        error instanceof ApiError
+          ? (extractDetail(error.body) ?? COMPOSER_ATTACHMENT_STRINGS.uploadFailed)
+          : COMPOSER_ATTACHMENT_STRINGS.uploadFailed;
+      pendingChips = pendingChips.map((c) =>
+        c.id === chipId ? { ...c, status: "error" as const, errorMessage: detail } : c,
+      );
+    }
+  }
+
+  /**
+   * Remove a chip by id. If the upload is still in-flight, the
+   * associated ``AbortController`` is triggered first so the fetch is
+   * cancelled. The chip disappears immediately from the UI regardless
+   * of upload state.
+   */
+  function removeChip(chipId: string): void {
+    chipAborts.get(chipId)?.abort();
+    chipAborts.delete(chipId);
+    pendingChips = pendingChips.filter((c) => c.id !== chipId);
+  }
+
   async function submit(): Promise<void> {
     if (!canSend) return;
     const checkpointCmd = tryParseCheckpointCommand(draft);
@@ -271,8 +382,15 @@
     inflight = true;
     errorMessage = null;
     const payload = content;
+    // Collect resolved upload ids from done chips to pass along with
+    // the prompt. The backend's PromptIn ignores the field today
+    // (extra="ignore") — it is a forward-compatible placeholder.
+    // See docs/behavior/chat.md §"Composer — attachment ingestion".
+    const uploadIds = pendingChips
+      .filter((c) => c.status === "done" && c.uploadId !== null)
+      .map((c) => c.uploadId as number);
     try {
-      await sendPrompt(sessionId, payload, { forceAdvisor });
+      await sendPrompt(sessionId, payload, { forceAdvisor, uploadIds });
       // Record before clearing — push deduplicates consecutive identical sends.
       history.push(payload);
       draft = "";
@@ -280,6 +398,8 @@
       // but call ``clearDraft`` explicitly here as a belt-and-braces guard
       // in case the effect batches after a potential component unmount.
       clearDraft(sessionId);
+      // Clear all attachment chips on successful send.
+      pendingChips = [];
       // Refocus so a quick "send + keep typing" loop stays on the
       // keyboard. The textarea reference may be ``null`` if the parent
       // unmounts the composer mid-send — guarded.
@@ -370,18 +490,29 @@
   }
 
   function handleDrop(event: DragEvent): void {
-    // Insert the dragged text (e.g. markdown link from vault row) into the textarea
     event.preventDefault();
-    if (event.dataTransfer === null || textareaEl === null) return;
+    if (event.dataTransfer === null) return;
+
+    // File drops take priority: upload each file as an attachment chip.
+    // The text/plain branch below handles vault markdown-link drags
+    // which arrive with no files in the transfer.
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length > 0) {
+      for (const file of files) {
+        void startFileUpload(file);
+      }
+      return;
+    }
+
+    // Fall through: insert dragged text (e.g. vault markdown link) at cursor.
+    if (textareaEl === null) return;
     const text = event.dataTransfer.getData("text/plain");
     if (!text) return;
-    // Insert at cursor position
     const start = textareaEl.selectionStart;
     const end = textareaEl.selectionEnd;
     const before = draft.slice(0, start);
     const after = draft.slice(end);
     draft = before + text + after;
-    // Move cursor after the inserted text
     textareaEl.focus();
     requestAnimationFrame(() => {
       if (textareaEl !== null) {
@@ -405,6 +536,41 @@
         onselect={handleCommandSelect}
         onclose={handleCommandClose}
       />
+    {/if}
+    {#if pendingChips.length > 0}
+      <div
+        class="flex flex-wrap gap-1 px-0.5"
+        data-testid="composer-attachment-chips"
+        aria-label={COMPOSER_ATTACHMENT_STRINGS.chipsAreaAriaLabel}
+      >
+        {#each pendingChips as chip (chip.id)}
+          <span
+            class="inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs {chip.status === 'error' ? 'border-red-400 text-red-400' : 'border-border bg-surface-1 text-fg-muted'}"
+            data-testid="composer-attachment-chip"
+            data-chip-id={chip.id}
+            data-chip-status={chip.status}
+          >
+            {#if chip.status === "uploading"}
+              <span
+                class="inline-block animate-spin"
+                aria-label={COMPOSER_ATTACHMENT_STRINGS.uploadingAriaLabel}
+                aria-hidden="false"
+              >⟳</span>
+            {/if}
+            <span>{chip.filename}</span>
+            {#if chip.status === "error" && chip.errorMessage !== null}
+              <span class="ml-0.5" title={chip.errorMessage}>⚠</span>
+            {/if}
+            <button
+              type="button"
+              class="ml-0.5 opacity-60 hover:opacity-100"
+              aria-label={COMPOSER_ATTACHMENT_STRINGS.removeChipAriaLabel(chip.filename)}
+              data-testid="composer-chip-remove"
+              onclick={() => removeChip(chip.id)}
+            >×</button>
+          </span>
+        {/each}
+      </div>
     {/if}
     <textarea
       bind:this={textareaEl}

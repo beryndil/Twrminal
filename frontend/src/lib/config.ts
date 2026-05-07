@@ -671,7 +671,7 @@ export const CHAT_LINK_REL = "noopener noreferrer";
 export const COMPOSER_STRINGS = {
   textareaAriaLabel: "Message composer",
   textareaPlaceholder:
-    "Send a prompt (Enter · Shift+Enter for newline · / for commands · Ctrl+V to paste files)",
+    "Send a prompt (Enter · Shift+Enter for newline · / for commands · drop files to attach)",
   sendButtonLabel: "Send",
   sendButtonAriaLabel: "Send message",
   sending: "Sending…",
@@ -2460,6 +2460,41 @@ export const STATUS_BAR_STRINGS = {
 } as const;
 
 // ---- Derivations -----------------------------------------------------------
+
+/**
+ * ``POST /api/uploads`` — single-file upload surface consumed by the
+ * composer's drag-drop handler (gap-cycle-03-001;
+ * ``src/bearings/web/routes/uploads.py``). Body is
+ * ``multipart/form-data`` with one ``file`` part. Returns
+ * :class:`bearings.web.models.uploads.UploadOut` on ``201 Created``.
+ *
+ * Batch uploads are implemented as parallel individual POSTs to this
+ * endpoint — the backend exposes no ``/api/uploads/batch`` route in
+ * v18. See ``api/uploads.ts`` :func:`uploadFile`.
+ */
+export const API_UPLOADS_ENDPOINT = `${API_BASE}/uploads`;
+
+/**
+ * String table for the composer's in-flight attachment chip row
+ * (gap-cycle-03-001).
+ *
+ * Chips appear between the command-palette dropdown and the textarea
+ * while files are uploading; they persist (in done / error state) until
+ * the prompt is sent or the chip is removed manually.
+ *
+ * Behavior anchor: ``docs/behavior/chat.md`` §"Composer — attachment
+ * ingestion".
+ */
+export const COMPOSER_ATTACHMENT_STRINGS = {
+  /** ``aria-label`` for the chips row container. */
+  chipsAreaAriaLabel: "Pending attachments",
+  /** ``aria-label`` suffix for a chip's remove button — filename is prepended. */
+  removeChipAriaLabel: (filename: string) => `Remove ${filename}`,
+  /** Inline error shown when the upload POST returns a non-2xx. */
+  uploadFailed: "Upload failed.",
+  /** Screen-reader label for the spinner shown on an uploading chip. */
+  uploadingAriaLabel: "Uploading",
+} as const;
 
 /**
  * Split a slash-namespaced tag name into ``[group, leaf]``.
