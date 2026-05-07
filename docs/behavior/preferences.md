@@ -93,6 +93,27 @@ The frontend fires `new Notification("Bearings", { body: "Claude finished replyi
 
 The check fires in `agent.svelte.ts` after every `message_complete` WS event.
 
+## Authentication (gap-cycle-07-002)
+
+The **Authentication** section renders below Notifications in the Settings page. It exposes a single password-type input field for the per-device auth token.
+
+| Property | Value |
+|---|---|
+| Input type | `password` |
+| Font | monospace |
+| Storage | `localStorage` under `bearings-v1:auth-token` |
+| Backend contact | **None** — the token never PATCHes `/api/preferences` |
+
+### Token field behavior
+
+- **Pre-populated** from `localStorage` on mount via `getStoredToken()`.
+- **Autosaves on every keystroke** (`oninput`): no explicit Save button.
+  - Non-empty value → `saveToken(value)` — writes trimmed value to `localStorage` and clears `authStore.blocking`.
+  - Empty value → `clearToken()` — removes the key from `localStorage` without touching `blocking`.
+- **Gate-bypass**: when `authStore.blocking` is `true` (gate is showing) and the user types a non-empty token, `saveToken` clears `blocking` immediately — the AuthGate dismisses without a page reload.
+- **Clear path**: clearing the field removes the stored token. The gate will reappear on the next 4401 WebSocket close.
+- **Section lede** explains: "Your auth token is stored on this device only — it is never sent to the Bearings server as a preference."
+
 ## API contract summary
 
 | Method | Path | Notes |

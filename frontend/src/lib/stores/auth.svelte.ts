@@ -64,6 +64,30 @@ export async function saveToken(value: string): Promise<void> {
   state.blocking = false;
 }
 
+/**
+ * Read the currently stored auth token from ``localStorage``.
+ *
+ * Returns the stored string, or an empty string if no token has been
+ * written yet.  Used by the Settings authentication section to
+ * pre-populate the token input on mount.
+ */
+export function getStoredToken(): string {
+  return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) ?? "";
+}
+
+/**
+ * Remove the stored auth token from ``localStorage`` without touching
+ * the ``blocking`` flag.
+ *
+ * Called by the Settings authentication section when the user clears
+ * the token field.  Deliberately does NOT clear ``blocking`` — if the
+ * gate is already showing it stays visible; if it is not showing it
+ * will reappear on the next 4401 WebSocket close as expected.
+ */
+export function clearToken(): void {
+  localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+}
+
 // ---- Test helpers -----------------------------------------------------------
 
 /**

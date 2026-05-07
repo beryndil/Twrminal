@@ -2080,6 +2080,14 @@ export const NOTIFICATION_STRINGS = {
   permissionDeniedError: "Browser denied notification permission — toggle rolled back.",
 } as const;
 
+/** Authentication section UI strings for Settings (gap-cycle-07-002). */
+export const AUTH_SECTION_STRINGS = {
+  heading: "Authentication",
+  lede: "Your auth token is stored on this device only — it is never sent to the Bearings server as a preference.",
+  tokenLabel: "Auth token",
+  tokenPlaceholder: "Leave empty if the server has auth disabled",
+} as const;
+
 /** UI strings for the PermissionModeSelector header dropdown (item 3.3). */
 export const PERMISSION_MODE_SELECTOR_STRINGS = {
   ariaLabel: "Permission mode",

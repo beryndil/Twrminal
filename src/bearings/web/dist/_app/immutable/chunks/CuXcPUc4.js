@@ -1,1 +1,0 @@
-import{f as r,O as n,g as t}from"./CSFMv8en.js";import{g as i}from"./D7-hmrdk.js";async function d(a={}){const s={query:[["period",a.period??"week"]]};return a.signal!==void 0&&(s.signal=a.signal),await i(r,s)}async function E(a={}){const e=a.days??n,s={query:[["days",String(e)]]};return a.signal!==void 0&&(s.signal=a.signal),await i(t,s)}export{E as a,d as g};
