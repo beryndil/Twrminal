@@ -178,6 +178,17 @@ export const sessionReorgAuditEndpoint = (sessionId: string, auditId: string): s
   `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/reorg/audits/${encodeURIComponent(auditId)}`;
 
 /**
+ * ``GET /api/sessions/{id}/tool_calls`` — persisted tool-call rows for
+ * one or more assistant message ids (gap-cycle-03-012). Accepts repeated
+ * ``?message_ids=ID`` query params to narrow the result to a specific
+ * page of messages. The conversation pane calls this alongside
+ * :func:`listMessages` on session-open so drawer rows are visible even
+ * when the ring buffer no longer holds the original streaming events.
+ */
+export const sessionToolCallsEndpoint = (sessionId: string): string =>
+  `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/tool_calls`;
+
+/**
  * ``GET /api/commands`` — slash-command list for the composer typeahead
  * (item 2.3). No session scoping — the scanner merges user + project
  * locations server-side.

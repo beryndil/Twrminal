@@ -40,6 +40,23 @@ Each turn is one user message followed by zero or more tool calls and exactly on
 * **Routing badge** (per spec §5) — short label such as `Sonnet`, `Sonnet → Opus×2`, `Haiku → Opus×1`, `Opus xhigh`. Hovering reveals the routing reason ("matched tag rule: bearings/architect — Hard architectural reasoning").
 * **Per-message usage column** (per spec §5) — input / output / cache-read tokens for the executor and (when present) the advisor, surfaced in the inspector’s per-message timeline (see Inspector Routing — cross-referenced in §What the user does NOT see in chat).
 
+## Tool-call hydration contract
+
+*Added in gap-cycle-03-012.*
+
+When a session is opened, the conversation pane fetches messages via `GET /api/sessions/{id}/messages`. For sessions where the ring-buffer events are no longer available (the runner was reaped, the server was restarted, or the session is older than the 5000-event ring-buffer cap), the tool-work drawer rows on completed assistant turns would be silently absent if the pane relied solely on WS replay.
+
+To fill this gap, the pane calls `GET /api/sessions/{id}/tool_calls?message_ids=ID1&message_ids=ID2&…` immediately after `listMessages` returns, passing the assistant message ids from the current page. The response is a flat list of `ToolCallOut` rows grouped by the caller by `message_id`.
+
+**Endpoint**:
+* `GET /api/sessions/{id}/tool_calls` — 404 when the session is absent; 200 with `[]` when no tool calls exist.
+* `?message_ids=ID` — repeated query param; omit to return all tool calls for the session (used by export / admin paths).
+* Response shape: `ToolCallOut[]` — `id`, `message_id`, `tool_name`, `input_json`, `output`, `ok`, `duration_ms`, `error_message`, `created_at`.
+
+**Persistence**: Tool calls are written to the `tool_calls` DB table at end-of-turn alongside the assistant message row. The `message_id` column references the Bearings message id (not the SDK's Anthropic API id) so the REST endpoint can be queried with the same ids `listMessages` returns.
+
+**Idempotency**: The hydration path skips assistant turns whose `toolCalls` array is already populated (WS replay was faster). The `tool_call_start` WS event skips inserting a drawer row if the call id is already present. `tool_output_delta` skips delta accumulation if the call is already marked `done`. This means the DB hydration and WS replay paths compose safely without duplicating drawer rows.
+
 ## Conversation rendering
 
 The body uses Markdown (CommonMark + GFM) with syntax-highlighted code blocks. Inside any rendered message body the linkifier auto-detects:

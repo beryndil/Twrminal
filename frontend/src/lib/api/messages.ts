@@ -14,6 +14,7 @@ import {
   messageMoveEndpoint,
   messagePinnedEndpoint,
   sessionMessagesEndpoint,
+  sessionToolCallsEndpoint,
 } from "../config";
 import { deleteResource, getJson, patchJson, postJson, type RequestOptions } from "./client";
 
@@ -64,6 +65,27 @@ export interface MessageOut {
 export interface MessagePage {
   items: MessageOut[];
   has_more: boolean;
+}
+
+/**
+ * One persisted tool-call row — mirrors
+ * :class:`bearings.web.models.sessions.ToolCallOut` (gap-cycle-03-012).
+ *
+ * Used by :func:`listToolCalls` to hydrate tool-work drawer rows on
+ * assistant turns when the ring buffer no longer holds the original
+ * streaming events.
+ */
+export interface ToolCallOut {
+  id: string;
+  session_id: string;
+  message_id: string;
+  tool_name: string;
+  input_json: string;
+  output: string;
+  ok: boolean | null;
+  duration_ms: number | null;
+  error_message: string | null;
+  created_at: string;
 }
 
 interface ListMessagesParams {
@@ -166,4 +188,32 @@ export async function moveMessage(
     { target_session_id: targetSessionId },
     options,
   );
+}
+
+/**
+ * Fetch persisted tool-call rows for the listed assistant message ids
+ * via ``GET /api/sessions/{id}/tool_calls?message_ids=…`` (gap-cycle-03-012).
+ *
+ * Called alongside :func:`listMessages` on session-open so that
+ * tool-work drawer rows are visible on assistant turns whose streaming
+ * events are no longer in the ring buffer.
+ *
+ * @param sessionId - The session to query.
+ * @param messageIds - Assistant message ids from the current page. Pass
+ *   an empty array to skip the request (no-op — returns ``[]``).
+ * @param options - Optional request overrides (signal, etc.).
+ */
+export async function listToolCalls(
+  sessionId: string,
+  messageIds: readonly string[],
+  options: RequestOptions = {},
+): Promise<ToolCallOut[]> {
+  if (messageIds.length === 0) {
+    return [];
+  }
+  const query: [string, string][] = messageIds.map((id) => ["message_ids", id]);
+  return await getJson<ToolCallOut[]>(sessionToolCallsEndpoint(sessionId), {
+    ...options,
+    query,
+  });
 }

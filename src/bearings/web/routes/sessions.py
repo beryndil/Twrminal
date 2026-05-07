@@ -75,6 +75,7 @@ from bearings.db import messages as messages_db
 from bearings.db import sdk_entries as sdk_entries_db
 from bearings.db import sessions as sessions_db
 from bearings.db import tags as tags_db
+from bearings.db import tool_calls as tool_calls_db
 from bearings.db.sessions import Session
 from bearings.web.models.sessions import (
     CheckpointExport,
@@ -88,6 +89,7 @@ from bearings.web.models.sessions import (
     SessionPermissionModeUpdate,
     SessionPinnedUpdate,
     SessionTitleUpdate,
+    ToolCallOut,
 )
 from bearings.web.routes.ws_sessions import SessionsBroadcaster
 from bearings.web.runner_factory import InProcessRunnerRegistry
@@ -691,6 +693,90 @@ async def get_paired_chat_info_route(session_id: str, request: Request) -> Paire
         return None
     parent_title, item_label = info
     return PairedChatInfo(parent_title=parent_title, item_label=item_label)
+
+
+# ---- tool calls (gap-cycle-03-012) -----------------------------------------
+
+
+@router.get(
+    "/api/sessions/{session_id}/tool_calls",
+    response_model=list[ToolCallOut],
+)
+async def list_session_tool_calls(
+    session_id: str,
+    request: Request,
+    message_ids: Annotated[list[str] | None, Query()] = None,
+) -> list[ToolCallOut]:
+    """Return persisted tool-call rows for the listed message ids.
+
+    Per ``docs/behavior/chat.md`` §"Tool-call hydration contract" the
+    conversation pane calls this endpoint once per fetched message page,
+    alongside :func:`list_messages`, to populate tool-work drawer rows
+    on assistant turns whose events are no longer in the ring buffer.
+
+    * ``200`` — list of :class:`ToolCallOut` (possibly empty).
+    * ``404`` — session not found.
+
+    ``?message_ids=ID1&message_ids=ID2`` narrows the result to tool calls
+    attached to the listed assistant message ids. Omitting the parameter
+    returns all tool calls for the session (useful for export / admin).
+    Tool calls are returned in insertion order (the order they executed
+    within each turn).
+    """
+    db = _db(request)
+    if not await sessions_db.exists(db, session_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no session matches {session_id!r}",
+        )
+    ids = list(message_ids) if message_ids else []
+    if not ids:
+        # No filter: load all tool calls for the session ordered by rowid.
+        cursor = await db.execute(
+            "SELECT id, session_id, message_id, tool_name, input_json, "
+            "       output, ok, duration_ms, error_message, created_at "
+            "FROM tool_calls WHERE session_id = ? ORDER BY rowid ASC",
+            (session_id,),
+        )
+        try:
+            rows = await cursor.fetchall()
+        finally:
+            await cursor.close()
+        return [
+            ToolCallOut(
+                id=str(r[0]),
+                session_id=str(r[1]),
+                message_id=str(r[2]),
+                tool_name=str(r[3]),
+                input_json=str(r[4]),
+                output=str(r[5]),
+                ok=(bool(int(str(r[6]))) if r[6] is not None else None),
+                duration_ms=(int(str(r[7])) if r[7] is not None else None),
+                error_message=(str(r[8]) if r[8] is not None else None),
+                created_at=str(r[9]),
+            )
+            for r in rows
+        ]
+    tc_rows = await tool_calls_db.list_for_messages(
+        db,
+        session_id=session_id,
+        message_ids=ids,
+    )
+    return [
+        ToolCallOut(
+            id=tc.id,
+            session_id=tc.session_id,
+            message_id=tc.message_id,
+            tool_name=tc.tool_name,
+            input_json=tc.input_json,
+            output=tc.output,
+            ok=tc.ok,
+            duration_ms=tc.duration_ms,
+            error_message=tc.error_message,
+            created_at=tc.created_at,
+        )
+        for tc in tc_rows
+    ]
 
 
 # ---- export / import -------------------------------------------------------

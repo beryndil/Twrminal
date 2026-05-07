@@ -4,7 +4,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getMessage, listMessages, type MessageOut, type MessagePage } from "../messages";
+import {
+  getMessage,
+  listMessages,
+  listToolCalls,
+  type MessageOut,
+  type MessagePage,
+  type ToolCallOut,
+} from "../messages";
 
 const sampleRow: MessageOut = {
   id: "msg_1",
@@ -129,5 +136,67 @@ describe("getMessage", () => {
     expect(row.seq).toBe(42);
     const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toBe("/api/messages/msg_1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listToolCalls (gap-cycle-03-012)
+// ---------------------------------------------------------------------------
+
+const sampleToolCall: ToolCallOut = {
+  id: "toolu_01",
+  session_id: "ses_a",
+  message_id: "msg_1",
+  tool_name: "Bash",
+  input_json: '{"command":"ls"}',
+  output: "file.txt",
+  ok: true,
+  duration_ms: 15,
+  error_message: null,
+  created_at: "2026-01-01T00:00:00Z",
+};
+
+describe("listToolCalls", () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns empty array without fetching when messageIds is empty", async () => {
+    const result = await listToolCalls("ses_a", []);
+    expect(result).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("hits /api/sessions/{id}/tool_calls with message_ids params", async () => {
+    fetchMock.mockResolvedValueOnce({
+      status: 200,
+      statusText: "OK",
+      json: async () => [sampleToolCall],
+    });
+    const result = await listToolCalls("ses_a", ["msg_1", "msg_2"]);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("toolu_01");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("/api/sessions/ses_a/tool_calls");
+    expect(url).toContain("message_ids=msg_1");
+    expect(url).toContain("message_ids=msg_2");
+  });
+
+  it("URL-encodes the session id", async () => {
+    fetchMock.mockResolvedValueOnce({
+      status: 200,
+      statusText: "OK",
+      json: async () => [],
+    });
+    await listToolCalls("a/b", ["msg_x"]);
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("a%2Fb");
   });
 });

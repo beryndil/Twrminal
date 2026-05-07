@@ -228,6 +228,28 @@ class PairedChatInfo(BaseModel):
     item_label: str
 
 
+class ToolCallOut(BaseModel):
+    """Response shape for ``GET /api/sessions/{id}/tool_calls`` (gap-cycle-03-012).
+
+    One row per tool invocation attached to an assistant message. The
+    ``message_id`` field lets the frontend group tool calls by their
+    owning assistant turn without a separate join request.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    session_id: str
+    message_id: str
+    tool_name: str
+    input_json: str
+    output: str
+    ok: bool | None
+    duration_ms: int | None
+    error_message: str | None
+    created_at: str
+
+
 class MessageExport(BaseModel):
     """Full-fidelity row mirror for the ``messages`` table in an export.
 
@@ -326,4 +348,5 @@ __all__ = [
     "SessionPermissionModeUpdate",
     "SessionPinnedUpdate",
     "SessionTitleUpdate",
+    "ToolCallOut",
 ]

@@ -61,7 +61,13 @@ from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, ResultMessage
 
-from bearings.agent.events import ErrorEvent, TodoWriteUpdate, ToolCallStart, UserMessage
+from bearings.agent.events import (
+    ErrorEvent,
+    TodoWriteUpdate,
+    ToolCallEnd,
+    ToolCallStart,
+    UserMessage,
+)
 from bearings.agent.options import OptionsKwargs
 from bearings.agent.persistence import (
     MessagePersistence,
@@ -80,6 +86,8 @@ from bearings.agent.session import (
 )
 from bearings.agent.translate import SDKEventTranslator
 from bearings.config.constants import FORCE_ADVISOR_INSTRUCTION
+from bearings.db import tool_calls as tool_calls_db
+from bearings.db.tool_calls import ToolCallRecord
 
 _log = logging.getLogger(__name__)
 
@@ -271,13 +279,22 @@ async def _do_run_one_turn(
     sdk_uuid = bearings_to_sdk_uuid(session.config.session_id)
     await client.query(query_content, session_id=sdk_uuid)
     last_result: ResultMessage | None = None
+    # Collect tool call events during the turn so they can be persisted
+    # atomically alongside the assistant message row (gap-cycle-03-012).
+    # Keyed by tool_call_id for O(1) end-event lookup.
+    pending_starts: list[ToolCallStart] = []
+    pending_ends: dict[str, ToolCallEnd] = {}
     async for sdk_msg in client.receive_response():
         if isinstance(sdk_msg, ResultMessage):
             last_result = sdk_msg
         for event in translator.feed(sdk_msg):
             await runner.emit(event)
-            if isinstance(event, ToolCallStart) and event.tool_name == "TodoWrite":
-                await runner.emit(_make_todo_update(event))
+            if isinstance(event, ToolCallStart):
+                pending_starts.append(event)
+                if event.tool_name == "TodoWrite":
+                    await runner.emit(_make_todo_update(event))
+            elif isinstance(event, ToolCallEnd):
+                pending_ends[event.tool_call_id] = event
     # Persist the assistant row. Skipped when the turn produced no
     # body (rare: would mean a tool-only turn that the SDK terminated
     # without an assistant message — already surfaced as ErrorEvent
@@ -285,7 +302,7 @@ async def _do_run_one_turn(
     db = session.config.db
     body = translator.final_body()
     if db is not None and translator.message_id is not None and body:
-        await persist_fn(
+        msg = await persist_fn(
             db,
             session_id=session.config.session_id,
             content=body,
@@ -293,6 +310,34 @@ async def _do_run_one_turn(
             model_usage=last_result.model_usage if last_result is not None else None,
             total_cost_usd=last_result.total_cost_usd if last_result is not None else None,
         )
+        # Persist tool calls with the Bearings message id so the REST
+        # hydration path (GET /api/sessions/{id}/tool_calls) can join
+        # against the messages table by Bearings id rather than SDK id.
+        if pending_starts:
+            records = [
+                ToolCallRecord(
+                    tool_call_id=s.tool_call_id,
+                    tool_name=s.tool_name,
+                    input_json=s.tool_input_json,
+                    output=pending_ends[s.tool_call_id].output_summary
+                    if s.tool_call_id in pending_ends
+                    else "",
+                    ok=pending_ends[s.tool_call_id].ok if s.tool_call_id in pending_ends else None,
+                    duration_ms=pending_ends[s.tool_call_id].duration_ms
+                    if s.tool_call_id in pending_ends
+                    else None,
+                    error_message=pending_ends[s.tool_call_id].error_message
+                    if s.tool_call_id in pending_ends
+                    else None,
+                )
+                for s in pending_starts
+            ]
+            await tool_calls_db.insert_batch(
+                db,
+                session_id=session.config.session_id,
+                message_id=msg.id,
+                records=records,
+            )
 
 
 def _make_todo_update(event: ToolCallStart) -> TodoWriteUpdate:

@@ -23,7 +23,7 @@
  * functions outside of the conversation cluster.
  */
 import type { AgentEvent, RunnerStatusEvent } from "../api/events";
-import { listMessages, type MessageOut, type MessagePage } from "../api/messages";
+import { listMessages, type MessageOut, type MessagePage, type ToolCallOut } from "../api/messages";
 import type { StreamFrame } from "../api/streaming";
 import { CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS, MESSAGE_PAGE_SIZE, WS_FRAME_KIND_EVENT } from "../config";
 
@@ -292,6 +292,63 @@ export function hydrateTurns(sessionId: string, page: MessagePage): void {
   // Hydrate doesn't reset ``lastSeq`` on its own — the caller resets
   // before subscribing so the cursor matches the just-loaded snapshot.
   state.error = null;
+}
+
+/**
+ * Merge persisted tool-call rows into the current turns (gap-cycle-03-012).
+ *
+ * Called after :func:`hydrateTurns` with the result of
+ * ``GET /api/sessions/{id}/tool_calls?message_ids=…``. Groups rows by
+ * ``message_id`` and attaches them to the matching assistant turns as
+ * :interface:`ToolCallView` entries with ``done=true`` so the drawer
+ * renders identically to a completed streaming turn.
+ *
+ * The display cap (:data:`CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS`) is applied
+ * here to match the live-streaming path (the ``tool_output_delta``
+ * reducer keeps the tail of the last N chars; hydrated output is also
+ * tail-trimmed so the elided-count annotation appears correctly).
+ *
+ * Idempotent: turns whose ``toolCalls`` array is already non-empty are
+ * not overwritten — they were populated by WS replay and are up-to-date.
+ */
+export function hydrateToolCalls(toolCalls: ToolCallOut[]): void {
+  if (toolCalls.length === 0) return;
+  // Group by message_id for O(n) turn walk.
+  const byMessageId = new Map<string, ToolCallOut[]>();
+  for (const tc of toolCalls) {
+    const list = byMessageId.get(tc.message_id) ?? [];
+    list.push(tc);
+    byMessageId.set(tc.message_id, list);
+  }
+  state.turns = state.turns.map((turn) => {
+    if (turn.role !== "assistant") return turn;
+    // Skip turns that already have tool calls from WS replay.
+    if (turn.toolCalls.length > 0) return turn;
+    const calls = byMessageId.get(turn.id);
+    if (!calls || calls.length === 0) return turn;
+    return {
+      ...turn,
+      toolCalls: calls.map((tc) => {
+        const rawLength = tc.output.length;
+        const output =
+          rawLength > CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS
+            ? tc.output.slice(rawLength - CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS)
+            : tc.output;
+        return {
+          id: tc.id,
+          name: tc.tool_name,
+          inputJson: tc.input_json,
+          output,
+          rawLength,
+          done: true,
+          ok: tc.ok,
+          durationMs: tc.duration_ms,
+          errorMessage: tc.error_message,
+          liveElapsedMs: 0,
+        };
+      }),
+    };
+  });
 }
 
 /**
@@ -578,26 +635,36 @@ export function applyEvent(
         thinking: turn.thinking + event.delta,
       }));
     case "tool_call_start":
-      return mapAssistantTurn(turns, event.message_id, (turn) => ({
-        ...turn,
-        toolCalls: [
-          ...turn.toolCalls,
-          {
-            id: event.tool_call_id,
-            name: event.tool_name,
-            inputJson: event.tool_input_json,
-            output: "",
-            rawLength: 0,
-            done: false,
-            ok: null,
-            durationMs: null,
-            errorMessage: null,
-            liveElapsedMs: 0,
-          },
-        ],
-      }));
+      // Idempotent: skip if this tool call already exists in the turn.
+      // Prevents duplicate drawer rows when the call was hydrated from
+      // the DB (gap-cycle-03-012) and WS replay also sends tool_call_start.
+      return mapAssistantTurn(turns, event.message_id, (turn) => {
+        if (turn.toolCalls.some((tc) => tc.id === event.tool_call_id)) return turn;
+        return {
+          ...turn,
+          toolCalls: [
+            ...turn.toolCalls,
+            {
+              id: event.tool_call_id,
+              name: event.tool_name,
+              inputJson: event.tool_input_json,
+              output: "",
+              rawLength: 0,
+              done: false,
+              ok: null,
+              durationMs: null,
+              errorMessage: null,
+              liveElapsedMs: 0,
+            },
+          ],
+        };
+      });
     case "tool_output_delta":
       return mapToolCall(turns, event.tool_call_id, (call) => {
+        // Skip delta streaming for calls already finalized via DB hydration
+        // (gap-cycle-03-012). WS replay sends deltas even for completed calls;
+        // skipping prevents re-appending output onto the hydrated full text.
+        if (call.done) return call;
         const nextRaw = call.rawLength + event.delta.length;
         const merged = call.output + event.delta;
         const truncated =

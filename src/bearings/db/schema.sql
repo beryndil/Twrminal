@@ -501,6 +501,44 @@ CREATE INDEX IF NOT EXISTS idx_checkpoints_message_id
     ON checkpoints(message_id);
 
 -- ---------------------------------------------------------------------------
+-- tool_calls — structured per-turn tool-call records (gap-cycle-03-012).
+--
+-- Persisted at end-of-turn alongside the assistant message so that
+-- sessions older than the ring buffer can hydrate tool-call drawer rows
+-- via REST rather than relying on WS replay. Each row captures one tool
+-- invocation: the start metadata (name, input) and the end outcome
+-- (output, ok, duration, error).
+--
+-- ``id`` is the SDK tool_call_id (e.g. ``toolu_01...``), unique globally.
+-- ``message_id`` references the Bearings assistant message that owns the
+-- tool call (``ON DELETE CASCADE`` so deleting a message cleans up its
+-- tool calls). ``session_id`` is a denormalised join key that lets the
+-- REST endpoint filter without a join through messages; also cascades.
+--
+-- ``ok`` is NULL while the call is in-flight (only when a turn is
+-- interrupted before ToolCallEnd arrives); persisted rows should always
+-- have a non-NULL ``ok`` because the batch-insert path waits until the
+-- turn ends.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS tool_calls (
+    id            TEXT    PRIMARY KEY,
+    session_id    TEXT    NOT NULL,
+    message_id    TEXT    NOT NULL,
+    tool_name     TEXT    NOT NULL,
+    input_json    TEXT    NOT NULL,
+    output        TEXT    NOT NULL DEFAULT '',
+    ok            INTEGER,
+    duration_ms   INTEGER,
+    error_message TEXT,
+    created_at    TEXT    NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES sessions(id)  ON DELETE CASCADE,
+    FOREIGN KEY (message_id) REFERENCES messages(id)  ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_tool_calls_session_message_id
+    ON tool_calls(session_id, message_id);
+
+-- ---------------------------------------------------------------------------
 -- templates — pre-baked session-config presets the user picks via the
 -- template picker (`t` keyboard chord per docs/behavior/keyboard-shortcuts.md
 -- §"Create" or via the `session.save_as_template` action on a session row

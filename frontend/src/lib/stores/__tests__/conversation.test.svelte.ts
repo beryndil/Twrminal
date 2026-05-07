@@ -21,11 +21,13 @@ import {
   applyEvent,
   conversationStore,
   hydrateTurns,
+  hydrateToolCalls,
   ingestFrame,
   resetConversation,
   type MessageTurnView,
 } from "../conversation.svelte";
 import { CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS, WS_FRAME_KIND_EVENT } from "../../config";
+import type { ToolCallOut } from "../../api/messages";
 
 afterEach(() => {
   _resetForTests();
@@ -422,5 +424,171 @@ describe("hydrateTurns", () => {
     });
     expect(conversationStore.hasMore).toBe(true);
     expect(conversationStore.oldestSeq).toBe(7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hydrateToolCalls (gap-cycle-03-012)
+// ---------------------------------------------------------------------------
+
+/** Minimal MessageOut stub for test fixtures. */
+function makeMsg(id: string, role: "user" | "assistant") {
+  return {
+    id,
+    session_id: "ses_a",
+    role,
+    content: "x",
+    created_at: "2026-01-01T00:00:00Z",
+    executor_model: role === "assistant" ? "sonnet" : null,
+    advisor_model: null,
+    effort_level: null,
+    routing_source: null,
+    routing_reason: null,
+    matched_rule_id: null,
+    executor_input_tokens: null,
+    executor_output_tokens: null,
+    advisor_input_tokens: null,
+    advisor_output_tokens: null,
+    advisor_calls_count: null,
+    cache_read_tokens: null,
+    input_tokens: null,
+    output_tokens: null,
+    seq: 1,
+    pinned: false,
+    hidden_from_context: false,
+  };
+}
+
+function makeToolCallOut(
+  id: string,
+  messageId: string,
+  overrides: Partial<ToolCallOut> = {},
+): ToolCallOut {
+  return {
+    id,
+    session_id: "ses_a",
+    message_id: messageId,
+    tool_name: "Bash",
+    input_json: '{"command":"ls"}',
+    output: "file.txt",
+    ok: true,
+    duration_ms: 10,
+    error_message: null,
+    created_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+describe("hydrateToolCalls", () => {
+  it("attaches tool calls to the matching assistant turn", () => {
+    hydrateTurns("ses_a", {
+      items: [makeMsg("u1", "user"), makeMsg("a1", "assistant")],
+      has_more: false,
+    });
+    hydrateToolCalls([makeToolCallOut("toolu_1", "a1")]);
+    const assistantTurn = conversationStore.turns.find((t) => t.id === "a1");
+    expect(assistantTurn?.toolCalls).toHaveLength(1);
+    expect(assistantTurn?.toolCalls[0].id).toBe("toolu_1");
+    expect(assistantTurn?.toolCalls[0].name).toBe("Bash");
+    expect(assistantTurn?.toolCalls[0].done).toBe(true);
+    expect(assistantTurn?.toolCalls[0].ok).toBe(true);
+  });
+
+  it("does not attach tool calls to user turns", () => {
+    hydrateTurns("ses_a", {
+      items: [makeMsg("u1", "user"), makeMsg("a1", "assistant")],
+      has_more: false,
+    });
+    // message_id points at user turn — should be ignored
+    hydrateToolCalls([makeToolCallOut("toolu_x", "u1")]);
+    const userTurn = conversationStore.turns.find((t) => t.id === "u1");
+    expect(userTurn?.toolCalls).toHaveLength(0);
+  });
+
+  it("preserves turns with existing tool calls (WS replay wins)", () => {
+    hydrateTurns("ses_a", {
+      items: [makeMsg("a1", "assistant")],
+      has_more: false,
+    });
+    // Simulate WS replay already populated tool calls.
+    const wsToolCall = {
+      id: "toolu_ws",
+      name: "Read",
+      inputJson: "{}",
+      output: "ws output",
+      rawLength: 9,
+      done: true,
+      ok: true,
+      durationMs: 5,
+      errorMessage: null,
+      liveElapsedMs: 0,
+    };
+    conversationStore.turns = conversationStore.turns.map((t) =>
+      t.id === "a1" ? { ...t, toolCalls: [wsToolCall] } : t,
+    );
+    // hydrateToolCalls should not overwrite the WS-populated row.
+    hydrateToolCalls([makeToolCallOut("toolu_db", "a1")]);
+    const turn = conversationStore.turns.find((t) => t.id === "a1");
+    expect(turn?.toolCalls).toHaveLength(1);
+    expect(turn?.toolCalls[0].id).toBe("toolu_ws");
+  });
+
+  it("applies display cap to long output", () => {
+    const longOutput = "x".repeat(CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS + 100);
+    hydrateTurns("ses_a", {
+      items: [makeMsg("a1", "assistant")],
+      has_more: false,
+    });
+    hydrateToolCalls([makeToolCallOut("toolu_long", "a1", { output: longOutput })]);
+    const turn = conversationStore.turns.find((t) => t.id === "a1");
+    expect(turn?.toolCalls[0].output.length).toBe(CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS);
+    expect(turn?.toolCalls[0].rawLength).toBe(longOutput.length);
+  });
+
+  it("no-ops on empty tool_calls array", () => {
+    hydrateTurns("ses_a", {
+      items: [makeMsg("a1", "assistant")],
+      has_more: false,
+    });
+    hydrateToolCalls([]);
+    expect(conversationStore.turns[0].toolCalls).toHaveLength(0);
+  });
+
+  it("tool_call_start is idempotent when call already exists from DB hydration", () => {
+    // Simulate DB hydration having already set tool calls.
+    hydrateTurns("ses_a", {
+      items: [makeMsg("a1", "assistant")],
+      has_more: false,
+    });
+    hydrateToolCalls([makeToolCallOut("toolu_dup", "a1", { output: "db output" })]);
+    // Now WS replay sends tool_call_start for the same id — should skip.
+    const turns = applyEvent(conversationStore.turns, {
+      type: "tool_call_start",
+      session_id: "ses_a",
+      message_id: "a1",
+      tool_call_id: "toolu_dup",
+      tool_name: "Bash",
+      tool_input_json: "{}",
+    });
+    const turn = turns.find((t) => t.id === "a1");
+    expect(turn?.toolCalls).toHaveLength(1); // still 1, not 2
+    expect(turn?.toolCalls[0].id).toBe("toolu_dup");
+  });
+
+  it("tool_output_delta is skipped for done=true calls (hydrated)", () => {
+    hydrateTurns("ses_a", {
+      items: [makeMsg("a1", "assistant")],
+      has_more: false,
+    });
+    hydrateToolCalls([makeToolCallOut("toolu_done", "a1", { output: "final" })]);
+    // WS replay sends a delta — should not append to done call.
+    const turns = applyEvent(conversationStore.turns, {
+      type: "tool_output_delta",
+      session_id: "ses_a",
+      tool_call_id: "toolu_done",
+      delta: " extra",
+    });
+    const turn = turns.find((t) => t.id === "a1");
+    expect(turn?.toolCalls[0].output).toBe("final"); // unchanged
   });
 });

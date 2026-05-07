@@ -84,6 +84,10 @@ EXPECTED_TABLES = frozenset(
         "sdk_session_entries",
         # gap-cycle-03-008 — one row per successful session merge.
         "reorg_audit",
+        # gap-cycle-03-012 — structured per-turn tool-call records for
+        # REST hydration of tool-work drawer rows on sessions older than
+        # the ring buffer.
+        "tool_calls",
     }
 )
 

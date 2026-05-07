@@ -24,11 +24,12 @@
   import { onMount } from "svelte";
 
   import { connectSession, disconnectSession } from "../../agent.svelte";
-  import { listMessages } from "../../api/messages";
+  import { listMessages, listToolCalls } from "../../api/messages";
   import { CONVERSATION_STRINGS, MESSAGE_PAGE_SIZE } from "../../config";
   import {
     conversationStore,
     hydrateTurns,
+    hydrateToolCalls,
     loadOlder,
     resetConversation,
     setError,
@@ -134,6 +135,22 @@
         const page = await listMessages(sid, { limit: MESSAGE_PAGE_SIZE });
         if (cancelled) return;
         hydrateTurns(sid, page);
+        // Hydrate tool-call drawer rows from the DB for assistant turns
+        // whose ring-buffer events are no longer available (gap-cycle-03-012).
+        // Run in parallel with the WS connect; errors are non-fatal (the
+        // drawer will be populated by WS replay for recent sessions).
+        const assistantIds = page.items
+          .filter((m) => m.role === "assistant")
+          .map((m) => m.id);
+        if (assistantIds.length > 0) {
+          try {
+            const toolCalls = await listToolCalls(sid, assistantIds);
+            if (!cancelled) hydrateToolCalls(toolCalls);
+          } catch {
+            // Non-fatal: WS replay covers recent sessions; old sessions
+            // without persisted tool calls will show empty drawers.
+          }
+        }
       } catch (error) {
         if (cancelled) return;
         setError(error instanceof Error ? error : new Error(String(error)));
