@@ -1,0 +1,252 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`BearingsMark > matches snapshot (static, loading=false) 1`] = `
+<div>
+  <svg
+    aria-hidden="true"
+    class="svelte-zxog8z"
+    data-testid="bearings-mark"
+    fill="none"
+    height="24"
+    viewBox="0 0 24 24"
+    width="24"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <circle
+      class="svelte-zxog8z"
+      cx="12"
+      cy="12"
+      r="11"
+      stroke="currentColor"
+      stroke-width="1"
+    />
+    <circle
+      class="svelte-zxog8z"
+      cx="12"
+      cy="12"
+      r="6.5"
+      stroke="currentColor"
+      stroke-width="1"
+    />
+    <circle
+      class="svelte-zxog8z"
+      cx="12"
+      cy="12"
+      r="2.5"
+      stroke="currentColor"
+      stroke-width="1"
+    />
+    <circle
+      class="svelte-zxog8z"
+      cx="12"
+      cy="3"
+      data-testid="bearings-mark-cardinal"
+      fill="currentColor"
+      r="1.2"
+    />
+    <circle
+      class="svelte-zxog8z"
+      cx="18.36396103067893"
+      cy="5.636038969321072"
+      data-testid="bearings-mark-cardinal"
+      fill="currentColor"
+      r="1.2"
+    />
+    <circle
+      class="svelte-zxog8z"
+      cx="21"
+      cy="12"
+      data-testid="bearings-mark-cardinal"
+      fill="currentColor"
+      r="1.2"
+    />
+    <circle
+      class="svelte-zxog8z"
+      cx="18.36396103067893"
+      cy="18.36396103067893"
+      data-testid="bearings-mark-cardinal"
+      fill="currentColor"
+      r="1.2"
+    />
+    <circle
+      class="svelte-zxog8z"
+      cx="12"
+      cy="21"
+      data-testid="bearings-mark-cardinal"
+      fill="currentColor"
+      r="1.2"
+    />
+    <circle
+      class="svelte-zxog8z"
+      cx="5.636038969321072"
+      cy="18.36396103067893"
+      data-testid="bearings-mark-cardinal"
+      fill="currentColor"
+      r="1.2"
+    />
+    <circle
+      class="svelte-zxog8z"
+      cx="3"
+      cy="12.000000000000002"
+      data-testid="bearings-mark-cardinal"
+      fill="currentColor"
+      r="1.2"
+    />
+    <circle
+      class="svelte-zxog8z"
+      cx="5.636038969321071"
+      cy="5.636038969321072"
+      data-testid="bearings-mark-cardinal"
+      fill="currentColor"
+      r="1.2"
+    />
+    <!---->
+  </svg>
+  
+</div>
+`;
+
+exports[`ClaudeMark > matches snapshot 1`] = `
+<div>
+  <svg
+    aria-hidden="true"
+    data-testid="claude-mark"
+    height="24"
+    viewBox="0 0 24 24"
+    width="24"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <ellipse
+      cx="12"
+      cy="7.5"
+      data-testid="claude-mark-petal"
+      fill="currentColor"
+      rx="1.6"
+      ry="3.8"
+      transform="rotate(0 12 12)"
+    />
+    <ellipse
+      cx="12"
+      cy="7.5"
+      data-testid="claude-mark-petal"
+      fill="currentColor"
+      rx="1.6"
+      ry="3.8"
+      transform="rotate(72 12 12)"
+    />
+    <ellipse
+      cx="12"
+      cy="7.5"
+      data-testid="claude-mark-petal"
+      fill="currentColor"
+      rx="1.6"
+      ry="3.8"
+      transform="rotate(144 12 12)"
+    />
+    <ellipse
+      cx="12"
+      cy="7.5"
+      data-testid="claude-mark-petal"
+      fill="currentColor"
+      rx="1.6"
+      ry="3.8"
+      transform="rotate(216 12 12)"
+    />
+    <ellipse
+      cx="12"
+      cy="7.5"
+      data-testid="claude-mark-petal"
+      fill="currentColor"
+      rx="1.6"
+      ry="3.8"
+      transform="rotate(288 12 12)"
+    />
+    
+  </svg>
+  
+</div>
+`;
+
+exports[`IconX > matches snapshot 1`] = `
+<div>
+  <svg
+    aria-hidden="true"
+    data-testid="icon-x"
+    fill="none"
+    height="16"
+    viewBox="0 0 16 16"
+    width="16"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <line
+      stroke="currentColor"
+      stroke-linecap="round"
+      stroke-width="1.75"
+      x1="3"
+      x2="13"
+      y1="3"
+      y2="13"
+    />
+    <line
+      stroke="currentColor"
+      stroke-linecap="round"
+      stroke-width="1.75"
+      x1="13"
+      x2="3"
+      y1="3"
+      y2="13"
+    />
+  </svg>
+  
+</div>
+`;
+
+exports[`SeverityShield > matches snapshot (severity=low) 1`] = `
+<div>
+  <svg
+    aria-label="Severity: low"
+    data-severity="low"
+    data-testid="severity-shield"
+    height="16"
+    role="img"
+    viewBox="0 0 24 24"
+    width="16"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path
+      class="fill-green-400"
+      d="M12 2 L20 5.5 L20 14 Q20 20 12 22 Q4 20 4 14 L4 5.5 Z"
+    />
+  </svg>
+  
+</div>
+`;
+
+exports[`TagIcon > matches snapshot 1`] = `
+<div>
+  <svg
+    aria-hidden="true"
+    data-testid="tag-icon"
+    fill="none"
+    height="16"
+    viewBox="0 0 16 16"
+    width="16"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path
+      d="M2 5 Q2 3 4 3 L10 3 L14 8 L10 13 L4 13 Q2 13 2 11 Z"
+      fill="none"
+      stroke="currentColor"
+      stroke-linejoin="round"
+      stroke-width="1.25"
+    />
+    <circle
+      cx="5"
+      cy="8"
+      fill="currentColor"
+      r="1"
+    />
+  </svg>
+  
+</div>
+`;
