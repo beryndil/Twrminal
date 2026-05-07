@@ -1,6 +1,6 @@
 /**
  * Templates store — list of saved session templates + instantiate /
- * delete helpers.
+ * delete helpers, and the picker overlay UI state.
  *
  * Responsibilities:
  *
@@ -12,6 +12,9 @@
  *   the template and returns the new session id for navigation.
  * - Expose :func:`removeTemplate` so the × row affordance can delete
  *   a template and refresh the list without closing the picker.
+ * - Own the picker overlay open/closed state (``pickerOpen``) so both
+ *   the keyboard chord (``t``) and the sidebar button (gap-cycle-08-007)
+ *   share a single source of truth via :func:`toggleTemplatePicker`.
  *
  * Pattern mirrors :mod:`stores/sessions.svelte.ts` — single ``$state``
  * proxy, cancellable refresh, test seam via :func:`_resetForTests`.
@@ -26,12 +29,21 @@ interface TemplatesState {
   loading: boolean;
   /** Last fetch error (cleared on next successful fetch). */
   error: Error | null;
+  /**
+   * Whether the template picker overlay is visible.
+   *
+   * Promoted out of ``KeybindingsProvider`` local state so the sidebar
+   * button (gap-cycle-08-007) and the keyboard chord share one reactive
+   * source of truth.
+   */
+  pickerOpen: boolean;
 }
 
 const state: TemplatesState = $state({
   templates: [],
   loading: false,
   error: null,
+  pickerOpen: false,
 });
 
 /** Reactive proxy — components read from this via destructuring or ``$derived``. */
@@ -111,11 +123,29 @@ export async function removeTemplate(templateId: number): Promise<void> {
   await refreshTemplates();
 }
 
+// ---- Picker visibility -------------------------------------------------------
+
+/** Toggle the template picker overlay open / closed. */
+export function toggleTemplatePicker(): void {
+  state.pickerOpen = !state.pickerOpen;
+}
+
+/** Open the template picker overlay. */
+export function openTemplatePicker(): void {
+  state.pickerOpen = true;
+}
+
+/** Close the template picker overlay. */
+export function closeTemplatePicker(): void {
+  state.pickerOpen = false;
+}
+
 /** Test seam — reset all state and cancel any in-flight request. */
 export function _resetForTests(): void {
   state.templates = [];
   state.loading = false;
   state.error = null;
+  state.pickerOpen = false;
   refreshController?.abort();
   refreshController = null;
 }

@@ -36,6 +36,11 @@
   import CommandPalette from "./CommandPalette.svelte";
   import TemplatePicker from "../components/menus/TemplatePicker.svelte";
   import PendingOpsCard from "../components/pending/PendingOpsCard.svelte";
+  import {
+    closeTemplatePicker,
+    templatesStore,
+    toggleTemplatePicker,
+  } from "../stores/templates.svelte";
 
   interface Props {
     children?: Snippet;
@@ -52,21 +57,20 @@
 
   let cheatSheetOpen = $state(false);
   let commandPaletteOpen = $state(false);
-  let templatePickerOpen = $state(false);
 
   import { toggleCard as togglePendingOpsCard } from "../stores/pending.svelte";
 
   // Re-export the modal flag to the dispatch layer so overlays
   // count as "modal context" for chord gating.
   $effect(() => {
-    setModalOpen(cheatSheetOpen || commandPaletteOpen || templatePickerOpen);
+    setModalOpen(cheatSheetOpen || commandPaletteOpen || templatesStore.pickerOpen);
   });
 
   function toggleCheatSheet(): void {
     cheatSheetOpen = !cheatSheetOpen;
     if (cheatSheetOpen) {
       commandPaletteOpen = false;
-      templatePickerOpen = false;
+      closeTemplatePicker();
     }
   }
 
@@ -74,13 +78,13 @@
     commandPaletteOpen = !commandPaletteOpen;
     if (commandPaletteOpen) {
       cheatSheetOpen = false;
-      templatePickerOpen = false;
+      closeTemplatePicker();
     }
   }
 
-  function toggleTemplatePicker(): void {
-    templatePickerOpen = !templatePickerOpen;
-    if (templatePickerOpen) {
+  function handleToggleTemplatePicker(): void {
+    toggleTemplatePicker();
+    if (templatesStore.pickerOpen) {
       cheatSheetOpen = false;
       commandPaletteOpen = false;
     }
@@ -103,7 +107,7 @@
     const releases = [
       bindHandler(KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET, toggleCheatSheet),
       bindHandler(KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE, toggleCommandPalette),
-      bindHandler(KEYBINDING_ACTION_TOGGLE_TEMPLATE_PICKER, toggleTemplatePicker),
+      bindHandler(KEYBINDING_ACTION_TOGGLE_TEMPLATE_PICKER, handleToggleTemplatePicker),
       bindHandler(KEYBINDING_ACTION_TOGGLE_PENDING_OPS, togglePendingOpsCard),
       bindHandler(KEYBINDING_ACTION_ESC_CASCADE, handleEsc),
     ];
@@ -142,5 +146,5 @@
 
 <CheatSheet open={cheatSheetOpen} onClose={() => (cheatSheetOpen = false)} />
 <CommandPalette open={commandPaletteOpen} onClose={() => (commandPaletteOpen = false)} />
-<TemplatePicker open={templatePickerOpen} onClose={() => (templatePickerOpen = false)} />
+<TemplatePicker open={templatesStore.pickerOpen} onClose={closeTemplatePicker} />
 <PendingOpsCard workingDir={activeWorkingDir} />

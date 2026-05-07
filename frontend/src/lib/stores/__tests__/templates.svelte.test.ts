@@ -9,10 +9,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   _resetForTests,
+  closeTemplatePicker,
   instantiate,
+  openTemplatePicker,
   refreshTemplates,
   removeTemplate,
   templatesStore,
+  toggleTemplatePicker,
 } from "../templates.svelte";
 import type { TemplateOut } from "../../api/templates";
 import type { SessionOut } from "../../api/sessions";
@@ -182,6 +185,46 @@ describe("instantiate — error surfaces inline", () => {
 // ---------------------------------------------------------------------------
 // removeTemplate
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Picker visibility (gap-cycle-08-007)
+// ---------------------------------------------------------------------------
+
+describe("toggleTemplatePicker", () => {
+  it("starts closed", () => {
+    expect(templatesStore.pickerOpen).toBe(false);
+  });
+
+  it("opens the picker on first call", () => {
+    toggleTemplatePicker();
+    expect(templatesStore.pickerOpen).toBe(true);
+  });
+
+  it("closes the picker on second call", () => {
+    toggleTemplatePicker();
+    toggleTemplatePicker();
+    expect(templatesStore.pickerOpen).toBe(false);
+  });
+});
+
+describe("openTemplatePicker / closeTemplatePicker", () => {
+  it("openTemplatePicker sets pickerOpen to true", () => {
+    openTemplatePicker();
+    expect(templatesStore.pickerOpen).toBe(true);
+  });
+
+  it("closeTemplatePicker sets pickerOpen to false", () => {
+    openTemplatePicker();
+    closeTemplatePicker();
+    expect(templatesStore.pickerOpen).toBe(false);
+  });
+
+  it("_resetForTests resets pickerOpen to false", () => {
+    openTemplatePicker();
+    _resetForTests();
+    expect(templatesStore.pickerOpen).toBe(false);
+  });
+});
 
 describe("removeTemplate", () => {
   it("calls DELETE then refreshes the list", async () => {

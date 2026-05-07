@@ -92,6 +92,35 @@ describe("sidebar nav vault link (gap-cycle-08-003)", () => {
   });
 });
 
+describe("sidebar templates button (gap-cycle-08-007)", () => {
+  it("renders the templates button inside the sidebar", () => {
+    const { getByTestId } = render(Layout);
+
+    const sidebar = getByTestId("app-shell-sidebar");
+    const btn = sidebar.querySelector('[data-testid="sidebar-templates-button"]');
+    expect(btn).toBeInTheDocument();
+  });
+
+  it("templates button carries the correct aria-label", () => {
+    const { getByTestId } = render(Layout);
+
+    const btn = getByTestId("sidebar-templates-button");
+    expect(btn.getAttribute("aria-label")).toBe("Open template picker");
+  });
+
+  it("clicking the templates button opens the TemplatePicker dialog", async () => {
+    const { getByTestId, queryByTestId } = render(Layout);
+
+    // Picker is closed initially.
+    expect(queryByTestId("template-picker")).not.toBeInTheDocument();
+
+    await fireEvent.click(getByTestId("sidebar-templates-button"));
+
+    // After click the backdrop / dialog should be visible.
+    expect(queryByTestId("template-picker")).toBeInTheDocument();
+  });
+});
+
 describe("sidebar identity block (gap-cycle-08-002)", () => {
   it("renders user-identity-block inside the sidebar", () => {
     const { getByTestId } = render(Layout);

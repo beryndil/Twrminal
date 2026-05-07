@@ -21,6 +21,8 @@ Sibling subsystems referenced here:
 | `Shift+C` | Open the new-chat dialog **without** the seeded routing / tag defaults — empty form. |
 | `t` | Open the **template picker**. Selecting a template populates the new-chat form. |
 
+The template picker is also reachable via the **Templates…** button in the sidebar (below the Import button), giving mouse-only users a discoverable affordance without memorising the `t` chord (gap-cycle-08-007).
+
 ### Navigate (sidebar)
 
 | Chord | Action |

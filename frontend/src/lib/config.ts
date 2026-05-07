@@ -811,6 +811,9 @@ export const SIDEBAR_STRINGS = {
   /** Sidebar identity block — button aria-label and display-name fallback (gap-cycle-08-002). */
   identityBlockAriaLabel: "Open Settings",
   identityBlockFallbackName: "Operator",
+  /** Templates button — sidebar affordance for the template picker (gap-cycle-08-007). */
+  templatesButtonLabel: "Templates…",
+  templatesButtonAriaLabel: "Open template picker",
 } as const;
 
 /**

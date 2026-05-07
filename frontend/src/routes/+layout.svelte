@@ -69,6 +69,7 @@
   import UserIdentityBlock from "$lib/components/identity/UserIdentityBlock.svelte";
   import SystemStatusCard from "$lib/components/feedback/SystemStatusCard.svelte";
   import { preferencesStore, refreshPreferences } from "$lib/stores/preferences.svelte";
+  import { toggleTemplatePicker } from "$lib/stores/templates.svelte";
 
   interface Props {
     children?: Snippet;
@@ -405,6 +406,16 @@
             >
               <span aria-hidden="true">↓</span>
               <span>Import session…</span>
+            </button>
+            <button
+              type="button"
+              class="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-surface-1 hover:text-fg focus:outline-none focus:ring-2 focus:ring-accent/70"
+              aria-label={SIDEBAR_STRINGS.templatesButtonAriaLabel}
+              data-testid="sidebar-templates-button"
+              onclick={toggleTemplatePicker}
+            >
+              <span aria-hidden="true">⊞</span>
+              <span>{SIDEBAR_STRINGS.templatesButtonLabel}</span>
             </button>
           </div>
 
