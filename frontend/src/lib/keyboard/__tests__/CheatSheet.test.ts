@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   KEYBINDING_ACTION_NEW_CHAT_DEFAULTS,
   KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET,
+  KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE,
   KEYBOARD_SHORTCUT_STRINGS,
 } from "../../config";
 import { _resetForTests as resetEsc } from "../escCascade";
@@ -51,6 +52,22 @@ describe("CheatSheet", () => {
     const ids = rows.map((r) => r.getAttribute("data-action"));
     expect(ids).toContain(KEYBINDING_ACTION_NEW_CHAT_DEFAULTS);
     expect(ids).toContain(KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET);
+  });
+
+  it("renders ⌘/Ctrl glyph for Ctrl-prefixed chords (Mac equivalence)", () => {
+    const { getAllByTestId } = render(CheatSheet, {
+      props: { open: true, onClose: vi.fn() },
+    });
+    // Find the row for the command-palette toggle (Ctrl+Shift+P).
+    const rows = getAllByTestId("cheat-sheet-row");
+    const cpRow = rows.find(
+      (r) => r.getAttribute("data-action") === KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE,
+    );
+    expect(cpRow).toBeDefined();
+    // The rendered chord caps must include the Mac equivalence glyph.
+    const chordEl = cpRow!.querySelector('[data-testid="cheat-sheet-chord"]');
+    expect(chordEl).toBeDefined();
+    expect(chordEl!.textContent).toContain("⌘");
   });
 
   it("close button fires onClose", async () => {

@@ -170,20 +170,20 @@ export const KEYBINDINGS: readonly KeybindingSpec[] = [
   },
   {
     id: KEYBINDING_ACTION_TOGGLE_PENDING_OPS,
-    chord: { code: "KeyO", ctrl: true, shift: true, display: ["Ctrl", "Shift", "O"] },
+    chord: { code: "KeyO", ctrl: true, shift: true, display: ["⌘/Ctrl", "Shift", "O"] },
     section: KEYBINDING_SECTION_HELP,
     global: true,
   },
   // ---- Command palette ---------------------------------------------
   {
     id: KEYBINDING_ACTION_TOGGLE_COMMAND_PALETTE,
-    chord: { code: "KeyP", ctrl: true, shift: true, display: ["Ctrl", "Shift", "P"] },
+    chord: { code: "KeyP", ctrl: true, shift: true, display: ["⌘/Ctrl", "Shift", "P"] },
     section: KEYBINDING_SECTION_COMMAND_PALETTE,
     global: true,
   },
   {
     id: KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH,
-    chord: { code: "KeyK", ctrl: true, display: ["Ctrl", "K"] },
+    chord: { code: "KeyK", ctrl: true, display: ["⌘/Ctrl", "K"] },
     section: KEYBINDING_SECTION_COMMAND_PALETTE,
     global: true,
   },
