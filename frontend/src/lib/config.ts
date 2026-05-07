@@ -2527,18 +2527,22 @@ export const ABOUT_SECTION_STRINGS = {
   /** CTA eyebrow (above the card title). */
   coffeeEyebrow: "Enjoy Bearings?",
   coffeeLabel: "Buy Me a Cup of Coffee",
-  /** Identity card row labels. */
+  /** Identity card row labels and descriptions (gap-cycle-17-005). */
   buildLabel: "Build",
   /** "dev build" fallback when build_mtime is null or non-finite. */
   buildFallback: "dev build",
+  buildDescription: "Identifies the running frontend bundle. Bumps on every npm run build.",
   repositoryLabel: "Repository",
+  repositoryDescription: "Source, issues, and releases on GitHub.",
   repositoryHref: "https://github.com/Beryndil/Bearings",
-  repositoryLinkLabel: "github.com/Beryndil/Bearings",
+  repositoryLinkLabel: "Beryndil/Bearings ↗",
   licenseLabel: "License",
-  licenseLinkLabel: "MIT",
+  licenseDescription: "Bearings is released under the MIT License.",
+  licenseLinkLabel: "MIT ↗",
   licenseHref: "https://github.com/Beryndil/Bearings/blob/main/LICENSE",
   creditsLabel: "Credits",
-  creditsLinkLabel: "CREDITS.md",
+  creditsDescription: "Open-source projects Bearings is built on.",
+  creditsLinkLabel: "View ↗",
   creditsHref: "https://github.com/Beryndil/Bearings/blob/main/CREDITS.md",
 } as const;
 

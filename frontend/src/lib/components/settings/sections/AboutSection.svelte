@@ -103,19 +103,25 @@
 
   <div class="settings-about__identity-card" data-testid="about-identity-card">
     <div class="settings-about__id-row" data-testid="about-build-row">
-      <span class="settings-defaults__label settings-about__id-label">
-        {ABOUT_SECTION_STRINGS.buildLabel}
+      <span class="settings-about__id-body">
+        <span class="settings-about__id-title">{ABOUT_SECTION_STRINGS.buildLabel}</span>
+        <span class="settings-about__id-desc" data-testid="about-build-desc">
+          {ABOUT_SECTION_STRINGS.buildDescription}
+        </span>
       </span>
       <span class="settings-about__id-value" data-testid="about-build-value">
         {formatBuildMtime(aboutBuildMtime)}
       </span>
     </div>
     <div class="settings-about__id-row" data-testid="about-repository-row">
-      <span class="settings-defaults__label settings-about__id-label">
-        {ABOUT_SECTION_STRINGS.repositoryLabel}
+      <span class="settings-about__id-body">
+        <span class="settings-about__id-title">{ABOUT_SECTION_STRINGS.repositoryLabel}</span>
+        <span class="settings-about__id-desc" data-testid="about-repository-desc">
+          {ABOUT_SECTION_STRINGS.repositoryDescription}
+        </span>
       </span>
       <a
-        class="settings-privacy__link"
+        class="settings-about__id-link"
         href={ABOUT_SECTION_STRINGS.repositoryHref}
         target="_blank"
         rel="noopener noreferrer"
@@ -125,11 +131,14 @@
       </a>
     </div>
     <div class="settings-about__id-row" data-testid="about-license-row">
-      <span class="settings-defaults__label settings-about__id-label">
-        {ABOUT_SECTION_STRINGS.licenseLabel}
+      <span class="settings-about__id-body">
+        <span class="settings-about__id-title">{ABOUT_SECTION_STRINGS.licenseLabel}</span>
+        <span class="settings-about__id-desc" data-testid="about-license-desc">
+          {ABOUT_SECTION_STRINGS.licenseDescription}
+        </span>
       </span>
       <a
-        class="settings-privacy__link"
+        class="settings-about__id-link"
         href={ABOUT_SECTION_STRINGS.licenseHref}
         target="_blank"
         rel="noopener noreferrer"
@@ -139,11 +148,14 @@
       </a>
     </div>
     <div class="settings-about__id-row" data-testid="about-credits-row">
-      <span class="settings-defaults__label settings-about__id-label">
-        {ABOUT_SECTION_STRINGS.creditsLabel}
+      <span class="settings-about__id-body">
+        <span class="settings-about__id-title">{ABOUT_SECTION_STRINGS.creditsLabel}</span>
+        <span class="settings-about__id-desc" data-testid="about-credits-desc">
+          {ABOUT_SECTION_STRINGS.creditsDescription}
+        </span>
       </span>
       <a
-        class="settings-privacy__link"
+        class="settings-about__id-link"
         href={ABOUT_SECTION_STRINGS.creditsHref}
         target="_blank"
         rel="noopener noreferrer"
@@ -231,6 +243,7 @@
   .settings-about__id-row {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 1rem;
     padding: 0.5rem 0.75rem;
     border-bottom: 1px solid rgb(var(--bearings-border));
@@ -238,26 +251,36 @@
   .settings-about__id-row:last-child {
     border-bottom: none;
   }
-  .settings-about__id-label {
-    min-width: 6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-size: 0.75rem;
+  .settings-about__id-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    flex: 1;
+    min-width: 0;
+  }
+  .settings-about__id-title {
+    font-size: 0.875rem;
     font-weight: 500;
+    color: rgb(var(--bearings-fg-strong));
+  }
+  .settings-about__id-desc {
+    font-size: 0.75rem;
     color: rgb(var(--bearings-fg-muted));
   }
   .settings-about__id-value {
     font-size: 0.8125rem;
     color: rgb(var(--bearings-fg-strong));
+    white-space: nowrap;
+    flex-shrink: 0;
   }
-  /* settings-privacy__link reused from PrivacySection — needs local copy
-     since Svelte scopes styles per component. */
-  .settings-privacy__link {
+  .settings-about__id-link {
     font-size: 0.8125rem;
     color: rgb(var(--bearings-accent));
     text-decoration: underline;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
-  .settings-privacy__link:hover {
+  .settings-about__id-link:hover {
     opacity: 0.85;
   }
   /* settings-help__action-btn reused from HelpSection — local copy. */

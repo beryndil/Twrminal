@@ -273,14 +273,16 @@ A centered column containing:
 
 ### Identity card
 
-A bordered card with four rows rendered below the hero:
+A bordered card with four rows rendered below the hero. Each row carries a
+**title**, a one-line **description**, and a **trailing** value or link
+(gap-cycle-17-005).
 
-| Row | Content |
-|---|---|
-| Build | Formatted from `build_mtime` (Unix timestamp, seconds) returned by `GET /api/diag/server`. Non-finite or `null` → "dev build". Valid timestamp → `new Date(ts * 1000).toLocaleString()`. |
-| Repository | `github.com/Beryndil/Bearings` → `https://github.com/Beryndil/Bearings` |
-| License | "MIT" → `https://github.com/Beryndil/Bearings/blob/main/LICENSE` |
-| Credits | "CREDITS.md" → `https://github.com/Beryndil/Bearings/blob/main/CREDITS.md` |
+| Row | Description | Trailing |
+|---|---|---|
+| Build | "Identifies the running frontend bundle. Bumps on every npm run build." | Formatted `build_mtime`: `new Date(ts * 1000).toLocaleString()`, or "dev build" when `null`/non-finite. Non-link value. |
+| Repository | "Source, issues, and releases on GitHub." | "Beryndil/Bearings ↗" → `https://github.com/Beryndil/Bearings` |
+| License | "Bearings is released under the MIT License." | "MIT ↗" → `https://github.com/Beryndil/Bearings/blob/main/LICENSE` |
+| Credits | "Open-source projects Bearings is built on." | "View ↗" → `https://github.com/Beryndil/Bearings/blob/main/CREDITS.md` |
 
 All identity card links open `target="_blank"` with `rel="noopener noreferrer"`.
 
