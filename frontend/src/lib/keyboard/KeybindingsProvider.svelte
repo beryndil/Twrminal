@@ -145,6 +145,6 @@
 {/if}
 
 <CheatSheet open={cheatSheetOpen} onClose={() => (cheatSheetOpen = false)} />
-<CommandPalette open={commandPaletteOpen} onClose={() => (commandPaletteOpen = false)} />
+<CommandPalette open={commandPaletteOpen} onClose={() => (commandPaletteOpen = false)} workingDir={activeWorkingDir} />
 <TemplatePicker open={templatesStore.pickerOpen} onClose={closeTemplatePicker} />
 <PendingOpsCard workingDir={activeWorkingDir} />

@@ -22,15 +22,45 @@
   import { COMMAND_PALETTE_STRINGS } from "../config";
   import { allPaletteActions, getPaletteHandler, type PaletteEntry } from "../context-menu/palette";
   import { ESC_PRIORITY_COMMAND_PALETTE, registerEscEntry } from "./escCascade";
+  import { listCommands, type CommandOut } from "../api/commands";
+  import { pasteIntoComposer } from "../stores/composerBridge.svelte";
+  import { inspectorStore } from "../stores/inspector.svelte";
 
   interface Props {
     open: boolean;
     onClose: () => void;
+    /**
+     * Working directory of the active session. When provided it is
+     * forwarded to ``GET /api/commands?cwd=<path>`` so the
+     * project-commands section lists commands scoped to this session.
+     * Changing this prop (e.g. the user switches sessions) triggers a
+     * re-fetch so the list stays current (gap-cycle-13-005).
+     */
+    workingDir?: string | null;
   }
 
-  const { open, onClose }: Props = $props();
+  const { open, onClose, workingDir = null }: Props = $props();
 
   const allActions: readonly PaletteEntry[] = allPaletteActions();
+
+  // ---------------------------------------------------------------------------
+  // Slash commands — fetched from /api/commands with per-session cwd scope.
+  // Re-fetches whenever workingDir changes (session switch) or on first open.
+  // ---------------------------------------------------------------------------
+
+  /** Commands fetched from the API, scoped to the current session's cwd. */
+  let slashCommands = $state<CommandOut[]>([]);
+
+  $effect(() => {
+    const dir = workingDir;
+    let cancelled = false;
+    void listCommands(dir).then((cmds) => {
+      if (!cancelled) slashCommands = cmds;
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
 
   // Register with the global Esc cascade (priority 2) so pressing Esc
   // closes the palette even when focus has moved off the search input.
@@ -59,11 +89,39 @@
     }
   });
 
-  const filtered = $derived.by(() => {
+  // ---------------------------------------------------------------------------
+  // Unified item list — palette actions + slash commands merged for display.
+  // ---------------------------------------------------------------------------
+
+  /** Discriminated union covering both action entries and slash commands. */
+  type PaletteItem =
+    | { kind: "action"; id: string; label: string }
+    | { kind: "command"; id: string; label: string; source: string };
+
+  /**
+   * Flat merged list of all available items — action entries from the
+   * context-menu registry followed by slash commands from the API.
+   */
+  const allItems = $derived.by((): PaletteItem[] => {
+    const actions: PaletteItem[] = allActions.map((a) => ({
+      kind: "action",
+      id: a.id,
+      label: a.label,
+    }));
+    const commands: PaletteItem[] = slashCommands.map((c) => ({
+      kind: "command",
+      id: `cmd:${c.name}`,
+      label: `/${c.name}`,
+      source: c.source,
+    }));
+    return [...actions, ...commands];
+  });
+
+  const filtered = $derived.by((): PaletteItem[] => {
     const q = query.trim().toLowerCase();
-    if (q === "") return allActions;
-    return allActions.filter(
-      (entry) => entry.label.toLowerCase().includes(q) || entry.id.toLowerCase().includes(q),
+    if (q === "") return allItems;
+    return allItems.filter(
+      (item) => item.label.toLowerCase().includes(q) || item.id.toLowerCase().includes(q),
     );
   });
 
@@ -79,11 +137,22 @@
     row?.scrollIntoView?.({ block: "nearest" });
   });
 
-  /** Fire the highlighted action and close the palette. */
+  /** Fire the highlighted item and close the palette. */
   function confirmActive(): void {
-    const entry = filtered[activeIndex];
-    if (entry === undefined) return;
-    getPaletteHandler(entry.id)?.();
+    const item = filtered[activeIndex];
+    if (item === undefined) return;
+    if (item.kind === "action") {
+      getPaletteHandler(item.id)?.();
+    } else {
+      // Slash command: paste into the active session's composer so the
+      // user can supply arguments before sending.  The consumption side
+      // in Composer reads composerBridgeStore.pending (gap pending full
+      // wire-up — see composerBridge.svelte.ts).
+      const sessionId = inspectorStore.activeSessionId;
+      if (sessionId !== null) {
+        pasteIntoComposer({ sessionId, text: item.label + " ", kind: "link" });
+      }
+    }
     onClose();
   }
 
@@ -178,14 +247,14 @@
             {COMMAND_PALETTE_STRINGS.noResults}
           </li>
         {:else}
-          {#each filtered as entry, idx (entry.id)}
+          {#each filtered as item, idx (item.id)}
             <li
               class="flex cursor-pointer items-center gap-3 rounded px-3 py-2 text-sm"
               class:bg-surface-2={idx === activeIndex}
               role="option"
               aria-selected={idx === activeIndex}
               data-testid="command-palette-item"
-              data-action-id={entry.id}
+              data-action-id={item.id}
               onclick={() => {
                 activeIndex = idx;
                 confirmActive();
@@ -200,8 +269,14 @@
                 activeIndex = idx;
               }}
             >
-              <span class="flex-1 text-fg-strong">{entry.label}</span>
-              <span class="shrink-0 font-mono text-xs text-fg-muted">{entry.id}</span>
+              <span class="flex-1 text-fg-strong">{item.label}</span>
+              {#if item.kind === "action"}
+                <span class="shrink-0 font-mono text-xs text-fg-muted">{item.id}</span>
+              {:else}
+                <span class="shrink-0 rounded bg-surface-2 px-1 py-0.5 text-[10px] text-fg-muted">
+                  {item.source}
+                </span>
+              {/if}
             </li>
           {/each}
         {/if}

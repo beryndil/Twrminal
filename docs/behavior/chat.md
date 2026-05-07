@@ -146,6 +146,16 @@ Typing `/` at the start of the composer opens a filter popup of available comman
 
 Slash commands the SDK exposes (e.g. `/clear`, `/compact`) pass through to the underlying agent and are observable as their normal effects rather than a Bearings-specific UI.
 
+### Per-session project command scoping
+
+*Added in gap-cycle-13-005.*
+
+The slash-command popup and the global `Ctrl+Shift+P` command palette both include **project-level commands** — `.md` files discovered under `<working_dir>/.claude/commands/**/*.md`. These commands are scoped to the **active session's working directory**, not the server's launch directory.
+
+Observable rule: when the user opens the composer typeahead or the global palette in session A, only project commands from session A's `working_dir` are shown. Switching to session B immediately scopes the next open to B's `working_dir`. User-level commands (`~/.claude/commands/**`) and skills (`~/.claude/skills/*/SKILL.md`) are global and unaffected by session context.
+
+The backend endpoint `GET /api/commands?cwd=<path>` accepts an optional `cwd` query parameter; the frontend passes the active session's `working_dir` as `cwd`. Omitting `cwd` falls back to the server's launch directory (backward-compatible for clients that have not yet upgraded).
+
 ## Sending a message
 
 Pressing Enter (or Cmd/Ctrl+Enter, depending on the user's draft-newline preference) sends the composed text. The user observes:

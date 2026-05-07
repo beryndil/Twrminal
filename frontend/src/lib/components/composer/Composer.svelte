@@ -62,9 +62,15 @@
      * null`` so we don't have to re-fetch.
      */
     disabled?: boolean;
+    /**
+     * Working directory of the active session. Forwarded to
+     * :component:`CommandMenu` so its slash-command list is scoped to
+     * this session's project commands (gap-cycle-13-005).
+     */
+    workingDir?: string | null;
   }
 
-  const { sessionId, disabled = false }: Props = $props();
+  const { sessionId, disabled = false, workingDir = null }: Props = $props();
 
   let draft = $state("");
   let inflight = $state(false);
@@ -538,6 +544,7 @@
       <CommandMenu
         bind:this={menuRef}
         query={menuQuery}
+        {workingDir}
         onselect={handleCommandSelect}
         onclose={handleCommandClose}
       />

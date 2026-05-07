@@ -40,7 +40,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from bearings.web.models.commands import CommandOut
 
@@ -180,20 +180,25 @@ def _scan_all(working_dir: Path | None = None) -> list[CommandOut]:
     return results
 
 
-def _get_working_dir() -> Path | None:  # pragma: no cover — runtime only
-    """Return ``None``; production attach working_dir via ``app.state`` if needed.
-
-    The scan uses ``Path.cwd()`` as the fallback when no project context
-    is wired, which matches the v0.17 behaviour.  A future item can
-    inject a per-session working_dir here.
-    """
-    return None
-
-
 @router.get("/api/commands", response_model=list[CommandOut])
-async def list_commands() -> list[CommandOut]:
-    """Return all discovered slash-commands from user + project locations."""
-    return _scan_all()
+async def list_commands(
+    cwd: str | None = Query(
+        default=None,
+        description=(
+            "Working directory used to scope project-level commands "
+            "(.claude/commands/**/*.md walk-up from this path). "
+            "Omit to use the server's launch directory (backward compat)."
+        ),
+    ),
+) -> list[CommandOut]:
+    """Return all discovered slash-commands from user + project locations.
+
+    When ``cwd`` is supplied the project-commands scan is rooted there,
+    so the response is scoped to that session's working directory.
+    Omitting ``cwd`` preserves the previous behaviour (server process cwd).
+    """
+    working_dir = Path(cwd) if cwd else None
+    return _scan_all(working_dir)
 
 
 __all__ = ["router"]

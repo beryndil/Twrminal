@@ -14,10 +14,17 @@
  * - Esc cascade closes the palette regardless of focus owner.
  * - Priority-1 (context menu) preempts the palette when both open.
  *
+ * Also covers gap-cycle-13-005:
+ *
+ * - Slash commands are fetched from ``listCommands`` with the active
+ *   session's ``workingDir``.
+ * - Changing ``workingDir`` (session switch) triggers a re-fetch.
+ *
  * Behavior anchor: ``docs/behavior/keyboard-shortcuts.md``
  * §"Command palette", §"Focus".
+ * ``docs/behavior/chat.md`` §"Per-session project command scoping".
  */
-import { cleanup, fireEvent, render } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import CommandPalette from "../CommandPalette.svelte";
@@ -28,6 +35,27 @@ import {
   registerEscEntry,
   runEscCascade,
 } from "../escCascade";
+
+// ---- mock listCommands so tests never hit the network -------------------
+// vi.mock factories are hoisted; use vi.hoisted to keep the ref available.
+const { mockListCommands, mockPasteIntoComposer } = vi.hoisted(() => ({
+  mockListCommands: vi.fn<(cwd?: string | null) => Promise<{ name: string; description: string; source: string }[]>>(),
+  mockPasteIntoComposer: vi.fn(),
+}));
+
+vi.mock("../../api/commands", () => ({
+  listCommands: mockListCommands,
+}));
+
+// ---- mock inspectorStore (CommandPalette reads activeSessionId) ----------
+vi.mock("../../stores/inspector.svelte", () => ({
+  inspectorStore: { activeSessionId: "test-session-id" },
+}));
+
+// ---- mock pasteIntoComposer (CommandPalette writes here on cmd select) --
+vi.mock("../../stores/composerBridge.svelte", () => ({
+  pasteIntoComposer: mockPasteIntoComposer,
+}));
 
 // ---- mock allPaletteActions so tests don't depend on the full registry ----
 vi.mock("../../context-menu/palette", async (importOriginal) => {
@@ -45,6 +73,9 @@ vi.mock("../../context-menu/palette", async (importOriginal) => {
 beforeEach(() => {
   resetEscCascade();
   _resetPaletteHandlers();
+  mockListCommands.mockReset();
+  mockListCommands.mockResolvedValue([]);
+  mockPasteIntoComposer.mockReset();
 });
 
 afterEach(() => {
@@ -269,5 +300,80 @@ describe("CommandPalette", () => {
     expect(closeMenu).toHaveBeenCalledOnce();
     // Palette must NOT have been closed — only the highest-priority overlay fires.
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+// ---- gap-cycle-13-005: per-session cwd scoping --------------------------
+
+describe("CommandPalette — slash command scoping (gap-cycle-13-005)", () => {
+  it("fetches commands with the supplied workingDir", async () => {
+    render(CommandPalette, {
+      props: { open: true, onClose: vi.fn(), workingDir: "/home/user/project" },
+    });
+
+    await waitFor(() => {
+      expect(mockListCommands).toHaveBeenCalledWith("/home/user/project");
+    });
+  });
+
+  it("fetches commands with null when workingDir is omitted", async () => {
+    render(CommandPalette, {
+      props: { open: true, onClose: vi.fn() },
+    });
+
+    await waitFor(() => {
+      expect(mockListCommands).toHaveBeenCalledWith(null);
+    });
+  });
+
+  it("re-fetches on session switch (workingDir prop change)", async () => {
+    mockListCommands.mockResolvedValue([]);
+
+    const { rerender } = render(CommandPalette, {
+      props: { open: true, onClose: vi.fn(), workingDir: "/session/a" },
+    });
+
+    await waitFor(() => {
+      expect(mockListCommands).toHaveBeenCalledWith("/session/a");
+    });
+
+    await rerender({ workingDir: "/session/b" });
+
+    // After the prop change the $effect should fire and fetch with the new cwd.
+    await waitFor(() => {
+      expect(mockListCommands).toHaveBeenCalledWith("/session/b");
+    });
+  });
+
+  it("shows fetched slash commands in the list", async () => {
+    mockListCommands.mockResolvedValue([
+      { name: "build", description: "Run build", source: "project_commands" },
+    ]);
+
+    const { getAllByTestId } = render(CommandPalette, {
+      props: { open: true, onClose: vi.fn(), workingDir: "/some/dir" },
+    });
+
+    await waitFor(() => {
+      // 3 action items + 1 slash command = 4 total.
+      const items = getAllByTestId("command-palette-item");
+      expect(items.length).toBe(4);
+    });
+  });
+
+  it("slash command label is prefixed with /", async () => {
+    mockListCommands.mockResolvedValue([
+      { name: "deploy", description: "Deploy", source: "project_commands" },
+    ]);
+
+    const { getAllByTestId } = render(CommandPalette, {
+      props: { open: true, onClose: vi.fn(), workingDir: "/some/dir" },
+    });
+
+    await waitFor(() => {
+      const items = getAllByTestId("command-palette-item");
+      const labels = Array.from(items).map((el) => el.textContent ?? "");
+      expect(labels.some((l) => l.includes("/deploy"))).toBe(true);
+    });
   });
 });

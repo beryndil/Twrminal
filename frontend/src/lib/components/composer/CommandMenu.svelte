@@ -18,7 +18,6 @@
    *
    * String literals — ``COMMAND_MENU_STRINGS`` in ``../../config``.
    */
-  import { onMount } from "svelte";
   import { listCommands, type CommandOut } from "../../api/commands";
   import { COMMAND_MENU_STRINGS } from "../../config";
 
@@ -28,6 +27,17 @@
      * An empty string shows all commands.
      */
     query: string;
+    /**
+     * Working directory of the active session. When provided it is
+     * forwarded to ``GET /api/commands?cwd=<path>`` so project-level
+     * commands are scoped to this session rather than the server's
+     * launch directory (gap-cycle-13-005).
+     *
+     * Changing this prop (e.g. the user switches sessions while the
+     * menu is open) triggers an immediate re-fetch so the list always
+     * reflects the current session's project commands.
+     */
+    workingDir?: string | null;
     /** Called when the user confirms a selection.  Argument is the
      *  full ``/<name>`` insertion string. */
     onselect: (insertion: string) => void;
@@ -36,17 +46,27 @@
     onclose: () => void;
   }
 
-  const { query, onselect, onclose }: Props = $props();
+  const { query, workingDir = null, onselect, onclose }: Props = $props();
 
-  // Full command list — fetched once on mount.
+  // Full command list — fetched on mount and whenever workingDir changes.
   let allCommands = $state<CommandOut[]>([]);
   // Index of the highlighted row (-1 = none highlighted).
   let activeIndex = $state(0);
   // Ref to the scrollable list container for scroll-into-view.
   let listEl = $state<HTMLUListElement | null>(null);
 
-  onMount(async () => {
-    allCommands = await listCommands();
+  // Re-fetch whenever the working directory changes so the project-commands
+  // section reflects the correct session scope. A cancellation flag prevents
+  // a slow response from a previous cwd from overwriting a faster one.
+  $effect(() => {
+    const dir = workingDir;
+    let cancelled = false;
+    void listCommands(dir).then((cmds) => {
+      if (!cancelled) allCommands = cmds;
+    });
+    return () => {
+      cancelled = true;
+    };
   });
 
   // Filtered list derived from query.

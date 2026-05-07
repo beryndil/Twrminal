@@ -762,7 +762,7 @@
                   </button>
                 </div>
               {:else}
-                <Composer sessionId={selectedSessionId} disabled={false} />
+                <Composer sessionId={selectedSessionId} disabled={false} workingDir={activeWorkingDir} />
               {/if}
             {/if}
           </footer>
