@@ -1,15 +1,19 @@
 /**
- * Unit tests for ``src/lib/utils/feedback.ts`` (gap-cycle-01-008).
+ * Unit tests for ``src/lib/utils/feedback.ts``
+ * (gap-cycle-01-008 + gap-cycle-07-004).
  *
  * Acceptance criteria covered:
  *
  * 1. URL composition — :func:`buildFeedbackUrl` returns a GitHub
  *    ``issues/new`` URL whose ``body`` query param contains the
  *    supplied version, the browser UA, platform, language, and the
- *    reproduction scaffold headers.
- * 2. Lazy version fetch on first click — :func:`fetchVersion` calls
+ *    kind-appropriate reproduction scaffold headers.
+ * 2. Kind discriminator — ``"bug"`` emits ``labels=bug`` and the
+ *    bug scaffold; ``"feature"`` emits ``labels=feature`` and the
+ *    feature scaffold; the two URLs are distinct.
+ * 3. Lazy version fetch on first click — :func:`fetchVersion` calls
  *    ``fetch`` exactly once on the first invocation.
- * 3. Cache reuse on second click — a second :func:`fetchVersion` call
+ * 4. Cache reuse on second click — a second :func:`fetchVersion` call
  *    does NOT issue a second ``fetch`` request.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -53,57 +57,98 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// AC1: URL composition
+// AC1: URL composition — common fields present in both kinds
 // ---------------------------------------------------------------------------
 
-describe("buildFeedbackUrl", () => {
-  it("starts with the Bearings GitHub issues/new URL", () => {
-    const url = buildFeedbackUrl("1.2.3");
+describe("buildFeedbackUrl — common fields", () => {
+  it("starts with the Bearings GitHub issues/new URL (bug)", () => {
+    const url = buildFeedbackUrl("bug", "1.2.3");
+    expect(url).toMatch(/^https:\/\/github\.com\/Beryndil\/Bearings\/issues\/new/);
+  });
+
+  it("starts with the Bearings GitHub issues/new URL (feature)", () => {
+    const url = buildFeedbackUrl("feature", "1.2.3");
     expect(url).toMatch(/^https:\/\/github\.com\/Beryndil\/Bearings\/issues\/new/);
   });
 
   it("body param contains the supplied version", () => {
-    const url = buildFeedbackUrl("0.99.1");
+    const url = buildFeedbackUrl("bug", "0.99.1");
     const body = decodeURIComponent(new URL(url).searchParams.get("body") ?? "");
     expect(body).toContain("0.99.1");
   });
 
   it("body param contains the browser user-agent", () => {
-    const url = buildFeedbackUrl("1.0.0");
+    const url = buildFeedbackUrl("bug", "1.0.0");
     const body = decodeURIComponent(new URL(url).searchParams.get("body") ?? "");
     // jsdom sets navigator.userAgent to a non-empty string.
     expect(body).toContain(navigator.userAgent);
   });
 
   it("body param contains the platform", () => {
-    const url = buildFeedbackUrl("1.0.0");
+    const url = buildFeedbackUrl("bug", "1.0.0");
     const body = decodeURIComponent(new URL(url).searchParams.get("body") ?? "");
     expect(body).toContain(navigator.platform);
   });
 
   it("body param contains the language", () => {
-    const url = buildFeedbackUrl("1.0.0");
+    const url = buildFeedbackUrl("bug", "1.0.0");
     const body = decodeURIComponent(new URL(url).searchParams.get("body") ?? "");
     expect(body).toContain(navigator.language);
   });
+});
 
-  it("body param contains the reproduction scaffold headers", () => {
-    const url = buildFeedbackUrl("1.0.0");
+// ---------------------------------------------------------------------------
+// AC2: Kind discriminator — bug vs. feature produce distinct URLs / labels
+// ---------------------------------------------------------------------------
+
+describe("buildFeedbackUrl — FeedbackKind discriminator", () => {
+  it("bug kind: body contains the bug scaffold headers", () => {
+    const url = buildFeedbackUrl("bug", "1.0.0");
     const body = decodeURIComponent(new URL(url).searchParams.get("body") ?? "");
     expect(body).toContain("## Steps to reproduce");
     expect(body).toContain("## Expected behavior");
     expect(body).toContain("## Actual behavior");
   });
 
-  it("includes the 'bug' label", () => {
-    const url = buildFeedbackUrl("1.0.0");
-    const parsed = new URL(url);
-    expect(parsed.searchParams.get("labels")).toBe("bug");
+  it("bug kind: labels param is 'bug'", () => {
+    const url = buildFeedbackUrl("bug", "1.0.0");
+    expect(new URL(url).searchParams.get("labels")).toBe("bug");
+  });
+
+  it("feature kind: body contains the feature scaffold headers", () => {
+    const url = buildFeedbackUrl("feature", "1.0.0");
+    const body = decodeURIComponent(new URL(url).searchParams.get("body") ?? "");
+    expect(body).toContain("## Use case");
+    expect(body).toContain("## Proposed behavior");
+    expect(body).toContain("## Alternatives considered");
+  });
+
+  it("feature kind: labels param is 'feature'", () => {
+    const url = buildFeedbackUrl("feature", "1.0.0");
+    expect(new URL(url).searchParams.get("labels")).toBe("feature");
+  });
+
+  it("bug and feature produce distinct URLs", () => {
+    const bugUrl = buildFeedbackUrl("bug", "1.0.0");
+    const featureUrl = buildFeedbackUrl("feature", "1.0.0");
+    expect(bugUrl).not.toBe(featureUrl);
+  });
+
+  it("feature kind does NOT contain bug scaffold headers", () => {
+    const url = buildFeedbackUrl("feature", "1.0.0");
+    const body = decodeURIComponent(new URL(url).searchParams.get("body") ?? "");
+    expect(body).not.toContain("## Steps to reproduce");
+  });
+
+  it("bug kind does NOT contain feature scaffold headers", () => {
+    const url = buildFeedbackUrl("bug", "1.0.0");
+    const body = decodeURIComponent(new URL(url).searchParams.get("body") ?? "");
+    expect(body).not.toContain("## Use case");
   });
 });
 
 // ---------------------------------------------------------------------------
-// AC2 + AC3: lazy fetch and cache reuse
+// AC3 + AC4: lazy fetch and cache reuse
 // ---------------------------------------------------------------------------
 
 describe("fetchVersion", () => {

@@ -25,6 +25,8 @@
    */
   import {
     AUTH_SECTION_STRINGS,
+    HELP_SECTION_STRINGS,
+    KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET,
     KNOWN_EXECUTOR_MODELS,
     KNOWN_PERMISSION_MODES,
     KNOWN_THEMES,
@@ -38,6 +40,8 @@
     type PermissionMode,
     type ThemeId,
   } from "$lib/config";
+  import { getHandler } from "$lib/keyboard/store.svelte";
+  import { openFeedbackTab } from "$lib/utils/feedback";
   import { clearToken, getStoredToken, saveToken } from "$lib/stores/auth.svelte";
   import {
     deleteAvatar,
@@ -132,6 +136,21 @@
       } catch {
         privacyOpenState = "error";
       }
+    }
+  }
+
+  // ---- Help section state (gap-cycle-07-004) ----
+
+  /** True while a feedback tab is opening (gates both feedback buttons). */
+  let helpFeedbackOpening = $state(false);
+
+  async function handleOpenFeedback(kind: "bug" | "feature"): Promise<void> {
+    if (helpFeedbackOpening) return;
+    helpFeedbackOpening = true;
+    try {
+      await openFeedbackTab(kind);
+    } finally {
+      helpFeedbackOpening = false;
     }
   }
 
@@ -752,6 +771,80 @@
       {/if}
     </div>
   </section>
+
+  <!-- Help (gap-cycle-07-004) -->
+  <section
+    class="settings-page__group"
+    aria-label="Help"
+    data-testid="settings-help"
+  >
+    <h2 class="settings-page__heading">{HELP_SECTION_STRINGS.heading}</h2>
+
+    <!-- Row 1: Keyboard shortcuts -->
+    <div class="settings-help__row" data-testid="help-keyboard-shortcuts-row">
+      <button
+        type="button"
+        class="settings-help__action-btn"
+        onclick={() => getHandler(KEYBINDING_ACTION_TOGGLE_CHEAT_SHEET)?.()}
+        data-testid="help-keyboard-shortcuts-btn"
+      >
+        {HELP_SECTION_STRINGS.keyboardShortcutsLabel}
+      </button>
+      <span class="settings-page__lede">{HELP_SECTION_STRINGS.keyboardShortcutsHint}</span>
+    </div>
+
+    <!-- Row 2: README -->
+    <div class="settings-help__row" data-testid="help-readme-row">
+      <a
+        class="settings-help__action-btn settings-help__link"
+        href={HELP_SECTION_STRINGS.readmeHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="help-readme-link"
+      >
+        {HELP_SECTION_STRINGS.readmeLabel}
+      </a>
+    </div>
+
+    <!-- Row 3: Documentation -->
+    <div class="settings-help__row" data-testid="help-docs-row">
+      <a
+        class="settings-help__action-btn settings-help__link"
+        href={HELP_SECTION_STRINGS.docsHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="help-docs-link"
+      >
+        {HELP_SECTION_STRINGS.docsLabel}
+      </a>
+    </div>
+
+    <!-- Row 4: Report a bug -->
+    <div class="settings-help__row" data-testid="help-report-bug-row">
+      <button
+        type="button"
+        class="settings-help__action-btn"
+        disabled={helpFeedbackOpening}
+        onclick={() => void handleOpenFeedback("bug")}
+        data-testid="help-report-bug-btn"
+      >
+        {HELP_SECTION_STRINGS.reportBugLabel}
+      </button>
+    </div>
+
+    <!-- Row 5: Request a feature -->
+    <div class="settings-help__row" data-testid="help-request-feature-row">
+      <button
+        type="button"
+        class="settings-help__action-btn"
+        disabled={helpFeedbackOpening}
+        onclick={() => void handleOpenFeedback("feature")}
+        data-testid="help-request-feature-btn"
+      >
+        {HELP_SECTION_STRINGS.requestFeatureLabel}
+      </button>
+    </div>
+  </section>
 </section>
 
 <style>
@@ -929,6 +1022,38 @@
   /* Authentication section (gap-cycle-07-002) */
   .settings-auth__token-input {
     font-family: monospace;
+  }
+
+  /* Help section (gap-cycle-07-004) */
+  .settings-help__row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .settings-help__action-btn {
+    background: transparent;
+    color: rgb(var(--bearings-accent));
+    border: 1px solid rgb(var(--bearings-border));
+    border-radius: 0.25rem;
+    padding: 0.3rem 0.875rem;
+    font: inherit;
+    font-size: 0.8125rem;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+  }
+  .settings-help__action-btn:hover {
+    background: rgb(var(--bearings-surface-2));
+    border-color: rgb(var(--bearings-accent));
+  }
+  .settings-help__action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .settings-help__link {
+    text-decoration: none;
   }
 
   /* Privacy section (gap-cycle-07-003) */

@@ -2113,6 +2113,33 @@ export const PRIVACY_STRINGS = {
   openDirError: "Couldn't open or copy the data directory path.",
 } as const;
 
+/**
+ * UI strings for the Help section of the Settings page
+ * (gap-cycle-07-004).
+ *
+ * Five rows rendered in one card:
+ * 1. Keyboard shortcuts — opens the cheat-sheet overlay.
+ * 2. README — external link to the GitHub project README.
+ * 3. Documentation — external link to the GitHub docs folder.
+ * 4. Report a bug — opens a pre-filled GitHub ``issues/new`` (bug).
+ * 5. Request a feature — opens a pre-filled GitHub ``issues/new``
+ *    (feature).
+ *
+ * The two feedback rows do not POST any data; the browser opens the
+ * GitHub form and the user submits manually (Beryndil standards §17).
+ */
+export const HELP_SECTION_STRINGS = {
+  heading: "Help",
+  keyboardShortcutsLabel: "Keyboard shortcuts",
+  keyboardShortcutsHint: "Open the cheat sheet",
+  readmeLabel: "README",
+  readmeHref: "https://github.com/Beryndil/Bearings#readme",
+  docsLabel: "Documentation",
+  docsHref: "https://github.com/Beryndil/Bearings/tree/main/docs",
+  reportBugLabel: "Report a bug",
+  requestFeatureLabel: "Request a feature",
+} as const;
+
 /** UI strings for the PermissionModeSelector header dropdown (item 3.3). */
 export const PERMISSION_MODE_SELECTOR_STRINGS = {
   ariaLabel: "Permission mode",

@@ -136,6 +136,33 @@ An **"Open data dir"** button appears alongside the path:
 
 While `GET /api/health` is in flight, a loading label renders. On error, an inline error renders instead of the path and button.
 
+## Help (gap-cycle-07-004)
+
+The **Help** section renders below Data import in the Settings page. It is read-only — no PATCH calls are made.
+
+Five rows are rendered in order:
+
+| Row | Type | Behaviour |
+|---|---|---|
+| Keyboard shortcuts | Button | Invokes the registered `help.toggle_cheat_sheet` handler via `getHandler()` — identical to pressing `?` globally. No-op when no handler is registered (provider not mounted). |
+| README | External link | Opens `https://github.com/Beryndil/Bearings#readme` in a new tab (`target="_blank"`, `rel="noopener noreferrer"`). |
+| Documentation | External link | Opens `https://github.com/Beryndil/Bearings/tree/main/docs` in a new tab (`target="_blank"`, `rel="noopener noreferrer"`). |
+| Report a bug | Button | Fetches `/api/diag/server` (lazy, cached), builds a GitHub `issues/new` URL with `labels=bug` and a steps-to-reproduce scaffold, opens it in a new tab. Bearings POSTs nothing — the user submits the GitHub form manually (Beryndil standards §17). |
+| Request a feature | Button | Same flow as "Report a bug" but `labels=feature` and a use-case / proposed-behavior scaffold. |
+
+The two feedback buttons share a single `helpFeedbackOpening` flag that disables both while a tab is opening, preventing concurrent dispatches.
+
+### Feedback URL shape
+
+Both feedback rows use `buildFeedbackUrl(kind, version)` from `src/lib/utils/feedback.ts`. The `FeedbackKind` type (`"bug" | "feature"`) selects:
+
+- **Bug**: scaffold sections `## Steps to reproduce`, `## Expected behavior`, `## Actual behavior`; `labels=bug`.
+- **Feature**: scaffold sections `## Use case`, `## Proposed behavior`, `## Alternatives considered`; `labels=feature`.
+
+Both kinds prefill: Bearings version, browser UA, platform, language.
+
+The `FeedbackButton` in the conversation header continues to invoke `openFeedbackTab()` with the default `kind="bug"` — no behaviour change.
+
 ## API contract summary
 
 | Method | Path | Notes |
