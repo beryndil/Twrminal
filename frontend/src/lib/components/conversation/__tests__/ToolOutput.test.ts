@@ -130,6 +130,55 @@ describe("ToolOutput — input JSON visibility (gap-cycle-06-003)", () => {
 });
 
 /**
+ * Linkified output (gap-cycle-06-004).
+ *
+ * Three criteria from the gap acceptance criteria:
+ *   (a) URL in output renders as ``<a target="_blank">`` anchor.
+ *   (b) Workspace-relative path resolves against workingDir and renders
+ *       a ``data-link-kind="file"`` anchor.
+ *   (c) Output with no paths / URLs renders as plain text with no anchors.
+ */
+describe("ToolOutput — linkified output (gap-cycle-06-004)", () => {
+  it("(a) URL in output renders an <a target='_blank'> anchor", () => {
+    const { getByTestId } = render(ToolOutput, {
+      props: {
+        call: tool({ output: "see https://example.com for details", done: true, ok: true }),
+      },
+    });
+    const stream = getByTestId("tool-output-stream");
+    const anchor = stream.querySelector("a");
+    expect(anchor).not.toBeNull();
+    expect(anchor!.getAttribute("target")).toBe("_blank");
+    expect(anchor!.getAttribute("href")).toBe("https://example.com");
+  });
+
+  it("(b) workspace-relative path resolves against workingDir and renders data-link-kind='file' anchor", () => {
+    const { getByTestId } = render(ToolOutput, {
+      props: {
+        call: tool({ output: "edited src/bearings/foo.py line 42", done: true, ok: true }),
+        workingDir: "/home/user/project",
+      },
+    });
+    const stream = getByTestId("tool-output-stream");
+    const anchor = stream.querySelector("a");
+    expect(anchor).not.toBeNull();
+    expect(anchor!.getAttribute("data-link-kind")).toBe("file");
+    expect(anchor!.getAttribute("href")).toBe("file:///home/user/project/src/bearings/foo.py");
+  });
+
+  it("(c) output with no paths or URLs renders as plain text with no anchors", () => {
+    const { getByTestId } = render(ToolOutput, {
+      props: {
+        call: tool({ output: "hello world, no links here", done: true, ok: true }),
+      },
+    });
+    const stream = getByTestId("tool-output-stream");
+    expect(stream.querySelector("a")).toBeNull();
+    expect(stream).toHaveTextContent("hello world, no links here");
+  });
+});
+
+/**
  * Live-clock behaviour (gap-cycle-06-001).
  *
  * The three sub-cases mirror the acceptance criteria directly:

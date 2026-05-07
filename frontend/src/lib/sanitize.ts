@@ -33,6 +33,12 @@
  *   ``target="_blank"`` for ``http(s)`` URLs to mirror chat.md
  *   §"Conversation rendering" — "rendered as anchors that open in a
  *   new tab".
+ * - Allow ``file://`` hrefs so the linkifier's ``data-link-kind="file"``
+ *   anchors produced by :func:`linkifyToHtml` survive sanitization.
+ *   Bearings is a localhost-only UI; the SPA intercepts ``file://``
+ *   clicks via ``data-link-kind`` before the browser can follow them.
+ *   ``file://`` is added to the ``ALLOWED_URI_REGEXP`` (DOMPurify
+ *   blocks it by default).
  * - Reject all on\* event handlers and ``javascript:`` / ``data:``
  *   URLs (DOMPurify defaults).
  */
@@ -109,6 +115,19 @@ function installAnchorHook(): void {
 }
 
 /**
+ * Extended URI allowlist — DOMPurify's default pattern plus ``file://``
+ * so that ``data-link-kind="file"`` anchors emitted by the linkifier
+ * survive sanitization. Based on the DOMPurify 3.x default regexp with
+ * ``file`` appended to the explicit-scheme alternation.
+ *
+ * ``file://`` carries no script-execution risk; the worst a malicious
+ * ``file://`` link could do is expose the existence of a local path,
+ * which is acceptable for a localhost-only developer tool.
+ */
+const ALLOWED_URI_REGEXP =
+  /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|cid|xmpp|file):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/iu;
+
+/**
  * Sanitize ``html`` and return the HTML string ready to be inserted
  * via ``{@html}``. The function never throws; on a parser error
  * DOMPurify falls back to the empty string and logs to the console
@@ -119,6 +138,7 @@ export function sanitizeHtml(html: string): string {
   return DOMPurify.sanitize(html, {
     ALLOWED_TAGS: [...ALLOWED_TAGS],
     ALLOWED_ATTR: [...ALLOWED_ATTR],
+    ALLOWED_URI_REGEXP,
     // Disallow ``<form>`` and other interactive shapes by default.
     FORBID_TAGS: ["form", "input", "button", "iframe", "object", "embed", "script", "style"],
     FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover", "onfocus"],

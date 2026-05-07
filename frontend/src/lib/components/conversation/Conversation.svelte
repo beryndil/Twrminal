@@ -37,6 +37,7 @@
     setError,
     setLoading,
   } from "../../stores/conversation.svelte";
+  import { sessionsStore } from "../../stores/sessions.svelte";
   import AccentCards from "./AccentCards.svelte";
   import ApprovalModal from "./ApprovalModal.svelte";
   import AskUserQuestionModal from "./AskUserQuestionModal.svelte";
@@ -118,6 +119,18 @@
       }
       return -1;
     })(),
+  );
+
+  /**
+   * Working directory of the active session, read from the sessions store
+   * so ``ToolOutput`` rows can linkify workspace-relative file paths.
+   * Per ``docs/behavior/tool-output-streaming.md``
+   * §"Clickable file paths and URLs in output" (gap-cycle-06-004).
+   */
+  const activeWorkingDir = $derived(
+    sessionId === null
+      ? null
+      : (sessionsStore.sessions.find((s) => s.id === sessionId)?.working_dir ?? null),
   );
 
   $effect(() => {
@@ -306,6 +319,7 @@
                 turnIdx === lastAssistantTurnIndex}
               turnsAfterCount={conversationStore.turns.length - 1 - turnIdx}
               {isPaired}
+              workingDir={activeWorkingDir}
             />
           </VirtualItem>
           <!-- Reorg audit dividers appear after their anchor turn. -->

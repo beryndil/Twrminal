@@ -34,14 +34,28 @@
     MENU_TARGET_TOOL_CALL,
   } from "../../config";
   import { contextMenu } from "../../actions/contextMenu";
+  import { linkifyToHtml } from "../../linkify";
+  import { sanitizeHtml } from "../../sanitize";
   import CollapsibleBody from "../common/CollapsibleBody.svelte";
   import type { ToolCallView } from "../../stores/conversation.svelte";
 
   interface Props {
     call: ToolCallView;
+    /**
+     * Absolute working directory of the active session, forwarded from
+     * ``Conversation.svelte`` via ``MessageTurn.svelte``. When provided,
+     * workspace-relative paths in the tool output (e.g.
+     * ``src/bearings/agent/runner.py``) resolve against this root and
+     * render as clickable ``data-link-kind="file"`` anchors.  When
+     * ``null`` only absolute paths and explicit URLs become anchors.
+     *
+     * Per ``docs/behavior/tool-output-streaming.md``
+     * §"Clickable file paths and URLs in output" (gap-cycle-06-004).
+     */
+    workingDir?: string | null;
   }
 
-  const { call }: Props = $props();
+  const { call, workingDir = null }: Props = $props();
 
   // ---- context-menu handlers -------------------------------------------------
 
@@ -175,11 +189,13 @@
         {CONVERSATION_STRINGS.toolStatusRunning}…
       </p>
     {:else}
+      <!-- eslint-disable svelte/no-at-html-tags -->
       <CollapsibleBody class="mt-2">
         <pre
           class="whitespace-pre-wrap break-words font-mono text-fg"
-          data-testid="tool-output-stream">{call.output}</pre>
+          data-testid="tool-output-stream">{@html sanitizeHtml(linkifyToHtml(call.output, { workingDir: workingDir ?? undefined }))}</pre>
       </CollapsibleBody>
+      <!-- eslint-enable svelte/no-at-html-tags -->
     {/if}
     {#if elidedCount > 0}
       <p class="mt-1 italic text-fg-muted" data-testid="tool-output-truncated">

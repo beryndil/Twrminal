@@ -77,6 +77,19 @@ Some tools produce no output for tens of seconds (sub-agent dispatch, slow web f
 * Even with no output bytes arriving, a periodic keepalive event keeps the per-tab UI reactive (so a backgrounded tab doesn't render a stale state when refocused mid-call).
 * The keepalive is not part of the persisted record. A reconnecting client picks up the live timer from the next live tick rather than replaying keepalives.
 
+## Clickable file paths and URLs in output
+
+File paths and URLs that appear inside tool output are automatically converted to clickable anchors (gap-cycle-06-004):
+
+* **`http(s)://` URLs** become anchors that open in a new tab with `rel="noopener noreferrer"`.
+* **Absolute filesystem paths** (e.g. `/home/user/project/src/foo.py`) become `file://` anchors dispatched to the local "Open in editor" handler — no new tab.
+* **Workspace-relative paths** (e.g. `src/bearings/agent/runner.py`, `frontend/src/lib/x.svelte`) are resolved against the active session's `working_dir` and rendered as `file://` anchors. Paths that cannot be resolved (no `working_dir` set, or the path would escape the project root via `..`) are left as plain text rather than producing a broken anchor.
+* **Explicit `file://` URLs** are treated as file anchors directly.
+* **Selecting and copying** a linkified span copies the visible text (the path or URL as the tool printed it), not the underlying `href`.
+* **ANSI escape sequences** are passed through unchanged; this feature does not introduce ANSI colorisation.
+
+The same linkification pipeline is used for user message bubbles in the conversation body (see [chat](chat.md) §"Conversation rendering").
+
 ## What the user does NOT see
 
 * **Per-byte timestamps.** The streamed output is rendered as bytes, not as a time-stamped log. Per-call start / end times are visible on the row; per-chunk arrival times are not surfaced.

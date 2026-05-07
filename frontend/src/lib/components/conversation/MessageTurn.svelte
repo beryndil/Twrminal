@@ -94,6 +94,17 @@
      * (gap-cycle-03-007).
      */
     isPaired?: boolean;
+    /**
+     * Absolute working directory of the active session.  Forwarded to
+     * each ``ToolOutput`` row so workspace-relative paths in tool output
+     * (e.g. ``src/bearings/agent/runner.py``) become clickable
+     * ``data-link-kind="file"`` anchors.  Plumbed from
+     * ``Conversation.svelte`` via the sessions store.
+     *
+     * Per ``docs/behavior/tool-output-streaming.md``
+     * §"Clickable file paths and URLs in output" (gap-cycle-06-004).
+     */
+    workingDir?: string | null;
   }
 
   const {
@@ -103,6 +114,7 @@
     isLastAssistantTurn = false,
     turnsAfterCount = 0,
     isPaired = false,
+    workingDir = null,
   }: Props = $props();
 
   function handleAskForMoreDetail(): void {
@@ -401,7 +413,7 @@
         </summary>
         <div class="px-2 py-1">
           {#each turn.toolCalls as call (call.id)}
-            <ToolOutput {call} />
+            <ToolOutput {call} {workingDir} />
           {/each}
         </div>
       </details>
