@@ -156,8 +156,23 @@
    */
   let selections = $state<string[][]>([]);
 
+  /**
+   * Per-question "Other" free-text for the structured branch. Parallel to
+   * ``selections`` — index matches the ``questions`` array. When a question's
+   * Other string is non-empty at submit time it takes precedence over the
+   * radio selection (single-select) or is appended after the selected labels
+   * (multi-select).
+   */
+  let otherTexts = $state<string[]>([]);
+
   $effect(() => {
-    selections = parsed.kind === "structured" ? parsed.questions.map(() => []) : [];
+    if (parsed.kind === "structured") {
+      selections = parsed.questions.map(() => []);
+      otherTexts = parsed.questions.map(() => "");
+    } else {
+      selections = [];
+      otherTexts = [];
+    }
   });
 
   /** Free-text answer for legacy + unknown branches. */
@@ -189,14 +204,23 @@
     selections = next;
   }
 
+  /** Update the Other free-text at ``questionIdx``. */
+  function setOther(questionIdx: number, value: string): void {
+    const next = otherTexts.slice();
+    next[questionIdx] = value;
+    otherTexts = next;
+  }
+
   /**
-   * True when every question in the structured branch has ≥1 selection.
-   * Used to gate the submit button.
+   * True when every question in the structured branch has ≥1 selection OR a
+   * non-empty Other text. Used to gate the submit button.
    */
   const structuredAnswered = $derived(
     parsed.kind === "structured" &&
       selections.length === parsed.questions.length &&
-      selections.every((picks) => picks.length > 0),
+      selections.every(
+        (picks, idx) => picks.length > 0 || (otherTexts[idx]?.trim() ?? "") !== "",
+      ),
   );
 
   /**
@@ -210,17 +234,35 @@
 
   /**
    * Build the ``answer`` string sent to the broker. Structured input is
-   * collapsed to one labelled line per question (header or trimmed
-   * question prefix, then the picked option labels joined by ``", "``);
-   * legacy/unknown input is the raw trimmed text.
+   * collapsed to one labelled line per question (header or trimmed question
+   * prefix, then the answer text). The answer text for a question is:
+   *
+   * - If Other is non-empty and single-select: the Other text (takes
+   *   precedence over any radio pick).
+   * - If Other is non-empty and multi-select: the selected labels joined by
+   *   ``", "`` followed by ``", "`` and the Other text.
+   * - If Other is empty: the selected labels joined by ``", "``.
+   *
+   * Legacy/unknown input uses the raw trimmed free-text.
    */
   function buildAnswer(): string {
     if (parsed.kind !== "structured") return freeText.trim();
     const lines: string[] = [];
     parsed.questions.forEach((question, idx) => {
       const picks = selections[idx] ?? [];
+      const other = (otherTexts[idx] ?? "").trim();
       const prefix = question.header ?? question.question;
-      lines.push(`${prefix}: ${picks.join(", ")}`);
+      let answer: string;
+      if (other !== "") {
+        if (question.multiSelect && picks.length > 0) {
+          answer = [...picks, other].join(", ");
+        } else {
+          answer = other;
+        }
+      } else {
+        answer = picks.join(", ");
+      }
+      lines.push(`${prefix}: ${answer}`);
     });
     return lines.join("\n");
   }
@@ -352,6 +394,24 @@
                   </li>
                 {/each}
               </ul>
+              <div class="mt-1.5">
+                <label
+                  class="mb-1 block text-xs font-medium text-fg-muted"
+                  for={`other-q${qIdx}`}
+                >
+                  {APPROVAL_STRINGS.otherLabel}
+                </label>
+                <input
+                  id={`other-q${qIdx}`}
+                  type="text"
+                  class="w-full rounded border border-border bg-surface-2 px-3 py-1.5 text-sm text-fg-strong placeholder:text-fg-muted focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                  placeholder={APPROVAL_STRINGS.otherPlaceholder}
+                  disabled={submitting}
+                  value={otherTexts[qIdx] ?? ""}
+                  oninput={(e) => setOther(qIdx, (e.currentTarget as HTMLInputElement).value)}
+                  data-testid="ask-modal-other"
+                />
+              </div>
             </li>
           {/each}
         </ol>

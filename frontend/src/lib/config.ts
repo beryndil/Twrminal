@@ -2812,6 +2812,14 @@ export const APPROVAL_STRINGS = {
   multiSelectHint: "Pick one or more",
   validationMissingSelection: "Pick an answer for every question.",
   /**
+   * Per-question "Other" free-text input rendered below the option list in
+   * the structured branch. When non-empty at submit time the Other text
+   * takes precedence over a radio selection (single-select) or is appended
+   * after the selected labels (multi-select).
+   */
+  otherLabel: "Other",
+  otherPlaceholder: "Type a custom answer…",
+  /**
    * Fallback when neither ``{question}`` nor ``{questions: [...]}`` shape
    * is recognised — the modal pretty-prints the raw input alongside a
    * free-text answer box so the user can still respond.

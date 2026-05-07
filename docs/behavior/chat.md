@@ -208,7 +208,7 @@ When the agent invokes a tool that requires user approval, a centred modal opens
 
 * **Agent question** — when the agent invokes the built-in `AskUserQuestion` tool. The modal title reads "Agent is asking:" and the body adapts to one of three shapes the tool input can take:
 
-    * *Structured* `{questions: [...]}` — one block per question, each with a header (small caps), the question prompt, a "Pick one" / "Pick one or more" hint, and a list of selectable options. Single-select questions render as radios; `multiSelect: true` renders checkboxes. The Submit button stays disabled until every question has at least one selection. On submit, picks are encoded as one labelled line per question (e.g. `Schema: First-class column`) joined by newlines, and posted as the `answer` text.
+    * *Structured* `{questions: [...]}` — one block per question, each with a header (small caps), the question prompt, a "Pick one" / "Pick one or more" hint, a list of selectable options, and an **Other** free-text input below the option list. Single-select questions render as radios; `multiSelect: true` renders checkboxes. The Submit button stays disabled until every question has at least one selection **or** a non-empty Other text. On submit, picks are encoded as one labelled line per question (e.g. `Schema: First-class column`) joined by newlines and posted as the `answer` text. When Other is non-empty: for single-select it replaces the radio pick; for multi-select it is appended after the selected labels (e.g. `Tags: alpha, beta, my custom tag`).
 
     * *Legacy free-text* `{question: "..."}` — a textarea with placeholder "Type your answer…" and a Submit button. Enter (without shift) submits; Shift+Enter inserts a newline.
 

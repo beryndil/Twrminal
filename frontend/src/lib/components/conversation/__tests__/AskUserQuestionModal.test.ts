@@ -240,6 +240,94 @@ describe("AskUserQuestionModal — Cancel button (gap-cycle-10-007)", () => {
   });
 });
 
+describe("AskUserQuestionModal — Other free-text input (gap-cycle-10-008)", () => {
+  it("renders one Other input per structured question", () => {
+    const { getAllByTestId } = render(AskUserQuestionModal, {
+      props: { sessionId: "ses_a", approval: makeApproval(STRUCTURED_FIXTURE) },
+    });
+    // STRUCTURED_FIXTURE has 2 questions — expect 2 Other inputs.
+    const others = getAllByTestId("ask-modal-other") as HTMLInputElement[];
+    expect(others.length).toBe(2);
+    expect(others[0].value).toBe("");
+    expect(others[1].value).toBe("");
+  });
+
+  it("Other text overrides radio selection (single-select precedence)", async () => {
+    const { getAllByTestId, getByTestId } = render(AskUserQuestionModal, {
+      props: { sessionId: "ses_a", approval: makeApproval(STRUCTURED_FIXTURE) },
+    });
+    const radios = getAllByTestId("ask-modal-radio") as HTMLInputElement[];
+    const others = getAllByTestId("ask-modal-other") as HTMLInputElement[];
+
+    // Pick a radio for q1, then type Other text — Other should win.
+    await fireEvent.click(radios[0]); // q1 → First-class column
+    await fireEvent.input(others[0], { target: { value: "custom q1 answer" } });
+    // q2 still needs an answer — use Other only (no radio click).
+    await fireEvent.input(others[1], { target: { value: "custom q2 answer" } });
+
+    const submit = getByTestId("ask-modal-submit") as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+
+    await fireEvent.click(submit);
+    await waitFor(() => {
+      expect(postApprovalMock).toHaveBeenCalledTimes(1);
+    });
+    const answer: string = postApprovalMock.mock.calls[0][3];
+    // Other takes precedence for q1 (single-select); Other is sole answer for q2.
+    expect(answer).toBe("Schema: custom q1 answer\nCardinality: custom q2 answer");
+  });
+
+  it("Other text is appended after selections for multi-select questions", async () => {
+    const multi = {
+      questions: [
+        {
+          header: "Extras",
+          question: "Which extras do you want?",
+          multiSelect: true,
+          options: [{ label: "alpha" }, { label: "beta" }],
+        },
+      ],
+    };
+    const { getAllByTestId, getByTestId } = render(AskUserQuestionModal, {
+      props: { sessionId: "ses_a", approval: makeApproval(multi) },
+    });
+    const checkboxes = getAllByTestId("ask-modal-checkbox") as HTMLInputElement[];
+    const others = getAllByTestId("ask-modal-other") as HTMLInputElement[];
+
+    await fireEvent.click(checkboxes[0]); // alpha
+    await fireEvent.input(others[0], { target: { value: "gamma" } });
+
+    await fireEvent.click(getByTestId("ask-modal-submit"));
+    await waitFor(() => {
+      expect(postApprovalMock).toHaveBeenCalledTimes(1);
+    });
+    // Selected labels come first, then the Other text, joined by ", ".
+    expect(postApprovalMock.mock.calls[0][3]).toBe("Extras: alpha, gamma");
+  });
+
+  it("Other alone (no radio pick) satisfies the submit gate for that question", async () => {
+    const single = {
+      questions: [
+        {
+          header: "Preference",
+          question: "Which option?",
+          multiSelect: false,
+          options: [{ label: "A" }, { label: "B" }],
+        },
+      ],
+    };
+    const { getAllByTestId, getByTestId } = render(AskUserQuestionModal, {
+      props: { sessionId: "ses_a", approval: makeApproval(single) },
+    });
+    const submit = getByTestId("ask-modal-submit") as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+
+    const others = getAllByTestId("ask-modal-other") as HTMLInputElement[];
+    await fireEvent.input(others[0], { target: { value: "my custom answer" } });
+    expect(submit.disabled).toBe(false);
+  });
+});
+
 describe("AskUserQuestionModal — unknown shape fallback", () => {
   it("pretty-prints the raw JSON and falls back to a free-text answer box", async () => {
     const { getByTestId, queryByTestId } = render(AskUserQuestionModal, {
