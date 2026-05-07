@@ -25,11 +25,12 @@
 
   import { connectSession, disconnectSession } from "../../agent.svelte";
   import { listMessages, listToolCalls } from "../../api/messages";
-  import { getSessionTodos } from "../../api/sessions";
+  import { getSessionTodos, getSessionTokens } from "../../api/sessions";
   import { CONVERSATION_STRINGS, MESSAGE_PAGE_SIZE } from "../../config";
   import {
     conversationStore,
     hydrateTodos,
+    hydrateTokens,
     hydrateTurns,
     hydrateToolCalls,
     loadOlder,
@@ -177,6 +178,19 @@
           }
         } catch {
           // Non-fatal: panel stays hidden until the agent re-emits TodoWrite.
+        }
+        // Seed session token totals from the persisted DB aggregate
+        // (gap-cycle-13-003). Sets hydrateTokens() which also marks
+        // _tokensHydratedPending so WS replay message_complete events do
+        // not double-count the already-aggregated historical totals.
+        // runner_status (end of replay) clears the flag so live turns
+        // accumulate on top of the hydrated base. Errors are non-fatal —
+        // token counters fall back to the WS replay accumulation path.
+        try {
+          const tokenTotals = await getSessionTokens(sid);
+          if (!cancelled) hydrateTokens(tokenTotals);
+        } catch {
+          // Non-fatal: totals accumulate from WS replay as before.
         }
       } catch (error) {
         if (cancelled) return;

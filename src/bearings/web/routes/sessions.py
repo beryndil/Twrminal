@@ -90,6 +90,7 @@ from bearings.web.models.sessions import (
     SessionPinnedUpdate,
     SessionTodosOut,
     SessionUpdate,
+    TokenTotalsOut,
     ToolCallOut,
 )
 from bearings.web.routes.ws_sessions import SessionsBroadcaster
@@ -890,6 +891,51 @@ async def get_session_todos(
     except (ValueError, AttributeError):
         todos_json = "[]"
     return SessionTodosOut(todos_json=todos_json)
+
+
+# ---- token totals hydration (gap-cycle-13-003) -----------------------------
+
+
+@router.get(
+    "/api/sessions/{session_id}/tokens",
+    response_model=TokenTotalsOut,
+)
+async def get_session_tokens(
+    session_id: str,
+    request: Request,
+) -> TokenTotalsOut:
+    """Return aggregated lifetime token totals for a session.
+
+    Per ``docs/behavior/chat.md`` §"Token totals hydration contract"
+    (gap-cycle-13-003), the conversation pane calls this once on
+    session open alongside ``listMessagesPage`` / ``hydrateToolCalls`` /
+    ``hydrateTodos`` so the Inspector Metrics tab and the header
+    dollar/token meter paint non-zero totals on first render instead of
+    starting from zero and waiting for WebSocket replay.
+
+    * ``200`` — :class:`TokenTotalsOut` with ``input``, ``output``,
+      ``cache_read``, and ``cache_creation`` summed across all
+      assistant-role message rows for the session.  ``cache_creation``
+      is always ``0`` in v18 (no ``cache_creation_tokens`` column).
+    * ``404`` — session not found.
+
+    Returns ``0`` for all fields when the session exists but has no
+    assistant turns yet (newly created session, first prompt not yet
+    completed).
+    """
+    db = _db(request)
+    if not await sessions_db.exists(db, session_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no session matches {session_id!r}",
+        )
+    inp, out, cache_read, cache_creation = await messages_db.get_token_totals(db, session_id)
+    return TokenTotalsOut(
+        input=inp,
+        output=out,
+        cache_read=cache_read,
+        cache_creation=cache_creation,
+    )
 
 
 # ---- export / import -------------------------------------------------------

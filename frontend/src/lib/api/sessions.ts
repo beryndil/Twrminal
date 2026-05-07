@@ -666,6 +666,43 @@ export async function spawnFromReply(
 }
 
 /**
+ * Wire shape for ``GET /api/sessions/{id}/tokens`` (gap-cycle-13-003).
+ *
+ * Aggregated lifetime token totals from persisted ``message_complete``
+ * rows.  All fields are non-negative integers; NULLs in the DB are
+ * treated as 0.  ``cache_creation`` is always ``0`` in v18 — reserved
+ * for when the backend surface for ``cache_creation_tokens`` lands.
+ */
+export interface SessionTokenTotalsOut {
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_creation: number;
+}
+
+/**
+ * Fetch aggregated lifetime token totals for a session via
+ * ``GET /api/sessions/{id}/tokens`` (gap-cycle-13-003).
+ *
+ * Called once on session open alongside ``listMessagesPage`` /
+ * ``hydrateToolCalls`` / ``hydrateTodos`` so the Inspector Metrics tab
+ * and the header dollar/token meter paint non-zero totals immediately
+ * rather than waiting for WebSocket replay.
+ *
+ * Returns ``{input:0, output:0, cache_read:0, cache_creation:0}`` when
+ * the session exists but has no assistant turns yet.
+ *
+ * @throws :class:`ApiError` on 404 (session not found) or 5xx.
+ */
+export async function getSessionTokens(
+  sessionId: string,
+  options: RequestOptions = {},
+): Promise<SessionTokenTotalsOut> {
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}/tokens`;
+  return await getJson<SessionTokenTotalsOut>(path, options);
+}
+
+/**
  * Wire shape for ``GET /api/sessions/{id}/todos`` (gap-cycle-03-013).
  *
  * ``todos_json`` is the serialised ``todos`` array from the most-recent

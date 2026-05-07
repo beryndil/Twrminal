@@ -24,6 +24,7 @@
  */
 import type { AgentEvent, RunnerStatusEvent } from "../api/events";
 import { listMessages, type MessageOut, type MessagePage, type ToolCallOut } from "../api/messages";
+import type { SessionTokenTotalsOut } from "../api/sessions";
 import type { StreamFrame } from "../api/streaming";
 import { CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS, MESSAGE_PAGE_SIZE, WS_FRAME_KIND_EVENT } from "../config";
 
@@ -262,6 +263,25 @@ interface ConversationState {
    * display (gap-cycle-01-019).
    */
   sessionCacheReadTokens: number;
+  /**
+   * Cumulative cache-creation (write) tokens for this session. Always
+   * ``0`` in v18 — the ``messages`` table and ``message_complete``
+   * event do not carry ``cache_creation_tokens`` yet. Reserved for
+   * when the backend surface lands; initialised from the hydration
+   * response (gap-cycle-13-003).
+   */
+  sessionCacheWriteTokens: number;
+  /**
+   * Guard flag set by :func:`hydrateTokens` and cleared by
+   * ``runner_status`` (end of WS replay). While ``true``,
+   * :func:`applySessionTokens` skips accumulation so that WS replay
+   * of historical ``message_complete`` events does not double-count
+   * tokens already captured in the hydrated DB aggregate.
+   *
+   * Prefixed ``_`` — internal implementation detail; consumers should
+   * read ``session*Tokens`` only.
+   */
+  _tokensHydratedPending: boolean;
 }
 
 const state: ConversationState = $state({
@@ -282,6 +302,8 @@ const state: ConversationState = $state({
   sessionInputTokens: 0,
   sessionOutputTokens: 0,
   sessionCacheReadTokens: 0,
+  sessionCacheWriteTokens: 0,
+  _tokensHydratedPending: false,
 });
 
 export const conversationStore = state;
@@ -384,6 +406,31 @@ export function hydrateTodos(todosJson: string): void {
 }
 
 /**
+ * Seed session token totals from the DB hydration payload returned by
+ * ``GET /api/sessions/{id}/tokens`` (gap-cycle-13-003).
+ *
+ * Called once on session open before the WebSocket subscription is
+ * established so the Inspector Metrics tab and the header token/dollar
+ * meter paint the correct lifetime totals immediately rather than
+ * starting at zero and accumulating via WS replay.
+ *
+ * Sets :data:`_tokensHydratedPending` to ``true`` so that
+ * :func:`applySessionTokens` ignores historical ``message_complete``
+ * events during WS replay (they are already counted in the DB
+ * aggregate).  The flag is cleared by :func:`applyRunnerStatus` when
+ * the ``runner_status`` synthetic frame signals the end of replay;
+ * from that point forward ``message_complete`` events for genuinely
+ * new turns accumulate on top of the hydrated base.
+ */
+export function hydrateTokens(totals: SessionTokenTotalsOut): void {
+  state.sessionInputTokens = totals.input;
+  state.sessionOutputTokens = totals.output;
+  state.sessionCacheReadTokens = totals.cache_read;
+  state.sessionCacheWriteTokens = totals.cache_creation;
+  state._tokensHydratedPending = true;
+}
+
+/**
  * Prepend an older page in front of the current turns (item 1.3
  * ``loadOlder()``). Called after a successful ``before=`` fetch;
  * updates ``hasMore`` + ``oldestSeq`` for the next call.
@@ -413,6 +460,8 @@ export function resetConversation(sessionId: string | null): void {
   state.sessionInputTokens = 0;
   state.sessionOutputTokens = 0;
   state.sessionCacheReadTokens = 0;
+  state.sessionCacheWriteTokens = 0;
+  state._tokensHydratedPending = false;
 }
 
 /**
@@ -493,10 +542,18 @@ export function ingestFrame(frame: StreamFrame): void {
  * Reconcile ``streamingActive`` / ``currentTurnId`` from a
  * ``runner_status`` frame (item 1.4). Called before the seq-dedup
  * filter so the synthetic post-replay frame is never silently dropped.
+ *
+ * Also clears :data:`_tokensHydratedPending` (gap-cycle-13-003): the
+ * ``runner_status`` frame is the synthetic post-replay signal that
+ * marks the end of ring-buffer replay.  After this point,
+ * ``message_complete`` events are from genuinely new turns and
+ * :func:`applySessionTokens` resumes accumulating on top of the
+ * hydrated base.
  */
 function applyRunnerStatus(event: RunnerStatusEvent): void {
   state.streamingActive = event.streaming_active;
   state.currentTurnId = event.current_turn_id;
+  state._tokensHydratedPending = false;
 }
 
 /**
@@ -594,9 +651,19 @@ function applyCacheHit(event: AgentEvent): void {
  * running session totals when both are non-null. Null counts (cache-only
  * turns or pure-tool turns where the SDK omits token data) are skipped so
  * the accumulated total reflects only turns with reliable token data.
+ *
+ * When :data:`_tokensHydratedPending` is ``true`` (set by
+ * :func:`hydrateTokens`, cleared by :func:`applyRunnerStatus`),
+ * accumulation is suppressed so that WS ring-buffer replay of historical
+ * ``message_complete`` events does not double-count tokens already
+ * captured in the DB aggregate (gap-cycle-13-003).
  */
 function applySessionTokens(event: AgentEvent): void {
   if (event.type !== "message_complete") return;
+  // Skip historical replay events: their tokens are already in the
+  // hydrated DB aggregate.  _tokensHydratedPending is cleared by
+  // runner_status (end of replay) so live turns still accumulate.
+  if (state._tokensHydratedPending) return;
   const input = event.executor_input_tokens;
   const output = event.executor_output_tokens;
   const cacheRead = event.cache_read_tokens;

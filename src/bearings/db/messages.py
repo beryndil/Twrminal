@@ -407,6 +407,40 @@ async def list_for_session(
     return messages
 
 
+async def get_token_totals(
+    connection: aiosqlite.Connection,
+    session_id: str,
+) -> tuple[int, int, int, int]:
+    """Aggregate lifetime token totals for ``session_id``.
+
+    Returns ``(input, output, cache_read, cache_creation)`` summed across
+    all assistant-role rows.  NULL token fields are treated as 0 by
+    ``COALESCE``.  ``cache_creation`` is always ``0`` in v18 — the
+    ``messages`` table has no ``cache_creation_tokens`` column yet; the
+    slot is reserved in the response shape for when the backend surface
+    lands.
+
+    Per ``docs/behavior/chat.md`` §"Token totals hydration contract"
+    (gap-cycle-13-003).
+    """
+    cursor = await connection.execute(
+        "SELECT"
+        "  COALESCE(SUM(executor_input_tokens), 0),"
+        "  COALESCE(SUM(executor_output_tokens), 0),"
+        "  COALESCE(SUM(cache_read_tokens), 0)"
+        " FROM messages"
+        " WHERE session_id = ? AND role = 'assistant'",
+        (session_id,),
+    )
+    try:
+        row = await cursor.fetchone()
+    finally:
+        await cursor.close()
+    if row is None:
+        return (0, 0, 0, 0)
+    return (int(row[0]), int(row[1]), int(row[2]), 0)
+
+
 async def count_for_session(
     connection: aiosqlite.Connection,
     session_id: str,
@@ -695,6 +729,7 @@ __all__ = [
     "delete",
     "get",
     "get_preceding_user_message",
+    "get_token_totals",
     "import_messages",
     "insert_assistant",
     "insert_system",

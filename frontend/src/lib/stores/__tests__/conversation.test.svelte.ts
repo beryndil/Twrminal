@@ -21,6 +21,7 @@ import {
   applyEvent,
   conversationStore,
   hydrateTodos,
+  hydrateTokens,
   hydrateTurns,
   hydrateToolCalls,
   ingestFrame,
@@ -654,5 +655,168 @@ describe("hydrateTodos — seed before WS event", () => {
     expect(conversationStore.liveTodos).toHaveLength(2);
     resetConversation(null);
     expect(conversationStore.liveTodos).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Token totals hydration (gap-cycle-13-003)
+// ---------------------------------------------------------------------------
+
+const sampleTokenTotals = {
+  input: 1000,
+  output: 500,
+  cache_read: 200,
+  cache_creation: 0,
+};
+
+/** Minimal message_complete frame for token accumulation tests. */
+function makeMessageComplete(
+  messageId: string,
+  overrides: {
+    executor_input_tokens?: number | null;
+    executor_output_tokens?: number | null;
+    cache_read_tokens?: number | null;
+  } = {},
+) {
+  return {
+    kind: WS_FRAME_KIND_EVENT as typeof WS_FRAME_KIND_EVENT,
+    seq: Math.floor(Math.random() * 1_000_000) + 1,
+    event: {
+      session_id: sid,
+      type: "message_complete" as const,
+      message_id: messageId,
+      content: "",
+      executor_input_tokens: overrides.executor_input_tokens ?? 100,
+      executor_output_tokens: overrides.executor_output_tokens ?? 50,
+      advisor_input_tokens: null,
+      advisor_output_tokens: null,
+      advisor_calls_count: 0,
+      cache_read_tokens: overrides.cache_read_tokens ?? null,
+      input_tokens: null,
+      output_tokens: null,
+    },
+  };
+}
+
+describe("hydrateTokens — seed before WS events", () => {
+  it("sets all four session token counters from the DB aggregate", () => {
+    expect(conversationStore.sessionInputTokens).toBe(0);
+    expect(conversationStore.sessionOutputTokens).toBe(0);
+    expect(conversationStore.sessionCacheReadTokens).toBe(0);
+    expect(conversationStore.sessionCacheWriteTokens).toBe(0);
+    hydrateTokens(sampleTokenTotals);
+    expect(conversationStore.sessionInputTokens).toBe(1000);
+    expect(conversationStore.sessionOutputTokens).toBe(500);
+    expect(conversationStore.sessionCacheReadTokens).toBe(200);
+    expect(conversationStore.sessionCacheWriteTokens).toBe(0);
+  });
+
+  it("sets _tokensHydratedPending so WS replay is suppressed", () => {
+    hydrateTokens(sampleTokenTotals);
+    expect(conversationStore._tokensHydratedPending).toBe(true);
+  });
+
+  it("WS message_complete events during replay do NOT add to hydrated totals", () => {
+    resetConversation(sid);
+    hydrateTokens(sampleTokenTotals);
+    // Simulate WS replay delivering a historical message_complete.
+    ingestFrame(makeMessageComplete("a1"));
+    // Token counters must remain at the hydrated values (no accumulation).
+    expect(conversationStore.sessionInputTokens).toBe(1000);
+    expect(conversationStore.sessionOutputTokens).toBe(500);
+  });
+
+  it("runner_status clears _tokensHydratedPending", () => {
+    resetConversation(sid);
+    hydrateTokens(sampleTokenTotals);
+    expect(conversationStore._tokensHydratedPending).toBe(true);
+    // runner_status is synthetic (seq=0) — goes through the pre-dedup path.
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 0,
+      event: {
+        type: "runner_status",
+        session_id: sid,
+        streaming_active: false,
+        current_turn_id: null,
+      },
+    });
+    expect(conversationStore._tokensHydratedPending).toBe(false);
+  });
+
+  it("message_complete after runner_status adds delta on top of hydrated totals", () => {
+    resetConversation(sid);
+    hydrateTokens(sampleTokenTotals);
+    // End of replay.
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 0,
+      event: {
+        type: "runner_status",
+        session_id: sid,
+        streaming_active: false,
+        current_turn_id: null,
+      },
+    });
+    // New live turn completes.
+    ingestFrame(makeMessageComplete("a_new", { executor_input_tokens: 50, executor_output_tokens: 25 }));
+    expect(conversationStore.sessionInputTokens).toBe(1050);
+    expect(conversationStore.sessionOutputTokens).toBe(525);
+  });
+
+  it("cache_read counter included in hydration and live accumulation", () => {
+    resetConversation(sid);
+    hydrateTokens({ input: 0, output: 0, cache_read: 400, cache_creation: 0 });
+    // End of replay.
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 0,
+      event: {
+        type: "runner_status",
+        session_id: sid,
+        streaming_active: false,
+        current_turn_id: null,
+      },
+    });
+    // New live turn with cache read.
+    ingestFrame(
+      makeMessageComplete("a_cache", {
+        executor_input_tokens: 10,
+        executor_output_tokens: 5,
+        cache_read_tokens: 100,
+      }),
+    );
+    expect(conversationStore.sessionCacheReadTokens).toBe(500);
+  });
+
+  it("resetConversation clears hydrated token counters and pending flag", () => {
+    hydrateTokens(sampleTokenTotals);
+    expect(conversationStore.sessionInputTokens).toBe(1000);
+    expect(conversationStore._tokensHydratedPending).toBe(true);
+    resetConversation(null);
+    expect(conversationStore.sessionInputTokens).toBe(0);
+    expect(conversationStore.sessionOutputTokens).toBe(0);
+    expect(conversationStore.sessionCacheReadTokens).toBe(0);
+    expect(conversationStore.sessionCacheWriteTokens).toBe(0);
+    expect(conversationStore._tokensHydratedPending).toBe(false);
+  });
+
+  it("without hydration, WS accumulation works as before (no regression)", () => {
+    resetConversation(sid);
+    // No hydrateTokens call — _tokensHydratedPending stays false.
+    // runner_status fires (end of replay) — flag already false.
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 0,
+      event: {
+        type: "runner_status",
+        session_id: sid,
+        streaming_active: false,
+        current_turn_id: null,
+      },
+    });
+    ingestFrame(makeMessageComplete("a1", { executor_input_tokens: 200, executor_output_tokens: 80 }));
+    expect(conversationStore.sessionInputTokens).toBe(200);
+    expect(conversationStore.sessionOutputTokens).toBe(80);
   });
 });

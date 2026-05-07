@@ -563,3 +563,32 @@ Stale checks for move: the moved message no longer exists in the target session 
 ### Divider rendering
 
 `ReorgAuditDivider` already renders all three kinds correctly. `Conversation.svelte` now passes `onUndo` for any entry with a `serverAuditId` (previously only for `kind === "merge"`).
+
+---
+
+## Addendum — gap-cycle-13-003: token totals hydration contract
+
+### Problem
+
+The Inspector Metrics tab and the header dollar/token meter derive their per-session input / output / cache-read token totals from `conversationStore.session*Tokens` counters that accumulate exclusively from `message_complete` WebSocket events received in the current page-life. On session open, `resetConversation()` zeros the counters; they grow as the WS ring-buffer replay delivers historical events. For sessions whose runner has been reaped or whose events are older than the 5 000-event ring-buffer cap, no replay arrives and the counters stay at zero — even though the complete token history is durably stored in the `messages` table.
+
+### New server endpoint
+
+`GET /api/sessions/{id}/tokens` returns `{input, output, cache_read, cache_creation}` — the `COALESCE(SUM(...), 0)` aggregate over all assistant-role rows for the session. `cache_creation` is always `0` in v18 (no `cache_creation_tokens` column); the field is reserved for when the backend surface lands. Returns `404` when the session is absent; returns all-zero totals when the session exists but has no completed assistant turns.
+
+### Hydration contract
+
+The conversation pane calls `GET /api/sessions/{id}/tokens` once on session open, sequentially after `listMessagesPage` / `hydrateToolCalls` / `hydrateTodos` and before `connectSession` (WS subscribe). `hydrateTokens(totals)` from `conversation.svelte.ts`:
+
+1. Sets `sessionInputTokens`, `sessionOutputTokens`, `sessionCacheReadTokens`, `sessionCacheWriteTokens` from the response.
+2. Sets an internal flag `_tokensHydratedPending = true`.
+
+The flag suppresses accumulation in `applySessionTokens` while WS ring-buffer replay is in progress so that historical `message_complete` replay events do not double-count tokens already captured in the DB aggregate.
+
+When the WS delivers the synthetic `runner_status` frame (emitted after ring-buffer replay is complete), `applyRunnerStatus` clears `_tokensHydratedPending`. From that point forward, `message_complete` events for genuinely new turns accumulate on top of the hydrated base.
+
+**No double-counting**: WS replay fires before `runner_status`; accumulation is suppressed for that window. Live turns fire after `runner_status`; they accumulate normally.
+
+**Failure handling**: If the `/tokens` fetch fails, `hydrateTokens` is never called, `_tokensHydratedPending` stays `false`, and the counters fall back to the previous WS-replay-only behaviour (starts at zero, grows with replay). Non-fatal.
+
+**Session-switch**: `resetConversation()` zeros all four token counters and clears `_tokensHydratedPending`. The hydration flow runs fresh for each session selection.

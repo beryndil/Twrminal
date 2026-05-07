@@ -993,3 +993,146 @@ async def test_stop_session_503_without_registry(
     with TestClient(app) as client:
         response = client.post(f"/api/sessions/{sid}/stop")
     assert response.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# GET /api/sessions/{id}/tokens — token totals hydration (gap-cycle-13-003)
+# ---------------------------------------------------------------------------
+
+
+async def _insert_assistant_with_tokens(
+    conn: aiosqlite.Connection,
+    session_id: str,
+    *,
+    executor_input_tokens: int | None,
+    executor_output_tokens: int | None,
+    cache_read_tokens: int | None,
+) -> Message:
+    """Insert an assistant row carrying the given token columns."""
+    from bearings.db.messages import insert_assistant
+
+    return await insert_assistant(
+        conn,
+        session_id=session_id,
+        content="reply",
+        executor_model="sonnet",
+        advisor_model=None,
+        effort_level="med",
+        routing_source="default",
+        routing_reason="default",
+        matched_rule_id=None,
+        executor_input_tokens=executor_input_tokens,
+        executor_output_tokens=executor_output_tokens,
+        advisor_input_tokens=None,
+        advisor_output_tokens=None,
+        advisor_calls_count=0,
+        cache_read_tokens=cache_read_tokens,
+    )
+
+
+async def test_get_tokens_unknown_session_404(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Missing session_id returns 404."""
+    app, _ = app_and_db
+    with TestClient(app) as client:
+        response = client.get("/api/sessions/ses_missing/tokens")
+    assert response.status_code == 404
+
+
+async def test_get_tokens_session_with_no_turns_returns_zeros(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """A session whose runner has never started returns all-zero totals.
+
+    Covers the AC: "tokens retrievable for a session whose runner has
+    never started in this process."
+    """
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    with TestClient(app) as client:
+        response = client.get(f"/api/sessions/{sid}/tokens")
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}
+
+
+async def test_get_tokens_aggregates_assistant_rows(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Token totals are summed across multiple assistant rows."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    await _insert_assistant_with_tokens(
+        conn,
+        sid,
+        executor_input_tokens=100,
+        executor_output_tokens=50,
+        cache_read_tokens=200,
+    )
+    await _insert_assistant_with_tokens(
+        conn,
+        sid,
+        executor_input_tokens=300,
+        executor_output_tokens=75,
+        cache_read_tokens=None,  # NULL → treated as 0
+    )
+    with TestClient(app) as client:
+        response = client.get(f"/api/sessions/{sid}/tokens")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["input"] == 400
+    assert body["output"] == 125
+    assert body["cache_read"] == 200
+    assert body["cache_creation"] == 0  # no column in v18 schema
+
+
+async def test_get_tokens_null_fields_treated_as_zero(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Rows with NULL token columns contribute 0 to the aggregate.
+
+    Covers the AC: "cache_creation summed correctly when present" —
+    NULL cache_read_tokens is treated as 0, and cache_creation is
+    always 0 in v18.
+    """
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    await _insert_assistant_with_tokens(
+        conn,
+        sid,
+        executor_input_tokens=None,
+        executor_output_tokens=None,
+        cache_read_tokens=None,
+    )
+    with TestClient(app) as client:
+        response = client.get(f"/api/sessions/{sid}/tokens")
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}
+
+
+async def test_get_tokens_user_rows_excluded(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """User-role messages are not included in the aggregate."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    # Insert a user row (its executor_input_tokens column is NULL — but
+    # even if it weren't, user rows should be excluded from the SUM).
+    await messages_db.insert_user(conn, session_id=sid, content="hello")
+    # One assistant row with known tokens.
+    await _insert_assistant_with_tokens(
+        conn,
+        sid,
+        executor_input_tokens=10,
+        executor_output_tokens=5,
+        cache_read_tokens=20,
+    )
+    with TestClient(app) as client:
+        response = client.get(f"/api/sessions/{sid}/tokens")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["input"] == 10
+    assert body["output"] == 5
+    assert body["cache_read"] == 20

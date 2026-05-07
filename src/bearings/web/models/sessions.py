@@ -260,6 +260,27 @@ class PairedChatInfo(BaseModel):
     item_label: str
 
 
+class TokenTotalsOut(BaseModel):
+    """Response shape for ``GET /api/sessions/{id}/tokens`` (gap-cycle-13-003).
+
+    Aggregated lifetime token totals from persisted ``message_complete``
+    rows for the session.  All fields are non-negative integers; NULLs in
+    the token columns are treated as 0 by the ``COALESCE(SUM(...), 0)``
+    aggregate.
+
+    ``cache_creation`` is always ``0`` in v18 — the ``messages`` table has
+    no ``cache_creation_tokens`` column yet.  The field is included so the
+    response shape is stable when the backend surface lands.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    input: int
+    output: int
+    cache_read: int
+    cache_creation: int
+
+
 class SessionTodosOut(BaseModel):
     """Response shape for ``GET /api/sessions/{id}/todos`` (gap-cycle-03-013).
 
@@ -467,5 +488,6 @@ __all__ = [
     "SessionTitleUpdate",
     "SessionTodosOut",
     "SessionUpdate",
+    "TokenTotalsOut",
     "ToolCallOut",
 ]
