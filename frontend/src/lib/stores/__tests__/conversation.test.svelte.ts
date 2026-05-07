@@ -523,6 +523,7 @@ describe("hydrateToolCalls", () => {
       durationMs: 5,
       errorMessage: null,
       liveElapsedMs: 0,
+      startedAt: 0,
     };
     conversationStore.turns = conversationStore.turns.map((t) =>
       t.id === "a1" ? { ...t, toolCalls: [wsToolCall] } : t,

@@ -76,8 +76,34 @@
     // Omitting the handler renders the entry disabled in the menu.
   });
 
+  // ---- live elapsed clock ---------------------------------------------------
+  //
+  // While the tool is in flight we need the elapsed counter to tick every
+  // second even when the backend's ``tool_progress`` keepalive only arrives
+  // every TOOL_PROGRESS_INTERVAL_S (2 s).  A local ``setInterval`` advances
+  // ``nowMs`` once per second while ``!call.done``; the effect cleans up the
+  // interval automatically when the call completes or the component unmounts.
+  // ``liveElapsedMs`` (from the last ``tool_progress`` frame) floors the
+  // local computation, which prevents a briefly-throttled setInterval (e.g.
+  // backgrounded tab) from showing a value smaller than the server's
+  // authoritative tick once the tab regains focus.
+
+  let nowMs = $state(Date.now());
+
+  $effect(() => {
+    if (call.done) return;
+    const id = setInterval(() => {
+      nowMs = Date.now();
+    }, 1000);
+    return () => {
+      clearInterval(id);
+    };
+  });
+
   const elapsedMs = $derived(
-    call.done && call.durationMs !== null ? call.durationMs : call.liveElapsedMs,
+    call.done && call.durationMs !== null
+      ? call.durationMs
+      : Math.max(nowMs - call.startedAt, call.liveElapsedMs),
   );
   const elapsedLabel = $derived(formatElapsed(elapsedMs));
   const elidedCount = $derived(Math.max(0, call.rawLength - call.output.length));

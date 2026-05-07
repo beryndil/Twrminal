@@ -47,6 +47,15 @@ export interface ToolCallView {
   errorMessage: string | null;
   /** Live elapsed-time tick (ms) from ``tool_progress`` keepalives. */
   liveElapsedMs: number;
+  /**
+   * ``Date.now()`` at the moment the ``tool_call_start`` event was
+   * ingested. Used by ``ToolOutput`` to advance the elapsed readout via
+   * a local ``setInterval`` clock so the counter ticks every second even
+   * when the backend's ``tool_progress`` keepalive only arrives every
+   * ``TOOL_PROGRESS_INTERVAL_S`` seconds. ``0`` for calls hydrated from
+   * the DB (already ``done``; ``durationMs`` drives the display instead).
+   */
+  startedAt: number;
 }
 
 /**
@@ -345,6 +354,7 @@ export function hydrateToolCalls(toolCalls: ToolCallOut[]): void {
           durationMs: tc.duration_ms,
           errorMessage: tc.error_message,
           liveElapsedMs: 0,
+          startedAt: 0,
         };
       }),
     };
@@ -677,6 +687,7 @@ export function applyEvent(
               durationMs: null,
               errorMessage: null,
               liveElapsedMs: 0,
+              startedAt: Date.now(),
             },
           ],
         };

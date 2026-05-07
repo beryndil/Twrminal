@@ -115,6 +115,7 @@ describe("MessageTurn — assistant role", () => {
               durationMs: null,
               errorMessage: null,
               liveElapsedMs: 0,
+              startedAt: 0,
             },
             {
               id: "t2",
@@ -127,6 +128,7 @@ describe("MessageTurn — assistant role", () => {
               durationMs: null,
               errorMessage: null,
               liveElapsedMs: 0,
+              startedAt: 0,
             },
           ],
         }),
