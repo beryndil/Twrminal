@@ -59,6 +59,7 @@
   import PairedChatIndicator from "$lib/components/conversation/PairedChatIndicator.svelte";
   import { reopenSession, getPairedChatInfo, type PairedChatInfo } from "$lib/api/sessions";
   import BackendStatusBanner from "$lib/components/feedback/BackendStatusBanner.svelte";
+  import AuthGate from "$lib/components/feedback/AuthGate.svelte";
 
   interface Props {
     children?: Snippet;
@@ -585,6 +586,10 @@
            Rendered as position:fixed so it overlays without disturbing
            the three-column grid. Hidden while the WS is healthy. -->
       <BackendStatusBanner />
+      <!-- Auth-gate blocking modal (gap-cycle-01-007).
+           Rendered as position:fixed so it overlays the full viewport.
+           Visible only when authStore.blocking is true (WS close 4401). -->
+      <AuthGate />
     </ContextMenuProvider>
     <!-- Item 2.4 — sidebar search overlay. Mounted inside KeybindingsProvider
          so its bindHandler call has access to the live keybindings store. -->

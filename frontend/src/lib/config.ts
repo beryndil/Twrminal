@@ -2204,6 +2204,36 @@ export const BACKEND_STATUS_BANNER_STRINGS = {
   message: "Backend unreachable — retrying",
 } as const;
 
+/**
+ * localStorage key for the Bearings auth token (gap-cycle-01-007).
+ *
+ * The ``bearings-v1:`` namespace groups Bearings keys together; ``auth-token``
+ * identifies the subsystem.  The value is a raw token string — no JSON wrapper.
+ *
+ * Behavior anchor: ``docs/behavior/chat.md`` §"Error states"
+ * "Auth required / token expired".
+ */
+export const AUTH_TOKEN_STORAGE_KEY = "bearings-v1:auth-token";
+
+/**
+ * UI strings for the auth-gate modal (``AuthGate.svelte``, gap-cycle-01-007).
+ *
+ * Behavior anchor: ``docs/behavior/chat.md`` §"Error states"
+ * "Auth required / token expired".
+ */
+export const AUTH_GATE_STRINGS = {
+  /** Dialog heading (visible + used as ``aria-labelledby`` target). */
+  heading: "Auth required",
+  /** Label for the token input. */
+  inputLabel: "Paste your token",
+  /** Placeholder inside the token input. */
+  inputPlaceholder: "sk-ant-…",
+  /** Submit button label in the idle state. */
+  submit: "Submit",
+  /** Submit button label while the save is in-flight. */
+  submitting: "Saving…",
+} as const;
+
 // ---- Derivations -----------------------------------------------------------
 
 /**
