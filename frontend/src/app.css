@@ -125,6 +125,23 @@
   }
 }
 
+/*
+ * Per-theme visual treatments — glass panels, aurora wash, flat
+ * surface variants.  Imported after all Tailwind layers so the
+ * unlayered selectors win by cascade position; each file is also
+ * more specific than any competing Tailwind utility class.
+ *
+ * Source of truth for each theme's effects:
+ *   frontend/src/lib/themes/midnight-glass.css  — glass + aurora
+ *   frontend/src/lib/themes/evergreen.css       — flat, forest-green
+ *   frontend/src/lib/themes/paper-light.css     — flat, cream
+ *   frontend/src/lib/themes/default.css         — flat, Tailwind dark
+ */
+@import "./lib/themes/midnight-glass.css";
+@import "./lib/themes/evergreen.css";
+@import "./lib/themes/paper-light.css";
+@import "./lib/themes/default.css";
+
 /* Markdown prose rendered inside assistant message bubbles. */
 .message-turn__body {
   @apply text-sm leading-relaxed;

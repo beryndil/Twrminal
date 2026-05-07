@@ -1,0 +1,57 @@
+/*
+ * Paper Light theme treatment — flat, cream.
+ *
+ * Light-mode flat surface. A warm two-stop body gradient, hairline
+ * code-block borders tinted with the parchment border colour, a
+ * blue-accent selected-row indicator, and a plain two-pixel focus
+ * outline.  No glass effects — this is intentionally the quietest
+ * theme.
+ *
+ * Color reference (mirrors app.css [data-theme="paper-light"]):
+ *   surface-0  rgb(250, 247, 240) — cream
+ *   surface-2  rgb(234, 228, 213) — warm card
+ *   accent     rgb(25, 91, 168)   — Prussian blue
+ *   border     rgb(196, 188, 168) — warm hairline
+ */
+
+/* ---- Subtle warm body gradient ---------------------------------------- */
+/*
+ * Cream fades very slightly to a warmer parchment at the bottom.
+ * background-attachment: fixed keeps the gradient pinned on scroll,
+ * consistent with the other themes' depth treatment.
+ */
+[data-theme="paper-light"] body {
+  background: linear-gradient(180deg, rgb(250, 247, 240) 0%, rgb(242, 237, 226) 100%);
+  background-attachment: fixed;
+}
+
+/* ---- Selected-row accent — Prussian-blue inset bar + tint ------------- */
+/*
+ * The active nav row carries a 2 px Prussian-blue inset bar and a
+ * very-low-opacity tint field so the selected state reads without
+ * inverting the light-mode palette.
+ */
+[data-theme="paper-light"] .nav-link--active {
+  background: rgba(25, 91, 168, 0.10);
+  box-shadow: inset 2px 0 0 rgb(25, 91, 168);
+  color: rgb(25, 91, 168);
+}
+
+/* ---- Flat code block border ------------------------------------------- */
+/*
+ * A hairline warm-parchment border matches the surface-2 / border
+ * palette and reads cleanly on the cream background.
+ */
+[data-theme="paper-light"] .message-turn__body pre {
+  border: 1px solid rgba(196, 188, 168, 0.80);
+}
+
+/* ---- Flat focus outline ------------------------------------------------ */
+/*
+ * A solid 2 px Prussian-blue outline matches the brand accent without
+ * any glow spread.
+ */
+[data-theme="paper-light"] *:focus-visible {
+  outline: 2px solid rgb(25, 91, 168);
+  outline-offset: 2px;
+}

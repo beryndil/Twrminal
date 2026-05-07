@@ -1,0 +1,55 @@
+/*
+ * Default theme treatment — flat, Tailwind classic dark.
+ *
+ * The "Default" theme uses Tailwind's built-in gray/slate palette.
+ * Its treatment is flat: a subtle two-stop body gradient, hairline
+ * code-block border, sky-blue selected-row indicator, and a plain
+ * two-pixel sky-blue focus outline.  No glass effects.
+ *
+ * Color reference (mirrors app.css [data-theme="default"]):
+ *   surface-0  rgb(17, 24, 39)  — gray-900
+ *   accent     rgb(96, 165, 250) — blue-400
+ *   border     rgb(75, 85, 99)  — gray-600
+ *   blue-300   rgb(147, 197, 253)
+ */
+
+/* ---- Subtle dark body gradient ---------------------------------------- */
+/*
+ * Gray-900 fades to a slightly deeper near-black at the bottom.
+ * background-attachment: fixed keeps the gradient pinned on scroll.
+ */
+[data-theme="default"] body {
+  background: linear-gradient(180deg, rgb(17, 24, 39) 0%, rgb(11, 16, 28) 100%);
+  background-attachment: fixed;
+}
+
+/* ---- Selected-row accent — sky-blue inset bar + tint ------------------ */
+/*
+ * The active nav row carries a 2 px sky-blue inset bar and a very-low-
+ * opacity blue field tint so the selected state reads clearly against
+ * the dark gray background.
+ */
+[data-theme="default"] .nav-link--active {
+  background: rgba(96, 165, 250, 0.14);
+  box-shadow: inset 2px 0 0 rgb(96, 165, 250);
+  color: rgb(147, 197, 253);
+}
+
+/* ---- Flat code block border ------------------------------------------- */
+/*
+ * A hairline gray border marks the code block boundary against the
+ * dark surface without any glow.
+ */
+[data-theme="default"] .message-turn__body pre {
+  border: 1px solid rgba(75, 85, 99, 0.80);
+}
+
+/* ---- Flat focus outline ------------------------------------------------ */
+/*
+ * A solid 2 px sky-blue outline matches the accent colour with no
+ * glow spread.
+ */
+[data-theme="default"] *:focus-visible {
+  outline: 2px solid rgb(96, 165, 250);
+  outline-offset: 2px;
+}

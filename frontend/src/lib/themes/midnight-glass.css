@@ -1,0 +1,135 @@
+/*
+ * Midnight Glass theme treatment — aurora body wash, glass sidebars.
+ *
+ * All rules are scoped under [data-theme="midnight-glass"] on <html>
+ * so switching to any other theme automatically removes every effect
+ * without requiring additional overrides. Imported last in app.css so
+ * the unlayered selectors beat @layer utilities by cascade position AND
+ * by specificity (attribute + element/class vs. single class).
+ *
+ * Color reference (mirrors app.css [data-theme="midnight-glass"] block):
+ *   surface-0  rgb(14, 23, 41)    — deep navy app background
+ *   surface-1  rgb(22, 33, 56)    — sidebar / inspector panels
+ *   accent     rgb(110, 168, 254) — cornflower blue
+ *   violet-300 rgb(196, 181, 253) — active-row text
+ *   violet-500 rgb(139, 92, 246)  — aurora / glow colour
+ *   indigo-500 rgb(99, 102, 241)  — secondary aurora node
+ *   emerald-500 rgb(16, 185, 129) — tertiary aurora node
+ */
+
+/* ---- Body aurora wash -------------------------------------------------- */
+/*
+ * Three soft radial-gradient aurora nodes layered over a dark navy
+ * gradient. background-attachment: fixed pins the gradients to the
+ * viewport so scrolling content slides over the wash rather than
+ * dragging it along (depth effect).
+ */
+[data-theme="midnight-glass"] body {
+  background:
+    radial-gradient(ellipse at 18% 14%, rgba(139, 92, 246, 0.18) 0%, transparent 52%),
+    radial-gradient(ellipse at 82% 8%, rgba(99, 102, 241, 0.15) 0%, transparent 52%),
+    radial-gradient(ellipse at 86% 88%, rgba(16, 185, 129, 0.12) 0%, transparent 48%),
+    linear-gradient(180deg, rgb(14, 23, 41) 0%, rgb(9, 14, 26) 100%);
+  background-attachment: fixed;
+}
+
+/* ---- Glass sidebars and inspector -------------------------------------- */
+/*
+ * <aside> elements receive a translucent background (slate-900 at 55 %
+ * alpha) plus a backdrop blur + saturation boost so the aurora
+ * gradients refract through the panels.  The -webkit- prefix covers
+ * WebKit-based engines (Blink / WebKit both accept it).
+ */
+[data-theme="midnight-glass"] aside {
+  background-color: rgba(14, 23, 41, 0.55);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+}
+
+/* ---- Conversation section glass layer ---------------------------------- */
+/*
+ * The main conversation body (.app-shell__main-body) drops to 40 %
+ * alpha with a lighter blur so message bubbles remain readable while
+ * the aurora subtly shows through.
+ */
+[data-theme="midnight-glass"] .app-shell__main-body {
+  background-color: rgba(9, 14, 26, 0.40);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  backdrop-filter: blur(8px) saturate(140%);
+}
+
+/* ---- Active sidebar row — left-weighted violet gradient + glow --------- */
+/*
+ * A left-heavy violet-to-transparent gradient replaces the flat
+ * accent-tint.  An inset left border + outer glow complete the
+ * "selected" affordance without heavy outlines.
+ */
+[data-theme="midnight-glass"] .nav-link--active {
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0.28) 0%, rgba(99, 102, 241, 0.10) 100%);
+  box-shadow:
+    inset 3px 0 0 rgb(139, 92, 246),
+    0 0 12px rgba(139, 92, 246, 0.22);
+  color: rgb(196, 181, 253);
+}
+
+/* ---- Primary button gradient overlay + hover lift --------------------- */
+/*
+ * Buttons that carry the primary accent background (class contains
+ * "bg-accent") receive a top-light-to-bottom-dark gradient overlay,
+ * an inset top highlight, and a drop shadow.  On hover the button
+ * lifts 1 px via translateY(-1px) — a tactile depth cue.
+ */
+[data-theme="midnight-glass"] [class*="bg-accent"] {
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.10) 0%,
+    rgba(0, 0, 0, 0.08) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    0 2px 6px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+[data-theme="midnight-glass"] [class*="bg-accent"]:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    0 4px 10px rgba(0, 0, 0, 0.42);
+}
+
+/* ---- Code block violet inner glow ------------------------------------- */
+/*
+ * A hairline violet inset ring + a wide, low-opacity inner shadow
+ * give code blocks a faint phosphor-glow that ties them into the
+ * violet aurora palette without dominating the text.
+ */
+[data-theme="midnight-glass"] .message-turn__body pre {
+  box-shadow:
+    inset 0 0 0 1px rgba(139, 92, 246, 0.30),
+    inset 0 0 16px rgba(139, 92, 246, 0.08);
+}
+
+/* ---- Focus-visible: 3 px violet outer glow ring ----------------------- */
+/*
+ * The default Tailwind focus ring is overridden with a violet-tinted
+ * glow ring that matches the aurora palette.  outline-offset: 2px
+ * keeps the ring outside the element boundary for readability.
+ */
+[data-theme="midnight-glass"] *:focus-visible {
+  outline: 3px solid rgba(139, 92, 246, 0.80);
+  outline-offset: 2px;
+}
+
+/* ---- Reduced-motion downgrade ----------------------------------------- */
+/*
+ * When the OS reports prefers-reduced-motion: reduce, animated button
+ * transitions are collapsed to the minimum non-zero duration (0.01 ms)
+ * so the transition fires but completes within a single frame —
+ * effectively instant from the user's perspective.
+ */
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="midnight-glass"] [class*="bg-accent"] {
+    transition-duration: 0.01ms;
+  }
+}

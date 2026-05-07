@@ -1,0 +1,65 @@
+/*
+ * Evergreen theme treatment — flat, forest-green.
+ *
+ * Evergreen is the v0.17.x visual-parity default. It is selected by
+ * both [data-theme="evergreen"] and :root (the no-theme-set fallback)
+ * so the file mirrors the dual-selector pattern from the variable block
+ * in app.css.
+ *
+ * The flat look is the deliberate absence of glass effects: a subtle
+ * two-stop body gradient, hairline code-block borders, emerald
+ * selected-row accent, and a plain two-pixel focus outline.
+ *
+ * Color reference (mirrors app.css :root / [data-theme="evergreen"]):
+ *   surface-0  rgb(14, 19, 27)   — slate-950
+ *   accent     rgb(37, 136, 70)  — emerald-500
+ *   border     rgb(56, 65, 75)   — slate-700
+ *   green-300  rgb(134, 239, 172)
+ */
+
+/* ---- Subtle dark body gradient ---------------------------------------- */
+/*
+ * A gentle two-stop slate gradient replaces the flat surface-0
+ * background.  background-attachment: fixed keeps it pinned so
+ * scrollable content slides over it, matching the midnight-glass
+ * depth rhythm without auroras.
+ */
+[data-theme="evergreen"] body,
+:root body {
+  background: linear-gradient(180deg, rgb(14, 19, 27) 0%, rgb(10, 14, 20) 100%);
+  background-attachment: fixed;
+}
+
+/* ---- Selected-row accent — emerald inset bar + tint ------------------- */
+/*
+ * The active nav row carries an inset left-edge bar (2 px emerald) and
+ * a very-low-opacity emerald field tint so the selected state reads
+ * clearly without a heavy block colour.
+ */
+[data-theme="evergreen"] .nav-link--active,
+:root .nav-link--active {
+  background: rgba(37, 136, 70, 0.14);
+  box-shadow: inset 2px 0 0 rgb(37, 136, 70);
+  color: rgb(134, 239, 172);
+}
+
+/* ---- Flat code block border ------------------------------------------- */
+/*
+ * A hairline slate border replaces the borderless code block default
+ * so the surface boundary reads clearly against the dark background.
+ */
+[data-theme="evergreen"] .message-turn__body pre,
+:root .message-turn__body pre {
+  border: 1px solid rgba(56, 65, 75, 0.80);
+}
+
+/* ---- Flat focus outline ------------------------------------------------ */
+/*
+ * A solid 2 px emerald outline matches the brand accent without any
+ * glow spread — strictly flat per the theme's visual contract.
+ */
+[data-theme="evergreen"] *:focus-visible,
+:root *:focus-visible {
+  outline: 2px solid rgb(37, 136, 70);
+  outline-offset: 2px;
+}

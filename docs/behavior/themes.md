@@ -100,6 +100,28 @@ active Bearings theme is a **pure `data-theme` attribute flip on `<html>`** — 
 already-rendered code blocks re-tint synchronously with the rest of the app shell;
 no re-render or re-highlight pass is required.
 
+## Per-theme visual treatments (addendum — gap-cycle-04-003)
+
+Beyond color tokens, each theme applies distinct structural treatments via per-theme CSS files
+imported at the end of `frontend/src/app.css`.  All rules are scoped under
+`[data-theme="<name>"]` on `<html>` so switching the attribute is the only thing required to
+activate or deactivate any effect.
+
+| Theme | Treatment file | Effect summary |
+|---|---|---|
+| `midnight-glass` | `frontend/src/lib/themes/midnight-glass.css` | Aurora body wash (three `radial-gradient` nodes, `background-attachment: fixed`); `<aside>` glass panels (`backdrop-filter: blur(18px) saturate(160%)`, 55 % alpha background); conversation section 40 % alpha blur layer; active-row left-weighted violet gradient + inset + outer glow; primary button gradient overlay + `translateY(-1px)` hover lift; code block violet inner glow; 3 px violet `focus-visible` ring. Reduced-motion: button `transition-duration` collapses to 0.01 ms. |
+| `evergreen` | `frontend/src/lib/themes/evergreen.css` | Subtle 2-stop slate body gradient; emerald inset-bar selected-row accent; hairline code-block border; 2 px emerald flat focus outline. Also applied under `:root` (default before any theme is picked). |
+| `paper-light` | `frontend/src/lib/themes/paper-light.css` | Warm cream 2-stop body gradient; Prussian-blue inset-bar selected-row accent; warm-parchment hairline code-block border; 2 px Prussian-blue flat focus outline. |
+| `default` | `frontend/src/lib/themes/default.css` | Subtle gray-900 2-stop body gradient; sky-blue inset-bar selected-row accent; gray hairline code-block border; 2 px sky-blue flat focus outline. |
+
+The three flat themes (`evergreen`, `paper-light`, `default`) never set `backdrop-filter` or
+`radial-gradient` — switching away from `midnight-glass` removes every glass/aurora pixel in the
+same tick the `data-theme` attribute flips.
+
+A vitest contract suite at `frontend/src/lib/themes/__tests__/treatments.test.ts` asserts the
+mapping: `midnight-glass.css` must declare `backdrop-filter` and `radial-gradient`; all three
+flat theme files must declare neither.
+
 ## Adding a new theme (user-observable consequences only)
 
 This subsystem doc does not list authoring steps. From the user's perspective, when a future build adds a theme:
