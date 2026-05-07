@@ -1367,6 +1367,15 @@ export const INSPECTOR_TAB_FILES = "files";
  */
 export const INSPECTOR_TAB_CHANGES = "changes";
 /**
+ * Metrics subsection (gap-cycle-09-005) — two cards: token totals
+ * (Input / Output / Cache read / Cache write) and tool-call counters
+ * (Total / Running / Failed / Total elapsed). Per-session granularity.
+ * Inserted between Changes and Routing to preserve adjacency with the
+ * other per-session content tabs; app-wide rollups (Routing / Usage)
+ * remain at the end of the strip.
+ */
+export const INSPECTOR_TAB_METRICS = "metrics";
+/**
  * Routing subsection (spec §10 "Modified: Inspector 'Routing'
  * subsection"). Lit by item 2.6 — the Inspector shell switches on
  * the id to render :class:`InspectorRouting`.
@@ -1391,6 +1400,7 @@ export const KNOWN_INSPECTOR_TABS = [
   INSPECTOR_TAB_INSTRUCTIONS,
   INSPECTOR_TAB_FILES,
   INSPECTOR_TAB_CHANGES,
+  INSPECTOR_TAB_METRICS,
   INSPECTOR_TAB_ROUTING,
   INSPECTOR_TAB_USAGE,
 ] as const;
@@ -1454,6 +1464,7 @@ export const INSPECTOR_STRINGS = {
     [INSPECTOR_TAB_INSTRUCTIONS]: "Instructions",
     [INSPECTOR_TAB_FILES]: "Files",
     [INSPECTOR_TAB_CHANGES]: "Changes",
+    [INSPECTOR_TAB_METRICS]: "Metrics",
     [INSPECTOR_TAB_ROUTING]: "Routing",
     [INSPECTOR_TAB_USAGE]: "Usage",
   } as const satisfies Record<InspectorTabId, string>,
@@ -1506,6 +1517,24 @@ export const INSPECTOR_STRINGS = {
   changesEmptyHeading: "No changes yet",
   changesEmptyBody:
     "A row appears each time the agent writes a new file, edits an existing file, or modifies a notebook cell.",
+  // Metrics subsection (gap-cycle-09-005) — per-session token totals +
+  // tool-call counters. Token data comes from the conversation store's
+  // accumulated ``session*Tokens`` counters (input, output, cache-read).
+  // Cache-write is not yet emitted by the v18 backend; its cell renders
+  // ``—`` until the backend surfaces ``cache_creation_tokens``.
+  metricsTokenTotalsHeading: "Token totals",
+  metricsTokenInputLabel: "Input",
+  metricsTokenOutputLabel: "Output",
+  metricsTokenCacheReadLabel: "Cache read",
+  metricsTokenCacheWriteLabel: "Cache write",
+  metricsTokenCacheWriteUnavailable: "—",
+  metricsToolCallsHeading: "Tool calls",
+  metricsToolCallsTotalLabel: "Total",
+  metricsToolCallsRunningLabel: "Running",
+  metricsToolCallsFailedLabel: "Failed",
+  metricsToolCallsElapsedLabel: "Total elapsed",
+  metricsToolCallsElapsedEmpty: "—",
+  metricsAnalyticsLink: "View cross-session rollups →",
   // Routing subsection (spec §10 "Modified: Inspector 'Routing'
   // subsection"). The current-decision card surfaces the four
   // routing-decision fields the spec lists; the timeline + advisor

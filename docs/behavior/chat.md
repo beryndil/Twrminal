@@ -257,7 +257,7 @@ The agent loop for a chat is implicit:
 
 ## Inspector pane (non-routing subsections)
 
-The right column of the app shell hosts the **Inspector** pane: a tabbed surface that exposes the active session's per-row metadata in long form. Seven tabs are wired today, in the order they render: **Agent**, **Context**, **Instructions**, **Files**, **Changes**, **Routing**, **Usage**. The first five are described here; the routing-and-usage pair belongs to §"What the user does NOT see in chat" because it is governed by the routing spec.
+The right column of the app shell hosts the **Inspector** pane: a tabbed surface that exposes the active session's per-row metadata in long form. Eight tabs are wired today, in the order they render: **Agent**, **Context**, **Instructions**, **Files**, **Changes**, **Metrics**, **Routing**, **Usage**. The first six are described here; the routing-and-usage pair belongs to §"What the user does NOT see in chat" because it is governed by the routing spec.
 
 The pane is empty-state when no session is selected (boot, tag filter empties the list, sidebar selection cleared). Picking a session activates the last-selected tab; **the active-tab choice is sticky across page reloads** — it is persisted to `localStorage` under the key `bearings-v1:inspector-tab` and re-hydrated on boot, falling back to the Agent tab when the value is absent or unrecognised. Persistence is best-effort: a `localStorage` exception (private-browsing mode, storage quota exceeded) is caught silently — the in-memory selection still flips for the lifetime of that page load. **State survives tab switches**: all seven subsection components stay mounted at all times (inactive ones hidden via the HTML `hidden` attribute); switching tabs never destroys a subtree, so per-tab transient state — expanded "Why this model?" panels, scroll positions, already-loaded fetch data — is intact when the user returns to a tab they visited earlier in the same session.
 
@@ -347,6 +347,36 @@ Processing: split on `\n`, take line 0, trim leading whitespace, clip to 120 cha
 **Row shape**: unlike the Files tab (which deduplicates by path), the Changes tab records one row per individual tool call — each `Edit` or `Write` or `NotebookEdit` call is a discrete change event. Rows sorted most-recent first. Entries with no recoverable timestamp sort after all timestamped rows (same derivation as Files: `startedAt` first, `turn.createdAt` fallback, `null` when neither).
 
 **Empty state**: "No changes yet" with the explanation: "A row appears each time the agent writes a new file, edits an existing file, or modifies a notebook cell."
+
+### Metrics
+
+Per-session token totals and tool-call counters (gap-cycle-09-005). Positioned between Changes and Routing to keep the per-session content tabs together; the app-wide rollups (Routing / Usage) remain at the end of the strip.
+
+The subsection renders two cards.
+
+**Card 1 — Token totals.** Four labelled cells in a 2×2 grid:
+
+| Cell | Label | Data source | Accent |
+|---|---|---|---|
+| Input | "Input" | `conversationStore.sessionInputTokens` — accumulated from `message_complete` frames, reset on session-switch | default (`text-fg`) |
+| Output | "Output" | `conversationStore.sessionOutputTokens` | default |
+| Cache read | "Cache read" | `conversationStore.sessionCacheReadTokens` | emerald (`text-emerald-400`) |
+| Cache write | "Cache write" | Not yet available — the v18 backend does not emit `cache_creation_tokens` | default — renders `—` until the backend surfaces this field |
+
+All token values use the standard short-notation formatter: `< 1 000` → raw integer, `≥ 1 000` → `N.Nk`, `≥ 1 000 000` → `N.NM`.
+
+**Card 2 — Tool calls.** Four labelled cells in a 2×2 grid, all derived from `conversationStore.turns`:
+
+| Cell | Label | Value | Accent |
+|---|---|---|---|
+| Total | "Total" | Count of all `ToolCallView` entries across all turns | default |
+| Running | "Running" | Count where `done === false` | amber (`text-amber-400`) when > 0; muted at 0 |
+| Failed | "Failed" | Count where `done === true && ok === false` | rose (`text-rose-400`) when > 0; muted at 0 |
+| Total elapsed | "Total elapsed" | Sum of `durationMs` for finished calls only (`done === true && durationMs !== null`) | default — renders `—` when no finished calls exist |
+
+The elapsed formatter: `< 1 000 ms` → `Nms`; `< 60 000 ms` → `N.Ns`; `≥ 60 000 ms` → `Nm Ns`.
+
+**Footer**: a link to `/analytics` with the label "View cross-session rollups →", so the user can navigate from per-session metrics to the app-wide Usage tab.
 
 ## CollapsibleBody
 
