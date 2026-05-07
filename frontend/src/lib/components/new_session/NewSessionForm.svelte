@@ -55,9 +55,12 @@
     NEW_SESSION_STRINGS,
     ROUTING_PREVIEW_DEBOUNCE_MS,
     ROUTING_SOURCE_QUOTA_DOWNGRADE,
+    SESSION_KIND_CHAT,
+    SESSION_KIND_CHECKLIST,
     type AdvisorModelChoice,
     type EffortLevel,
     type ExecutorModel,
+    type SessionKind,
   } from "../../config";
   import { previewRouting as previewRoutingDefault, type RoutingPreview } from "../../api/routing";
   import { getCurrentQuota as getCurrentQuotaDefault } from "../../api/quota";
@@ -85,8 +88,14 @@
    * is responsible for the actual ``POST /api/sessions`` call (a
    * later item). The shape carries everything the create endpoint
    * needs from this dialog.
+   *
+   * ``kind`` mirrors the segmented-control selection: ``"chat"`` for a
+   * normal agent session, ``"checklist"`` for a structured-list session.
+   * When ``kind`` is ``"checklist"``, ``routing`` carries default values
+   * (the checklist never runs an agent) and ``firstMessage`` is ``""``.
    */
   export interface NewSessionSubmission {
+    kind: SessionKind;
     tagIds: number[];
     workingDir: string;
     firstMessage: string;
@@ -173,6 +182,16 @@
     }
     manualOverride = true;
   }
+
+  // ---- Kind toggle -------------------------------------------------------
+
+  /**
+   * Whether the user is creating a chat or checklist session. Defaults to
+   * ``"chat"``; the segmented control at the top of the form switches it.
+   * When ``"checklist"``, the routing fieldset, quota bars, and first-message
+   * textarea are hidden (checklists run no agent and burn no tokens).
+   */
+  let kind = $state<SessionKind>(SESSION_KIND_CHAT);
 
   // ---- Form state --------------------------------------------------------
 
@@ -295,6 +314,7 @@
   // … Changing tags re-evaluates rules"). ``untrack`` around the
   // schedule call so the effect itself doesn't re-subscribe to anything
   // beyond the two listed inputs.
+  // Checklist sessions run no agent — skip the preview entirely.
   $effect(() => {
     // Subscribe to both inputs.
     void firstMessage;
@@ -302,7 +322,11 @@
     for (const id of tagIds) {
       void id;
     }
-    untrack(() => schedulePreview());
+    untrack(() => {
+      if (kind === SESSION_KIND_CHAT) {
+        schedulePreview();
+      }
+    });
   });
 
   onMount(() => {
@@ -441,6 +465,7 @@
 
   function onSubmitClick(): void {
     onSubmit({
+      kind,
       tagIds: [...tagIds],
       workingDir,
       firstMessage,
@@ -484,115 +509,146 @@
 >
   <h2 class="new-session-form__title">{NEW_SESSION_STRINGS.dialogTitle}</h2>
 
-  {#if templates.length > 0}
-    <div class="new-session-form__row">
-      <label for="new-session-template">Template</label>
-      <select
-        id="new-session-template"
-        data-testid="new-session-template"
-        value={selectedTemplateId ?? ""}
-        onchange={onTemplateChange}
-      >
-        <option value="">— no template —</option>
-        {#each templates as tpl (tpl.id)}
-          <option value={tpl.id}>{tpl.name}</option>
-        {/each}
-      </select>
-    </div>
-  {/if}
+  <div
+    class="new-session-form__kind-toggle"
+    role="group"
+    aria-label={NEW_SESSION_STRINGS.kindToggleAriaLabel}
+  >
+    <button
+      type="button"
+      class="new-session-form__kind-btn"
+      class:new-session-form__kind-btn--active={kind === SESSION_KIND_CHAT}
+      data-testid="new-session-kind-chat"
+      onclick={() => {
+        kind = SESSION_KIND_CHAT;
+      }}
+    >
+      {NEW_SESSION_STRINGS.kindChatLabel}
+    </button>
+    <button
+      type="button"
+      class="new-session-form__kind-btn"
+      class:new-session-form__kind-btn--active={kind === SESSION_KIND_CHECKLIST}
+      data-testid="new-session-kind-checklist"
+      onclick={() => {
+        kind = SESSION_KIND_CHECKLIST;
+      }}
+    >
+      {NEW_SESSION_STRINGS.kindChecklistLabel}
+    </button>
+  </div>
 
-  <fieldset class="new-session-form__routing">
-    <legend class="new-session-form__routing-heading">
-      {NEW_SESSION_STRINGS.routingHeading}
-    </legend>
-
-    <div class="new-session-form__row">
-      <label for="new-session-executor">{NEW_SESSION_STRINGS.executorLabel}</label>
-      <select
-        id="new-session-executor"
-        data-testid="new-session-executor"
-        value={executor}
-        onchange={onExecutorChange}
-      >
-        {#each KNOWN_EXECUTOR_MODELS as option (option)}
-          <option value={option}>{NEW_SESSION_STRINGS.executorLabels[option]}</option>
-        {/each}
-      </select>
-    </div>
-
-    {#if advisorHidden}
-      <p class="new-session-form__advisor-hint" data-testid="new-session-advisor-hint">
-        {NEW_SESSION_STRINGS.advisorOpusExecutorHint}
-      </p>
-    {:else}
+  {#if kind === SESSION_KIND_CHAT}
+    {#if templates.length > 0}
       <div class="new-session-form__row">
-        <label for="new-session-advisor">{NEW_SESSION_STRINGS.advisorLabel}</label>
+        <label for="new-session-template">Template</label>
         <select
-          id="new-session-advisor"
-          data-testid="new-session-advisor"
-          value={advisor}
-          onchange={onAdvisorChange}
+          id="new-session-template"
+          data-testid="new-session-template"
+          value={selectedTemplateId ?? ""}
+          onchange={onTemplateChange}
         >
-          {#each KNOWN_ADVISOR_MODELS as option (option)}
-            <option value={option}>{NEW_SESSION_STRINGS.advisorLabels[option]}</option>
+          <option value="">— no template —</option>
+          {#each templates as tpl (tpl.id)}
+            <option value={tpl.id}>{tpl.name}</option>
           {/each}
         </select>
-        <label class="new-session-form__inline" for="new-session-advisor-max">
-          {NEW_SESSION_STRINGS.advisorMaxUsesLabel}
-        </label>
-        <input
-          id="new-session-advisor-max"
-          data-testid="new-session-advisor-max"
-          type="number"
-          min="0"
-          max="99"
-          value={advisorMaxUses}
-          disabled={advisor === ADVISOR_MODEL_NONE}
-          onchange={onAdvisorMaxUsesChange}
-        />
       </div>
     {/if}
 
-    <div class="new-session-form__row">
-      <label for="new-session-effort">{NEW_SESSION_STRINGS.effortLabel}</label>
-      <select
-        id="new-session-effort"
-        data-testid="new-session-effort"
-        value={effort}
-        onchange={onEffortChange}
-      >
-        {#each KNOWN_EFFORT_LEVELS as option (option)}
-          <option value={option}>{NEW_SESSION_STRINGS.effortLabels[option]}</option>
-        {/each}
-      </select>
+    <fieldset class="new-session-form__routing">
+      <legend class="new-session-form__routing-heading">
+        {NEW_SESSION_STRINGS.routingHeading}
+      </legend>
+
+      <div class="new-session-form__row">
+        <label for="new-session-executor">{NEW_SESSION_STRINGS.executorLabel}</label>
+        <select
+          id="new-session-executor"
+          data-testid="new-session-executor"
+          value={executor}
+          onchange={onExecutorChange}
+        >
+          {#each KNOWN_EXECUTOR_MODELS as option (option)}
+            <option value={option}>{NEW_SESSION_STRINGS.executorLabels[option]}</option>
+          {/each}
+        </select>
+      </div>
+
+      {#if advisorHidden}
+        <p class="new-session-form__advisor-hint" data-testid="new-session-advisor-hint">
+          {NEW_SESSION_STRINGS.advisorOpusExecutorHint}
+        </p>
+      {:else}
+        <div class="new-session-form__row">
+          <label for="new-session-advisor">{NEW_SESSION_STRINGS.advisorLabel}</label>
+          <select
+            id="new-session-advisor"
+            data-testid="new-session-advisor"
+            value={advisor}
+            onchange={onAdvisorChange}
+          >
+            {#each KNOWN_ADVISOR_MODELS as option (option)}
+              <option value={option}>{NEW_SESSION_STRINGS.advisorLabels[option]}</option>
+            {/each}
+          </select>
+          <label class="new-session-form__inline" for="new-session-advisor-max">
+            {NEW_SESSION_STRINGS.advisorMaxUsesLabel}
+          </label>
+          <input
+            id="new-session-advisor-max"
+            data-testid="new-session-advisor-max"
+            type="number"
+            min="0"
+            max="99"
+            value={advisorMaxUses}
+            disabled={advisor === ADVISOR_MODEL_NONE}
+            onchange={onAdvisorMaxUsesChange}
+          />
+        </div>
+      {/if}
+
+      <div class="new-session-form__row">
+        <label for="new-session-effort">{NEW_SESSION_STRINGS.effortLabel}</label>
+        <select
+          id="new-session-effort"
+          data-testid="new-session-effort"
+          value={effort}
+          onchange={onEffortChange}
+        >
+          {#each KNOWN_EFFORT_LEVELS as option (option)}
+            <option value={option}>{NEW_SESSION_STRINGS.effortLabels[option]}</option>
+          {/each}
+        </select>
+      </div>
+
+      <RoutingPreviewLine state={previewState} />
+    </fieldset>
+
+    <QuotaBars snapshot={quota} />
+
+    {#if banner !== null}
+      <RecostDialog
+        downgradedTo={banner.downgradedTo}
+        originalModel={banner.originalModel}
+        bucket={banner.bucket}
+        usedPct={banner.usedPct}
+        {onUseAnyway}
+      />
+    {/if}
+
+    <div class="new-session-form__row new-session-form__row--message">
+      <label for="new-session-first-message">{NEW_SESSION_STRINGS.firstMessageLabel}</label>
+      <textarea
+        id="new-session-first-message"
+        data-testid="new-session-first-message"
+        rows="6"
+        placeholder={NEW_SESSION_STRINGS.firstMessagePlaceholder}
+        value={firstMessage}
+        oninput={onFirstMessageInput}
+      ></textarea>
     </div>
-
-    <RoutingPreviewLine state={previewState} />
-  </fieldset>
-
-  <QuotaBars snapshot={quota} />
-
-  {#if banner !== null}
-    <RecostDialog
-      downgradedTo={banner.downgradedTo}
-      originalModel={banner.originalModel}
-      bucket={banner.bucket}
-      usedPct={banner.usedPct}
-      {onUseAnyway}
-    />
   {/if}
-
-  <div class="new-session-form__row new-session-form__row--message">
-    <label for="new-session-first-message">{NEW_SESSION_STRINGS.firstMessageLabel}</label>
-    <textarea
-      id="new-session-first-message"
-      data-testid="new-session-first-message"
-      rows="6"
-      placeholder={NEW_SESSION_STRINGS.firstMessagePlaceholder}
-      value={firstMessage}
-      oninput={onFirstMessageInput}
-    ></textarea>
-  </div>
 
   <div class="new-session-form__actions">
     <button
@@ -620,6 +676,30 @@
     background: rgb(var(--bearings-surface-1));
     border-radius: 0.5rem;
     color: rgb(var(--bearings-fg));
+  }
+  .new-session-form__kind-toggle {
+    display: flex;
+    align-self: flex-start;
+    border: 1px solid rgb(var(--bearings-border));
+    border-radius: 0.375rem;
+    overflow: hidden;
+  }
+  .new-session-form__kind-btn {
+    padding: 0.3125rem 1rem;
+    font: inherit;
+    font-size: 0.8125rem;
+    cursor: pointer;
+    background: rgb(var(--bearings-surface-2));
+    color: inherit;
+    border: none;
+    border-right: 1px solid rgb(var(--bearings-border));
+  }
+  .new-session-form__kind-btn:last-child {
+    border-right: none;
+  }
+  .new-session-form__kind-btn--active {
+    background: rgb(var(--bearings-accent));
+    color: white;
   }
   .new-session-form__title {
     font-size: 1.125rem;

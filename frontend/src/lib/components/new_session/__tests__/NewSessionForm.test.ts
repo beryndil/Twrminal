@@ -28,6 +28,8 @@ import {
   ROUTING_PREVIEW_DEBOUNCE_MS,
   ROUTING_SOURCE_QUOTA_DOWNGRADE,
   ROUTING_SOURCE_TAG_RULE,
+  SESSION_KIND_CHAT,
+  SESSION_KIND_CHECKLIST,
 } from "../../../config";
 import type { RoutingPreview } from "../../../api/routing";
 import type { QuotaSnapshot } from "../../../api/quota";
@@ -253,5 +255,64 @@ describe("NewSessionForm — submission", () => {
     expect(payload.firstMessage).toBe("build the thing");
     expect(payload.routing.executor).toBe(EXECUTOR_MODEL_SONNET);
     expect(payload.routing.override).toBe(false);
+  });
+});
+
+describe("NewSessionForm — kind toggle (gap-cycle-10-002)", () => {
+  it("renders both Chat and Checklist kind buttons", () => {
+    const previewRouting = vi.fn().mockResolvedValue(makePreview());
+    const getCurrentQuota = vi.fn().mockResolvedValue(makeQuotaSnapshot());
+    const { getByTestId } = render(NewSessionForm, {
+      props: { tagIds: [], previewRouting, getCurrentQuota },
+    });
+    expect(getByTestId("new-session-kind-chat")).toBeInTheDocument();
+    expect(getByTestId("new-session-kind-checklist")).toBeInTheDocument();
+  });
+
+  it("hides routing axes, first-message textarea, and RoutingPreview when Checklist is selected", async () => {
+    const previewRouting = vi.fn().mockResolvedValue(makePreview());
+    const getCurrentQuota = vi.fn().mockResolvedValue(makeQuotaSnapshot());
+    const { getByTestId, queryByTestId } = render(NewSessionForm, {
+      props: { tagIds: [], previewRouting, getCurrentQuota },
+    });
+    // Verify chat fields are present initially.
+    expect(getByTestId("new-session-executor")).toBeInTheDocument();
+    expect(getByTestId("new-session-first-message")).toBeInTheDocument();
+    // Switch to Checklist.
+    await fireEvent.click(getByTestId("new-session-kind-checklist"));
+    expect(queryByTestId("new-session-executor")).toBeNull();
+    expect(queryByTestId("new-session-advisor")).toBeNull();
+    expect(queryByTestId("new-session-effort")).toBeNull();
+    expect(queryByTestId("new-session-first-message")).toBeNull();
+    expect(queryByTestId("routing-preview")).toBeNull();
+  });
+
+  it("submit payload includes kind: chat when Chat is selected (default)", async () => {
+    const previewRouting = vi.fn().mockResolvedValue(makePreview());
+    const getCurrentQuota = vi.fn().mockResolvedValue(makeQuotaSnapshot());
+    const onSubmit = vi.fn();
+    const { getByTestId } = render(NewSessionForm, {
+      props: { tagIds: [1], workingDir: "/wd", previewRouting, getCurrentQuota, onSubmit },
+    });
+    await vi.advanceTimersByTimeAsync(ROUTING_PREVIEW_DEBOUNCE_MS);
+    await fireEvent.input(getByTestId("new-session-first-message") as HTMLTextAreaElement, {
+      target: { value: "hello" },
+    });
+    await fireEvent.click(getByTestId("new-session-submit"));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0].kind).toBe(SESSION_KIND_CHAT);
+  });
+
+  it("submit payload includes kind: checklist when Checklist is selected", async () => {
+    const previewRouting = vi.fn().mockResolvedValue(makePreview());
+    const getCurrentQuota = vi.fn().mockResolvedValue(makeQuotaSnapshot());
+    const onSubmit = vi.fn();
+    const { getByTestId } = render(NewSessionForm, {
+      props: { tagIds: [1], workingDir: "/wd", previewRouting, getCurrentQuota, onSubmit },
+    });
+    await fireEvent.click(getByTestId("new-session-kind-checklist"));
+    await fireEvent.click(getByTestId("new-session-submit"));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0].kind).toBe(SESSION_KIND_CHECKLIST);
   });
 });

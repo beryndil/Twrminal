@@ -52,6 +52,7 @@
     EXECUTOR_MODEL_SONNET,
     KNOWN_EXECUTOR_MODELS,
     SESSION_KIND_CHAT,
+    SESSION_KIND_CHECKLIST,
     type ExecutorModel,
   } from "$lib/config";
   import NewSessionForm, {
@@ -68,6 +69,8 @@
   /** Title is derived from the first message — single line, ≤80 chars. */
   const TITLE_MAX_FROM_MESSAGE = 80;
   const TITLE_FALLBACK = "(untitled)";
+  /** Default title for a freshly-created checklist (no first-message to derive from). */
+  const CHECKLIST_TITLE_DEFAULT = "(checklist)";
 
   let availableTags = $state<TagOut[]>([]);
   let tagsLoading = $state(true);
@@ -236,29 +239,44 @@
       submitError = "Working dir is required.";
       return;
     }
-    const trimmedMessage = payload.firstMessage.trim();
-    if (trimmedMessage === "") {
-      submitError = "First message is required.";
-      return;
+    if (payload.kind === SESSION_KIND_CHAT) {
+      const trimmedMessage = payload.firstMessage.trim();
+      if (trimmedMessage === "") {
+        submitError = "First message is required.";
+        return;
+      }
     }
     submitting = true;
     try {
-      const created = await createSession({
-        kind: SESSION_KIND_CHAT,
-        title: deriveTitle(payload.firstMessage),
-        working_dir: trimmedWd,
-        model: pickModel(payload.routing.executor),
-        tag_ids: payload.tagIds,
-        // Persist the full routing decision so supervisor respawns and
-        // mid-session model swaps reconstruct it exactly.
-        routing_advisor_model: payload.routing.advisor === "" ? null : payload.routing.advisor,
-        routing_advisor_max_uses: payload.routing.advisorMaxUses,
-        routing_effort_level: payload.routing.effort,
-      });
-      // Queue the kick-off prompt against the new session so the
-      // first turn is already in flight by the time the URL flips.
-      await sendPrompt(created.id, trimmedMessage);
-      await goto(`/sessions/${encodeURIComponent(created.id)}`);
+      if (payload.kind === SESSION_KIND_CHECKLIST) {
+        // Checklists run no agent and need no first-message kick-off prompt.
+        const created = await createSession({
+          kind: SESSION_KIND_CHECKLIST,
+          title: CHECKLIST_TITLE_DEFAULT,
+          working_dir: trimmedWd,
+          model: EXECUTOR_MODEL_SONNET,
+          tag_ids: payload.tagIds,
+        });
+        await goto(`/sessions/${encodeURIComponent(created.id)}`);
+      } else {
+        const trimmedMessage = payload.firstMessage.trim();
+        const created = await createSession({
+          kind: SESSION_KIND_CHAT,
+          title: deriveTitle(payload.firstMessage),
+          working_dir: trimmedWd,
+          model: pickModel(payload.routing.executor),
+          tag_ids: payload.tagIds,
+          // Persist the full routing decision so supervisor respawns and
+          // mid-session model swaps reconstruct it exactly.
+          routing_advisor_model: payload.routing.advisor === "" ? null : payload.routing.advisor,
+          routing_advisor_max_uses: payload.routing.advisorMaxUses,
+          routing_effort_level: payload.routing.effort,
+        });
+        // Queue the kick-off prompt against the new session so the
+        // first turn is already in flight by the time the URL flips.
+        await sendPrompt(created.id, trimmedMessage);
+        await goto(`/sessions/${encodeURIComponent(created.id)}`);
+      }
     } catch (error) {
       const message = error instanceof ApiError ? describeApiError(error) : String(error);
       submitError = `Couldn't create the session: ${message}`;
@@ -284,8 +302,8 @@
   <header class="new-session-page__header">
     <h1>Create a new session</h1>
     <p class="new-session-page__lede">
-      Pick at least one tag, point at a working directory, and write the first message. The routing
-      axes below adapt as you type.
+      Pick Chat or Checklist, attach at least one tag, and point at a working directory. Chat
+      sessions also require a first message; the routing axes adapt as you type.
     </p>
   </header>
 
