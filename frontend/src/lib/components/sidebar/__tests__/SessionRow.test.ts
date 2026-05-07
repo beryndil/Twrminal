@@ -1,11 +1,15 @@
 /**
  * Component tests for ``SessionRow`` — title, kind indicator, tag
- * chips, status indicators (pinned / closed / error / unviewed dot),
+ * chips, status indicators (pinned / closed / activity pip),
  * the finder-click behavior (clicking a tag chip on the row triggers
  * the onToggleTag callback with that tag's id), and the stale-target
  * detection (right-clicking a row whose session was deleted from the
  * store between mouse-down and menu-open passes ``stale: true`` per
  * ``docs/behavior/context-menus.md`` §"Failure modes").
+ *
+ * Also covers the ``indicatorState`` pure helper for all 8 relevant
+ * input combinations of {error_pending, awaiting, running, unviewed}
+ * per ``docs/behavior/chat.md`` §"Activity indicator".
  */
 import { fireEvent, render } from "@testing-library/svelte";
 import { flushSync } from "svelte";
@@ -16,7 +20,10 @@ import type { SessionOut } from "../../../api/sessions";
 import type { TagOut } from "../../../api/tags";
 import {
   sessionsStore,
+  indicatorState,
   _resetForTests as resetSessionsStore,
+  _setRunningForTests,
+  _setAwaitingForTests,
 } from "../../../stores/sessions.svelte";
 import {
   contextMenuStore,
@@ -77,6 +84,14 @@ const tag = (id: number, name: string): TagOut => ({
 });
 
 describe("SessionRow", () => {
+  beforeEach(() => {
+    resetSessionsStore();
+  });
+
+  afterEach(() => {
+    resetSessionsStore();
+  });
+
   it("renders the session title", () => {
     const { getByTestId } = render(SessionRow, {
       props: {
@@ -105,7 +120,7 @@ describe("SessionRow", () => {
     expect(getByTestId("session-kind-indicator")).toHaveAttribute("aria-label", "Chat session");
   });
 
-  it("renders pinned + error indicators when the flags are set", () => {
+  it("renders pinned indicator and red activity pip when error_pending is set", () => {
     const { getByTestId } = render(SessionRow, {
       props: {
         session: { ...baseSession, pinned: true, error_pending: true },
@@ -117,7 +132,9 @@ describe("SessionRow", () => {
       },
     });
     expect(getByTestId("session-pinned-indicator")).toBeInTheDocument();
-    expect(getByTestId("session-error-indicator")).toBeInTheDocument();
+    const pip = getByTestId("session-activity-pip");
+    expect(pip).toBeInTheDocument();
+    expect(pip).toHaveAttribute("data-pip-state", "red");
   });
 
   it("renders the closed indicator when closed_at is set", () => {
@@ -299,9 +316,9 @@ describe("SessionRow", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  // ---- Unviewed-dot rendering --------------------------------------------
+  // ---- Activity pip rendering (gap-cycle-08-001) -------------------------
 
-  it("shows the unviewed dot when last_completed_at > last_viewed_at and not selected", () => {
+  it("shows green activity pip when last_completed_at > last_viewed_at and not selected", () => {
     const { getByTestId } = render(SessionRow, {
       props: {
         session: {
@@ -316,10 +333,12 @@ describe("SessionRow", () => {
         onToggleTag: vi.fn(),
       },
     });
-    expect(getByTestId("session-unviewed-dot")).toBeInTheDocument();
+    const pip = getByTestId("session-activity-pip");
+    expect(pip).toBeInTheDocument();
+    expect(pip).toHaveAttribute("data-pip-state", "green");
   });
 
-  it("shows the unviewed dot when last_completed_at is set but last_viewed_at is null", () => {
+  it("shows green activity pip when last_completed_at is set but last_viewed_at is null", () => {
     const { getByTestId } = render(SessionRow, {
       props: {
         session: {
@@ -334,10 +353,12 @@ describe("SessionRow", () => {
         onToggleTag: vi.fn(),
       },
     });
-    expect(getByTestId("session-unviewed-dot")).toBeInTheDocument();
+    const pip = getByTestId("session-activity-pip");
+    expect(pip).toBeInTheDocument();
+    expect(pip).toHaveAttribute("data-pip-state", "green");
   });
 
-  it("hides the unviewed dot when last_viewed_at >= last_completed_at", () => {
+  it("shows no activity pip when last_viewed_at >= last_completed_at", () => {
     const { queryByTestId } = render(SessionRow, {
       props: {
         session: {
@@ -352,10 +373,10 @@ describe("SessionRow", () => {
         onToggleTag: vi.fn(),
       },
     });
-    expect(queryByTestId("session-unviewed-dot")).toBeNull();
+    expect(queryByTestId("session-activity-pip")).toBeNull();
   });
 
-  it("hides the unviewed dot when the row is selected even if last_completed_at > last_viewed_at", () => {
+  it("shows no activity pip when the row is selected even if last_completed_at > last_viewed_at", () => {
     const { queryByTestId } = render(SessionRow, {
       props: {
         session: {
@@ -370,10 +391,10 @@ describe("SessionRow", () => {
         onToggleTag: vi.fn(),
       },
     });
-    expect(queryByTestId("session-unviewed-dot")).toBeNull();
+    expect(queryByTestId("session-activity-pip")).toBeNull();
   });
 
-  it("hides the unviewed dot when last_completed_at is null", () => {
+  it("shows no activity pip when last_completed_at is null", () => {
     const { queryByTestId } = render(SessionRow, {
       props: {
         session: { ...baseSession, last_completed_at: null, last_viewed_at: null },
@@ -384,7 +405,88 @@ describe("SessionRow", () => {
         onToggleTag: vi.fn(),
       },
     });
-    expect(queryByTestId("session-unviewed-dot")).toBeNull();
+    expect(queryByTestId("session-activity-pip")).toBeNull();
+  });
+
+  it("shows orange activity pip when session is in running set", () => {
+    flushSync(() => {
+      _setRunningForTests(["ses_a"]);
+    });
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: baseSession,
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    flushSync();
+    const pip = getByTestId("session-activity-pip");
+    expect(pip).toBeInTheDocument();
+    expect(pip).toHaveAttribute("data-pip-state", "orange");
+  });
+
+  it("shows red activity pip when session is in awaiting set", () => {
+    flushSync(() => {
+      _setAwaitingForTests(["ses_a"]);
+    });
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: baseSession,
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    flushSync();
+    const pip = getByTestId("session-activity-pip");
+    expect(pip).toBeInTheDocument();
+    expect(pip).toHaveAttribute("data-pip-state", "red");
+  });
+
+  it("red pip takes priority over running (awaiting wins)", () => {
+    flushSync(() => {
+      _setRunningForTests(["ses_a"]);
+      _setAwaitingForTests(["ses_a"]);
+    });
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: baseSession,
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    flushSync();
+    expect(getByTestId("session-activity-pip")).toHaveAttribute("data-pip-state", "red");
+  });
+
+  it("orange pip takes priority over green (running wins over unviewed)", () => {
+    flushSync(() => {
+      _setRunningForTests(["ses_a"]);
+    });
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: {
+          ...baseSession,
+          last_completed_at: "2026-01-02T00:00:00Z",
+          last_viewed_at: null,
+        },
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    flushSync();
+    expect(getByTestId("session-activity-pip")).toHaveAttribute("data-pip-state", "orange");
   });
 
   // ---- markSessionViewed on click ----------------------------------------
@@ -403,6 +505,62 @@ describe("SessionRow", () => {
     });
     await fireEvent.click(getByTestId("session-row"));
     expect(markSessionViewed).toHaveBeenCalledWith("ses_a");
+  });
+});
+
+// ---- indicatorState helper — all 8 input combinations (gap-cycle-08-001) --
+
+describe("indicatorState helper", () => {
+  // 3 binary inputs: errorPending|awaiting (both map to red), running, unviewed
+  // → 8 combinations of {errorPending, awaiting, running, unviewed} that
+  //   exercise all priority branches.
+
+  it("returns null when all inputs are false (idle and caught up)", () => {
+    expect(
+      indicatorState({ errorPending: false, awaiting: false, running: false, unviewed: false }),
+    ).toBe(null);
+  });
+
+  it("returns green when only unviewed is true", () => {
+    expect(
+      indicatorState({ errorPending: false, awaiting: false, running: false, unviewed: true }),
+    ).toBe("green");
+  });
+
+  it("returns orange when only running is true", () => {
+    expect(
+      indicatorState({ errorPending: false, awaiting: false, running: true, unviewed: false }),
+    ).toBe("orange");
+  });
+
+  it("returns orange (running) even when unviewed is also true — running wins", () => {
+    expect(
+      indicatorState({ errorPending: false, awaiting: false, running: true, unviewed: true }),
+    ).toBe("orange");
+  });
+
+  it("returns red when awaiting is true", () => {
+    expect(
+      indicatorState({ errorPending: false, awaiting: true, running: false, unviewed: false }),
+    ).toBe("red");
+  });
+
+  it("returns red when errorPending is true", () => {
+    expect(
+      indicatorState({ errorPending: true, awaiting: false, running: false, unviewed: false }),
+    ).toBe("red");
+  });
+
+  it("returns red (awaiting) even when running is also true — awaiting wins", () => {
+    expect(
+      indicatorState({ errorPending: false, awaiting: true, running: true, unviewed: false }),
+    ).toBe("red");
+  });
+
+  it("returns red (errorPending) even when all other inputs are also true — red wins all", () => {
+    expect(
+      indicatorState({ errorPending: true, awaiting: true, running: true, unviewed: true }),
+    ).toBe("red");
   });
 });
 

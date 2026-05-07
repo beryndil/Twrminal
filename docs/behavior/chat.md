@@ -28,7 +28,22 @@ Clicking a sidebar row selects that chat. The conversation pane renders:
 * the conversation body: every message turn in chronological order, oldest at top;
 * a composer: multi-line input, attachment chips, send button, slash-command popup.
 
-Selecting the row also marks the session "viewed": the amber unviewed dot on the sidebar row clears. An amber dot appears on a row whenever the session has new assistant output (`last_completed_at`) that the user has not yet opened (`last_completed_at > last_viewed_at`, or `last_viewed_at` is null). The dot is suppressed on the currently-selected row. Selecting the row fires `POST /api/sessions/{id}/viewed`, which stamps `last_viewed_at` server-side and emits a sessions-broadcast upsert so the dot also clears on any other open tab or window within the same WebSocket tick. Refocusing the browser tab while a session is already selected (tab visibility-change) fires the same POST. See [keyboard-shortcuts](keyboard-shortcuts.md) for `j` / `k` / `Alt+1..9` navigation between sidebar rows.
+Selecting the row also marks the session "viewed": the green activity pip on the sidebar row clears. Selecting the row fires `POST /api/sessions/{id}/viewed`, which stamps `last_viewed_at` server-side and emits a sessions-broadcast upsert so the pip also clears on any other open tab or window within the same WebSocket tick. Refocusing the browser tab while a session is already selected (tab visibility-change) fires the same POST. See [keyboard-shortcuts](keyboard-shortcuts.md) for `j` / `k` / `Alt+1..9` navigation between sidebar rows.
+
+### Activity indicator
+
+Each sidebar row has a single coloured pip indicator rendered to the left of the session title. The pip reflects the live agent state for that session, updated in real time via the `/ws/sessions` broadcast. Four states, resolved in priority order (first match wins):
+
+| Priority | Colour | Animation | Condition |
+|---|---|---|---|
+| 1 | **Red** | Flashing ping | Agent is parked waiting for user input (tool-use approval or `AskUserQuestion`) **OR** `error_pending` is latched on the session |
+| 2 | **Orange** | Flashing ping | Agent turn is actively running and not parked on a question |
+| 3 | **Green** | Solid dot | Session has new assistant output the user has not yet opened (`last_completed_at > last_viewed_at`, or `last_viewed_at` is null). Suppressed on the currently-selected row. |
+| 4 | — | (absent) | Session is idle and caught up — no pip is rendered |
+
+The red and orange states are driven by `runner_state` WebSocket broadcast events (`is_awaiting_user` and `is_running` fields respectively). The green state is driven by the `last_completed_at` / `last_viewed_at` timestamps on the `SessionOut` row, which the sessions-broadcast upsert keeps current. Colour carries the full meaning — the pip dimensions and animation rhythm are identical across all active states.
+
+The `is_running` and `is_awaiting_user` fields from `runner_state` events are maintained in the sessions store as `Set<string>` collections (`running` and `awaiting`). They are not persisted to the `SessionOut` row because they represent transient runner state; a page reload or server restart resets them to empty (the broadcast reconnects and re-emits state on the next runner event).
 
 ## What a message turn looks like
 

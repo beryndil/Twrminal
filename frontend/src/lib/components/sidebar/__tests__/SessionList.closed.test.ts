@@ -53,6 +53,8 @@ const fakeStores = (sessions: readonly SessionOut[]) => ({
     tagsBySessionId: {} as Record<string, never[]>,
     loading: false,
     error: null as Error | null,
+    running: new Set<string>(),
+    awaiting: new Set<string>(),
   },
   tagsStore: {
     all: [] as never[],

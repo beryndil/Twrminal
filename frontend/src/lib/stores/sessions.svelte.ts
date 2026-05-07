@@ -41,6 +41,19 @@ interface SessionsState {
   loading: boolean;
   /** Last error from a refresh attempt (cleared on success). */
   error: Error | null;
+  /**
+   * Session ids whose agent runner is currently executing a turn
+   * (``is_running`` from the ``runner_state`` WS broadcast). Cleared
+   * when the runner_state event sets ``is_running=false``.
+   */
+  running: Set<string>;
+  /**
+   * Session ids whose agent runner is parked waiting for the user
+   * (``is_awaiting_user`` from the ``runner_state`` WS broadcast) —
+   * tool-use approval or ``AskUserQuestion``. Cleared when
+   * ``is_awaiting_user`` returns to false.
+   */
+  awaiting: Set<string>;
 }
 
 const state: SessionsState = $state({
@@ -48,6 +61,8 @@ const state: SessionsState = $state({
   tagsBySessionId: {},
   loading: false,
   error: null,
+  running: new Set<string>(),
+  awaiting: new Set<string>(),
 });
 
 export const sessionsStore = state;
@@ -129,13 +144,35 @@ connectSessionsBroadcast(
       _applyUpsert(event.session);
     } else if (event.type === "session_delete") {
       _applyDelete(event.session_id);
-    } else if (event.type === "runner_state" && event.is_error) {
+    } else if (event.type === "runner_state") {
+      const { session_id, is_running, is_awaiting_user, is_error } = event;
+
+      // Maintain running set — reassign so Svelte's proxy detects the change.
+      const nextRunning = new Set(state.running);
+      if (is_running) {
+        nextRunning.add(session_id);
+      } else {
+        nextRunning.delete(session_id);
+      }
+      state.running = nextRunning;
+
+      // Maintain awaiting set — same reassignment pattern.
+      const nextAwaiting = new Set(state.awaiting);
+      if (is_awaiting_user) {
+        nextAwaiting.add(session_id);
+      } else {
+        nextAwaiting.delete(session_id);
+      }
+      state.awaiting = nextAwaiting;
+
       // Agent loop entered ERROR state — set error_pending locally so
       // the sidebar pip flashes without waiting for a page reload.
       // The session_upsert from the recover route will clear it.
-      const idx = state.sessions.findIndex((s) => s.id === event.session_id);
-      if (idx !== -1) {
-        state.sessions[idx] = { ...state.sessions[idx], error_pending: true };
+      if (is_error) {
+        const idx = state.sessions.findIndex((s) => s.id === session_id);
+        if (idx !== -1) {
+          state.sessions[idx] = { ...state.sessions[idx], error_pending: true };
+        }
       }
     }
   },
@@ -235,8 +272,20 @@ export function _resetForTests(): void {
   state.tagsBySessionId = {};
   state.loading = false;
   state.error = null;
+  state.running = new Set<string>();
+  state.awaiting = new Set<string>();
   refreshController?.abort();
   refreshController = null;
+}
+
+/** Override ``running`` ids for unit tests. */
+export function _setRunningForTests(ids: string[]): void {
+  state.running = new Set(ids);
+}
+
+/** Override ``awaiting`` ids for unit tests. */
+export function _setAwaitingForTests(ids: string[]): void {
+  state.awaiting = new Set(ids);
 }
 
 /**
@@ -266,4 +315,40 @@ export function _resetWsStatusForTests(): void {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+// ---- Activity indicator (gap-cycle-08-001) ---------------------------------
+
+/**
+ * The four visible states of the per-row activity indicator pip.
+ * Priority order: ``"red"`` > ``"orange"`` > ``"green"`` > ``null``.
+ */
+export type IndicatorState = "red" | "orange" | "green" | null;
+
+/**
+ * Pure helper: resolve the activity indicator state from the four
+ * boolean inputs that drive the sidebar pip.
+ *
+ * Priority rules (first match wins):
+ * 1. ``"red"``    — agent awaiting user input OR ``error_pending`` latched.
+ * 2. ``"orange"`` — agent turn is running (not parked on a question).
+ * 3. ``"green"``  — unviewed output (``last_completed_at > last_viewed_at``
+ *                   and the row is not the currently-selected session).
+ * 4. ``null``     — idle and caught up.
+ *
+ * The function is exported for direct unit-test coverage; the
+ * ``SessionRow`` component derives its state by calling it with values
+ * read from ``sessionsStore.running``, ``sessionsStore.awaiting``, and
+ * the session row's own fields.
+ */
+export function indicatorState(params: {
+  errorPending: boolean;
+  awaiting: boolean;
+  running: boolean;
+  unviewed: boolean;
+}): IndicatorState {
+  if (params.errorPending || params.awaiting) return "red";
+  if (params.running) return "orange";
+  if (params.unviewed) return "green";
+  return null;
 }

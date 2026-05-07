@@ -71,7 +71,12 @@
   import { goto } from "$app/navigation";
   import { shellOpenInTerminal } from "../../api/shell";
   import { showShellOpError } from "../../stores/shellOpNotification.svelte";
-  import { refreshSessions, sessionsStore } from "../../stores/sessions.svelte";
+  import {
+    indicatorState,
+    refreshSessions,
+    sessionsStore,
+    type IndicatorState,
+  } from "../../stores/sessions.svelte";
   import { currentFilter } from "../../stores/tags.svelte";
   import { undoStore } from "../../stores/undo.svelte";
   import {
@@ -167,19 +172,27 @@
   const isClosed = $derived(session.closed_at !== null);
 
   /**
-   * True when the session has new assistant output since the user last
-   * viewed it. The amber dot is suppressed on the currently-selected
-   * row (the view clears on selection via ``markSessionViewed``).
+   * Resolved activity indicator state for this row, following the
+   * red > orange > green > null priority defined in
+   * ``docs/behavior/chat.md`` §"Activity indicator":
    *
-   * Condition mirrors the backend broadcast: ``last_completed_at`` is
-   * stamped whenever a ``message_complete`` event is emitted; the dot
-   * shows until ``last_viewed_at`` overtakes it.
+   * - ``"red"``    — agent awaiting user input OR ``error_pending``.
+   * - ``"orange"`` — agent turn is running (not parked on a question).
+   * - ``"green"``  — unviewed output (``last_completed_at >
+   *                  last_viewed_at`` and row is not selected).
+   * - ``null``     — idle and caught up.
    */
-  const isUnviewed = $derived(
-    !isSelected &&
-      session.last_completed_at !== null &&
-      (session.last_viewed_at === null ||
-        session.last_completed_at > session.last_viewed_at),
+  const activityIndicator: IndicatorState = $derived(
+    indicatorState({
+      errorPending: session.error_pending,
+      awaiting: sessionsStore.awaiting.has(session.id),
+      running: sessionsStore.running.has(session.id),
+      unviewed:
+        !isSelected &&
+        session.last_completed_at !== null &&
+        (session.last_viewed_at === null ||
+          session.last_completed_at > session.last_viewed_at),
+    }),
   );
 
   const kindLabel = $derived(
@@ -509,6 +522,50 @@
         aria-label={kindLabel}
         data-testid="session-kind-indicator"
       ></span>
+      <!--
+        Activity pip (gap-cycle-08-001): unified four-state indicator
+        rendered to the left of the title. Red and orange states animate
+        with a ping to draw the eye; green is solid. The pip is absent
+        when the row is idle and caught up (activityIndicator === null).
+        Priority: red > orange > green > null.
+      -->
+      {#if activityIndicator === "red"}
+        <span
+          class="relative flex h-2.5 w-2.5 flex-shrink-0 items-center justify-center"
+          aria-label={SIDEBAR_STRINGS.activityPipRedAriaLabel}
+          data-testid="session-activity-pip"
+          data-pip-state="red"
+        >
+          <span
+            class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"
+          ></span>
+          <span class="relative inline-flex h-2 w-2 rounded-full bg-red-500"></span>
+        </span>
+      {:else if activityIndicator === "orange"}
+        <span
+          class="relative flex h-2.5 w-2.5 flex-shrink-0 items-center justify-center"
+          aria-label={SIDEBAR_STRINGS.activityPipOrangeAriaLabel}
+          data-testid="session-activity-pip"
+          data-pip-state="orange"
+        >
+          <span
+            class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"
+          ></span>
+          <span class="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
+        </span>
+      {:else if activityIndicator === "green"}
+        <!--
+          Solid emerald dot: unviewed output. Clears when the row is
+          selected (onclick stamps last_viewed_at and the WS broadcast
+          removes the dot on all open tabs within the same tick).
+        -->
+        <span
+          class="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-emerald-500"
+          aria-label={SIDEBAR_STRINGS.activityPipGreenAriaLabel}
+          data-testid="session-activity-pip"
+          data-pip-state="green"
+        ></span>
+      {/if}
       <span class="flex-1 truncate text-sm text-fg-strong" data-testid="session-title">
         {session.title}
       </span>
@@ -519,28 +576,6 @@
           data-testid="session-pinned-indicator"
         >
           ★
-        </span>
-      {/if}
-      {#if isUnviewed}
-        <!--
-          Amber dot: new assistant output arrived since the user last
-          opened this session. Clears when the row is selected (the
-          onclick stamps last_viewed_at and the sessions-broadcast upsert
-          removes the dot on all open tabs within the same WS tick).
-        -->
-        <span
-          class="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-amber-400"
-          aria-label={SIDEBAR_STRINGS.unviewedDotAriaLabel}
-          data-testid="session-unviewed-dot"
-        ></span>
-      {/if}
-      {#if session.error_pending}
-        <span
-          class="animate-pulse text-xs text-red-400"
-          aria-label={SIDEBAR_STRINGS.errorPendingIndicatorAriaLabel}
-          data-testid="session-error-indicator"
-        >
-          !
         </span>
       {/if}
       {#if isClosed}

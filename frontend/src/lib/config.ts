@@ -783,6 +783,10 @@ export const SIDEBAR_STRINGS = {
   unviewedDotAriaLabel: "Unviewed",
   closedIndicatorAriaLabel: "Closed",
   errorPendingIndicatorAriaLabel: "Needs attention",
+  /** Activity pip — per-row state descriptions (gap-cycle-08-001). */
+  activityPipRedAriaLabel: "Awaiting your input",
+  activityPipOrangeAriaLabel: "Agent running",
+  activityPipGreenAriaLabel: "New output — unviewed",
   closedGroupLabel: "Closed",
   closedToggleExpandLabel: (count: number) => `Closed (${count})`,
   closedToggleAriaExpanded: "Hide closed sessions",
