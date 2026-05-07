@@ -169,6 +169,26 @@ Exposes the per-session free-text instructions (`session_instructions` on `Sessi
 
 The Instructions subsection is read-only in v0.18.0 — the editor surface for the field lives in the SessionEdit modal (per arch §1.2 `components/modals/`), not in the Inspector body. Inspector renders a faithful view of the persisted value; round-tripping back through the editor preserves the exact text including leading/trailing whitespace inside the bubble.
 
+## CollapsibleBody
+
+Long content areas — the assistant message body and the tool-output stream — are wrapped in a `CollapsibleBody` component (`common/CollapsibleBody.svelte`).
+
+**Folded state (content height > threshold):**
+* The wrapper clamps to the threshold height (default 320 px).
+* The bottom 64 px of the visible area fades out via a CSS `mask-image` gradient, signalling to the user that content continues below.
+* A **"Show full"** button appears beneath the clamped area.
+
+**Expanded state:**
+* Clicking "Show full" removes the clamp and mask, revealing the full content height.
+* The "Show full" button is replaced by a **"Collapse"** affordance.
+* Scrolling does not re-fold the wrapper — only clicking "Collapse" contracts it.
+
+**Content under threshold:** No fold UI is rendered; the content displays normally.
+
+**ResizeObserver lifecycle:** A `ResizeObserver` watches the inner content element (not the clamping wrapper). The inner element has no height constraint, so it always reports the content's natural height — even while the outer wrapper is clamped with `overflow: hidden`. This means streaming output that grows past the threshold triggers the fold UI smoothly without a full re-render, and theme-driven font swaps that change line height are re-evaluated automatically.
+
+The threshold and fade-zone constants live in `config.ts` (`COLLAPSIBLE_BODY_THRESHOLD_PX`, `COLLAPSIBLE_BODY_FADE_PX`). The expand/collapse button strings are in `COLLAPSIBLE_BODY_STRINGS` in the same file.
+
 ## What the user does NOT see in chat
 
 These belong to other subsystems:

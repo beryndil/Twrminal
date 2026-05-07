@@ -34,6 +34,7 @@
     MENU_TARGET_TOOL_CALL,
   } from "../../config";
   import { contextMenu } from "../../actions/contextMenu";
+  import CollapsibleBody from "../common/CollapsibleBody.svelte";
   import type { ToolCallView } from "../../stores/conversation.svelte";
 
   interface Props {
@@ -136,9 +137,11 @@
         {CONVERSATION_STRINGS.toolStatusRunning}…
       </p>
     {:else}
-      <pre
-        class="whitespace-pre-wrap break-words font-mono text-fg"
-        data-testid="tool-output-stream">{call.output}</pre>
+      <CollapsibleBody>
+        <pre
+          class="whitespace-pre-wrap break-words font-mono text-fg"
+          data-testid="tool-output-stream">{call.output}</pre>
+      </CollapsibleBody>
     {/if}
     {#if elidedCount > 0}
       <p class="mt-1 italic text-fg-muted" data-testid="tool-output-truncated">

@@ -56,6 +56,7 @@
   import { sanitizeHtml } from "../../sanitize";
   import { bumpCheckpointRefresh } from "../../stores/checkpointBus.svelte";
   import type { MessageTurnView } from "../../stores/conversation.svelte";
+  import CollapsibleBody from "../common/CollapsibleBody.svelte";
   import ConfirmDialog from "../sidebar/ConfirmDialog.svelte";
   import RoutingBadge from "./RoutingBadge.svelte";
   import ToolOutput from "./ToolOutput.svelte";
@@ -299,12 +300,16 @@
         </details>
       {/if}
       {#if bodyHtml.length > 0}
-        <div class="message-turn__body" data-testid="message-turn-body" use:markdownContextMenu>
-          <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-          {@html bodyHtml}
-        </div>
+        <CollapsibleBody>
+          <div class="message-turn__body" data-testid="message-turn-body" use:markdownContextMenu>
+            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+            {@html bodyHtml}
+          </div>
+        </CollapsibleBody>
       {:else if turn.body.length > 0}
-        <p class="text-fg-muted" data-testid="message-turn-body-fallback">{turn.body}</p>
+        <CollapsibleBody>
+          <p class="text-fg-muted" data-testid="message-turn-body-fallback">{turn.body}</p>
+        </CollapsibleBody>
       {/if}
       <div class="mt-2 flex items-center justify-end gap-2">
         <button

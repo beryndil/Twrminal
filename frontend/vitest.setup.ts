@@ -8,9 +8,37 @@
  *   provider (item 2.9) needs synchronous reads + writes for the
  *   no-flash boot path. The polyfill is reset between tests via the
  *   per-file `beforeEach(window.localStorage.clear())`.
+ * - Installs a no-op ``ResizeObserver`` stub so that components
+ *   using ``CollapsibleBody`` (gap-cycle-01-010) do not throw
+ *   "ResizeObserver is not defined" in jsdom. The stub never fires its
+ *   callback, keeping content always under-threshold in tests that do
+ *   not specifically test the fold UI. Tests that DO exercise
+ *   ``CollapsibleBody`` install their own stub via ``vi.stubGlobal``
+ *   in a per-file ``beforeEach`` and clean up with
+ *   ``vi.unstubAllGlobals()`` in ``afterEach``, which takes precedence
+ *   over this global assignment.
  */
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach } from "vitest";
+
+// Global no-op ResizeObserver stub — jsdom does not implement it.
+// ``CollapsibleBody`` uses it to re-measure content on layout changes;
+// when the stub fires no callbacks the component stays in the
+// under-threshold (no fold UI) state, which is correct for tests that
+// do not target fold behaviour.
+if (typeof window !== "undefined" && !("ResizeObserver" in window)) {
+  window.ResizeObserver = class NoopResizeObserver {
+    observe(): void {
+      // no-op
+    }
+    unobserve(): void {
+      // no-op
+    }
+    disconnect(): void {
+      // no-op
+    }
+  } as unknown as typeof ResizeObserver;
+}
 
 class MemoryStorage {
   private store = new Map<string, string>();

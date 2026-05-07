@@ -440,6 +440,34 @@ export const CONVERSATION_STRINGS = {
 } as const;
 
 /**
+ * Height threshold (px) above which ``CollapsibleBody`` clamps content
+ * and shows the fold affordance (gap-cycle-01-010).
+ *
+ * A comfortable reading height that prevents a single long turn from
+ * dominating the viewport. Anchored to
+ * ``docs/behavior/chat.md`` §"CollapsibleBody".
+ */
+export const COLLAPSIBLE_BODY_THRESHOLD_PX = 320;
+
+/**
+ * Pixel height of the CSS ``mask-image`` fade zone at the bottom of a
+ * folded ``CollapsibleBody`` (gap-cycle-01-010). Matches v0.17.x
+ * observable behavior.
+ */
+export const COLLAPSIBLE_BODY_FADE_PX = 64;
+
+/**
+ * String table for the ``CollapsibleBody`` fold affordance.
+ *
+ * Centralised here per coding-standards "i18n-ready string tables".
+ * Anchored to ``docs/behavior/chat.md`` §"CollapsibleBody".
+ */
+export const COLLAPSIBLE_BODY_STRINGS = {
+  showFull: "Show full",
+  collapse: "Collapse",
+} as const;
+
+/**
  * Global command palette strings (Phase 5).
  * Anchored to ``docs/behavior/keyboard-shortcuts.md`` §"Command palette".
  */
