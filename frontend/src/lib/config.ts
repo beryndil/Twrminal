@@ -2367,13 +2367,14 @@ export const PREFERENCES_STRINGS = {
   modelLabel: "Default model",
   permissionModeLabel: "Default permission mode",
   workingDirLabel: "Default working directory",
-  saveButton: "Save defaults",
-  savedFeedback: "Saved.",
-  saveError: "Couldn't save — try again.",
   loadError: "Couldn't load preferences.",
   modelPlaceholder: "(use routing rules)",
   permissionModePlaceholder: "(SDK default)",
   workingDirPlaceholder: "/path/to/project",
+  /** Per-row save badges (gap-cycle-17-002). */
+  savingBadge: "Saving…",
+  savedBadge: "Saved",
+  saveFailedPrefix: "Failed to save:",
 } as const;
 
 /**
@@ -2383,6 +2384,14 @@ export const PREFERENCES_STRINGS = {
  * Mirrors the ~400 ms v17 observable behaviour for SettingsTextField.
  */
 export const PROFILE_AUTOSAVE_DEBOUNCE_MS = 400;
+
+/**
+ * Debounce delay (ms) for the default-working-directory autosave in the
+ * Defaults section (gap-cycle-17-002).
+ *
+ * Mirrors the ~400 ms v17 observable behaviour for SettingsTextField.
+ */
+export const DEFAULTS_AUTOSAVE_DEBOUNCE_MS = 400;
 
 /** Profile / identity section UI strings (gap-cycle-03-011). */
 export const PROFILE_STRINGS = {

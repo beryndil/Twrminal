@@ -34,18 +34,34 @@ The preferences subsystem stores per-instance settings in a single DB row and ex
 
 Sibling subsystems referenced here: [themes](themes.md), [chat](chat.md).
 
-## Settings → Defaults
+## Settings → Defaults (gap-cycle-17-002)
 
 The **Defaults** section in Settings lets the user pre-fill the new-session form. Four fields are exposed:
 
-| Field | Type | Effect |
-|---|---|---|
-| `theme` | string | Active UI theme ID; NOT NULL in DB |
-| `default_model` | nullable string | Pre-fills the executor model selector in the new-session form |
-| `default_permission_mode` | nullable string | Pre-fills the permission mode selector |
-| `default_working_dir` | nullable string | Pre-fills the working directory input |
+| Field | Type | Control | Save trigger |
+|---|---|---|---|
+| `theme` | string | `<select>` | Immediate on change |
+| `default_model` | nullable string | `<select>` | Immediate on change |
+| `default_permission_mode` | nullable string | `<select>` | Immediate on change |
+| `default_working_dir` | nullable string | `<input type="text">` | Debounced ~400 ms (`DEFAULTS_AUTOSAVE_DEBOUNCE_MS`) |
 
-`PATCH /api/preferences` uses Pydantic `model_fields_set` semantics: only explicitly supplied keys are written to the DB. An empty JSON body `{}` is a no-op.
+There is **no Save button**. Each field autosaves independently — selecting an option or pausing after typing fires its own `PATCH /api/preferences` containing only that field (`model_fields_set` semantics; an empty body `{}` is a no-op).
+
+### Per-row save badges
+
+Every field row carries a save badge rendered to the right of its control, matching the v17 `SettingsRow` pattern:
+
+| State | Text | Role | CSS modifier |
+|---|---|---|---|
+| Saving | "Saving…" | `status` | `--saving` (muted fg) |
+| Saved | "Saved" | `status` | `--saved` (accent fg) |
+| Error | "Failed to save: {message}" | `alert` | `--error` (error fg) |
+
+The badge auto-fades back to idle ~2 s after a successful save. The `onsaveStatus` callback fires on every save event so the `SettingsShell` footer aggregates the active section's last save state.
+
+### Theme field cross-sync
+
+The theme `<select>` in Defaults reads from `themeStore.theme` (the same reactive store used by the `ThemePicker` in Appearance). Changing the theme in either location calls `setTheme()`, which updates `themeStore.theme`, applies the new palette to the DOM, and persists to `localStorage` (`bearings-theme-v1`) — the other control reflects the change without a page reload. The autosave path additionally PATCHes `/api/preferences` so the theme is persisted to the DB as well.
 
 ## Profile / Identity (gap-cycle-03-011)
 
