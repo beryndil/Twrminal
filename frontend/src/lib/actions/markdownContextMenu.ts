@@ -29,14 +29,45 @@
 import {
   MENU_ACTION_CODE_BLOCK_COPY,
   MENU_ACTION_CODE_BLOCK_COPY_WITH_FENCE,
+  MENU_ACTION_CODE_BLOCK_OPEN_IN_EDITOR,
   MENU_ACTION_CODE_BLOCK_SAVE_TO_FILE,
   MENU_ACTION_LINK_COPY_TEXT,
   MENU_ACTION_LINK_COPY_URL,
+  MENU_ACTION_LINK_OPEN_IN_EDITOR,
   MENU_ACTION_LINK_OPEN_NEW_TAB,
   MENU_TARGET_CODE_BLOCK,
   MENU_TARGET_LINK,
 } from "../config";
 import { openMenu } from "../context-menu/store.svelte";
+import { shellOpenInEditor } from "../api/shell";
+import { showShellOpError } from "../stores/shellOpNotification.svelte";
+
+/**
+ * Return the absolute path from a ``file://`` URL or a bare absolute
+ * path string, or ``null`` when neither pattern matches.
+ */
+function fileUrlToPath(href: string): string | null {
+  if (href.startsWith("file://")) {
+    try {
+      return decodeURIComponent(new URL(href).pathname);
+    } catch {
+      return null;
+    }
+  }
+  if (href.startsWith("/")) return href;
+  return null;
+}
+
+/**
+ * Return ``true`` when the trimmed code content looks like a single
+ * absolute file path (no newlines, starts with ``/``).  Used to gate
+ * the "Open in editor" action on code blocks that contain a path
+ * rather than multi-line source code.
+ */
+function looksLikePath(code: string): boolean {
+  const trimmed = code.trim();
+  return trimmed.startsWith("/") && !trimmed.includes("\n");
+}
 
 /**
  * Maps common fenced-code language identifiers to file extensions for
@@ -151,8 +182,19 @@ export function markdownContextMenu(container: HTMLElement): { destroy: () => vo
           [MENU_ACTION_CODE_BLOCK_SAVE_TO_FILE]: () => {
             saveToFile(code, lang);
           },
-          // MENU_ACTION_CODE_BLOCK_OPEN_IN_EDITOR — advanced, no editor
-          // integration in v1; omitting the handler renders it disabled.
+          // MENU_ACTION_CODE_BLOCK_OPEN_IN_EDITOR — advanced, wired when
+          // the code content is a single-line absolute path.
+          ...(looksLikePath(code)
+            ? {
+                [MENU_ACTION_CODE_BLOCK_OPEN_IN_EDITOR]: () => {
+                  void shellOpenInEditor(code.trim()).catch((err: unknown) => {
+                    const detail =
+                      err instanceof Error ? err.message : "unknown error";
+                    showShellOpError(detail);
+                  });
+                },
+              }
+            : {}),
         },
         data: { lang },
         x: event.clientX,
@@ -170,6 +212,9 @@ export function markdownContextMenu(container: HTMLElement): { destroy: () => vo
       const href =
         target instanceof HTMLAnchorElement ? target.href : (target.getAttribute("href") ?? "");
       const text = target.textContent ?? "";
+      // Resolve local path from file:// URL or bare absolute path once;
+      // used to gate the open-in-editor handler below.
+      const localHrefPath = fileUrlToPath(href);
 
       openMenu({
         target: MENU_TARGET_LINK,
@@ -183,8 +228,19 @@ export function markdownContextMenu(container: HTMLElement): { destroy: () => vo
           [MENU_ACTION_LINK_OPEN_NEW_TAB]: () => {
             window.open(href, "_blank", "noopener,noreferrer");
           },
-          // MENU_ACTION_LINK_OPEN_IN_EDITOR — advanced, for file:// links;
-          // no editor integration in v1; omitting renders it disabled.
+          // MENU_ACTION_LINK_OPEN_IN_EDITOR — advanced, wired for file://
+          // URLs and bare absolute paths; greyed for http(s):// links.
+          ...(localHrefPath !== null
+            ? {
+                [MENU_ACTION_LINK_OPEN_IN_EDITOR]: () => {
+                  void shellOpenInEditor(localHrefPath).catch((err: unknown) => {
+                    const detail =
+                      err instanceof Error ? err.message : "unknown error";
+                    showShellOpError(detail);
+                  });
+                },
+              }
+            : {}),
         },
         data: { href, text },
         x: event.clientX,

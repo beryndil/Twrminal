@@ -770,6 +770,14 @@ export const ROUTING_PREVIEW_DEBOUNCE_MS = 300;
 export const API_FS_READ_ENDPOINT = `${API_BASE}/fs/read`;
 
 /**
+ * ``POST /api/shell/exec`` — dispatch an argv via the backend shell
+ * allowlist (``xdg-open`` et al.).  Used by context-menu shell-open
+ * actions per ``docs/behavior/context-menus.md`` §"Shell-open
+ * integration".
+ */
+export const API_SHELL_EXEC_ENDPOINT = `${API_BASE}/shell/exec`;
+
+/**
  * UI strings for the pending-operations floating card (toggled by
  * ``Ctrl+Shift+O`` per ``docs/behavior/keyboard-shortcuts.md`` §"Help").
  */
@@ -791,6 +799,18 @@ export const PENDING_OPS_CARD_STRINGS = {
     if (h < 24) return `${h}h ago`;
     return `${Math.floor(h / 24)}d ago`;
   },
+} as const;
+
+// ---- Shell-open notification (gap-cycle-03-002) -----------------------------
+
+/**
+ * UI strings for the transient shell-operation error toast
+ * (``ShellOpNotification.svelte``).
+ */
+export const SHELL_OP_NOTIFICATION_STRINGS = {
+  /** Prefix prepended before the server ``detail`` message. */
+  errorPrefix: "Shell open failed: ",
+  dismissAriaLabel: "Dismiss notification",
 } as const;
 
 // ---- Template picker (gap-cycle-01-002; keyboard-shortcuts §Create) --------
@@ -2129,6 +2149,7 @@ export const MENU_ACTION_SESSION_COPY_ID = "session.copy_id";
 export const MENU_ACTION_SESSION_COPY_TITLE = "session.copy_title";
 export const MENU_ACTION_SESSION_COPY_SHARE_LINK = "session.copy_share_link";
 export const MENU_ACTION_SESSION_DELETE = "session.delete";
+export const MENU_ACTION_SESSION_OPEN_IN_TERMINAL = "session.open_in_terminal";
 
 export const MENU_ACTION_MESSAGE_JUMP_TO_TURN = "message.jump_to_turn";
 export const MENU_ACTION_MESSAGE_COPY_CONTENT = "message.copy_content";
@@ -2225,6 +2246,7 @@ export const CONTEXT_MENU_STRINGS = {
     [MENU_ACTION_SESSION_COPY_TITLE]: "Copy session title",
     [MENU_ACTION_SESSION_COPY_SHARE_LINK]: "Copy share link",
     [MENU_ACTION_SESSION_DELETE]: "Delete session",
+    [MENU_ACTION_SESSION_OPEN_IN_TERMINAL]: "Open in terminal",
     [MENU_ACTION_MESSAGE_JUMP_TO_TURN]: "Scroll into view",
     [MENU_ACTION_MESSAGE_COPY_CONTENT]: "Copy message text",
     [MENU_ACTION_MESSAGE_COPY_AS_MARKDOWN]: "Copy as Markdown",

@@ -40,6 +40,7 @@ Action IDs (e.g. `session.copy_id`) are public — `~/.config/bearings/menus.tom
 | copy | Copy session title | `session.copy_title` | |
 | copy | Copy share link | `session.copy_share_link` | Advanced. |
 | destructive | Delete session | `session.delete` | Confirm dialog. Cascades to the conversation history and (per [paired-chats](paired-chats.md)) clears the back-pointer on any item paired with this chat. |
+| navigate | Open in terminal | `session.open_in_terminal` | Advanced. Calls `POST /api/shell/exec` with `working_dir`. Greyed when `working_dir` is empty. |
 
 ### Message bubble (user or assistant)
 
@@ -158,6 +159,25 @@ The submenu arrows (`▸`) on Add tag / Remove tag open lists of tags currently 
 | view | Open directory in editor | `pending_operation.open_in.editor` (advanced) |
 
 The Phase 14-16 actions (checkpoint, attachment, pending operation) are listed above; they share the same sectioning and confirmation rules as the other targets.
+
+Also added in Phase 16 (gap-cycle-03-002): `session.open_in_terminal` (navigate, advanced) — opens the session's `working_dir` via `xdg-open`; only rendered when `working_dir` is non-empty.
+
+## Shell-open integration
+
+The following actions call `POST /api/shell/exec` with `argv: ["xdg-open", <path>]`:
+
+| Action ID | Target | Path passed to xdg-open |
+|---|---|---|
+| `code_block.open_in.editor` | Code block (advanced) | Code content, only when it is a single-line absolute path |
+| `link.open_in.editor` | Link (advanced) | Resolved `file://` URL path or bare absolute path; greyed for `http(s)://` |
+| `attachment.open_in.editor` | Attachment chip | `attachment.path` |
+| `attachment.open_in.file_explorer` | Attachment chip (advanced) | Parent directory of `attachment.path` |
+| `pending_operation.open_in.editor` | Pending op row (advanced) | `op.dir`; action greyed when `dir` is absent |
+| `session.open_in_terminal` | Session row (advanced) | `session.working_dir`; action greyed when `working_dir` is empty |
+
+All openers use `xdg-open` (the only command on the default `DEFAULT_ALLOWED_SHELL_COMMANDS` allowlist). The user's desktop environment determines what application opens: a code editor for file paths, a file manager for directories. Users who configure `xdg-open` to launch a terminal emulator for directories will get that behavior for the `open_in_terminal` action.
+
+A non-2xx response from `POST /api/shell/exec` surfaces a transient error toast with the server's `detail` message. The menu closes regardless.
 
 ## Where context menus do NOT appear
 

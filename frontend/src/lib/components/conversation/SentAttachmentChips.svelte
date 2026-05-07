@@ -9,9 +9,10 @@
    *
    * ``attachment.remove`` is deliberately absent from the handler map:
    * the message is already sent, so the action renders greyed with its
-   * normal label. The other four actions (copy-path, copy-filename,
-   * open-in-editor, reveal-in-file-explorer) are all live; the two
-   * "open" variants are no-op stubs until the editor/explorer API lands.
+   * normal label. The four live actions (copy-path, copy-filename,
+   * open-in-editor, reveal-in-file-explorer) call the backend shell
+   * surface (``POST /api/shell/exec``) for the "open" variants per
+   * ``docs/behavior/context-menus.md`` §"Shell-open integration".
    *
    * Behavior anchor: ``docs/behavior/chat.md`` §"What a message turn
    * looks like" — "attachment chips at the bottom (``[File 1] foo.log``-style
@@ -27,6 +28,8 @@
   } from "../../config";
   import { contextMenu } from "../../actions/contextMenu";
   import type { SentAttachment } from "../../stores/conversation.svelte";
+  import { shellOpenInEditor, shellRevealInExplorer } from "../../api/shell";
+  import { showShellOpError } from "../../stores/shellOpNotification.svelte";
 
   interface Props {
     attachments: readonly SentAttachment[];
@@ -63,14 +66,17 @@
             [MENU_ACTION_ATTACHMENT_COPY_FILENAME]: () => {
               void navigator.clipboard.writeText(basename(attachment.path));
             },
-            // Open-in-editor: no-op stub until the editor-open API lands.
             [MENU_ACTION_ATTACHMENT_OPEN_IN_EDITOR]: () => {
-              // intentionally empty — action is enabled (not absent) so the
-              // menu entry renders live rather than greyed.
+              void shellOpenInEditor(attachment.path).catch((err: unknown) => {
+                const detail = err instanceof Error ? err.message : "unknown error";
+                showShellOpError(detail);
+              });
             },
-            // Reveal-in-file-explorer: likewise a no-op stub.
             [MENU_ACTION_ATTACHMENT_OPEN_IN_FILE_EXPLORER]: () => {
-              // intentionally empty stub
+              void shellRevealInExplorer(attachment.path).catch((err: unknown) => {
+                const detail = err instanceof Error ? err.message : "unknown error";
+                showShellOpError(detail);
+              });
             },
             // MENU_ACTION_ATTACHMENT_REMOVE is absent: the message is already
             // sent. The menu entry renders greyed per the behavior doc.

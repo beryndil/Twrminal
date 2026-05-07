@@ -62,6 +62,7 @@
   import BackendStatusBanner from "$lib/components/feedback/BackendStatusBanner.svelte";
   import AuthGate from "$lib/components/feedback/AuthGate.svelte";
   import StatusBar from "$lib/components/feedback/StatusBar.svelte";
+  import ShellOpNotification from "$lib/components/feedback/ShellOpNotification.svelte";
 
   interface Props {
     children?: Snippet;
@@ -600,6 +601,10 @@
            Rendered as position:fixed so it overlays the full viewport.
            Visible only when authStore.blocking is true (WS close 4401). -->
       <AuthGate />
+      <!-- Shell-open error toast (gap-cycle-03-002).
+           Rendered as position:fixed so it overlays without disturbing
+           the grid. Visible only when a shell action returns non-2xx. -->
+      <ShellOpNotification />
     </ContextMenuProvider>
     <!-- Item 2.4 — sidebar search overlay. Mounted inside KeybindingsProvider
          so its bindHandler call has access to the live keybindings store. -->

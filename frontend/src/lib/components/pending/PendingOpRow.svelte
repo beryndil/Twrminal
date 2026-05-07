@@ -27,6 +27,8 @@
   } from "../../config";
   import { contextMenu } from "../../actions/contextMenu";
   import type { PendingOp } from "../../stores/pending.svelte";
+  import { shellOpenInEditor } from "../../api/shell";
+  import { showShellOpError } from "../../stores/shellOpNotification.svelte";
 
   interface Props {
     op: PendingOp;
@@ -67,15 +69,20 @@
     }
   }
 
+  // ---- Shell-open handler ---------------------------------------------------
+
+  /**
+   * Open the op's ``dir`` in the editor via the backend shell surface.
+   * When ``dir`` is absent the action is omitted from the handler map
+   * so the menu renders it greyed.
+   */
   function handleOpenInEditor(): void {
     const dir = op.dir ?? "";
-    if (dir !== "") {
-      // The editor-open action is advisory; no direct API call here.
-      // The context-menu action fires the handler registered on this row.
-      // The PendingOpsCard is responsible for a richer implementation
-      // if the backend shell/exec surface is wired.
-      void navigator.clipboard.writeText(dir);
-    }
+    if (dir === "") return;
+    void shellOpenInEditor(dir).catch((err: unknown) => {
+      const detail = err instanceof Error ? err.message : "unknown error";
+      showShellOpError(detail);
+    });
   }
 
   const menuHandlers = $derived({
@@ -83,7 +90,12 @@
     [MENU_ACTION_PENDING_OPERATION_DISMISS]: () => onDismiss(op.name),
     [MENU_ACTION_PENDING_OPERATION_COPY_NAME]: handleCopyName,
     [MENU_ACTION_PENDING_OPERATION_COPY_COMMAND]: handleCopyCommand,
-    [MENU_ACTION_PENDING_OPERATION_OPEN_IN_EDITOR]: handleOpenInEditor,
+    // Open-in-editor only wired when op.dir is present; absent handler
+    // renders the action greyed per context-menu behavior doc §"Pending
+    // operation".
+    ...(op.dir !== undefined && op.dir !== ""
+      ? { [MENU_ACTION_PENDING_OPERATION_OPEN_IN_EDITOR]: handleOpenInEditor }
+      : {}),
   });
 </script>
 

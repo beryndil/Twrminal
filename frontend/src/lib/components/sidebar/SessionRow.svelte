@@ -48,6 +48,7 @@
     MENU_ACTION_SESSION_DUPLICATE,
     MENU_ACTION_SESSION_EDIT_TAGS,
     MENU_ACTION_SESSION_OPEN_IN_NEW_TAB,
+    MENU_ACTION_SESSION_OPEN_IN_TERMINAL,
     MENU_ACTION_SESSION_PIN,
     MENU_ACTION_SESSION_RENAME,
     MENU_ACTION_SESSION_REOPEN,
@@ -58,6 +59,8 @@
     SESSION_KIND_CHAT,
     SIDEBAR_STRINGS,
   } from "../../config";
+  import { shellOpenInTerminal } from "../../api/shell";
+  import { showShellOpError } from "../../stores/shellOpNotification.svelte";
   import { refreshSessions } from "../../stores/sessions.svelte";
   import { currentFilter } from "../../stores/tags.svelte";
   import {
@@ -271,6 +274,21 @@
     [MENU_ACTION_SESSION_DELETE]: () => {
       showDeleteConfirm = true;
     },
+    // Open in terminal — advanced; only wired when working_dir is set.
+    ...(session.working_dir !== null &&
+    session.working_dir !== undefined &&
+    session.working_dir !== ""
+      ? {
+          [MENU_ACTION_SESSION_OPEN_IN_TERMINAL]: () => {
+            void shellOpenInTerminal(session.working_dir as string).catch(
+              (err: unknown) => {
+                const detail = err instanceof Error ? err.message : "unknown error";
+                showShellOpError(detail);
+              },
+            );
+          },
+        }
+      : {}),
   });
 </script>
 
