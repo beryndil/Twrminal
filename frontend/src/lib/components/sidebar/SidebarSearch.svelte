@@ -25,6 +25,7 @@
     SIDEBAR_SEARCH_STRINGS,
   } from "../../config";
   import { bindHandler } from "../../keyboard/store.svelte";
+  import { ESC_PRIORITY_OVERLAY, registerEscEntry } from "../../keyboard/escCascade";
 
   interface Props {
     /** Called when the overlay closes so the parent can sync open state. */
@@ -120,8 +121,17 @@
 
   onMount(() => {
     const release = bindHandler(KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH, openOverlay);
+    // Register with the global Esc cascade at priority 4 so pressing Esc
+    // closes the overlay even when focus has moved off the search input.
+    // The local onkeydown handler on the input remains as defence-in-depth.
+    const unregisterEsc = registerEscEntry({
+      priority: ESC_PRIORITY_OVERLAY,
+      isOpen: () => open,
+      close: closeOverlay,
+    });
     return () => {
       release();
+      unregisterEsc();
       if (debounceTimer !== null) clearTimeout(debounceTimer);
     };
   });
