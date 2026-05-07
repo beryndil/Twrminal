@@ -175,6 +175,50 @@ model name, bad `kind`, label over the cap, etc.).
   destination assigns new sequential `seq` values (monotonically
   increasing from 0 within the session).
 
+---
+
+### Drag-and-drop
+
+The entire sidebar `<aside>` (`app-shell__sidebar` in `+layout.svelte`)
+doubles as a drop target for `.json` export files.
+
+**Affordance**
+
+While one or more files are dragged over the sidebar, the aside gains
+the `.app-shell__sidebar--dragging` CSS class, which paints a visible
+inset accent ring around it.
+
+**Drop behaviour**
+
+1. Only items with `kind === "file"` are accepted; non-file drags are
+   ignored.
+2. Dropping one or more `.json` files starts the batch import loop via
+   `importFromFiles()` in `$lib/utils/batchImport.ts`.  For each file
+   in order:
+   - A `"Importing N of M…"` progress line appears in the sidebar
+     (below the New Session / Import buttons, above the nav).
+   - The file text is read, JSON-parsed, and POSTed to
+     `POST /api/sessions/import`.
+   - On success: the imported `SessionOut` is collected.
+   - On failure (parse error or `ApiError`): the error is recorded;
+     **the remaining files continue** — one bad file does not abort the
+     batch.
+3. After all files are processed:
+   - The progress line clears.
+   - If any files failed, a single-line error summary
+     (`"name1: err1; name2: err2"`) appears inline in the sidebar.
+   - If at least one import succeeded, `goto()` navigates to the first
+     imported session.  Remaining successful imports are prepended to
+     the session list via the session-broadcast WebSocket without
+     further navigation.
+
+**Canonical use case**
+
+Multi-file drag (a directory exported by "Export selected") is the
+canonical way to bulk-import sessions without repeating the dialog flow.
+
+---
+
 ### Frontend implementation notes
 
 `importSessionJson(exportJson, options?)` in

@@ -59,6 +59,7 @@
   import SessionImportDialog from "$lib/components/sidebar/SessionImportDialog.svelte";
   import PairedChatIndicator from "$lib/components/conversation/PairedChatIndicator.svelte";
   import { reopenSession, getPairedChatInfo, type PairedChatInfo, type SessionOut } from "$lib/api/sessions";
+  import { importFromFiles, type BatchImportProgress } from "$lib/utils/batchImport";
   import { sidebarNavNext, sidebarNavPrev, sidebarNavSlot } from "$lib/keyboard/sidebarNav";
   import BackendStatusBanner from "$lib/components/feedback/BackendStatusBanner.svelte";
   import AuthGate from "$lib/components/feedback/AuthGate.svelte";
@@ -135,6 +136,81 @@
   function handleImported(session: SessionOut): void {
     showImportDialog = false;
     void goto(`/sessions/${encodeURIComponent(session.id)}`);
+  }
+
+  // ---- Sidebar drag-and-drop import (gap-cycle-08-005) ------------------
+  //
+  // The entire sidebar <aside> is a drop target for .json export files.
+  // Dragging one or more files in paints an accent inset ring; releasing
+  // runs a batch import loop via importFromFiles().  The first successful
+  // import navigates to that session; subsequent imports prepend via the
+  // session-broadcast WebSocket without further navigation.
+  //
+  // dragDepth tracks enter/leave pairs so child-element boundaries don't
+  // flicker the ring state.
+
+  let sidebarDragDepth = $state(0);
+  const isSidebarDragActive = $derived(sidebarDragDepth > 0);
+  let sidebarImportProgress = $state<string | null>(null);
+  let sidebarImportErrors = $state<string | null>(null);
+
+  function sidebarHasFileItems(dt: DataTransfer | null): boolean {
+    if (!dt) return false;
+    for (const item of Array.from(dt.items)) {
+      if (item.kind === "file") return true;
+    }
+    return false;
+  }
+
+  function handleSidebarDragEnter(event: DragEvent): void {
+    if (!sidebarHasFileItems(event.dataTransfer)) return;
+    event.preventDefault();
+    sidebarDragDepth += 1;
+  }
+
+  function handleSidebarDragOver(event: DragEvent): void {
+    if (sidebarDragDepth > 0) {
+      event.preventDefault();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = "copy";
+      }
+    }
+  }
+
+  function handleSidebarDragLeave(_event: DragEvent): void {
+    sidebarDragDepth = Math.max(0, sidebarDragDepth - 1);
+  }
+
+  function handleSidebarDrop(event: DragEvent): void {
+    event.preventDefault();
+    sidebarDragDepth = 0;
+    const files = Array.from(event.dataTransfer?.files ?? []).filter((f) =>
+      f.name.endsWith(".json"),
+    );
+    if (files.length === 0) return;
+    sidebarImportErrors = null;
+    void runBatchImport(files);
+  }
+
+  async function runBatchImport(files: File[]): Promise<void> {
+    sidebarImportProgress = `Importing 1 of ${files.length}…`;
+    sidebarImportErrors = null;
+    let firstNavigated = false;
+
+    const result = await importFromFiles(files, (progress: BatchImportProgress) => {
+      sidebarImportProgress = `Importing ${progress.current} of ${progress.total}…`;
+    });
+
+    sidebarImportProgress = null;
+
+    if (result.imported.length > 0 && !firstNavigated) {
+      firstNavigated = true;
+      void goto(`/sessions/${encodeURIComponent(result.imported[0].id)}`);
+    }
+
+    if (result.errors.length > 0) {
+      sidebarImportErrors = result.errors.map((e) => `${e.name}: ${e.detail}`).join("; ");
+    }
   }
 
   async function handleReopenSession(): Promise<void> {
@@ -268,8 +344,13 @@
       <div class="app-shell" data-testid="app-shell">
         <aside
           class="app-shell__sidebar border-r border-border bg-surface-1"
+          class:app-shell__sidebar--dragging={isSidebarDragActive}
           data-testid="app-shell-sidebar"
           aria-label="Sessions sidebar"
+          ondragenter={handleSidebarDragEnter}
+          ondragover={handleSidebarDragOver}
+          ondragleave={handleSidebarDragLeave}
+          ondrop={handleSidebarDrop}
         >
           <!-- Brand -->
           <div class="flex items-center gap-2 px-2 py-2 text-accent" data-testid="sidebar-brand">
@@ -325,6 +406,22 @@
               <span>Import session…</span>
             </button>
           </div>
+
+          <!-- Drag-and-drop import status (gap-cycle-08-005) -->
+          {#if sidebarImportProgress !== null || sidebarImportErrors !== null}
+            <div class="px-2 pb-1 text-xs" data-testid="sidebar-import-status">
+              {#if sidebarImportProgress !== null}
+                <p class="text-fg-muted" data-testid="sidebar-import-progress">
+                  {sidebarImportProgress}
+                </p>
+              {/if}
+              {#if sidebarImportErrors !== null}
+                <p class="text-red-400" data-testid="sidebar-import-errors">
+                  {sidebarImportErrors}
+                </p>
+              {/if}
+            </div>
+          {/if}
 
           <!-- Primary nav -->
           <nav
@@ -737,6 +834,12 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  /* Drag-and-drop import drop target (gap-cycle-08-005).
+   * Paints an inset accent ring when files are dragged over the sidebar. */
+  .app-shell__sidebar--dragging {
+    box-shadow: inset 0 0 0 2px rgb(var(--bearings-accent) / 0.8);
   }
 
   .app-shell__sidebar-body {
