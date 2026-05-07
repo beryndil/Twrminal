@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Awaitable, Callable, Iterable
+from pathlib import Path
 
 import aiosqlite
 from fastapi import APIRouter, FastAPI, WebSocket
@@ -209,6 +210,7 @@ def create_app(
     uploads_cfg: UploadsCfg | None = None,
     fs_cfg: FsCfg | None = None,
     shell_cfg: ShellCfg | None = None,
+    avatars_root: Path | None = None,
     extra_routers: Iterable[APIRouter] | None = None,
     enable_driver_dispatch: bool = False,
     billing_mode: str = DEFAULT_BILLING_MODE,
@@ -312,6 +314,10 @@ def create_app(
     app.state.uploads_cfg = uploads_cfg if uploads_cfg is not None else UploadsCfg()
     app.state.fs_cfg = fs_cfg if fs_cfg is not None else FsCfg()
     app.state.shell_cfg = shell_cfg if shell_cfg is not None else ShellCfg()
+    # Avatar storage root (gap-cycle-03-011). Tests inject a tmp_path;
+    # production callers leave None and the route helper resolves the
+    # DEFAULT_AVATARS_STORAGE_ROOT constant on first access.
+    app.state.avatars_root = avatars_root
     # Process-uptime anchor (item 1.10; consumed by health + metrics +
     # diag/server). ``time.monotonic`` so a system-clock jump does not
     # fold uptime negative.

@@ -4429,7 +4429,7 @@
         ],
         "summary": "Dismiss a pending operation",
         "description": "Removes the named entry from ``.bearings/pending.toml`` for the given project directory and persists the file. Behaviorally identical to the resolve endpoint. Returns 204 on success; 404 when the name is absent.",
-        "operationId": "dismiss_pending_op_api_pending__name__delete",
+        "operationId": "delete_pending_op_api_pending__name__delete",
         "parameters": [
           {
             "name": "name",
@@ -4672,6 +4672,108 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/preferences/avatar": {
+      "get": {
+        "tags": [
+          "preferences"
+        ],
+        "summary": "Get Avatar",
+        "description": "Serve the current avatar image bytes.\n\nReturns 404 when no avatar has been set. The response carries the\nstored MIME type; callers append ``?v=<updated_at>`` to the URL for\ncache-busting.",
+        "operationId": "get_avatar_api_preferences_avatar_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "preferences"
+        ],
+        "summary": "Upload Avatar",
+        "description": "Upload a new avatar image.\n\nAccepts ``multipart/form-data`` with a single ``file`` field. The\nMIME type must be one of ``image/jpeg``, ``image/png``,\n``image/gif``, or ``image/webp``; anything else is rejected with\n415. The file may not exceed :data:`MAX_AVATAR_SIZE_BYTES`; a\nlarger body is rejected with 413.\n\nThe previous avatar (if any) is replaced atomically: the new file\nis written, then the DB row is updated.",
+        "operationId": "upload_avatar_api_preferences_avatar_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_avatar_api_preferences_avatar_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "preferences"
+        ],
+        "summary": "Delete Avatar",
+        "description": "Remove the current avatar and clear the DB fields.\n\nReturns the updated preferences row. A no-op (no avatar set) is\ntreated as success (idempotent DELETE).",
+        "operationId": "delete_avatar_api_preferences_avatar_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/preferences/sync_from_system": {
+      "post": {
+        "tags": [
+          "preferences"
+        ],
+        "summary": "Sync From System",
+        "description": "Populate display_name and avatar from the running user environment.\n\n* ``display_name`` \u2190 ``$USER`` (falls back to ``$LOGNAME``, then\n  ``$USERNAME``; empty string is treated as \"not set\").\n* avatar \u2190 ``~/.face`` when that file exists and is \u2264\n  :data:`MAX_AVATAR_SIZE_BYTES`.  The MIME type is guessed from\n  the file's magic header (first 4 bytes); unrecognised formats\n  are stored with ``image/jpeg`` as the fallback.\n\nFields are written unconditionally \u2014 a subsequent sync always\nrefreshes both values. Returns the updated preferences row.",
+        "operationId": "sync_from_system_api_preferences_sync_from_system_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesOut"
                 }
               }
             }
@@ -5452,6 +5554,21 @@
           "file"
         ],
         "title": "Body_post_upload_api_uploads_post"
+      },
+      "Body_upload_avatar_api_preferences_avatar_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "Avatar image file."
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_avatar_api_preferences_avatar_post"
       },
       "ChecklistItemIn": {
         "properties": {
@@ -6964,6 +7081,28 @@
             ],
             "title": "Default Working Dir"
           },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
           "updated_at": {
             "type": "string",
             "title": "Updated At"
@@ -6976,10 +7115,12 @@
           "default_model",
           "default_permission_mode",
           "default_working_dir",
+          "display_name",
+          "avatar_url",
           "updated_at"
         ],
         "title": "PreferencesOut",
-        "description": "Response shape for GET / PATCH ``/api/preferences``."
+        "description": "Response shape for GET / PATCH / avatar ``/api/preferences``."
       },
       "PreferencesPatch": {
         "properties": {
@@ -7026,6 +7167,17 @@
               }
             ],
             "title": "Default Working Dir"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
           }
         },
         "additionalProperties": false,

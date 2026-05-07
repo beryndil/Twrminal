@@ -30,6 +30,10 @@ class Preferences:
     default_model: str | None
     default_permission_mode: str | None
     default_working_dir: str | None
+    # gap-cycle-03-011 profile / identity fields.
+    display_name: str | None
+    avatar_path: str | None
+    avatar_mime_type: str | None
     updated_at: str
 
 
@@ -39,6 +43,9 @@ def _row_to_prefs(row: aiosqlite.Row) -> Preferences:
         default_model=row["default_model"],
         default_permission_mode=row["default_permission_mode"],
         default_working_dir=row["default_working_dir"],
+        display_name=row["display_name"],
+        avatar_path=row["avatar_path"],
+        avatar_mime_type=row["avatar_mime_type"],
         updated_at=row["updated_at"],
     )
 
@@ -49,10 +56,12 @@ async def get_preferences(conn: aiosqlite.Connection) -> Preferences:
     Raises :class:`RuntimeError` if the seed row is absent (should
     never happen after :func:`load_schema`).
     """
+    conn.row_factory = aiosqlite.Row
     async with conn.execute(
         """
         SELECT theme, default_model, default_permission_mode,
-               default_working_dir, updated_at
+               default_working_dir, display_name, avatar_path,
+               avatar_mime_type, updated_at
           FROM preferences
          WHERE id = ?
         """,
@@ -71,6 +80,9 @@ async def patch_preferences(
     default_model: str | None = None,
     default_permission_mode: str | None = None,
     default_working_dir: str | None = None,
+    display_name: str | None = None,
+    avatar_path: str | None = None,
+    avatar_mime_type: str | None = None,
     fields: frozenset[str] = frozenset(),
 ) -> Preferences:
     """Update the singleton row with only the fields named in ``fields``.
@@ -82,6 +94,10 @@ async def patch_preferences(
     ``theme`` is excluded from the ``fields`` guard when non-None
     because the theme column is NOT NULL — callers pass a valid theme
     string directly and it is always written.
+
+    The avatar/display-name fields (``display_name``, ``avatar_path``,
+    ``avatar_mime_type``) follow the same ``fields``-gated semantics as
+    the other nullable columns.
 
     Typical call from the route layer (mirrors Pydantic
     ``model_fields_set``):
@@ -113,6 +129,15 @@ async def patch_preferences(
     if "default_working_dir" in fields:
         updates.append("default_working_dir = ?")
         params.append(default_working_dir)
+    if "display_name" in fields:
+        updates.append("display_name = ?")
+        params.append(display_name)
+    if "avatar_path" in fields:
+        updates.append("avatar_path = ?")
+        params.append(avatar_path)
+    if "avatar_mime_type" in fields:
+        updates.append("avatar_mime_type = ?")
+        params.append(avatar_mime_type)
 
     if updates:
         updates.append("updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')")

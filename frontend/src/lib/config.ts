@@ -191,6 +191,18 @@ export const API_COMMANDS_ENDPOINT = `${API_BASE}/commands`;
 export const API_PREFERENCES_ENDPOINT = `${API_BASE}/preferences`;
 
 /**
+ * ``GET/POST/DELETE /api/preferences/avatar`` — serve / upload / remove the
+ * user's profile avatar (gap-cycle-03-011).
+ */
+export const API_PREFERENCES_AVATAR_ENDPOINT = `${API_BASE}/preferences/avatar`;
+
+/**
+ * ``POST /api/preferences/sync_from_system`` — populate display_name from
+ * ``$USER`` and avatar from ``~/.face`` (gap-cycle-03-011).
+ */
+export const API_PREFERENCES_SYNC_ENDPOINT = `${API_BASE}/preferences/sync_from_system`;
+
+/**
  * ``POST /api/import/bearings`` — import all data from the original
  * Bearings database into Bearings-v1. Copies sessions, messages, tags,
  * and related data. Rows with duplicate IDs are skipped.
@@ -1999,6 +2011,28 @@ export const PREFERENCES_STRINGS = {
   modelPlaceholder: "(use routing rules)",
   permissionModePlaceholder: "(SDK default)",
   workingDirPlaceholder: "/path/to/project",
+} as const;
+
+/** Profile / identity section UI strings (gap-cycle-03-011). */
+export const PROFILE_STRINGS = {
+  heading: "Profile",
+  lede: "Your identity shown in the sidebar and status bar.",
+  displayNameLabel: "Display name",
+  displayNamePlaceholder: "Your name",
+  avatarLabel: "Profile picture",
+  uploadButton: "Upload image",
+  removeButton: "Remove",
+  syncButton: "Sync from system",
+  syncLede: "Copies your $USER and ~/.face into the display name and avatar.",
+  saveButton: "Save profile",
+  savedFeedback: "Saved.",
+  saveError: "Couldn't save — try again.",
+  loadError: "Couldn't load profile.",
+  syncError: "Sync failed — try again.",
+  uploadError: "Upload failed — try again.",
+  removeError: "Couldn't remove avatar.",
+  avatarAlt: "Profile picture",
+  avatarFallbackAriaLabel: "No profile picture set",
 } as const;
 
 /** UI strings for the PermissionModeSelector header dropdown (item 3.3). */

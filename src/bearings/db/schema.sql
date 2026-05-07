@@ -609,6 +609,16 @@ CREATE TABLE IF NOT EXISTS preferences (
     default_model           TEXT,
     default_permission_mode TEXT,
     default_working_dir     TEXT,
+    -- gap-cycle-03-011: user identity / profile fields.
+    -- display_name: human-readable name shown in the identity block and
+    --   sidebar; NULL means "not set" (no display-name block rendered).
+    -- avatar_path: absolute on-disk path of the avatar file stored under
+    --   ~/.local/share/bearings-v1/avatars/; NULL when no avatar set.
+    -- avatar_mime_type: MIME type of the stored avatar file so the serve
+    --   route never re-probes the file header.
+    display_name            TEXT,
+    avatar_path             TEXT,
+    avatar_mime_type        TEXT,
     updated_at              TEXT    NOT NULL
         DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );

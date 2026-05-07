@@ -995,6 +995,38 @@ UPLOADS_LIST_MAX_LIMIT: Final[int] = 1000
 UPLOAD_STREAM_CHUNK_BYTES: Final[int] = 64 * 1024
 
 # ---------------------------------------------------------------------------
+# Avatar / profile identity (gap-cycle-03-011).
+#
+# Users may attach a profile picture (avatar) and a display name to their
+# Bearings instance. The avatar is stored as a single file — it is not
+# content-addressed — because only one avatar exists at a time. The file
+# lives under :data:`DEFAULT_AVATARS_STORAGE_ROOT`; the DB row stores the
+# absolute path + MIME type so the serve route never re-detects the type.
+#
+#   * POST /api/preferences/avatar   — upload new avatar (multipart).
+#   * GET  /api/preferences/avatar   — serve the current avatar bytes.
+#   * DELETE /api/preferences/avatar — remove avatar; clears DB fields.
+#   * POST /api/preferences/sync_from_system — populate display_name from
+#     $USER and avatar from ~/.face when that file exists.
+#
+# ``AVATAR_ALLOWED_MIME_TYPES`` is the hard gate at the upload boundary;
+# any Content-Type not in this set is rejected with 415.
+# ``MAX_AVATAR_SIZE_BYTES`` is the per-upload cap (2 MiB covers any
+# reasonable profile picture).
+# ``DISPLAY_NAME_MAX_LENGTH`` bounds the DB column and wire validation.
+# ---------------------------------------------------------------------------
+
+DEFAULT_AVATARS_STORAGE_ROOT: Final[Path] = Path("~/.local/share/bearings-v1/avatars").expanduser()
+
+MAX_AVATAR_SIZE_BYTES: Final[int] = 2 * 1024 * 1024  # 2 MiB
+
+AVATAR_ALLOWED_MIME_TYPES: Final[frozenset[str]] = frozenset(
+    {"image/jpeg", "image/png", "image/gif", "image/webp"}
+)
+
+DISPLAY_NAME_MAX_LENGTH: Final[int] = 120
+
+# ---------------------------------------------------------------------------
 # Filesystem read/list (item 1.10; arch §1.1.5 ``web/routes/fs.py``).
 #
 # vault.md is plan/todo-specific (the vault is a curated read-only index
@@ -1245,6 +1277,7 @@ __all__ = [
     "AUTO_DRIVER_STATE_IDLE",
     "AUTO_DRIVER_STATE_PAUSED",
     "AUTO_DRIVER_STATE_RUNNING",
+    "AVATAR_ALLOWED_MIME_TYPES",
     "BEARINGS_MCP_SERVER_NAME",
     "BEARINGS_TODO_CHECK_DEFAULT_MAX_AGE_DAYS",
     "BEARINGS_TODO_ENTRY_HEADING_PREFIX",
@@ -1269,6 +1302,7 @@ __all__ = [
     "DEFAULT_ADVISOR_MAX_USES_HAIKU",
     "DEFAULT_ADVISOR_MAX_USES_SONNET",
     "DEFAULT_ALLOWED_SHELL_COMMANDS",
+    "DEFAULT_AVATARS_STORAGE_ROOT",
     "DEFAULT_BILLING_MODE",
     "DEFAULT_BILLING_PLAN",
     "DEFAULT_CHECKPOINT_LABEL_TEMPLATE",
@@ -1286,6 +1320,7 @@ __all__ = [
     "DEFAULT_VAULT_TODO_GLOB",
     "DIAG_DRIVER_SAMPLE_LIMIT",
     "DIAG_RUNNER_SAMPLE_LIMIT",
+    "DISPLAY_NAME_MAX_LENGTH",
     "DRIVER_OUTCOME_COMPLETED",
     "DRIVER_OUTCOME_HALTED_EMPTY",
     "DRIVER_OUTCOME_HALTED_FAILURE_TEMPLATE",
@@ -1328,6 +1363,7 @@ __all__ = [
     "KNOWN_SESSION_KINDS",
     "KNOWN_TAG_CLASSES",
     "KNOWN_VAULT_KINDS",
+    "MAX_AVATAR_SIZE_BYTES",
     "MAX_CHECKPOINTS_PER_SESSION",
     "MAX_UPLOAD_SIZE_BYTES",
     "MESSAGES_LIST_DEFAULT_LIMIT",

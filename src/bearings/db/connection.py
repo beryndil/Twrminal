@@ -120,6 +120,11 @@ _ADDED_COLUMNS: Final[tuple[tuple[str, str, str], ...]] = (
         "TEXT NOT NULL DEFAULT 'general' CHECK (class IN ('project', 'severity', 'general'))",
     ),
     ("tags", "sort_order", "INTEGER NOT NULL DEFAULT 0"),
+    # gap-cycle-03-011: user identity / profile columns on preferences.
+    # Existing rows get NULL for all three (no identity configured yet).
+    ("preferences", "display_name", "TEXT"),
+    ("preferences", "avatar_path", "TEXT"),
+    ("preferences", "avatar_mime_type", "TEXT"),
 )
 
 

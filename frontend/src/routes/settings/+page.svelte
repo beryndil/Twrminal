@@ -1,6 +1,10 @@
 <script lang="ts">
   /**
-   * Settings page — Appearance, Defaults, and System routing rules.
+   * Settings page — Profile, Appearance, Defaults, and System routing rules.
+   *
+   * Per ``docs/behavior/preferences.md`` §"Profile / Identity" the
+   * Profile section (with avatar upload / sync + display name) renders
+   * first, above Appearance.
    *
    * Per ``docs/behavior/themes.md`` §"Theme picker UI" the Appearance
    * controls live here (theme picker today; future timezone /
@@ -13,6 +17,8 @@
    * default_model, default_permission_mode, and default_working_dir.
    * The new-session form reads these on mount to pre-fill its fields.
    *
+   * gap-cycle-03-011 adds the Profile section above Appearance.
+   *
    * Reachable via the ``/settings`` route. The center column of
    * ``+layout.svelte`` renders this page when no session is selected
    * (i.e. the ``children`` snippet branch).
@@ -23,20 +29,38 @@
     KNOWN_THEMES,
     PERMISSION_MODE_LABELS,
     PREFERENCES_STRINGS,
+    PROFILE_STRINGS,
     THEME_STRINGS,
     type ExecutorModel,
     type PermissionMode,
     type ThemeId,
   } from "$lib/config";
   import {
+    deleteAvatar,
     getPreferences,
     patchPreferences,
+    syncFromSystem,
+    uploadAvatar,
     type PreferencesPatch,
     type PreferencesOut,
   } from "$lib/api/preferences";
   import { importFromBearings, type ImportResultOut } from "$lib/api/import";
   import ThemePicker from "$lib/themes/ThemePicker.svelte";
   import RoutingRuleEditor from "$lib/components/routing/RoutingRuleEditor.svelte";
+  import UserIdentityBlock from "$lib/components/identity/UserIdentityBlock.svelte";
+
+  // ---- Profile section state ----
+
+  let profileDisplayName = $state<string>("");
+  let profileAvatarUrl = $state<string | null>(null);
+  let profileUpdatedAt = $state<string>("");
+  let profileSaving = $state(false);
+  let profileSavedFeedback = $state(false);
+  let profileSaveError = $state<string | null>(null);
+  let profileSyncing = $state(false);
+  let profileSyncError = $state<string | null>(null);
+  let profileUploadError = $state<string | null>(null);
+  let profileRemoveError = $state<string | null>(null);
 
   // ---- Defaults section state ----
 
@@ -62,6 +86,11 @@
     loadError = null;
     try {
       const prefs: PreferencesOut = await getPreferences();
+      // Profile fields.
+      profileDisplayName = prefs.display_name ?? "";
+      profileAvatarUrl = prefs.avatar_url;
+      profileUpdatedAt = prefs.updated_at;
+      // Defaults fields.
       prefTheme = (KNOWN_THEMES as readonly string[]).includes(prefs.theme)
         ? (prefs.theme as ThemeId)
         : "default";
@@ -73,6 +102,71 @@
       prefWorkingDir = prefs.default_working_dir ?? "";
     } catch (err) {
       loadError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  function _applyProfilePrefs(prefs: PreferencesOut): void {
+    profileDisplayName = prefs.display_name ?? "";
+    profileAvatarUrl = prefs.avatar_url;
+    profileUpdatedAt = prefs.updated_at;
+  }
+
+  async function saveProfile(): Promise<void> {
+    profileSaving = true;
+    profileSaveError = null;
+    profileSavedFeedback = false;
+    try {
+      const patch: PreferencesPatch = {
+        display_name: profileDisplayName.trim() !== "" ? profileDisplayName.trim() : null,
+      };
+      const updated = await patchPreferences(patch);
+      _applyProfilePrefs(updated);
+      profileSavedFeedback = true;
+      setTimeout(() => {
+        profileSavedFeedback = false;
+      }, 2000);
+    } catch (err) {
+      profileSaveError = err instanceof Error ? err.message : String(err);
+    } finally {
+      profileSaving = false;
+    }
+  }
+
+  async function handleAvatarUpload(e: Event): Promise<void> {
+    profileUploadError = null;
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const updated = await uploadAvatar(file);
+      _applyProfilePrefs(updated);
+    } catch (err) {
+      profileUploadError = err instanceof Error ? err.message : String(err);
+    }
+    // Reset the file input so re-selecting the same file fires change again.
+    input.value = "";
+  }
+
+  async function handleAvatarRemove(): Promise<void> {
+    profileRemoveError = null;
+    try {
+      const updated = await deleteAvatar();
+      _applyProfilePrefs(updated);
+    } catch (err) {
+      profileRemoveError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async function handleSyncFromSystem(): Promise<void> {
+    profileSyncing = true;
+    profileSyncError = null;
+    try {
+      const updated = await syncFromSystem();
+      _applyProfilePrefs(updated);
+    } catch (err) {
+      profileSyncError = err instanceof Error ? err.message : String(err);
+    } finally {
+      profileSyncing = false;
     }
   }
 
@@ -119,8 +213,139 @@
 </script>
 
 <section class="settings-page" data-testid="settings-page" aria-label="Settings">
+  <!-- Profile / Identity — gap-cycle-03-011 -->
+  <section
+    class="settings-page__group"
+    aria-label="Profile"
+    data-testid="settings-profile"
+  >
+    <h1 class="settings-page__heading">{PROFILE_STRINGS.heading}</h1>
+    <p class="settings-page__lede">{PROFILE_STRINGS.lede}</p>
+
+    {#if loadError !== null}
+      <p class="settings-page__error" role="alert"
+        >{PROFILE_STRINGS.loadError}: {loadError}</p
+      >
+    {:else}
+      <!-- Identity preview -->
+      <div class="settings-profile__preview">
+        <UserIdentityBlock
+          displayName={profileDisplayName || null}
+          avatarUrl={profileAvatarUrl}
+          cacheBust={profileUpdatedAt}
+        />
+      </div>
+
+      <form
+        class="settings-defaults__form"
+        onsubmit={(e) => {
+          e.preventDefault();
+          void saveProfile();
+        }}
+        data-testid="settings-profile-form"
+      >
+        <!-- Display name -->
+        <label class="settings-defaults__field">
+          <span class="settings-defaults__label">{PROFILE_STRINGS.displayNameLabel}</span>
+          <input
+            type="text"
+            class="settings-defaults__input"
+            bind:value={profileDisplayName}
+            placeholder={PROFILE_STRINGS.displayNamePlaceholder}
+            data-testid="profile-display-name"
+          />
+        </label>
+
+        <!-- Avatar controls -->
+        <div class="settings-defaults__field">
+          <span class="settings-defaults__label">{PROFILE_STRINGS.avatarLabel}</span>
+          <div class="settings-profile__avatar-actions">
+            <label class="settings-defaults__save settings-profile__upload-label">
+              {PROFILE_STRINGS.uploadButton}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                class="settings-profile__file-input"
+                onchange={handleAvatarUpload}
+                data-testid="profile-avatar-upload"
+              />
+            </label>
+            {#if profileAvatarUrl !== null}
+              <button
+                type="button"
+                class="settings-profile__remove-btn"
+                onclick={handleAvatarRemove}
+                data-testid="profile-avatar-remove"
+              >
+                {PROFILE_STRINGS.removeButton}
+              </button>
+            {/if}
+          </div>
+          {#if profileUploadError !== null}
+            <span class="settings-page__error" role="alert" data-testid="profile-upload-error">
+              {PROFILE_STRINGS.uploadError}
+            </span>
+          {/if}
+          {#if profileRemoveError !== null}
+            <span class="settings-page__error" role="alert" data-testid="profile-remove-error">
+              {PROFILE_STRINGS.removeError}
+            </span>
+          {/if}
+        </div>
+
+        <div class="settings-defaults__actions">
+          <button
+            type="submit"
+            class="settings-defaults__save"
+            disabled={profileSaving}
+            data-testid="profile-save"
+          >
+            {PROFILE_STRINGS.saveButton}
+          </button>
+          {#if profileSavedFeedback}
+            <span
+              class="settings-defaults__saved"
+              role="status"
+              data-testid="profile-saved"
+            >
+              {PROFILE_STRINGS.savedFeedback}
+            </span>
+          {/if}
+          {#if profileSaveError !== null}
+            <span
+              class="settings-defaults__error"
+              role="alert"
+              data-testid="profile-save-error"
+            >
+              {PROFILE_STRINGS.saveError}
+            </span>
+          {/if}
+        </div>
+      </form>
+
+      <!-- Sync from system -->
+      <div class="settings-profile__sync">
+        <p class="settings-page__lede">{PROFILE_STRINGS.syncLede}</p>
+        <button
+          type="button"
+          class="settings-defaults__save"
+          disabled={profileSyncing}
+          onclick={handleSyncFromSystem}
+          data-testid="profile-sync"
+        >
+          {PROFILE_STRINGS.syncButton}
+        </button>
+        {#if profileSyncError !== null}
+          <span class="settings-page__error" role="alert" data-testid="profile-sync-error">
+            {PROFILE_STRINGS.syncError}
+          </span>
+        {/if}
+      </div>
+    {/if}
+  </section>
+
   <section class="settings-page__group" aria-label="Appearance">
-    <h1 class="settings-page__heading">{THEME_STRINGS.appearanceHeading}</h1>
+    <h2 class="settings-page__heading">{THEME_STRINGS.appearanceHeading}</h2>
     <ThemePicker />
   </section>
 
@@ -354,5 +579,51 @@
   .settings-import__result {
     font-size: 0.8125rem;
     color: #4ade80;
+  }
+
+  /* Profile section (gap-cycle-03-011) */
+  .settings-profile__preview {
+    margin-bottom: 0.75rem;
+    padding: 0.625rem;
+    background: rgb(var(--bearings-surface-2));
+    border-radius: 0.375rem;
+    display: inline-flex;
+  }
+  .settings-profile__avatar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .settings-profile__upload-label {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+  }
+  .settings-profile__file-input {
+    display: none;
+  }
+  .settings-profile__remove-btn {
+    background: transparent;
+    color: rgb(var(--bearings-fg-muted));
+    border: 1px solid rgb(var(--bearings-border));
+    border-radius: 0.25rem;
+    padding: 0.3rem 0.875rem;
+    font: inherit;
+    font-size: 0.8125rem;
+    cursor: pointer;
+  }
+  .settings-profile__remove-btn:hover {
+    color: rgb(var(--bearings-fg-strong));
+    border-color: rgb(var(--bearings-fg-muted));
+  }
+  .settings-profile__sync {
+    display: flex;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgb(var(--bearings-border));
   }
 </style>
