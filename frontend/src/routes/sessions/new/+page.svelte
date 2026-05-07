@@ -44,7 +44,7 @@
   import { page } from "$app/state";
 
   import { createSession, getMostRecentSession } from "$lib/api/sessions";
-  import { listTags, type TagOut } from "$lib/api/tags";
+  import { createTag, listTags, type TagOut } from "$lib/api/tags";
   import { sendPrompt } from "$lib/api/prompt";
   import { getPreferences } from "$lib/api/preferences";
   import { ApiError } from "$lib/api/client";
@@ -83,6 +83,34 @@
 
   let submitError = $state<string | null>(null);
   let submitting = $state(false);
+
+  // Tag inline-create / filter input state (gap-cycle-10-003).
+  let tagInput = $state("");
+  let tagCreateError = $state<string | null>(null);
+  let tagCreating = $state(false);
+
+  /**
+   * Available tags filtered by the current ``tagInput`` prefix (case-
+   * insensitive). When the input is empty, all unselected tags are shown.
+   */
+  let filteredAvailableTags = $derived(
+    tagInput.trim() === ""
+      ? availableTags.filter((t) => !selectedTagIds.includes(t.id))
+      : availableTags.filter(
+          (t) =>
+            !selectedTagIds.includes(t.id) &&
+            t.name.toLowerCase().startsWith(tagInput.trim().toLowerCase()),
+        ),
+  );
+
+  /**
+   * True when the current ``tagInput`` text exactly matches an existing tag
+   * (case-insensitive). Suppresses the "+ Create" affordance in that case.
+   */
+  let tagInputHasExactMatch = $derived(
+    tagInput.trim() !== "" &&
+      availableTags.some((t) => t.name.toLowerCase() === tagInput.trim().toLowerCase()),
+  );
 
   // For drag-to-reorder: tracks which tag is being dragged
   let draggedTagId = $state<number | null>(null);
@@ -167,6 +195,58 @@
     } else {
       selectedTagIds = [...selectedTagIds, tagId];
     }
+  }
+
+  /** Case-insensitive exact lookup in the full tag set. */
+  function findExactMatch(name: string): TagOut | null {
+    const lower = name.toLowerCase();
+    return availableTags.find((t) => t.name.toLowerCase() === lower) ?? null;
+  }
+
+  /**
+   * Handle Enter on the tag input:
+   * - Exact match (case-insensitive) found → attach if not already selected;
+   *   clear the input.
+   * - No match → POST /api/tags to create, append to ``availableTags``, select;
+   *   on 422 surface the API detail inline via ``tagCreateError``.
+   */
+  async function handleTagInputEnter(): Promise<void> {
+    const trimmed = tagInput.trim();
+    if (trimmed === "") return;
+    tagCreateError = null;
+    const exact = findExactMatch(trimmed);
+    if (exact !== null) {
+      if (!selectedTagIds.includes(exact.id)) {
+        selectedTagIds = [...selectedTagIds, exact.id];
+      }
+      tagInput = "";
+      return;
+    }
+    tagCreating = true;
+    try {
+      const newTag = await createTag({ name: trimmed });
+      availableTags = [...availableTags, newTag];
+      selectedTagIds = [...selectedTagIds, newTag.id];
+      tagInput = "";
+    } catch (error) {
+      if (error instanceof ApiError) {
+        const detail = (error.body as { detail?: unknown } | null)?.detail;
+        tagCreateError =
+          typeof detail === "string" ? detail : `Could not create tag "${trimmed}".`;
+      } else {
+        tagCreateError = String(error);
+      }
+    } finally {
+      tagCreating = false;
+    }
+  }
+
+  /** Click a suggestion chip → attach immediately and clear the input. */
+  function handleSuggestionClick(tagId: number): void {
+    if (!selectedTagIds.includes(tagId)) {
+      selectedTagIds = [...selectedTagIds, tagId];
+    }
+    tagInput = "";
   }
 
   function handleDragStart(tagId: number): void {
@@ -313,90 +393,136 @@
       <p class="new-session-page__hint">Loading tags…</p>
     {:else if tagsError !== null}
       <p class="new-session-page__error" role="alert">Couldn't load tags: {tagsError}</p>
-    {:else if availableTags.length === 0}
-      <p class="new-session-page__hint">
-        No tags yet. Create one from the Tags page first; the new-session form requires at least
-        one.
-      </p>
     {:else}
-      <div class="new-session-page__tags-container">
-        <div class="new-session-page__tags-pool">
-          <div class="new-session-page__tags-zone-label">Available tags</div>
-          <ul class="new-session-page__tag-list" aria-label="Available tags">
-            {#each availableTags.filter((t) => !selectedTagIds.includes(t.id)) as tag (tag.id)}
-              <li>
-                <button
-                  type="button"
-                  class="new-session-page__tag-chip"
-                  aria-pressed="false"
-                  onclick={() => toggleTag(tag.id)}
-                  data-testid={`new-session-tag-${tag.id}`}
-                  use:contextMenu={{
-                    target: MENU_TARGET_TAG_CHIP,
-                    disabled: false,
-                    handlers: {
-                      [MENU_ACTION_TAG_CHIP_COPY_NAME]: () => {
-                        void navigator.clipboard.writeText(tag.name);
-                      },
-                    },
-                    data: { tagId: tag.id },
-                  }}
-                >
-                  {tag.name}
-                </button>
-              </li>
-            {/each}
-          </ul>
-        </div>
+      <!-- Inline filter + create input — visible whenever not loading/error
+           (gap-cycle-10-003). Placing it here ensures it is always present even
+           when the available list is empty, so the user can type a name to create
+           their first tag without leaving the form. -->
+      <input
+        type="text"
+        class="new-session-page__tag-input"
+        placeholder="Filter or create a tag…"
+        bind:value={tagInput}
+        onkeydown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            void handleTagInputEnter();
+          }
+        }}
+        data-testid="new-session-tag-input"
+        aria-label="Filter or create tag"
+        autocomplete="off"
+        disabled={tagCreating}
+      />
+      {#if tagCreateError !== null}
+        <p
+          class="new-session-page__error"
+          role="alert"
+          data-testid="new-session-tag-create-error"
+        >
+          {tagCreateError}
+        </p>
+      {/if}
 
-        <div class="new-session-page__tags-selected">
-          <div class="new-session-page__tags-zone-label">Selected (drag to reorder)</div>
-          {#if selectedTagIds.length === 0}
-            <p class="new-session-page__hint">Click tags above to select them</p>
-          {:else}
-            <ul class="new-session-page__tag-list-ordered" aria-label="Selected tags">
-              {#each selectedTagIds as tagId (tagId)}
-                {@const tag = availableTags.find((t) => t.id === tagId)}
-                {#if tag}
-                  <li
-                    draggable="true"
-                    ondragstart={() => handleDragStart(tagId)}
-                    ondragend={handleDragEnd}
-                    ondragover={handleDragOver}
-                    ondrop={() => handleDrop(tagId)}
-                    class="new-session-page__tag-row"
-                    class:new-session-page__tag-row--dragging={draggedTagId === tagId}
-                  >
-                    <span class="new-session-page__drag-handle" title="Drag to reorder">⠿</span>
-                    <button
-                      type="button"
-                      class="new-session-page__tag-chip new-session-page__tag-chip--active"
-                      aria-pressed="true"
-                      onclick={() => toggleTag(tagId)}
-                      data-testid={`new-session-tag-${tagId}`}
-                      use:contextMenu={{
-                        target: MENU_TARGET_TAG_CHIP,
-                        disabled: false,
-                        handlers: {
-                          [MENU_ACTION_TAG_CHIP_COPY_NAME]: () => {
-                            void navigator.clipboard.writeText(tag.name);
-                          },
-                          [MENU_ACTION_TAG_CHIP_DETACH]: () => {
-                            toggleTag(tagId);
-                          },
+      {#if availableTags.length === 0 && tagInput.trim() === ""}
+        <!-- No tags at all and nothing typed yet — show hint instead of empty columns. -->
+        <p class="new-session-page__hint">
+          No tags yet. Type a name above and press <kbd>Enter</kbd> to create one; at least one
+          tag is required.
+        </p>
+      {:else}
+        <div class="new-session-page__tags-container">
+          <div class="new-session-page__tags-pool">
+            <div class="new-session-page__tags-zone-label">Available tags</div>
+            <ul class="new-session-page__tag-list" aria-label="Available tags">
+              {#each filteredAvailableTags as tag (tag.id)}
+                <li>
+                  <button
+                    type="button"
+                    class="new-session-page__tag-chip"
+                    aria-pressed="false"
+                    onclick={() => handleSuggestionClick(tag.id)}
+                    data-testid={`new-session-tag-${tag.id}`}
+                    use:contextMenu={{
+                      target: MENU_TARGET_TAG_CHIP,
+                      disabled: false,
+                      handlers: {
+                        [MENU_ACTION_TAG_CHIP_COPY_NAME]: () => {
+                          void navigator.clipboard.writeText(tag.name);
                         },
-                        data: { tagId },
-                      }}
-                    >
-                      {tag.name}
-                    </button>
-                  </li>
-                {/if}
+                      },
+                      data: { tagId: tag.id },
+                    }}
+                  >
+                    {tag.name}
+                  </button>
+                </li>
               {/each}
+              {#if tagInput.trim() !== "" && !tagInputHasExactMatch}
+                <li>
+                  <button
+                    type="button"
+                    class="new-session-page__tag-chip new-session-page__tag-chip--create"
+                    onclick={() => void handleTagInputEnter()}
+                    data-testid="new-session-tag-create"
+                    disabled={tagCreating}
+                  >
+                    + Create "{tagInput.trim()}"
+                  </button>
+                </li>
+              {/if}
             </ul>
-          {/if}
+          </div>
+
+          <div class="new-session-page__tags-selected">
+            <div class="new-session-page__tags-zone-label">Selected (drag to reorder)</div>
+            {#if selectedTagIds.length === 0}
+              <p class="new-session-page__hint">Click tags above to select them</p>
+            {:else}
+              <ul class="new-session-page__tag-list-ordered" aria-label="Selected tags">
+                {#each selectedTagIds as tagId (tagId)}
+                  {@const tag = availableTags.find((t) => t.id === tagId)}
+                  {#if tag}
+                    <li
+                      draggable="true"
+                      ondragstart={() => handleDragStart(tagId)}
+                      ondragend={handleDragEnd}
+                      ondragover={handleDragOver}
+                      ondrop={() => handleDrop(tagId)}
+                      class="new-session-page__tag-row"
+                      class:new-session-page__tag-row--dragging={draggedTagId === tagId}
+                    >
+                      <span class="new-session-page__drag-handle" title="Drag to reorder">⠿</span>
+                      <button
+                        type="button"
+                        class="new-session-page__tag-chip new-session-page__tag-chip--active"
+                        aria-pressed="true"
+                        onclick={() => toggleTag(tagId)}
+                        data-testid={`new-session-tag-${tagId}`}
+                        use:contextMenu={{
+                          target: MENU_TARGET_TAG_CHIP,
+                          disabled: false,
+                          handlers: {
+                            [MENU_ACTION_TAG_CHIP_COPY_NAME]: () => {
+                              void navigator.clipboard.writeText(tag.name);
+                            },
+                            [MENU_ACTION_TAG_CHIP_DETACH]: () => {
+                              toggleTag(tagId);
+                            },
+                          },
+                          data: { tagId },
+                        }}
+                      >
+                        {tag.name}
+                      </button>
+                    </li>
+                  {/if}
+                {/each}
+              </ul>
+            {/if}
+          </div>
         </div>
-      </div>
+      {/if}
     {/if}
   </fieldset>
 
@@ -470,6 +596,25 @@
     margin: 0;
     padding: 0;
   }
+  .new-session-page__tag-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: rgb(var(--bearings-surface-2));
+    color: inherit;
+    border: 1px solid rgb(var(--bearings-border));
+    border-radius: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    font: inherit;
+    font-size: 0.8125rem;
+    outline: none;
+  }
+  .new-session-page__tag-input:focus {
+    border-color: rgb(var(--bearings-accent));
+  }
+  .new-session-page__tag-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
   .new-session-page__tag-chip {
     background: rgb(var(--bearings-surface-2));
     color: inherit;
@@ -484,6 +629,16 @@
     background: rgb(var(--bearings-accent));
     color: white;
     border-color: transparent;
+  }
+  .new-session-page__tag-chip--create {
+    background: transparent;
+    color: rgb(var(--bearings-accent));
+    border-color: rgb(var(--bearings-accent));
+    border-style: dashed;
+  }
+  .new-session-page__tag-chip--create:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .new-session-page__tags-container {
     display: grid;

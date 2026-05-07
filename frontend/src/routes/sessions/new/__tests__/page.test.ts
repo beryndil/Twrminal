@@ -1,11 +1,19 @@
 /**
- * Route-level tests for ``/sessions/new`` (gap-cycle-10-002).
+ * Route-level tests for ``/sessions/new``.
  *
  * Coverage:
  *
- * * route-after-create (checklist): submitting a checklist session
- *   calls ``createSession`` with ``kind: 'checklist'``, skips
- *   ``sendPrompt``, and navigates to ``/sessions/{id}`` via ``goto``.
+ * * route-after-create (checklist) [gap-cycle-10-002]: submitting a
+ *   checklist session calls ``createSession`` with ``kind: 'checklist'``,
+ *   skips ``sendPrompt``, and navigates to ``/sessions/{id}`` via ``goto``.
+ *
+ * * Tag inline filter / create [gap-cycle-10-003]:
+ *   - suggestion-on-type: typing filters the available tag list.
+ *   - Enter-attaches-existing: exact-match tag is selected without a POST.
+ *   - Enter-creates-and-attaches: no-match → POST /api/tags → tag appended
+ *     and selected.
+ *   - 422-inline-error: POST /api/tags returns a 422 body → error shown
+ *     inline, selection unchanged.
  */
 import { fireEvent, render, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -28,6 +36,7 @@ vi.mock("../../../../lib/api/sessions", () => ({
 }));
 vi.mock("../../../../lib/api/tags", () => ({
   listTags: vi.fn(),
+  createTag: vi.fn(),
 }));
 vi.mock("../../../../lib/api/prompt", () => ({
   sendPrompt: vi.fn(),
@@ -76,7 +85,8 @@ vi.mock("../../../../lib/components/new_session/FolderPicker.svelte", () => ({
 
 import { goto } from "$app/navigation";
 import { createSession } from "../../../../lib/api/sessions";
-import { listTags } from "../../../../lib/api/tags";
+import { createTag, listTags } from "../../../../lib/api/tags";
+import { ApiError } from "../../../../lib/api/client";
 import { sendPrompt } from "../../../../lib/api/prompt";
 import type { TagOut } from "../../../../lib/api/tags";
 import type { SessionOut } from "../../../../lib/api/sessions";
@@ -171,5 +181,122 @@ describe("/sessions/new — route-after-create (gap-cycle-10-002)", () => {
     await waitFor(() => {
       expect(goto).toHaveBeenCalledWith("/sessions/new-session-id");
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// gap-cycle-10-003: inline tag filter / create
+// ---------------------------------------------------------------------------
+
+describe("/sessions/new — tag inline filter/create (gap-cycle-10-003)", () => {
+  it("suggestion-on-type: typing prefix filters the Available tag list", async () => {
+    const alpha = makeTag({ id: 1, name: "alpha" });
+    const beta = makeTag({ id: 2, name: "beta" });
+    (listTags as ReturnType<typeof vi.fn>).mockResolvedValue([alpha, beta]);
+
+    const { getByTestId, queryByTestId } = render(NewSessionPage);
+
+    // Wait for tags to load.
+    await waitFor(() => {
+      expect(getByTestId("new-session-tag-1")).toBeInTheDocument();
+    });
+
+    const input = getByTestId("new-session-tag-input");
+
+    // Type "al" — should show alpha chip, hide beta chip.
+    await fireEvent.input(input, { target: { value: "al" } });
+    await fireEvent.change(input, { target: { value: "al" } });
+
+    await waitFor(() => {
+      expect(getByTestId("new-session-tag-1")).toBeInTheDocument();
+      expect(queryByTestId("new-session-tag-2")).toBeNull();
+    });
+  });
+
+  it("Enter-attaches-existing: exact match attaches without POST /api/tags", async () => {
+    const alpha = makeTag({ id: 1, name: "alpha" });
+    (listTags as ReturnType<typeof vi.fn>).mockResolvedValue([alpha]);
+
+    const { getByTestId } = render(NewSessionPage);
+
+    // Wait for the available tag chip to appear (tags loaded).
+    await waitFor(() => {
+      expect(getByTestId("new-session-tag-1")).toBeInTheDocument();
+    });
+
+    const input = getByTestId("new-session-tag-input");
+
+    // Type exact name (case variant) and press Enter.
+    await fireEvent.input(input, { target: { value: "Alpha" } });
+    await fireEvent.change(input, { target: { value: "Alpha" } });
+    await fireEvent.keyDown(input, { key: "Enter" });
+
+    // createTag must NOT be called — the existing tag is re-used.
+    expect(createTag).not.toHaveBeenCalled();
+
+    // The chip moves to the selected column (same testid, now aria-pressed="true").
+    await waitFor(() => {
+      expect(getByTestId("new-session-tag-1")).toHaveAttribute("aria-pressed", "true");
+    });
+  });
+
+  it("Enter-creates-and-attaches: no match → POST /api/tags → chip appears in selected list", async () => {
+    (listTags as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    const fresh = makeTag({ id: 99, name: "brand-new", working_dir: null });
+    (createTag as ReturnType<typeof vi.fn>).mockResolvedValue(fresh);
+
+    const { getByTestId } = render(NewSessionPage);
+
+    // The input is always rendered when not loading/error; no need to wait for
+    // tags — just wait for the component to mount.
+    await waitFor(() => {
+      expect(getByTestId("new-session-page")).toBeInTheDocument();
+    });
+    // Wait for the tags loading state to settle (listTags resolves to []).
+    await waitFor(() => {
+      expect(getByTestId("new-session-tag-input")).toBeInTheDocument();
+    });
+
+    const input = getByTestId("new-session-tag-input");
+    await fireEvent.input(input, { target: { value: "brand-new" } });
+    await fireEvent.change(input, { target: { value: "brand-new" } });
+    await fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(createTag).toHaveBeenCalledWith({ name: "brand-new" });
+    });
+
+    // The newly created tag (id=99) should appear in the selected column.
+    await waitFor(() => {
+      expect(getByTestId("new-session-tag-99")).toHaveAttribute("aria-pressed", "true");
+    });
+  });
+
+  it("422-inline-error: POST /api/tags 422 → inline error, no tag selected", async () => {
+    (listTags as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (createTag as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new ApiError(422, { detail: "name already exists" }, "POST /api/tags → 422"),
+    );
+
+    const { getByTestId, queryByTestId } = render(NewSessionPage);
+
+    // Wait for tag loading to settle (listTags resolves to []), then the input appears.
+    await waitFor(() => {
+      expect(getByTestId("new-session-tag-input")).toBeInTheDocument();
+    });
+
+    const input = getByTestId("new-session-tag-input");
+    await fireEvent.input(input, { target: { value: "dupe" } });
+    await fireEvent.change(input, { target: { value: "dupe" } });
+    await fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(getByTestId("new-session-tag-create-error")).toHaveTextContent(
+        "name already exists",
+      );
+    });
+
+    // No tag chip should have been added to the selected list.
+    expect(queryByTestId("new-session-tag-99")).toBeNull();
   });
 });

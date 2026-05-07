@@ -9,6 +9,39 @@ Sibling subsystems referenced here:
 [chat](chat.md), [context-menus](context-menus.md),
 [prompt-endpoint](prompt-endpoint.md).
 
+## New-session tag inline filter / create
+
+### Trigger
+
+The `/sessions/new` tags fieldset includes a text input above the
+**Available tags** column. The user types a tag name to filter or
+create a tag without leaving the form.
+
+### Behavior
+
+* **Filtering** — typing any prefix (case-insensitive) hides available
+  tags whose names do not start with that prefix. Suggestion chips
+  (the filtered Available list) update with each keystroke.
+* **Enter — existing tag** — when the typed text exactly matches an
+  existing tag name (case-insensitive), pressing **Enter** attaches
+  that tag (moves it to the Selected column) and clears the input. No
+  `POST /api/tags` is issued.
+* **Enter — new tag** — when no existing tag matches exactly, pressing
+  **Enter** issues `POST /api/tags` with `{ name: <input value> }`.
+  On success the tag is appended to the Available list and immediately
+  selected; the input clears. On a `422` response the API `detail`
+  string is shown as an inline error below the input; the selection
+  state is unchanged.
+* **"+ Create '…'" affordance** — while the input contains text that
+  has no exact match in the full tag list, a dashed chip labelled
+  `+ Create "<name>"` appears at the bottom of the Available list as a
+  clickable alternative to pressing Enter. Clicking it triggers the
+  same create-and-attach flow.
+* **No-op on duplicate** — attaching a tag that is already in the
+  Selected list is silently ignored.
+
+---
+
 ## Inline rename
 
 ### Trigger
