@@ -12,11 +12,32 @@ import {
   MENU_ACTION_CHECKPOINT_COPY_LABEL,
   MENU_ACTION_CHECKPOINT_DELETE,
   MENU_ACTION_CHECKPOINT_FORK,
+  MENU_ACTION_SESSION_RENAME,
+  MENU_ACTION_SESSION_REOPEN,
   MENU_TARGET_CHECKPOINT,
+  MENU_TARGET_SESSION,
 } from "../../config";
 import { _resetForTests as resetEsc } from "../../keyboard/escCascade";
 import ContextMenu from "../ContextMenu.svelte";
 import { _resetForTests, closeMenu, contextMenuStore, openMenu } from "../store.svelte";
+
+function openSessionMenu(
+  opts: {
+    handlers?: Record<string, () => void>;
+  } = {},
+): void {
+  flushSync(() => {
+    openMenu({
+      target: MENU_TARGET_SESSION,
+      x: 100,
+      y: 200,
+      handlers: opts.handlers ?? {},
+      advancedRevealed: false,
+      stale: false,
+      data: null,
+    });
+  });
+}
 
 function openCheckpointMenu(
   opts: {
@@ -161,5 +182,78 @@ describe("ContextMenu", () => {
     });
     expect(contextMenuStore.open?.x).toBe(50);
     closeMenu();
+  });
+
+  describe("mnemonic navigation", () => {
+    it("pressing a mnemonic letter jumps the highlight to the matching action", async () => {
+      const { getAllByTestId } = render(ContextMenu);
+      // CHECKPOINT_FORK → "Fork from here" → mnemonic 'f'
+      openCheckpointMenu();
+
+      await fireEvent.keyDown(window, { key: "f" });
+
+      const forkRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_FORK,
+      );
+      expect(forkRow).toHaveClass("context-menu__row--highlighted");
+    });
+
+    it("repeat mnemonic press cycles through multiple matching actions", async () => {
+      const { getAllByTestId } = render(ContextMenu);
+      // SESSION: 'r' matches "Rename…" (flat section edit) then "Reopen session" (organize).
+      // Section order: navigate → create → edit → copy → organize → destructive.
+      // Flat indices: Rename is in edit (idx 3), Reopen is in organize (idx 10).
+      openSessionMenu();
+
+      await fireEvent.keyDown(window, { key: "r" });
+      let renameRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_SESSION_RENAME,
+      );
+      expect(renameRow).toHaveClass("context-menu__row--highlighted");
+
+      await fireEvent.keyDown(window, { key: "r" });
+      let reopenRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_SESSION_REOPEN,
+      );
+      expect(reopenRow).toHaveClass("context-menu__row--highlighted");
+
+      // Third press wraps back to Rename.
+      await fireEvent.keyDown(window, { key: "r" });
+      renameRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_SESSION_RENAME,
+      );
+      expect(renameRow).toHaveClass("context-menu__row--highlighted");
+    });
+
+    it("mnemonic key press has no effect when the menu is closed", async () => {
+      const { queryByTestId } = render(ContextMenu);
+      // No menu open — pressing a letter must not throw or open the menu.
+      await fireEvent.keyDown(window, { key: "f" });
+      expect(queryByTestId("context-menu")).toBeNull();
+    });
+
+    it("mnemonic char is rendered underlined in the action label", () => {
+      const { getAllByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+      const forkRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_FORK,
+      );
+      // "Fork from here" — first char 'F' should be inside a <u> element.
+      const underlined = forkRow?.querySelector("u.context-menu__mnemonic");
+      expect(underlined).toBeTruthy();
+      expect(underlined?.textContent).toBe("F");
+    });
+
+    it("uppercase and lowercase key presses both match the same mnemonic", async () => {
+      const { getAllByTestId } = render(ContextMenu);
+      openCheckpointMenu();
+
+      // Pressing capital 'F' should also jump to CHECKPOINT_FORK.
+      await fireEvent.keyDown(window, { key: "F" });
+      const forkRow = getAllByTestId("context-menu-row").find(
+        (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_FORK,
+      );
+      expect(forkRow).toHaveClass("context-menu__row--highlighted");
+    });
   });
 });

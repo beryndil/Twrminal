@@ -127,6 +127,13 @@ export interface MenuActionDescriptor {
    * The doc renders ``▸`` on these entries.
    */
   readonly submenu?: boolean;
+  /**
+   * Override the keyboard mnemonic character for this action (single
+   * alphanumeric, case-insensitive). When omitted the first alphanumeric
+   * character of the localised label is used as the mnemonic. The
+   * underlined glyph in the rendered label indicates the mnemonic.
+   */
+  readonly mnemonic?: string;
 }
 
 const SESSION_ACTIONS: readonly MenuActionDescriptor[] = [

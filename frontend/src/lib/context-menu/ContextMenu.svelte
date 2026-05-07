@@ -90,6 +90,36 @@
     return labels[id] ?? id;
   }
 
+  /**
+   * Returns the mnemonic character for an action (lower-case). Uses the
+   * explicit ``action.mnemonic`` when set; otherwise derives from the first
+   * alphanumeric character of the localised label.
+   */
+  function mnemonicChar(action: MenuActionDescriptor): string | null {
+    if (action.mnemonic !== undefined) {
+      return action.mnemonic.toLowerCase();
+    }
+    const label = actionLabel(action.id);
+    const match = label.match(/[a-zA-Z0-9]/);
+    return match ? match[0]!.toLowerCase() : null;
+  }
+
+  /**
+   * Splits a label into three parts around the mnemonic character so the
+   * template can render the mnemonic glyph underlined. Returns ``null`` when
+   * no alphanumeric char can be derived.
+   */
+  function labelParts(
+    action: MenuActionDescriptor,
+  ): { before: string; char: string; after: string } | null {
+    const label = actionLabel(action.id);
+    const m = mnemonicChar(action);
+    if (m === null) return null;
+    const idx = label.toLowerCase().indexOf(m);
+    if (idx === -1) return null;
+    return { before: label.slice(0, idx), char: label.slice(idx, idx + 1), after: label.slice(idx + 1) };
+  }
+
   function isActionEnabled(action: MenuActionDescriptor): boolean {
     if (open === null) return false;
     if (open.stale) return false;
@@ -127,6 +157,18 @@
       event.preventDefault();
       const action = flatActions[highlightIndex];
       if (action !== undefined) activate(action);
+    } else if (/^[a-zA-Z0-9]$/.test(event.key)) {
+      const lowerKey = event.key.toLowerCase();
+      const matches: number[] = [];
+      for (let i = 0; i < flatActions.length; i++) {
+        if (mnemonicChar(flatActions[i]!) === lowerKey) matches.push(i);
+      }
+      if (matches.length > 0) {
+        event.preventDefault();
+        const currentPos = matches.indexOf(highlightIndex);
+        highlightIndex =
+          currentPos >= 0 ? matches[(currentPos + 1) % matches.length]! : matches[0]!;
+      }
     }
   }
 
@@ -185,6 +227,7 @@
       {/if}
       {#each group.actions as action, ai (action.id)}
         {@const flatIdx = computeFlatIndex(grouped, group.section, ai)}
+        {@const parts = labelParts(action)}
         <li
           class="context-menu__row"
           class:context-menu__row--disabled={!isActionEnabled(action)}
@@ -206,7 +249,13 @@
             }
           }}
         >
-          <span class="context-menu__label">{actionLabel(action.id)}</span>
+          <span class="context-menu__label">
+            {#if parts !== null}
+              {parts.before}<u class="context-menu__mnemonic">{parts.char}</u>{parts.after}
+            {:else}
+              {actionLabel(action.id)}
+            {/if}
+          </span>
           {#if action.submenu}
             <span class="context-menu__arrow" aria-hidden="true">▸</span>
           {/if}
@@ -277,5 +326,9 @@
   .context-menu__arrow {
     color: rgb(var(--bearings-fg-muted));
     margin-left: 0.5rem;
+  }
+  .context-menu__mnemonic {
+    text-decoration-line: underline;
+    text-underline-offset: 2px;
   }
 </style>
