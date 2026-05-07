@@ -574,6 +574,41 @@ export const CONTEXT_METER_STRINGS = {
 export const CONTEXT_METER_WARN_BAND_PCT = 15;
 
 /**
+ * Per-session WS reconnect ring buffer cap (arch §1.1.2).
+ *
+ * Mirrors ``RING_BUFFER_MAX`` in ``src/bearings/config/constants.py``
+ * (``Final[int] = 5000``). Shown in the AccentCard "Recovery armed"
+ * label (gap-cycle-01-019). Must be kept in sync with the backend
+ * constant manually — the two modules do not share a config surface.
+ */
+export const WS_RING_BUFFER_CAP = 5_000;
+
+/**
+ * String table for the conversation-level AccentCards strip
+ * (gap-cycle-01-019).
+ *
+ * Two value-add info cards rendered above the message list:
+ * - Card 1 (token caching) — "Saved X% tokens — N vs M cached".
+ * - Card 2 (WS recovery) — "Recovery armed — Up to 5000 events buffered".
+ *
+ * Behavior anchor: ``docs/behavior/chat.md`` §"AccentCards".
+ */
+export const ACCENT_CARDS_STRINGS = {
+  /** Aria-label for the cards strip wrapper. */
+  ariaLabel: "Conversation value-add indicators",
+  /** Card 1 — token cache savings. */
+  cacheSavedLabel: "Saved",
+  cachePctSuffix: "%",
+  cacheSavingsLabel: "tokens",
+  cacheVsLabel: "vs",
+  cacheSuffix: "cached",
+  /** Card 2 — WS recovery status. */
+  recoveryArmedLabel: "Recovery armed",
+  recoveryBufferPrefix: "Up to",
+  recoveryBufferSuffix: "events buffered",
+} as const;
+
+/**
  * UI string table for the conversation header band (gap-cycle-01-005).
  *
  * Covers: title aria-label, severity shield, tag chips, cost indicator,

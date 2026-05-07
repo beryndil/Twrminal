@@ -189,6 +189,29 @@ Long content areas — the assistant message body and the tool-output stream —
 
 The threshold and fade-zone constants live in `config.ts` (`COLLAPSIBLE_BODY_THRESHOLD_PX`, `COLLAPSIBLE_BODY_FADE_PX`). The expand/collapse button strings are in `COLLAPSIBLE_BODY_STRINGS` in the same file.
 
+## AccentCards
+
+Two compact info cards render between the conversation header band and the message list. They surface always-on Bearings value-adds the user might not otherwise notice.
+
+**Card 1 — Token cache savings.** Hidden until the session has accumulated at least one cache-read token. Once visible, it shows:
+
+> Saved X% tokens — N vs M cached
+
+where:
+- *X%* = the percentage of total token cost avoided through prompt caching (`cache_read_tokens × 0.9 / (executor_input_tokens + cache_read_tokens) × 100`, rounded to the nearest integer).
+- *N* = the actual token cost for this session after the 90 % cache-read discount (`executor_input_tokens + cache_read_tokens × 0.1`).
+- *M* = what the token cost would have been without caching (`executor_input_tokens + cache_read_tokens`).
+
+Both *N* and *M* are formatted using the standard short notation (`1.2k`, `3.4M`).
+
+**Card 2 — Recovery armed.** Always rendered, regardless of cache activity:
+
+> Recovery armed — Up to 5000 events buffered
+
+The number (5000) is the per-session WebSocket reconnect ring buffer cap (`WS_RING_BUFFER_CAP` in `config.ts`, mirroring `RING_BUFFER_MAX` in the backend constants). This card communicates the reconnect guarantee without requiring the user to consult documentation.
+
+Both cards are defined in `ACCENT_CARDS_STRINGS` (`config.ts`). Neither card has interactive elements.
+
 ## What the user does NOT see in chat
 
 These belong to other subsystems:

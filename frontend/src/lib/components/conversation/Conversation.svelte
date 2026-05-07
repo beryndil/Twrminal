@@ -34,6 +34,7 @@
     setError,
     setLoading,
   } from "../../stores/conversation.svelte";
+  import AccentCards from "./AccentCards.svelte";
   import ApprovalModal from "./ApprovalModal.svelte";
   import AskUserQuestionModal from "./AskUserQuestionModal.svelte";
   import CheckpointGutter from "./CheckpointGutter.svelte";
@@ -177,6 +178,10 @@
   <ConversationHeader {sessionId} />
   <!-- Live todos strip — sticky above the scroll body; hidden when empty -->
   <LiveTodos />
+  <!-- AccentCards — token-cache savings + recovery armed status.
+       Rendered between the header band and the message list per
+       docs/behavior/chat.md §"AccentCards" (gap-cycle-01-019). -->
+  <AccentCards />
   <div class="relative flex-1 overflow-hidden">
     <div
       bind:this={bodyEl}

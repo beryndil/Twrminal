@@ -244,6 +244,15 @@ interface ConversationState {
    * (gap-cycle-01-017).
    */
   sessionOutputTokens: number;
+  /**
+   * Cumulative cache-read tokens for this session, accumulated from
+   * every ``message_complete`` frame that carries a non-null
+   * ``cache_read_tokens`` value. Reset to ``0`` on session-switch.
+   *
+   * Drives :component:`AccentCards` Card 1 — token-cache savings
+   * display (gap-cycle-01-019).
+   */
+  sessionCacheReadTokens: number;
 }
 
 const state: ConversationState = $state({
@@ -263,6 +272,7 @@ const state: ConversationState = $state({
   cacheHitRatio: null,
   sessionInputTokens: 0,
   sessionOutputTokens: 0,
+  sessionCacheReadTokens: 0,
 });
 
 export const conversationStore = state;
@@ -313,6 +323,7 @@ export function resetConversation(sessionId: string | null): void {
   state.cacheHitRatio = null;
   state.sessionInputTokens = 0;
   state.sessionOutputTokens = 0;
+  state.sessionCacheReadTokens = 0;
 }
 
 /**
@@ -499,8 +510,10 @@ function applySessionTokens(event: AgentEvent): void {
   if (event.type !== "message_complete") return;
   const input = event.executor_input_tokens;
   const output = event.executor_output_tokens;
+  const cacheRead = event.cache_read_tokens;
   if (input !== null) state.sessionInputTokens += input;
   if (output !== null) state.sessionOutputTokens += output;
+  if (cacheRead !== null) state.sessionCacheReadTokens += cacheRead;
 }
 
 /**
