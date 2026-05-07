@@ -2290,6 +2290,27 @@ export const AUTH_GATE_STRINGS = {
   submitting: "Saving…",
 } as const;
 
+/**
+ * UI strings for the shared data-fetching wrapper
+ * (``DataView.svelte``, gap-cycle-01-011).
+ *
+ * Behaviour anchor: ``docs/behavior/`` §"Error UX" (Beryndil standards §9).
+ */
+export const DATA_VIEW_STRINGS = {
+  /** Accessible label for the loading skeleton region. */
+  loadingAriaLabel: "Loading…",
+  /** Accessible label for the error region. */
+  errorAriaLabel: "Error loading data",
+  /** Default error message when the consumer passes a non-empty string. */
+  errorFallback: "Something went wrong.",
+  /** Retry button label inside the default error state. */
+  retryLabel: "Retry",
+  /** Accessible label for the empty-state region. */
+  emptyAriaLabel: "No items",
+  /** Default empty-state copy when no ``empty`` snippet is supplied. */
+  emptyFallback: "Nothing here yet.",
+} as const;
+
 // ---- Derivations -----------------------------------------------------------
 
 /**
