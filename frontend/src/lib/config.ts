@@ -2469,13 +2469,24 @@ export const PRIVACY_STRINGS = {
 export const HELP_SECTION_STRINGS = {
   heading: "Help",
   keyboardShortcutsLabel: "Keyboard shortcuts",
-  keyboardShortcutsHint: "Open the cheat sheet",
+  keyboardShortcutsDescription:
+    "Opens the cheat sheet — same overlay you can summon any time with the ? key.",
+  keyboardShortcutsTrailing: "Show ?",
   readmeLabel: "README",
   readmeHref: "https://github.com/Beryndil/Bearings#readme",
+  readmeDescription: "Setup, build, and architecture overview on GitHub.",
+  readmeTrailing: "README ↗",
   docsLabel: "Documentation",
   docsHref: "https://github.com/Beryndil/Bearings/tree/main/docs",
+  docsDescription: "In-repo reference for checklists, context menus, themes, and keybindings.",
+  docsTrailing: "docs/ ↗",
   reportBugLabel: "Report a bug",
+  reportBugDescription:
+    "Opens GitHub with environment and a steps-to-reproduce scaffold prefilled.",
+  reportBugTrailing: "New bug ↗",
   requestFeatureLabel: "Request a feature",
+  requestFeatureDescription: "Opens GitHub with a problem / proposal scaffold prefilled.",
+  requestFeatureTrailing: "New request ↗",
 } as const;
 
 /**

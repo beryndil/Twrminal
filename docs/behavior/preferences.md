@@ -239,6 +239,20 @@ Both kinds prefill: Bearings version, browser UA, platform, language.
 
 The `FeedbackButton` in the conversation header continues to invoke `openFeedbackTab()` with the default `kind="bug"` — no behaviour change.
 
+### Help row descriptions and trailing affordances (gap-cycle-17-004)
+
+Each row renders three elements: a **title**, a one-line **description**, and a **trailing affordance** string. The entire row surface is the action target (full-width button or anchor). All strings are centralised in `HELP_SECTION_STRINGS` in `frontend/src/lib/config.ts` — no inline literals in the section component.
+
+| Row | Description | Trailing | New tab? |
+|---|---|---|---|
+| Keyboard shortcuts | "Opens the cheat sheet — same overlay you can summon any time with the ? key." | `Show ?` | No |
+| README | "Setup, build, and architecture overview on GitHub." | `README ↗` | Yes |
+| Documentation | "In-repo reference for checklists, context menus, themes, and keybindings." | `docs/ ↗` | Yes |
+| Report a bug | "Opens GitHub with environment and a steps-to-reproduce scaffold prefilled." | `New bug ↗` | Yes |
+| Request a feature | "Opens GitHub with a problem / proposal scaffold prefilled." | `New request ↗` | Yes |
+
+The ↗ glyph (`U+2197`) appears only on rows that open an external tab, giving a consistent affordance signal across all link-type rows. The keyboard-shortcuts row uses `Show ?` because it triggers an in-app overlay, not an external page.
+
 ## About (gap-cycle-07-005)
 
 The **About** section renders at the bottom of the Settings page. It is read-only — no PATCH calls are made from this section.
