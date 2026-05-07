@@ -130,6 +130,65 @@ describe("ToolOutput — input JSON visibility (gap-cycle-06-003)", () => {
 });
 
 /**
+ * Pretty-printed input JSON (gap-cycle-16-002).
+ *
+ * Three acceptance criteria from the gap:
+ *   (a) A ``tool_call_start`` event with compact ``tool_input_json`` results
+ *       in a rendered row with a multi-line pretty-printed body (newlines +
+ *       2-space indent).
+ *   (b) A hydrated tool call (``inputJson`` set at DB-hydration time, not
+ *       from a live WS event) likewise renders a pretty-printed body.
+ *   (c) A malformed JSON input string renders the raw string verbatim
+ *       without throwing.
+ *
+ * The ``{}`` compact-one-liner case is already covered in the
+ * gap-cycle-06-003 describe block above.
+ */
+describe("ToolOutput — pretty-printed input JSON (gap-cycle-16-002)", () => {
+  it("(a) compact tool_call_start inputJson renders as multi-line pretty-printed", () => {
+    const { getByTestId } = render(ToolOutput, {
+      props: {
+        call: tool({ inputJson: '{"command":"ls -la","description":"List files"}' }),
+      },
+    });
+    const pre = getByTestId("tool-output-input");
+    // Must contain newlines (multi-line).
+    expect(pre.textContent).toContain("\n");
+    // Keys must appear with 2-space indent.
+    expect(pre.textContent).toContain('  "command"');
+    expect(pre.textContent).toContain('  "description"');
+  });
+
+  it("(b) hydrated (done) tool call likewise renders pretty-printed input", () => {
+    // Simulates a ToolCallView populated via hydrateToolCalls — inputJson
+    // comes from the DB as compact single-line JSON.
+    const { getByTestId } = render(ToolOutput, {
+      props: {
+        call: tool({
+          inputJson: '{"file_path":"/tmp/foo.txt","offset":0}',
+          done: true,
+          ok: true,
+          durationMs: 10,
+        }),
+      },
+    });
+    const pre = getByTestId("tool-output-input");
+    expect(pre.textContent).toContain("\n");
+    expect(pre.textContent).toContain('  "file_path"');
+    expect(pre.textContent).toContain('  "offset"');
+  });
+
+  it("(c) malformed JSON renders the raw string verbatim without throwing", () => {
+    const bad = '{"command": "ls -la"'; // missing closing brace
+    const { getByTestId } = render(ToolOutput, {
+      props: { call: tool({ inputJson: bad }) },
+    });
+    // Must fall back to the raw string, no crash.
+    expect(getByTestId("tool-output-input")).toHaveTextContent(bad);
+  });
+});
+
+/**
  * Linkified output (gap-cycle-06-004).
  *
  * Three criteria from the gap acceptance criteria:

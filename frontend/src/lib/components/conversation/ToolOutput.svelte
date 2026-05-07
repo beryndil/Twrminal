@@ -142,6 +142,33 @@
   function pad2(n: number): string {
     return n < 10 ? `0${n}` : String(n);
   }
+
+  /**
+   * Return ``raw`` pretty-printed with 2-space indent, or ``raw`` verbatim
+   * if it is not valid JSON (defensive fall-back per gap-cycle-16-002).
+   *
+   * ``JSON.stringify(JSON.parse(raw), null, 2)`` mirrors v17's
+   * ``inputPretty: JSON.stringify(parsedInput, null, 2)`` from the v17
+   * reducer.  Compact-by-nature payloads (e.g. ``{}``) stringify back to
+   * a single line, matching the v17 behaviour exactly.
+   */
+  function prettyJson(raw: string): string {
+    try {
+      return JSON.stringify(JSON.parse(raw), null, 2) as string;
+    } catch {
+      return raw;
+    }
+  }
+
+  /**
+   * Pretty-printed version of ``call.inputJson``, computed once (Svelte
+   * ``$derived`` only re-runs when the source dependency changes, and
+   * ``call.inputJson`` is set once at ``tool_call_start`` / hydration and
+   * never mutated thereafter).  Streaming ``tool_output_delta`` events do
+   * not re-trigger the parse+stringify — per gap-cycle-16-002
+   * acceptance criterion (2b).
+   */
+  const inputPretty = $derived(prettyJson(call.inputJson));
 </script>
 
 <details
@@ -182,7 +209,7 @@
       <pre
         class="whitespace-pre-wrap break-words font-mono text-fg-muted"
         data-testid="tool-output-input"
-      >{call.inputJson}</pre>
+      >{inputPretty}</pre>
     </CollapsibleBody>
     {#if call.output.length === 0 && !call.done}
       <p class="mt-2 text-fg-muted" data-testid="tool-output-empty">
