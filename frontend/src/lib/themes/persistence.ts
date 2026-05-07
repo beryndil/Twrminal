@@ -11,7 +11,7 @@
  *   to a future item per ``TODO.md`` §"Item 2.9 — theme server-sync
  *   layer (deferred)".
  * - §"Theme picker UI" — first-paint default: ``paper-light`` when
- *   the OS reports a light scheme, ``midnight-glass`` otherwise.
+ *   the OS reports a light scheme, ``evergreen`` otherwise.
  * - §"Failure modes" — a localStorage write failure (quota / private
  *   mode) translates to the "couldn't save your theme" toast; the
  *   active theme reverts to whatever the previously-saved value was.

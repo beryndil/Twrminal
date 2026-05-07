@@ -7,17 +7,18 @@ Sibling subsystems referenced here:
 
 ## Theme picker UI
 
-The theme picker lives in **Settings → Appearance**. The user sees a single dropdown labeled **Theme** with three options in v1:
+The theme picker lives in **Settings → Appearance**. The user sees a single dropdown labeled **Theme** with four options in v1:
 
 | Option | Visible label |
 |---|---|
+| `evergreen` | "Evergreen (forest-green, flat)" |
 | `midnight-glass` | "Midnight Glass (warm-navy, glass panels)" |
 | `default` | "Default (Tailwind classic dark)" |
 | `paper-light` | "Paper Light (cream, flat)" |
 
 Below the theme dropdown is a one-line caption: "Saved per device. Applies immediately." The picker has no Save / Apply button — selecting an option commits the change immediately (no debounce, single click).
 
-When the user lands on the Appearance section for the first time on a device, the dropdown shows the theme that is currently active. If the user has never explicitly picked a theme, the active theme is whatever the OS-color-scheme fallback resolved to: `paper-light` when the OS reports a light scheme, `midnight-glass` otherwise.
+When the user lands on the Appearance section for the first time on a device, the dropdown shows the theme that is currently active. If the user has never explicitly picked a theme, the active theme is whatever the OS-color-scheme fallback resolved to: `paper-light` when the OS reports a light scheme, `evergreen` otherwise.
 
 ## Persistence boundary
 
@@ -64,7 +65,7 @@ A theme switch is safe at any point. If the user changes themes while an assista
 * The display **timezone**. That is a separate Settings → Appearance control (also per-device, persisted in local storage rather than on the server, since a laptop in CT and a phone abroad each want their own display tz). **As of gap-cycle-07-006 this control is wired** — see addendum below.
 * The **locale** for date / number formatting. Deferred for v1; helpers accept a locale already, so a follow-up can surface this without disturbing existing strings.
 * **Per-component overrides.** The user cannot pick a different theme for the conversation pane vs the sidebar; theme is global.
-* **Custom theme uploads.** v1 ships with the three named themes. Custom user themes are out of scope.
+* **Custom theme uploads.** v1 ships with the four named themes. Custom user themes are out of scope.
 
 ## Syntax-highlighting palette wiring (addendum — gap-cycle-04-002)
 
