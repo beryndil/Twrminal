@@ -1,0 +1,512 @@
+/**
+ * Tests for the reorg subsystem — gap-cycle-01-013.
+ *
+ * Coverage:
+ *   1. ReorgPicker — opens on right-click action, lists sessions,
+ *      confirms "move" mode, confirms "split" mode.
+ *   2. ReorgAuditDivider — renders after a successful commit.
+ *   3. ReorgUndoToast — 30 s auto-dismiss + manual undo + dismiss.
+ *   4. ReorgProposalEditor — analyzeReorg() called on open; accept
+ *      triggers picker; dismiss removes proposal.
+ *   5. reorgStore — state transitions for openPicker / commitMove /
+ *      commitSplit / undoReorg / dismissUndoToast.
+ */
+import { fireEvent, render, waitFor } from "@testing-library/svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// ---------------------------------------------------------------------------
+// API mocks — hoisted so the mock factory can reference them.
+// ---------------------------------------------------------------------------
+
+const { moveMessageMock, listMessagesMock, listSessionsMock } = vi.hoisted(() => ({
+  moveMessageMock: vi.fn(),
+  listMessagesMock: vi.fn(),
+  listSessionsMock: vi.fn(),
+}));
+
+vi.mock("../../../api/messages", () => ({
+  moveMessage: moveMessageMock,
+  listMessages: listMessagesMock,
+}));
+
+vi.mock("../../../api/sessions", () => ({
+  listSessions: listSessionsMock,
+}));
+
+// analyzeReorg uses listMessages internally — covered by the mock above.
+// We also need to mock it for the proposal editor tests.
+const { analyzeReorgMock } = vi.hoisted(() => ({ analyzeReorgMock: vi.fn() }));
+vi.mock("../../../stores/reorg.svelte", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../stores/reorg.svelte")>();
+  return {
+    ...actual,
+    analyzeReorg: analyzeReorgMock,
+  };
+});
+
+import ReorgPicker from "../ReorgPicker.svelte";
+import ReorgAuditDivider from "../ReorgAuditDivider.svelte";
+import ReorgUndoToast from "../ReorgUndoToast.svelte";
+import ReorgProposalEditor from "../ReorgProposalEditor.svelte";
+import {
+  reorgStore,
+  _resetReorgForTests,
+  type ReorgAuditEntry,
+  type ReorgUndoPayload,
+} from "../../../stores/reorg.svelte";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeAuditEntry(overrides: Partial<ReorgAuditEntry> = {}): ReorgAuditEntry {
+  return {
+    id: "e1",
+    anchorMessageId: "msg1",
+    kind: "move",
+    count: 1,
+    targetSessionId: "sess-b",
+    targetSessionTitle: "Target Session",
+    timestamp: new Date("2026-01-01T12:00:00Z").toISOString(),
+    ...overrides,
+  };
+}
+
+function makeUndoPayload(overrides: Partial<ReorgUndoPayload> = {}): ReorgUndoPayload {
+  return {
+    entry: makeAuditEntry(),
+    originalSessionId: "sess-a",
+    movedMessageIds: ["msg1"],
+    ...overrides,
+  };
+}
+
+const SESSION_FIXTURES = [
+  {
+    id: "sess-a",
+    kind: "chat",
+    title: "Source Session",
+    description: null,
+    session_instructions: null,
+    working_dir: "/",
+    model: "sonnet",
+    permission_mode: null,
+    max_budget_usd: null,
+    total_cost_usd: 0,
+    message_count: 3,
+    last_context_pct: null,
+    last_context_tokens: null,
+    last_context_max: null,
+    pinned: false,
+    error_pending: false,
+    checklist_item_id: null,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    last_viewed_at: null,
+    last_completed_at: null,
+    closed_at: null,
+  },
+  {
+    id: "sess-b",
+    kind: "chat",
+    title: "Target Session",
+    description: "A target session",
+    session_instructions: null,
+    working_dir: "/",
+    model: "sonnet",
+    permission_mode: null,
+    max_budget_usd: null,
+    total_cost_usd: 0,
+    message_count: 0,
+    last_context_pct: null,
+    last_context_tokens: null,
+    last_context_max: null,
+    pinned: false,
+    error_pending: false,
+    checklist_item_id: null,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    last_viewed_at: null,
+    last_completed_at: null,
+    closed_at: null,
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Setup / teardown
+// ---------------------------------------------------------------------------
+
+beforeEach(() => {
+  _resetReorgForTests();
+  moveMessageMock.mockResolvedValue({ id: "msg1", session_id: "sess-b" });
+  listSessionsMock.mockResolvedValue(SESSION_FIXTURES);
+  listMessagesMock.mockResolvedValue({
+    items: [
+      { id: "msg1", session_id: "sess-a", role: "user", content: "hello", seq: 1, created_at: "2026-01-01T10:00:00Z" },
+      { id: "msg2", session_id: "sess-a", role: "assistant", content: "hi", seq: 2, created_at: "2026-01-01T10:01:00Z" },
+    ],
+    has_more: false,
+  });
+  analyzeReorgMock.mockResolvedValue([
+    { messageId: "msg2", reason: "Natural chunk boundary at message 2" },
+  ]);
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+  _resetReorgForTests();
+});
+
+// ---------------------------------------------------------------------------
+// 1. ReorgPicker — opens on right-click context-menu action
+// ---------------------------------------------------------------------------
+
+describe("ReorgPicker — picker open on right-click", () => {
+  it("renders when picker state is set to move mode", async () => {
+    reorgStore.openPicker({
+      mode: "move",
+      messageId: "msg1",
+      sourceSessionId: "sess-a",
+      seq: 1,
+    });
+
+    const { getByTestId } = render(ReorgPicker);
+
+    await waitFor(() => {
+      expect(getByTestId("reorg-picker")).toBeTruthy();
+    });
+    expect(getByTestId("reorg-picker")).toHaveAttribute("data-mode", "move");
+  });
+
+  it("renders in split mode when opened with split", async () => {
+    reorgStore.openPicker({
+      mode: "split",
+      messageId: "msg1",
+      sourceSessionId: "sess-a",
+      seq: 1,
+    });
+
+    const { getByTestId } = render(ReorgPicker);
+    await waitFor(() => {
+      expect(getByTestId("reorg-picker")).toHaveAttribute("data-mode", "split");
+    });
+  });
+
+  it("does not render when picker state is null", () => {
+    const { queryByTestId } = render(ReorgPicker);
+    expect(queryByTestId("reorg-picker")).toBeNull();
+  });
+
+  it("lists sessions excluding the source session", async () => {
+    reorgStore.openPicker({
+      mode: "move",
+      messageId: "msg1",
+      sourceSessionId: "sess-a",
+      seq: 1,
+    });
+
+    const { getByTestId, queryByTestId } = render(ReorgPicker);
+    await waitFor(() => {
+      // sess-b should be present; sess-a (source) should be excluded
+      expect(getByTestId("rp-session-sess-b")).toBeTruthy();
+    });
+    expect(queryByTestId("rp-session-sess-a")).toBeNull();
+  });
+
+  it("closes when cancel is clicked", async () => {
+    reorgStore.openPicker({
+      mode: "move",
+      messageId: "msg1",
+      sourceSessionId: "sess-a",
+      seq: 1,
+    });
+
+    const { getByTestId, queryByTestId } = render(ReorgPicker);
+    await waitFor(() => expect(getByTestId("reorg-picker")).toBeTruthy());
+
+    fireEvent.click(getByTestId("reorg-picker-cancel"));
+    await waitFor(() => expect(queryByTestId("reorg-picker")).toBeNull());
+  });
+
+  it("confirm button is disabled until a session is selected", async () => {
+    reorgStore.openPicker({
+      mode: "move",
+      messageId: "msg1",
+      sourceSessionId: "sess-a",
+      seq: 1,
+    });
+
+    const { getByTestId } = render(ReorgPicker);
+    await waitFor(() => expect(getByTestId("rp-session-sess-b")).toBeTruthy());
+    expect(getByTestId("reorg-picker-confirm")).toBeDisabled();
+  });
+
+  it("calls moveMessage and closes on move confirm", async () => {
+    reorgStore.openPicker({
+      mode: "move",
+      messageId: "msg1",
+      sourceSessionId: "sess-a",
+      seq: 1,
+    });
+
+    const { getByTestId, queryByTestId } = render(ReorgPicker);
+    await waitFor(() => expect(getByTestId("rp-session-sess-b")).toBeTruthy());
+
+    fireEvent.click(getByTestId("rp-session-sess-b"));
+    fireEvent.click(getByTestId("reorg-picker-confirm"));
+
+    await waitFor(() => {
+      expect(moveMessageMock).toHaveBeenCalledWith("msg1", "sess-b");
+    });
+    await waitFor(() => expect(queryByTestId("reorg-picker")).toBeNull());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2. ReorgAuditDivider — divider render after commit
+// ---------------------------------------------------------------------------
+
+describe("ReorgAuditDivider — divider render after commit", () => {
+  it("renders the moved-message summary label", () => {
+    const entry = makeAuditEntry({ kind: "move", count: 1, targetSessionTitle: "Target Session" });
+    const { getByTestId } = render(ReorgAuditDivider, { props: { entry } });
+
+    expect(getByTestId("reorg-audit-divider")).toBeTruthy();
+    expect(getByTestId("reorg-audit-divider")).toHaveAttribute("data-kind", "move");
+  });
+
+  it("renders a link to the target session", () => {
+    const entry = makeAuditEntry({ targetSessionId: "sess-b", targetSessionTitle: "Target Session" });
+    const { getByTestId } = render(ReorgAuditDivider, { props: { entry } });
+
+    const link = getByTestId("reorg-audit-divider-target-link");
+    expect(link).toHaveAttribute("href", "/sessions/sess-b");
+    expect(link).toHaveTextContent("Target Session");
+  });
+
+  it("renders a timestamp", () => {
+    const entry = makeAuditEntry({ timestamp: "2026-01-01T12:00:00Z" });
+    const { getByTestId } = render(ReorgAuditDivider, { props: { entry } });
+    expect(getByTestId("reorg-audit-divider-time")).toBeTruthy();
+  });
+
+  it("renders 'split' kind correctly", () => {
+    const entry = makeAuditEntry({ kind: "split", count: 3 });
+    const { getByTestId } = render(ReorgAuditDivider, { props: { entry } });
+    expect(getByTestId("reorg-audit-divider")).toHaveAttribute("data-kind", "split");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3. ReorgUndoToast — timeout + reverse + dismiss
+// ---------------------------------------------------------------------------
+
+describe("ReorgUndoToast — undo toast timeout + reverse", () => {
+  // Fake timers only in this block — other describe blocks need real timers
+  // so that async Promise chains and waitFor polling work correctly.
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("renders when undo payload is present", () => {
+    reorgStore.showUndoToast(makeUndoPayload());
+    const { getByTestId } = render(ReorgUndoToast);
+    expect(getByTestId("reorg-undo-toast")).toBeTruthy();
+  });
+
+  it("does not render when undo payload is null", () => {
+    const { queryByTestId } = render(ReorgUndoToast);
+    expect(queryByTestId("reorg-undo-toast")).toBeNull();
+  });
+
+  it("auto-dismisses after 30 seconds", async () => {
+    reorgStore.showUndoToast(makeUndoPayload());
+    const { queryByTestId } = render(ReorgUndoToast);
+
+    expect(queryByTestId("reorg-undo-toast")).toBeTruthy();
+
+    vi.advanceTimersByTime(30_000);
+
+    await waitFor(() => {
+      expect(queryByTestId("reorg-undo-toast")).toBeNull();
+    });
+  });
+
+  it("does not auto-dismiss before 30 seconds", async () => {
+    reorgStore.showUndoToast(makeUndoPayload());
+    const { queryByTestId } = render(ReorgUndoToast);
+
+    vi.advanceTimersByTime(29_999);
+
+    // Still visible.
+    expect(queryByTestId("reorg-undo-toast")).toBeTruthy();
+  });
+
+  it("calls moveMessage (reverse) when Undo is clicked", async () => {
+    const payload = makeUndoPayload({
+      originalSessionId: "sess-a",
+      movedMessageIds: ["msg1"],
+    });
+    reorgStore.showUndoToast(payload);
+    const { getByTestId, queryByTestId } = render(ReorgUndoToast);
+
+    fireEvent.click(getByTestId("reorg-undo-toast-undo"));
+
+    await waitFor(() => {
+      expect(moveMessageMock).toHaveBeenCalledWith("msg1", "sess-a");
+    });
+    await waitFor(() => {
+      expect(queryByTestId("reorg-undo-toast")).toBeNull();
+    });
+  });
+
+  it("dismisses without reversing when Dismiss (✕) is clicked", async () => {
+    reorgStore.showUndoToast(makeUndoPayload());
+    const { getByTestId, queryByTestId } = render(ReorgUndoToast);
+
+    fireEvent.click(getByTestId("reorg-undo-toast-dismiss"));
+
+    await waitFor(() => expect(queryByTestId("reorg-undo-toast")).toBeNull());
+    expect(moveMessageMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4. ReorgProposalEditor — analyze + apply / dismiss
+// ---------------------------------------------------------------------------
+
+describe("ReorgProposalEditor — analyze + apply", () => {
+  it("calls analyzeReorg on open", async () => {
+    const onclose = vi.fn();
+    render(ReorgProposalEditor, {
+      props: { sessionId: "sess-a", open: true, onclose },
+    });
+
+    await waitFor(() => {
+      expect(analyzeReorgMock).toHaveBeenCalledWith("sess-a");
+    });
+  });
+
+  it("renders proposals returned by analyzeReorg", async () => {
+    const onclose = vi.fn();
+    const { getByTestId } = render(ReorgProposalEditor, {
+      props: { sessionId: "sess-a", open: true, onclose },
+    });
+
+    await waitFor(() => {
+      expect(getByTestId("rpe-proposal-msg2")).toBeTruthy();
+    });
+  });
+
+  it("dismiss removes a proposal from the list", async () => {
+    const onclose = vi.fn();
+    const { getByTestId, queryByTestId } = render(ReorgProposalEditor, {
+      props: { sessionId: "sess-a", open: true, onclose },
+    });
+
+    await waitFor(() => expect(getByTestId("rpe-proposal-msg2")).toBeTruthy());
+
+    fireEvent.click(getByTestId("rpe-dismiss-msg2"));
+
+    await waitFor(() => {
+      expect(queryByTestId("rpe-proposal-msg2")).toBeNull();
+    });
+    expect(getByTestId("rpe-empty")).toBeTruthy();
+  });
+
+  it("accept opens the reorg picker and closes the editor", async () => {
+    const onclose = vi.fn();
+    const { getByTestId } = render(ReorgProposalEditor, {
+      props: { sessionId: "sess-a", open: true, onclose },
+    });
+
+    await waitFor(() => expect(getByTestId("rpe-proposal-msg2")).toBeTruthy());
+
+    fireEvent.click(getByTestId("rpe-accept-msg2"));
+
+    await waitFor(() => {
+      expect(reorgStore.picker).not.toBeNull();
+      expect(reorgStore.picker?.mode).toBe("split");
+      expect(reorgStore.picker?.messageId).toBe("msg2");
+    });
+    expect(onclose).toHaveBeenCalled();
+  });
+
+  it("does not call analyzeReorg when closed", () => {
+    const onclose = vi.fn();
+    render(ReorgProposalEditor, {
+      props: { sessionId: "sess-a", open: false, onclose },
+    });
+    expect(analyzeReorgMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5. reorgStore — state transitions
+// ---------------------------------------------------------------------------
+
+describe("reorgStore — state transitions", () => {
+  it("openPicker sets picker state", () => {
+    expect(reorgStore.picker).toBeNull();
+    reorgStore.openPicker({ mode: "move", messageId: "m1", sourceSessionId: "s1", seq: 5 });
+    expect(reorgStore.picker).toMatchObject({ mode: "move", messageId: "m1" });
+  });
+
+  it("closePicker clears picker state", () => {
+    reorgStore.openPicker({ mode: "move", messageId: "m1", sourceSessionId: "s1", seq: 5 });
+    reorgStore.closePicker();
+    expect(reorgStore.picker).toBeNull();
+  });
+
+  it("commitMove calls moveMessage and adds audit entry", async () => {
+    await reorgStore.commitMove("sess-a", "msg1", "sess-b", "Target Session");
+
+    expect(moveMessageMock).toHaveBeenCalledWith("msg1", "sess-b");
+    const entries = reorgStore.auditEntriesFor("sess-a");
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ kind: "move", count: 1, targetSessionId: "sess-b" });
+  });
+
+  it("commitMove shows undo toast", async () => {
+    expect(reorgStore.undo).toBeNull();
+    await reorgStore.commitMove("sess-a", "msg1", "sess-b", "Target Session");
+    expect(reorgStore.undo).not.toBeNull();
+    expect(reorgStore.undo?.originalSessionId).toBe("sess-a");
+  });
+
+  it("commitSplit fetches messages and moves all at or after seq", async () => {
+    await reorgStore.commitSplit("sess-a", "msg1", 1, "sess-b", "Target Session");
+
+    // Both msg1 (seq=1) and msg2 (seq=2) should be moved.
+    expect(moveMessageMock).toHaveBeenCalledTimes(2);
+    expect(moveMessageMock).toHaveBeenCalledWith("msg1", "sess-b");
+    expect(moveMessageMock).toHaveBeenCalledWith("msg2", "sess-b");
+
+    const entries = reorgStore.auditEntriesFor("sess-a");
+    expect(entries[0]).toMatchObject({ kind: "split", count: 2 });
+  });
+
+  it("undoReorg moves messages back and clears audit entry", async () => {
+    await reorgStore.commitMove("sess-a", "msg1", "sess-b", "Target Session");
+    const payload = reorgStore.undo!;
+    moveMessageMock.mockClear();
+
+    await reorgStore.undoReorg(payload);
+
+    expect(moveMessageMock).toHaveBeenCalledWith("msg1", "sess-a");
+    expect(reorgStore.undo).toBeNull();
+    expect(reorgStore.auditEntriesFor("sess-a")).toHaveLength(0);
+  });
+
+  it("dismissUndoToast clears toast without reversing", async () => {
+    await reorgStore.commitMove("sess-a", "msg1", "sess-b", "Target Session");
+    moveMessageMock.mockClear();
+    reorgStore.dismissUndoToast();
+
+    expect(reorgStore.undo).toBeNull();
+    expect(moveMessageMock).not.toHaveBeenCalled();
+  });
+});

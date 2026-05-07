@@ -20,6 +20,7 @@ function turn(overrides: Partial<MessageTurnView> = {}): MessageTurnView {
     error: null,
     createdAt: null,
     resumed: false,
+    seq: 0,
     ...overrides,
   };
 }

@@ -74,6 +74,13 @@ export interface MessageTurnView {
    * (item 1.4). Only ever set on user-role rows.
    */
   resumed: boolean;
+  /**
+   * SQLite rowid (monotonically increasing per insertion order).
+   * Carried from ``MessageOut.seq`` so the reorg picker can identify
+   * which messages sit at or after a split boundary without a
+   * secondary API call.
+   */
+  seq: number;
 }
 
 export interface TurnRouting {
@@ -454,6 +461,7 @@ export function applyEvent(
           error: null,
           createdAt: null,
           resumed: false,
+          seq: 0,
         },
       ];
     case "message_start":
@@ -471,6 +479,7 @@ export function applyEvent(
           error: null,
           createdAt: null,
           resumed: false,
+          seq: 0,
         },
       ];
     case "token":
@@ -637,6 +646,7 @@ function attachError(turns: readonly MessageTurnView[], message: string): Messag
       error: message,
       createdAt: null,
       resumed: false,
+      seq: 0,
     },
   ];
 }
@@ -663,6 +673,7 @@ function rowToTurn(row: MessageOut): MessageTurnView {
     error: null,
     createdAt: row.created_at,
     resumed: false,
+    seq: row.seq,
   };
 }
 

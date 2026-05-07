@@ -44,6 +44,7 @@ const userMsg: MessageTurnView = {
   error: null,
   createdAt: null,
   resumed: false,
+  seq: 0,
 };
 
 describe("applyEvent — user/assistant lifecycle", () => {

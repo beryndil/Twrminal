@@ -45,6 +45,10 @@
   import { checkpointBus } from "../../stores/checkpointBus.svelte";
   import { recoverSession } from "../../api/sessions";
   import { pasteIntoComposer } from "../../stores/composerBridge.svelte";
+  import { reorgStore } from "../../stores/reorg.svelte";
+  import ReorgAuditDivider from "../reorg/ReorgAuditDivider.svelte";
+  import ReorgPicker from "../reorg/ReorgPicker.svelte";
+  import ReorgUndoToast from "../reorg/ReorgUndoToast.svelte";
 
   interface Props {
     sessionId: string | null;
@@ -234,6 +238,12 @@
           <VirtualItem>
             <MessageTurn {turn} {sessionId} onAskForMoreDetail={handleAskForMoreDetail} />
           </VirtualItem>
+          <!-- Reorg audit dividers appear after their anchor turn. -->
+          {#if sessionId !== null}
+            {#each reorgStore.auditEntriesFor(sessionId).filter((e) => e.anchorMessageId === turn.id) as entry (entry.id)}
+              <ReorgAuditDivider {entry} />
+            {/each}
+          {/if}
         {/each}
       {/if}
     </div>
@@ -255,6 +265,13 @@
     </button>
   {/if}
 </section>
+
+<!-- Reorg picker (full-screen overlay — lives outside the section so it
+     overlays the full viewport, not just the conversation pane). -->
+<ReorgPicker />
+
+<!-- Reorg undo toast (bottom-right, fixed positioning). -->
+<ReorgUndoToast />
 
 {#if conversationStore.pendingApproval !== null && sessionId !== null}
   {#if conversationStore.pendingApproval.toolName === "AskUserQuestion"}

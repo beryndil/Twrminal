@@ -46,7 +46,6 @@
   import { createCheckpoint, forkCheckpoint } from "../../api/checkpoints";
   import {
     deleteMessage,
-    moveMessage,
     patchMessageHidden,
     patchMessagePinned,
   } from "../../api/messages";
@@ -56,6 +55,7 @@
   import { sanitizeHtml } from "../../sanitize";
   import { bumpCheckpointRefresh } from "../../stores/checkpointBus.svelte";
   import type { MessageTurnView } from "../../stores/conversation.svelte";
+  import { reorgStore } from "../../stores/reorg.svelte";
   import CollapsibleBody from "../common/CollapsibleBody.svelte";
   import ConfirmDialog from "../sidebar/ConfirmDialog.svelte";
   import RoutingBadge from "./RoutingBadge.svelte";
@@ -133,34 +133,32 @@
     },
 
     /**
-     * Move the message to another session. Uses window.prompt for the
-     * session ID until a full session-picker UI lands in a later item.
+     * Move the message to another session — opens the ReorgPicker in
+     * "move" mode (gap-cycle-01-013).
      */
     [MENU_ACTION_MESSAGE_MOVE_TO_SESSION]: () => {
-      // Simple session-ID prompt; a full session-picker is deferred.
-      const targetId = window.prompt("Enter target session ID:");
-      if (targetId === null || targetId.trim() === "") return;
-      void moveMessage(turn.id, targetId.trim()).catch((err) => {
-        console.error("Move message failed:", err);
+      if (sessionId === null || sessionId === undefined) return;
+      reorgStore.openPicker({
+        mode: "move",
+        messageId: turn.id,
+        sourceSessionId: sessionId,
+        seq: turn.seq,
       });
     },
 
     /**
-     * Split the conversation at this message — drop a checkpoint at
-     * this anchor (G6). Per ``docs/behavior/context-menus.md``
-     * §"Message bubble" split-here records the boundary; the user can
-     * fork from the gutter chip later if they decide to branch.
+     * Split the conversation at this message — opens the ReorgPicker in
+     * "split" mode (gap-cycle-01-013).  The picker lets the user choose
+     * a destination; all messages at or after this ``seq`` are moved.
      */
     [MENU_ACTION_MESSAGE_SPLIT_HERE]: () => {
       if (sessionId === null || sessionId === undefined) return;
-      void (async () => {
-        try {
-          await createCheckpoint({ sessionId, messageId: turn.id });
-          bumpCheckpointRefresh();
-        } catch (err) {
-          console.error("split-here failed:", err);
-        }
-      })();
+      reorgStore.openPicker({
+        mode: "split",
+        messageId: turn.id,
+        sourceSessionId: sessionId,
+        seq: turn.seq,
+      });
     },
 
     /**
