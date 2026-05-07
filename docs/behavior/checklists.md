@@ -119,3 +119,19 @@ If the server restarts mid-run, the run is rehydrated on next boot — the user 
 ## Sidebar visibility of paired-chat activity
 
 A paired chat's sidebar row carries the same "needs attention" / "unviewed" indicators as a normal chat (see [chat](chat.md) error states). The driver's leg cutovers are observable in the sidebar as a fast-cycling sequence of new chat rows for the same item. The originating checklist session retains a single row.
+
+## ChecklistChat
+
+A checklist session pane carries a compact **ChecklistChat** panel positioned between the auto-driver header and the items tree. The panel provides a conversational surface for whole-list instructions — for example, "add five items about CI setup" or "reorder these by estimated effort".
+
+**What the user observes:**
+
+* The panel renders at a fixed compact height with an internal scroll area. A user turn and the matching assistant reply each occupy their own row; older turns scroll off the top.
+* Each assistant reply renders as a streaming delta: as tokens arrive the text updates in-place, with a blinking cursor appended to the live text. Once the turn completes the cursor disappears and the full body is frozen.
+* The composer at the bottom of the panel is a multi-line textarea (Enter sends, Shift+Enter inserts a newline to match the main chat composer convention). A **Send** button sits to the right.
+* The textarea is disabled and the Send button is inert while a send is in flight (from submit until the 202 Accepted acknowledgement arrives). After the ack the textarea becomes active again; the streaming assistant reply arrives independently via the WebSocket channel.
+* Typing in an empty textarea keeps the Send button disabled; the button enables once at least one non-whitespace character is present.
+* If the 202 handshake fails the optimistic user bubble is removed and a brief inline error message appears. The composer re-enables so the user can retry.
+* Conversation history for the checklist session is loaded on pane open (the most recent 50 messages). If history cannot be fetched the panel starts empty and remains usable for new messages.
+
+**Relationship to paired chats:** ChecklistChat sends prompts to the checklist session's own agent, not to any per-item paired chat. Whole-list instructions (add, reorder, bulk-check) are appropriate here; item-level work happens in the item's paired chat (see [paired-chats](paired-chats.md)).

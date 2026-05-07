@@ -87,6 +87,7 @@
   } from "../../stores/checklist.svelte";
   import type { SessionOut } from "../../api/sessions";
   import AutoDriverControls from "./AutoDriverControls.svelte";
+  import ChecklistChat from "./ChecklistChat.svelte";
   import PairedChatLinkSpawn from "./PairedChatLinkSpawn.svelte";
   import SentinelEvent from "./SentinelEvent.svelte";
 
@@ -327,6 +328,8 @@
       onChange={refresh}
     />
   </header>
+
+  <ChecklistChat {checklistId} />
 
   <div class="checklist-view__body flex-1 overflow-y-auto p-3" data-testid="checklist-view-body">
     {#if checklistStore.loading}

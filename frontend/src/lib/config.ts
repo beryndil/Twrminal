@@ -1560,6 +1560,12 @@ export const CHECKLIST_STRINGS = {
   // Failure-on-item template (mirrors backend
   // ``DRIVER_OUTCOME_HALTED_FAILURE_TEMPLATE``).
   driverOutcomeHaltedFailureTemplate: "Halted: failure on item {itemId}",
+  // ChecklistChat surface (behavior/checklists.md §ChecklistChat).
+  chatPanelAriaLabel: "Checklist chat",
+  chatInputPlaceholder: "Ask about this checklist…",
+  chatInputAriaLabel: "Message to checklist agent",
+  chatSendLabel: "Send",
+  chatSendAriaLabel: "Send message to checklist agent",
 } as const;
 
 // ---- Vault (item 2.10; mirrors ``docs/behavior/vault.md``) ----------------
