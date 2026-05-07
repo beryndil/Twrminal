@@ -632,6 +632,13 @@ TAG_MEMORY_TITLE_MAX_LENGTH: Final[int] = 200
 # budget so up to two large memories can coexist.
 TAG_MEMORY_BODY_MAX_LENGTH: Final[int] = 30_000
 
+# Tag-memory body preview length for the global memories index
+# (``GET /api/memories``). The flat-list view shows a one-line
+# truncated excerpt so the user can scan intent without opening the
+# per-tag editor. 200 chars is roughly two short sentences — enough
+# context without overrunning a list row.
+MEMORY_BODY_PREVIEW_MAX_LENGTH: Final[int] = 200
+
 # ---------------------------------------------------------------------------
 # Prompt endpoint (item 1.7; arch §1.1.5 ``web/routes/sessions.py``;
 # behavior surface in ``docs/behavior/prompt-endpoint.md``).
@@ -1389,6 +1396,7 @@ __all__ = [
     "MAX_AVATAR_SIZE_BYTES",
     "MAX_CHECKPOINTS_PER_SESSION",
     "MAX_UPLOAD_SIZE_BYTES",
+    "MEMORY_BODY_PREVIEW_MAX_LENGTH",
     "MESSAGES_LIST_DEFAULT_LIMIT",
     "MESSAGES_LIST_MAX_LIMIT",
     "MESSAGE_ID_PREFIX",

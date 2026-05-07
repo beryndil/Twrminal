@@ -9,8 +9,10 @@ import {
   createMemory,
   deleteMemory,
   getMemory,
+  listAllMemories,
   listTagMemories,
   updateMemory,
+  type AllMemoriesRow,
   type TagMemoryIn,
 } from "../memories";
 
@@ -27,6 +29,44 @@ const fakeMemory = {
   created_at: "2026-04-29T00:00:00Z",
   updated_at: "2026-04-29T00:00:00Z",
 };
+
+const fakeAllMemoriesRow: AllMemoriesRow = {
+  tag_id: 7,
+  tag_name: "bearings/architect",
+  tag_color: null,
+  memory_id: 42,
+  memory_title: "T",
+  memory_body_preview: "B",
+  enabled: true,
+  updated_at: "2026-04-29T00:00:00Z",
+};
+
+describe("listAllMemories", () => {
+  it("GETs /api/memories and returns the flat list", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify([fakeAllMemoriesRow]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const out = await listAllMemories();
+    expect(out).toHaveLength(1);
+    expect(out[0].memory_id).toBe(42);
+    expect(out[0].tag_name).toBe("bearings/architect");
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/api/memories");
+  });
+
+  it("returns [] when the response is an empty array", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const out = await listAllMemories();
+    expect(out).toEqual([]);
+  });
+});
 
 describe("listTagMemories", () => {
   it("GETs /api/tags/{tag_id}/memories", async () => {

@@ -20,7 +20,7 @@
    * The validation helpers live in :mod:`./validation` so the unit
    * tests can exercise the rule shape without mounting the component.
    */
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
 
   import {
     MEMORIES_STRINGS,
@@ -43,10 +43,18 @@
 
   interface Props {
     /**
-     * Initially-active tag (e.g. picked from a context-menu deeplink).
+     * Initially-active tag (e.g. picked from a context-menu deeplink
+     * or the global memories index row click).
      * ``null`` shows the picker without a default scope.
      */
     initialTagId?: number | null;
+    /**
+     * Memory to open in edit mode on first load (gap-cycle-13-007 —
+     * the global index row click passes the memory id so the editor
+     * lands with that memory pre-selected for editing). Only consumed
+     * once; cleared after the memory is found in the loaded list.
+     */
+    initialMemoryId?: number | null;
     // Test-injectable seams.
     memoriesStore?: typeof memoriesStoreDefault;
     tagsStore?: typeof tagsStoreDefault;
@@ -59,6 +67,7 @@
 
   const {
     initialTagId = null,
+    initialMemoryId = null,
     memoriesStore = memoriesStoreDefault,
     tagsStore = tagsStoreDefault,
     refreshTags = refreshTagsDefault,
@@ -73,9 +82,31 @@
   let formBody = $state("");
   let formEnabled = $state(true);
   let formSubmitting = $state(false);
+  // Pending memory id from initialMemoryId — consumed once the memories
+  // list has loaded. Cleared to null after startEdit is called.
+  // ``untrack`` is required to snapshot the prop at construction time
+  // (Svelte 5 runes disallow referencing a reactive prop directly as a
+  // ``$state`` initializer — svelte/valid-compile state_referenced_locally).
+  let pendingMemoryId = $state<number | null>(untrack(() => initialMemoryId));
 
   const errors = $derived(validateMemoryForm({ title: formTitle, body: formBody }));
   const valid = $derived(isFormValid(errors));
+
+  // When the memories list loads and we have a pending memory id (from
+  // the global index row click), open that memory for editing.
+  $effect(() => {
+    if (
+      pendingMemoryId !== null &&
+      !memoriesStore.loading &&
+      memoriesStore.memories.length > 0
+    ) {
+      const target = memoriesStore.memories.find((m) => m.id === pendingMemoryId);
+      if (target !== undefined) {
+        startEdit(target);
+        pendingMemoryId = null;
+      }
+    }
+  });
 
   function startCreate(): void {
     editingId = "new";

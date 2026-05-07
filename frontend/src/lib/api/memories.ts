@@ -11,7 +11,7 @@
  * :class:`TagMemoryOut`; ``extra="forbid"`` on the backend means a
  * stray TS field surfaces as a 422 at the wire boundary.
  */
-import { memoryEndpoint, tagMemoriesEndpoint } from "../config";
+import { API_ALL_MEMORIES_ENDPOINT, memoryEndpoint, tagMemoriesEndpoint } from "../config";
 import { deleteResource, getJson, patchJson, postJson, type RequestOptions } from "./client";
 
 /**
@@ -49,6 +49,41 @@ export interface TagMemoryIn {
   title: string;
   body: string;
   enabled: boolean;
+}
+
+/**
+ * Wire shape for one row in the global memories index — mirrors
+ * :class:`bearings.web.models.tags.AllMemoriesOut`.
+ *
+ * ``memory_body_preview`` is the body truncated server-side to
+ * :const:`MEMORY_BODY_PREVIEW_MAX_LENGTH` chars; the full body is
+ * available via :func:`getMemory`.
+ *
+ * The list is sorted by ``(tag_name, memory_title)`` so grouping by
+ * tag emerges from the sort order.
+ */
+export interface AllMemoriesRow {
+  tag_id: number;
+  tag_name: string;
+  tag_color: string | null;
+  memory_id: number;
+  memory_title: string;
+  memory_body_preview: string;
+  enabled: boolean;
+  updated_at: string;
+}
+
+/**
+ * ``GET /api/memories`` — every memory across all tags.
+ *
+ * Returns the flat list sorted by tag name then memory title. Pass
+ * ``onlyEnabled: true`` to restrict to enabled memories (mirrors the
+ * ``?only_enabled=true`` query param on the per-tag list endpoint).
+ */
+export async function listAllMemories(
+  options: RequestOptions = {},
+): Promise<AllMemoriesRow[]> {
+  return await getJson<AllMemoriesRow[]>(API_ALL_MEMORIES_ENDPOINT, options);
 }
 
 /**

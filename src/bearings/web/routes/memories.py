@@ -7,6 +7,7 @@ db-layer split — :mod:`bearings.db.tags` vs :mod:`bearings.db.memories`).
 
 Endpoints:
 
+* ``GET /api/memories`` — global flat-list across all tags (gap-cycle-13-007).
 * ``POST /api/tags/{tag_id}/memories`` — create.
 * ``GET /api/tags/{tag_id}/memories`` — list (optional
   ``?only_enabled=true`` filter for prompt-assembler consumers).
@@ -18,6 +19,10 @@ Memories are addressable both via their parent tag (``/tags/{id}/
 memories``) and directly by id (``/memories/{id}``); the dual surface
 matches v0.17.x's UI which shows the editor in two places — inside
 the per-tag panel and as a flat list.
+
+Route ordering note: ``GET /api/memories`` (no path param) is
+registered BEFORE ``GET /api/memories/{memory_id}`` (path param) so
+FastAPI's static-path-first precedence resolves correctly.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from bearings.db import memories as memories_db
 from bearings.db import tags as tags_db
 from bearings.db.memories import TagMemory
-from bearings.web.models.tags import TagMemoryIn, TagMemoryOut
+from bearings.web.models.tags import AllMemoriesOut, TagMemoryIn, TagMemoryOut
 
 router = APIRouter()
 
@@ -104,6 +109,43 @@ async def list_memories_for_tag(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"tag {tag_id} not found")
     rows = await memories_db.list_for_tag(db, tag_id, only_enabled=only_enabled)
     return [_to_out(row) for row in rows]
+
+
+@router.get(
+    "/api/memories",
+    response_model=list[AllMemoriesOut],
+)
+async def list_all_memories(
+    request: Request,
+    only_enabled: bool = False,
+) -> list[AllMemoriesOut]:
+    """Every memory across every tag, sorted by tag name then memory title.
+
+    Returns a flat list of :class:`AllMemoriesOut` rows — each row
+    carries enough tag context for the global-index view to render
+    without a second round-trip. ``memory_body_preview`` is the body
+    truncated to
+    :data:`bearings.config.constants.MEMORY_BODY_PREVIEW_MAX_LENGTH`
+    chars; the full body is still available via ``GET /api/memories/{id}``.
+
+    ``?only_enabled=true`` restricts to enabled memories — mirrors the
+    same query param supported by the per-tag list endpoint.
+    """
+    db = _db(request)
+    rows = await memories_db.list_all(db, only_enabled=only_enabled)
+    return [
+        AllMemoriesOut(
+            tag_id=row.tag_id,
+            tag_name=row.tag_name,
+            tag_color=row.tag_color,
+            memory_id=row.memory_id,
+            memory_title=row.memory_title,
+            memory_body_preview=row.memory_body_preview,
+            enabled=row.enabled,
+            updated_at=row.updated_at,
+        )
+        for row in rows
+    ]
 
 
 @router.get("/api/memories/{memory_id}", response_model=TagMemoryOut)

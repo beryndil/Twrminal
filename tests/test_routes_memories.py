@@ -166,3 +166,92 @@ def test_tag_delete_cascades_to_memories_via_api(
     app_client.delete(f"/api/tags/{tag_id}")
     response = app_client.get(f"/api/memories/{created['id']}")
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Global flat-list endpoint — GET /api/memories (gap-cycle-13-007)
+# ---------------------------------------------------------------------------
+
+
+def test_list_all_memories_empty_on_fresh_db(app_client: TestClient) -> None:
+    """``GET /api/memories`` returns [] when no memories exist."""
+    response = app_client.get("/api/memories")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_all_memories_returns_cross_tag_rows(app_client: TestClient) -> None:
+    """Rows span multiple tags; each row carries the tag context."""
+    tag_a = _make_tag(app_client, "alpha")
+    tag_b = _make_tag(app_client, "beta")
+    app_client.post(f"/api/tags/{tag_a}/memories", json={"title": "A-mem", "body": "a body"})
+    app_client.post(f"/api/tags/{tag_b}/memories", json={"title": "B-mem", "body": "b body"})
+
+    response = app_client.get("/api/memories")
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 2
+    # Both tag fields are present.
+    tag_names = {r["tag_name"] for r in rows}
+    assert tag_names == {"alpha", "beta"}
+    # Each row has the mandatory shape.
+    for row in rows:
+        for key in (
+            "tag_id",
+            "tag_name",
+            "tag_color",
+            "memory_id",
+            "memory_title",
+            "memory_body_preview",
+            "enabled",
+            "updated_at",
+        ):
+            assert key in row, f"missing key {key!r}"
+
+
+def test_list_all_memories_sorted_by_tag_name_then_title(app_client: TestClient) -> None:
+    """Response is sorted by (tag_name ASC, memory_title ASC)."""
+    tag_z = _make_tag(app_client, "zzz")
+    tag_a = _make_tag(app_client, "aaa")
+    # Insert in reverse order to confirm sort is applied.
+    app_client.post(f"/api/tags/{tag_z}/memories", json={"title": "z-mem", "body": "b"})
+    app_client.post(f"/api/tags/{tag_a}/memories", json={"title": "a-m2", "body": "b"})
+    app_client.post(f"/api/tags/{tag_a}/memories", json={"title": "a-m1", "body": "b"})
+
+    rows = app_client.get("/api/memories").json()
+    assert [r["tag_name"] for r in rows] == ["aaa", "aaa", "zzz"]
+    assert [r["memory_title"] for r in rows] == ["a-m1", "a-m2", "z-mem"]
+
+
+def test_list_all_memories_only_enabled_filter(app_client: TestClient) -> None:
+    """``?only_enabled=true`` excludes disabled memories."""
+    tag_id = _make_tag(app_client, "filter-tag")
+    app_client.post(
+        f"/api/tags/{tag_id}/memories",
+        json={"title": "on", "body": "b", "enabled": True},
+    )
+    app_client.post(
+        f"/api/tags/{tag_id}/memories",
+        json={"title": "off", "body": "b", "enabled": False},
+    )
+
+    all_rows = app_client.get("/api/memories").json()
+    assert len(all_rows) == 2
+
+    enabled_rows = app_client.get("/api/memories", params={"only_enabled": "true"}).json()
+    assert len(enabled_rows) == 1
+    assert enabled_rows[0]["memory_title"] == "on"
+    assert enabled_rows[0]["enabled"] is True
+
+
+def test_list_all_memories_body_preview_truncated(app_client: TestClient) -> None:
+    """``memory_body_preview`` is truncated to at most 200 chars."""
+    from bearings.config.constants import MEMORY_BODY_PREVIEW_MAX_LENGTH
+
+    tag_id = _make_tag(app_client, "trunc-tag")
+    long_body = "x" * (MEMORY_BODY_PREVIEW_MAX_LENGTH + 100)
+    app_client.post(f"/api/tags/{tag_id}/memories", json={"title": "big", "body": long_body})
+
+    rows = app_client.get("/api/memories").json()
+    assert len(rows) == 1
+    assert len(rows[0]["memory_body_preview"]) == MEMORY_BODY_PREVIEW_MAX_LENGTH

@@ -389,6 +389,14 @@ export const tagMemoriesEndpoint = (tagId: number): string =>
   `${API_TAGS_ENDPOINT}/${tagId}/memories`;
 
 /**
+ * ``GET /api/memories`` — global flat-list of every memory across all
+ * tags, sorted by tag name then memory title (gap-cycle-13-007).
+ * Supports ``?only_enabled=true`` (same semantics as the per-tag list
+ * endpoint). Returns an :interface:`AllMemoriesRow[]`.
+ */
+export const API_ALL_MEMORIES_ENDPOINT = `${API_BASE}/memories`;
+
+/**
  * ``…/api/memories/{id}`` — direct addressable surface for a single
  * memory (GET / PATCH / DELETE). The dual-surface (per-tag + direct)
  * matches v0.17.x's UI which shows the editor in two places — inside
@@ -2169,6 +2177,12 @@ export const MEMORIES_STRINGS = {
   deleteConfirmTemplate: "Delete memory {title}? This cannot be undone.",
   pickTagFirst: "Pick a tag to view its memories.",
   characterCountTemplate: "{used} / {max}",
+  // Global memories index strings (gap-cycle-13-007).
+  indexAriaLabel: "Memories index",
+  indexChipGroupLabel: "Filter by tag",
+  indexEmpty: "No memories yet — pick a tag to add one.",
+  indexLoadFailed: "Couldn't load memories.",
+  disabledBadge: "disabled",
 } as const;
 
 // ---- Themes (item 2.9; mirrors ``docs/behavior/themes.md`` §"Theme picker UI") ----

@@ -146,7 +146,34 @@ class TagMemoryOut(BaseModel):
     updated_at: str
 
 
+class AllMemoriesOut(BaseModel):
+    """Response body for ``GET /api/memories`` — global flat-list.
+
+    Each row is a denormalised join of one tag-memory with its parent
+    tag so the frontend global-index view can display tag context
+    without a second round-trip. ``memory_body_preview`` is the body
+    truncated to
+    :data:`bearings.config.constants.MEMORY_BODY_PREVIEW_MAX_LENGTH`
+    chars; the full body is available via ``GET /api/memories/{id}``.
+
+    The list is sorted by ``(tag_name, memory_title)`` — grouping by
+    tag is implied by the alphabetical sort.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    tag_id: int
+    tag_name: str
+    tag_color: str | None
+    memory_id: int
+    memory_title: str
+    memory_body_preview: str
+    enabled: bool
+    updated_at: str
+
+
 __all__ = [
+    "AllMemoriesOut",
     "TagClass",
     "TagIn",
     "TagMemoryIn",

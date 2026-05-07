@@ -21,9 +21,11 @@ deleting a tag sweeps its memories.
 Public surface:
 
 * :class:`TagMemory` — frozen dataclass row mirror.
-* :func:`create`, :func:`get`, :func:`list_for_tag`, :func:`update`,
-  :func:`delete` — CRUD; same return-shape conventions as
-  :mod:`bearings.db.tags`.
+* :class:`AllMemoriesRow` — join of ``tags`` + ``tag_memories`` for
+  the global-index list endpoint (``GET /api/memories``).
+* :func:`create`, :func:`get`, :func:`list_for_tag`, :func:`list_all`,
+  :func:`update`, :func:`delete` — CRUD; same return-shape conventions
+  as :mod:`bearings.db.tags`.
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ from dataclasses import dataclass
 import aiosqlite
 
 from bearings.config.constants import (
+    MEMORY_BODY_PREVIEW_MAX_LENGTH,
     TAG_MEMORY_BODY_MAX_LENGTH,
     TAG_MEMORY_TITLE_MAX_LENGTH,
 )
@@ -83,6 +86,55 @@ class TagMemory:
             )
         if self.tag_id <= 0:
             raise ValueError(f"TagMemory.tag_id must be > 0 (got {self.tag_id})")
+
+
+@dataclass(frozen=True)
+class AllMemoriesRow:
+    """Denormalised row for the global memories index (``GET /api/memories``).
+
+    Joins ``tag_memories`` with ``tags`` so the flat-list view can
+    render tag context without a second round-trip. ``memory_body_preview``
+    is the body truncated to
+    :data:`bearings.config.constants.MEMORY_BODY_PREVIEW_MAX_LENGTH`
+    chars — the full body is still reachable via ``GET /api/memories/{id}``.
+
+    Sorted by ``(tag_name ASC, memory_title ASC)`` so the list groups
+    by tag naturally and memories within each tag are alphabetical.
+    """
+
+    tag_id: int
+    tag_name: str
+    tag_color: str | None
+    memory_id: int
+    memory_title: str
+    memory_body_preview: str
+    enabled: bool
+    updated_at: str
+
+
+async def list_all(
+    connection: aiosqlite.Connection,
+    *,
+    only_enabled: bool = False,
+) -> list[AllMemoriesRow]:
+    """All memories across every tag, sorted by tag name then memory title.
+
+    ``only_enabled=True`` restricts to memories with ``enabled = 1``;
+    useful for the same "prompt-assembler consumer" path that
+    :func:`list_for_tag` supports, and exercised by the acceptance
+    criteria's ``?only_enabled`` query variant.
+    """
+    where = " WHERE m.enabled = 1" if only_enabled else ""
+    cursor = await connection.execute(
+        "SELECT t.id, t.name, t.color, m.id, m.title, m.body, m.enabled, m.updated_at "
+        "FROM tag_memories m "
+        "JOIN tags t ON t.id = m.tag_id" + where + " ORDER BY t.name ASC, m.title ASC",
+    )
+    try:
+        rows = await cursor.fetchall()
+    finally:
+        await cursor.close()
+    return [_row_to_all_memories_row(row) for row in rows]
 
 
 async def create(
@@ -220,6 +272,27 @@ _SELECT_MEMORY_COLUMNS = (
 )
 
 
+def _row_to_all_memories_row(row: aiosqlite.Row | tuple[object, ...]) -> AllMemoriesRow:
+    """Translate a raw join SELECT tuple to :class:`AllMemoriesRow`.
+
+    Column order: tag.id, tag.name, tag.color, m.id, m.title, m.body,
+    m.enabled, m.updated_at — matches the SELECT in :func:`list_all`.
+    """
+    # Column order from list_all SELECT:
+    # 0:t.id  1:t.name  2:t.color  3:m.id  4:m.title  5:m.body  6:m.enabled  7:m.updated_at
+    preview = str(row[5])[:MEMORY_BODY_PREVIEW_MAX_LENGTH]
+    return AllMemoriesRow(
+        tag_id=int(str(row[0])),
+        tag_name=str(row[1]),
+        tag_color=str(row[2]) if row[2] is not None else None,
+        memory_id=int(str(row[3])),
+        memory_title=str(row[4]),
+        memory_body_preview=preview,
+        enabled=bool(int(str(row[6]))),
+        updated_at=str(row[7]),
+    )
+
+
 def _row_to_memory(row: aiosqlite.Row | tuple[object, ...]) -> TagMemory:
     """Translate a raw SELECT tuple to a validated :class:`TagMemory`."""
     return TagMemory(
@@ -234,10 +307,12 @@ def _row_to_memory(row: aiosqlite.Row | tuple[object, ...]) -> TagMemory:
 
 
 __all__ = [
+    "AllMemoriesRow",
     "TagMemory",
     "create",
     "delete",
     "get",
+    "list_all",
     "list_for_tag",
     "update",
 ]
