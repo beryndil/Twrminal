@@ -336,4 +336,95 @@ describe("ContextMenu", () => {
       expect(fork).toHaveBeenCalledOnce();
     });
   });
+
+  describe("editable-outside-menu auto-close guard", () => {
+    it("focusin on an outside INPUT closes the menu", async () => {
+      const input = document.createElement("input");
+      document.body.appendChild(input);
+
+      render(ContextMenu);
+      openCheckpointMenu();
+      expect(contextMenuStore.open).not.toBeNull();
+
+      await fireEvent.focusIn(input);
+
+      expect(contextMenuStore.open).toBeNull();
+      input.remove();
+    });
+
+    it("focusin on an outside TEXTAREA closes the menu", async () => {
+      const textarea = document.createElement("textarea");
+      document.body.appendChild(textarea);
+
+      render(ContextMenu);
+      openCheckpointMenu();
+      expect(contextMenuStore.open).not.toBeNull();
+
+      await fireEvent.focusIn(textarea);
+
+      expect(contextMenuStore.open).toBeNull();
+      textarea.remove();
+    });
+
+    it("focusin on an outside contentEditable element closes the menu", async () => {
+      const div = document.createElement("div");
+      div.contentEditable = "true";
+      document.body.appendChild(div);
+
+      render(ContextMenu);
+      openCheckpointMenu();
+      expect(contextMenuStore.open).not.toBeNull();
+
+      await fireEvent.focusIn(div);
+
+      expect(contextMenuStore.open).toBeNull();
+      div.remove();
+    });
+
+    it("focusin on a non-editable element outside the menu does not close it", async () => {
+      const button = document.createElement("button");
+      document.body.appendChild(button);
+
+      render(ContextMenu);
+      openCheckpointMenu();
+
+      await fireEvent.focusIn(button);
+
+      expect(contextMenuStore.open).not.toBeNull();
+      button.remove();
+    });
+
+    it("keystrokes from an outside textarea are not consumed by the menu handler", async () => {
+      // The checkpoint menu has 'f' as a mnemonic for FORK. Without the
+      // guard a keydown(f) from a textarea would match and call
+      // preventDefault, silently dropping the character.
+      const textarea = document.createElement("textarea");
+      document.body.appendChild(textarea);
+
+      render(ContextMenu);
+      openCheckpointMenu();
+
+      // Fire keydown from the textarea (bubbles to window).
+      // If the guard works, handleKeyDown returns early without
+      // calling preventDefault — dispatchEvent returns true.
+      const notPrevented = await fireEvent.keyDown(textarea, { key: "f" });
+      expect(notPrevented).toBe(true);
+
+      textarea.remove();
+    });
+
+    it("arrow keys and Enter still navigate while a menu row has focus", async () => {
+      const fork = vi.fn();
+      const { getAllByTestId } = render(ContextMenu);
+      openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_FORK]: fork } });
+
+      // First row (FORK) is focused — fire ArrowDown from it.
+      // The guard must not block navigation for elements inside the menu.
+      const rows = getAllByTestId("context-menu-row");
+      await fireEvent.keyDown(rows[0]!, { key: "ArrowDown" });
+
+      // Focus should have advanced to row 1 (COPY_LABEL).
+      expect(document.activeElement).toBe(rows[1]);
+    });
+  });
 });

@@ -180,8 +180,64 @@
     closeMenu();
   }
 
+  /**
+   * Returns ``true`` when ``el`` is an editable field — ``INPUT``,
+   * ``TEXTAREA``, or a ``contentEditable`` host. Used by the focusin
+   * auto-close guard and the keydown intercept guard.
+   *
+   * Checks the IDL property ``contentEditable`` (``"true"`` /
+   * ``"false"`` / ``"inherit"``) rather than ``isContentEditable``
+   * because ``isContentEditable`` is a computed property that some
+   * environments (notably jsdom) do not populate until layout.  The
+   * IDL property is set synchronously on assignment.
+   */
+  function isEditableElement(el: Element): boolean {
+    const tag = el.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return true;
+    if (el instanceof HTMLElement && el.contentEditable === "true") return true;
+    return false;
+  }
+
+  /**
+   * Returns ``true`` when ``el`` is an editable field that lives
+   * **outside** the open menu container. The check is symmetric:
+   * elements inside the menu (e.g. a future inline-edit row) are
+   * explicitly excluded so typing there still works.
+   */
+  function isEditableOutsideMenu(el: Element): boolean {
+    if (!isEditableElement(el)) return false;
+    if (menuContainerRef !== null && menuContainerRef.contains(el)) return false;
+    return true;
+  }
+
+  /**
+   * Auto-close handler for the global ``focusin`` event. If focus
+   * moves to an editable element outside the menu while the menu is
+   * open, close the menu immediately (within the same event-loop tick).
+   * This prevents the ``svelte:window onkeydown`` handler from
+   * swallowing subsequent alphanumeric keystrokes destined for the
+   * newly focused field — the "composer textarea dead until hard
+   * refresh" wedge documented in v0.17's ContextMenu head comment.
+   */
+  function handleFocusIn(event: FocusEvent): void {
+    if (open === null) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (isEditableOutsideMenu(target)) {
+      closeMenu();
+    }
+  }
+
   function handleKeyDown(event: KeyboardEvent): void {
     if (open === null) return;
+    // Guard: if focus has moved to an editable field outside the menu,
+    // do not intercept the keystroke. The menu will already be closing
+    // (or have closed) via handleFocusIn; skipping here prevents a
+    // race where a mnemonic match calls preventDefault on a keystroke
+    // that the focused input needs.
+    if (event.target instanceof Element && isEditableOutsideMenu(event.target)) {
+      return;
+    }
     if (event.key === "ArrowDown") {
       event.preventDefault();
       highlightIndex = (highlightIndex + 1) % Math.max(1, flatActions.length);
@@ -220,7 +276,7 @@
   });
 </script>
 
-<svelte:window onkeydown={handleKeyDown} />
+<svelte:window onkeydown={handleKeyDown} onfocusin={handleFocusIn} />
 
 {#if open !== null}
   <!-- Backdrop — clicking outside closes the menu. -->
