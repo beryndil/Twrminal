@@ -27,6 +27,7 @@
     KNOWN_EXECUTOR_MODELS,
     KNOWN_PERMISSION_MODES,
     KNOWN_THEMES,
+    NOTIFICATION_STRINGS,
     PERMISSION_MODE_LABELS,
     PREFERENCES_STRINGS,
     PROFILE_STRINGS,
@@ -45,6 +46,11 @@
     type PreferencesOut,
   } from "$lib/api/preferences";
   import { importFromBearings, type ImportResultOut } from "$lib/api/import";
+  import {
+    requestNotifyPermission,
+    setNotifyOnComplete,
+    supportsNotifications,
+  } from "$lib/utils/notify";
   import ThemePicker from "$lib/themes/ThemePicker.svelte";
   import RoutingRuleEditor from "$lib/components/routing/RoutingRuleEditor.svelte";
   import UserIdentityBlock from "$lib/components/identity/UserIdentityBlock.svelte";
@@ -61,6 +67,19 @@
   let profileSyncError = $state<string | null>(null);
   let profileUploadError = $state<string | null>(null);
   let profileRemoveError = $state<string | null>(null);
+
+  // ---- Notifications section state ----
+
+  let prefNotifyOnComplete = $state(false);
+  let notifyError = $state<string | null>(null);
+  // Derived: true when the browser has no Notification API.
+  const notifyUnsupported = $derived(!supportsNotifications());
+  // Derived: true when the user has explicitly blocked notifications.
+  const notifyDenied = $derived(
+    supportsNotifications() && typeof Notification !== "undefined"
+      ? Notification.permission === "denied"
+      : false,
+  );
 
   // ---- Defaults section state ----
 
@@ -100,6 +119,10 @@
           ? (prefs.default_permission_mode as PermissionMode)
           : "";
       prefWorkingDir = prefs.default_working_dir ?? "";
+      // Notifications fields — sync module-level state so agent.svelte.ts sees
+      // the correct value from initial load onward.
+      prefNotifyOnComplete = prefs.notify_on_complete;
+      setNotifyOnComplete(prefs.notify_on_complete);
     } catch (err) {
       loadError = err instanceof Error ? err.message : String(err);
     }
@@ -191,6 +214,50 @@
       saveError = err instanceof Error ? err.message : String(err);
     } finally {
       saving = false;
+    }
+  }
+
+  /**
+   * Handle the "Notify when Claude finishes replying" toggle.
+   *
+   * When turning ON: request browser permission first. If the user denies,
+   * roll the toggle back and surface an inline error. Otherwise persist via
+   * PATCH and sync the module-level state.
+   *
+   * When turning OFF: persist immediately, no permission prompt needed.
+   */
+  /**
+   * Handle the "Notify when Claude finishes replying" toggle.
+   *
+   * Optimistic update: flip the state immediately so the checkbox
+   * transitions visually, then roll back if the browser denies permission
+   * or the PATCH fails.
+   *
+   * When turning ON: requests browser permission after the optimistic
+   * flip. On deny: rolls back to false and surfaces an inline error.
+   * When turning OFF: persists immediately; no permission prompt.
+   */
+  async function handleNotifyToggle(enabled: boolean): Promise<void> {
+    notifyError = null;
+    // Optimistic: update state now so the toggle visually reflects intent.
+    prefNotifyOnComplete = enabled;
+    if (enabled) {
+      const permission = await requestNotifyPermission();
+      if (permission !== "granted") {
+        // Roll back — user denied the browser prompt.
+        prefNotifyOnComplete = false;
+        notifyError = NOTIFICATION_STRINGS.permissionDeniedError;
+        return;
+      }
+    }
+    try {
+      const updated = await patchPreferences({ notify_on_complete: enabled });
+      prefNotifyOnComplete = updated.notify_on_complete;
+      setNotifyOnComplete(updated.notify_on_complete);
+    } catch (err) {
+      // Roll back on API failure.
+      prefNotifyOnComplete = !enabled;
+      notifyError = err instanceof Error ? err.message : String(err);
     }
   }
 
@@ -439,6 +506,47 @@
     {/if}
   </section>
 
+  <!-- Notifications — gap-cycle-07-001 -->
+  <section
+    class="settings-page__group"
+    aria-label="Notifications"
+    data-testid="settings-notifications"
+  >
+    <h2 class="settings-page__heading">{NOTIFICATION_STRINGS.heading}</h2>
+
+    <label class="settings-notifications__row">
+      <input
+        type="checkbox"
+        class="settings-notifications__checkbox"
+        checked={prefNotifyOnComplete}
+        disabled={notifyUnsupported || notifyDenied}
+        onchange={(e) => {
+          void handleNotifyToggle((e.target as HTMLInputElement).checked);
+        }}
+        data-testid="notify-toggle"
+      />
+      <span class="settings-defaults__label settings-notifications__label">
+        {NOTIFICATION_STRINGS.toggleLabel}
+      </span>
+    </label>
+
+    {#if notifyUnsupported}
+      <p class="settings-page__lede" data-testid="notify-unsupported">
+        {NOTIFICATION_STRINGS.footnoteUnsupported}
+      </p>
+    {:else if notifyDenied}
+      <p class="settings-page__lede" data-testid="notify-denied">
+        {NOTIFICATION_STRINGS.footnoteDenied}
+      </p>
+    {/if}
+
+    {#if notifyError !== null}
+      <p class="settings-page__error" role="alert" data-testid="notify-error">
+        {notifyError}
+      </p>
+    {/if}
+  </section>
+
   <section class="settings-page__group" aria-label="System routing rules">
     <h2 class="settings-page__heading">System routing rules</h2>
     <p class="settings-page__lede">
@@ -579,6 +687,31 @@
   .settings-import__result {
     font-size: 0.8125rem;
     color: #4ade80;
+  }
+
+  /* Notifications section (gap-cycle-07-001) */
+  .settings-notifications__row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+  }
+  .settings-notifications__checkbox {
+    width: 1rem;
+    height: 1rem;
+    cursor: pointer;
+  }
+  .settings-notifications__checkbox:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+  .settings-notifications__label {
+    cursor: pointer;
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    color: rgb(var(--bearings-fg-strong));
   }
 
   /* Profile section (gap-cycle-03-011) */

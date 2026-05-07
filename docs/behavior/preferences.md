@@ -69,12 +69,36 @@ Props: `displayName: string | null`, `avatarUrl: string | null`, `cacheBust?: st
 
 When `avatarUrl` is `null` the component renders a circular fallback SVG (person silhouette). When `displayName` is `null` the name slot is hidden entirely.
 
+## Notifications (gap-cycle-07-001)
+
+The **Notifications** section renders below Defaults in the Settings page. It exposes a single toggle:
+
+| Field | Type | Default | Effect |
+|---|---|---|---|
+| `notify_on_complete` | boolean | `false` | When `true`, fires a desktop notification after each completed assistant turn while the tab is hidden or unfocused |
+
+### Toggle behavior
+
+- **Flipping ON**: the browser permission prompt fires **before** the PATCH. If the user denies, the toggle visibly rolls back and an inline error renders. The PATCH only fires on `"granted"`.
+- **Flipping OFF**: persists immediately; no permission prompt.
+- **Disabled with footnote** when `window.Notification` is undefined (footnote: *"Your browser does not support desktop notifications."*) or `Notification.permission === "denied"` (footnote: *"Blocked in browser settings — re-allow notifications for this site, then re-toggle."*).
+
+### Notification fire condition
+
+The frontend fires `new Notification("Bearings", { body: "Claude finished replying." })` once per assistant turn when all hold:
+
+1. `notify_on_complete` is `true` in the module-level state (set by the Settings page on load and PATCH).
+2. `Notification.permission === "granted"`.
+3. `document.visibilityState === "hidden"` OR `!document.hasFocus()`.
+
+The check fires in `agent.svelte.ts` after every `message_complete` WS event.
+
 ## API contract summary
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/api/preferences` | Returns `PreferencesOut` including profile fields |
-| `PATCH` | `/api/preferences` | Partial update; `display_name` patchable here |
+| `GET` | `/api/preferences` | Returns `PreferencesOut` including profile fields and `notify_on_complete` |
+| `PATCH` | `/api/preferences` | Partial update; `display_name` and `notify_on_complete` patchable here |
 | `GET` | `/api/preferences/avatar` | Serve avatar bytes |
 | `POST` | `/api/preferences/avatar` | Upload avatar (multipart) |
 | `DELETE` | `/api/preferences/avatar` | Remove avatar |

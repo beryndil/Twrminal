@@ -22,7 +22,8 @@
  */
 import { conversationStore, ingestFrame, setError } from "./stores/conversation.svelte";
 import { parseStreamFrame } from "./api/streaming";
-import { sessionStreamPath, WS_SINCE_SEQ_QUERY_PARAM } from "./config";
+import { sessionStreamPath, WS_FRAME_KIND_EVENT, WS_SINCE_SEQ_QUERY_PARAM } from "./config";
+import { maybeFireTurnNotification } from "./utils/notify";
 
 const INITIAL_RECONNECT_DELAY_MS = 250;
 const MAX_RECONNECT_DELAY_MS = 4_000;
@@ -91,6 +92,12 @@ function openSocket(sessionId: string): void {
       return;
     }
     ingestFrame(frame);
+    // Fire a desktop notification when an assistant turn completes and
+    // the tab is hidden or unfocused. maybeFireTurnNotification performs
+    // all prerequisite checks (opt-in, permission, visibility).
+    if (frame.kind === WS_FRAME_KIND_EVENT && frame.event.type === "message_complete") {
+      maybeFireTurnNotification();
+    }
   });
   socket.addEventListener("close", () => {
     if (conn.closed) {

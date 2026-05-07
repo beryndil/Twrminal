@@ -29,6 +29,8 @@ export interface PreferencesOut {
   default_working_dir: string | null;
   display_name: string | null;
   avatar_url: string | null;
+  /** gap-cycle-07-001: desktop-notification opt-in. */
+  notify_on_complete: boolean;
   updated_at: string;
 }
 
@@ -45,6 +47,8 @@ export interface PreferencesPatch {
   default_permission_mode?: string | null;
   default_working_dir?: string | null;
   display_name?: string | null;
+  /** gap-cycle-07-001: desktop-notification opt-in. */
+  notify_on_complete?: boolean | null;
 }
 
 /** Fetch the singleton user-preferences row. */

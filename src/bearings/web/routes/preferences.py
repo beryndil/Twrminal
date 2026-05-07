@@ -91,6 +91,7 @@ def _to_out(prefs: Preferences) -> PreferencesOut:
         default_working_dir=prefs.default_working_dir,
         display_name=prefs.display_name,
         avatar_url=_AVATAR_URL_PATH if prefs.avatar_path is not None else None,
+        notify_on_complete=prefs.notify_on_complete,
         updated_at=prefs.updated_at,
     )
 
@@ -129,6 +130,7 @@ async def patch_preferences(
         default_permission_mode=body.default_permission_mode,
         default_working_dir=body.default_working_dir,
         display_name=body.display_name,
+        notify_on_complete=body.notify_on_complete,
         fields=frozenset(supplied - {"theme"}),
     )
     return _to_out(prefs)

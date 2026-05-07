@@ -22,6 +22,8 @@ class PreferencesOut(BaseModel):
     # The frontend appends ``?v=<updated_at>`` for cache-busting.
     display_name: str | None
     avatar_url: str | None
+    # gap-cycle-07-001: desktop-notification opt-in (default False).
+    notify_on_complete: bool
     updated_at: str
 
 
@@ -44,6 +46,8 @@ class PreferencesPatch(BaseModel):
     # dedicated avatar upload/delete/sync routes only and are therefore
     # NOT exposed here (prevents a caller from writing an arbitrary path).
     display_name: str | None = None
+    # gap-cycle-07-001: desktop-notification opt-in.
+    notify_on_complete: bool | None = None
 
     # Tracks which fields the caller explicitly set so the route can
     # distinguish "caller sent null" from "caller omitted the field".

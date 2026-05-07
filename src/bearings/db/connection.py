@@ -125,6 +125,13 @@ _ADDED_COLUMNS: Final[tuple[tuple[str, str, str], ...]] = (
     ("preferences", "display_name", "TEXT"),
     ("preferences", "avatar_path", "TEXT"),
     ("preferences", "avatar_mime_type", "TEXT"),
+    # gap-cycle-07-001: desktop-notification opt-in.
+    # Existing rows default to 0 (off) — the user must re-enable.
+    (
+        "preferences",
+        "notify_on_complete",
+        "INTEGER NOT NULL DEFAULT 0 CHECK (notify_on_complete IN (0, 1))",
+    ),
 )
 
 

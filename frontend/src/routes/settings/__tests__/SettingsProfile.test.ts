@@ -57,6 +57,7 @@ function makePrefs(overrides: Partial<PreferencesOut> = {}): PreferencesOut {
     default_working_dir: null,
     display_name: null,
     avatar_url: null,
+    notify_on_complete: false,
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,
   };

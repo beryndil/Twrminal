@@ -34,6 +34,8 @@ class Preferences:
     display_name: str | None
     avatar_path: str | None
     avatar_mime_type: str | None
+    # gap-cycle-07-001: desktop-notification opt-in.
+    notify_on_complete: bool
     updated_at: str
 
 
@@ -46,6 +48,7 @@ def _row_to_prefs(row: aiosqlite.Row) -> Preferences:
         display_name=row["display_name"],
         avatar_path=row["avatar_path"],
         avatar_mime_type=row["avatar_mime_type"],
+        notify_on_complete=bool(row["notify_on_complete"]),
         updated_at=row["updated_at"],
     )
 
@@ -61,7 +64,7 @@ async def get_preferences(conn: aiosqlite.Connection) -> Preferences:
         """
         SELECT theme, default_model, default_permission_mode,
                default_working_dir, display_name, avatar_path,
-               avatar_mime_type, updated_at
+               avatar_mime_type, notify_on_complete, updated_at
           FROM preferences
          WHERE id = ?
         """,
@@ -83,6 +86,7 @@ async def patch_preferences(
     display_name: str | None = None,
     avatar_path: str | None = None,
     avatar_mime_type: str | None = None,
+    notify_on_complete: bool | None = None,
     fields: frozenset[str] = frozenset(),
 ) -> Preferences:
     """Update the singleton row with only the fields named in ``fields``.
@@ -138,6 +142,9 @@ async def patch_preferences(
     if "avatar_mime_type" in fields:
         updates.append("avatar_mime_type = ?")
         params.append(avatar_mime_type)
+    if "notify_on_complete" in fields and notify_on_complete is not None:
+        updates.append("notify_on_complete = ?")
+        params.append(1 if notify_on_complete else 0)
 
     if updates:
         updates.append("updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')")

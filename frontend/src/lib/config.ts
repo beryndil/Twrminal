@@ -2070,6 +2070,16 @@ export const PROFILE_STRINGS = {
   avatarFallbackAriaLabel: "No profile picture set",
 } as const;
 
+/** Notifications section UI strings (gap-cycle-07-001). */
+export const NOTIFICATION_STRINGS = {
+  heading: "Notifications",
+  toggleLabel: "Notify when Claude finishes replying",
+  footnoteUnsupported: "Your browser does not support desktop notifications.",
+  footnoteDenied:
+    "Blocked in browser settings — re-allow notifications for this site, then re-toggle.",
+  permissionDeniedError: "Browser denied notification permission — toggle rolled back.",
+} as const;
+
 /** UI strings for the PermissionModeSelector header dropdown (item 3.3). */
 export const PERMISSION_MODE_SELECTOR_STRINGS = {
   ariaLabel: "Permission mode",

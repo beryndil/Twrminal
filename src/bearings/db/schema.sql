@@ -657,6 +657,10 @@ CREATE TABLE IF NOT EXISTS preferences (
     display_name            TEXT,
     avatar_path             TEXT,
     avatar_mime_type        TEXT,
+    -- gap-cycle-07-001: desktop-notification opt-in.
+    -- 1 = user has granted browser permission and opted in; 0 = off.
+    notify_on_complete      INTEGER NOT NULL DEFAULT 0
+                                CHECK (notify_on_complete IN (0, 1)),
     updated_at              TEXT    NOT NULL
         DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
