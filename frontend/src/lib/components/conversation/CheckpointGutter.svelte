@@ -49,6 +49,7 @@
   } from "../../config";
   import { goto } from "$app/navigation";
   import { undoStore } from "../../stores/undo.svelte";
+  import { scrollBehavior } from "../../utils/motion";
 
   interface Props {
     /** Active session id; ``null`` clears the gutter. */
@@ -155,7 +156,7 @@
     const el = bodyEl.querySelector(
       `[data-turn-id="${CSS.escape(messageId)}"]`,
     ) as HTMLElement | null;
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    el?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
   }
 
   function makeMenuHandlers(cp: CheckpointOut): Record<string, import("../../context-menu/store.svelte").HandlerEntry> {

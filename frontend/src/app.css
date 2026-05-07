@@ -142,6 +142,30 @@
 @import "./lib/themes/paper-light.css";
 @import "./lib/themes/default.css";
 
+/*
+ * Global reduced-motion guard (gap-cycle-14-001).
+ *
+ * Applied to every element, unconditionally across all themes, so a user
+ * with the OS-level "Reduce motion" accessibility preference enabled sees
+ * no CSS-driven motion. Imperative JS scroll callers should consult
+ * ``lib/utils/motion.ts:scrollBehavior()`` to match this guard on the
+ * JS side.
+ *
+ * Per-component opt-back-in (e.g. BearingsMark opacity pulse) is declared
+ * inside the component's own ``<style>`` block with ``!important`` to
+ * override these suppression rules while remaining non-translational.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Markdown prose rendered inside assistant message bubbles. */
 .message-turn__body {
   @apply text-sm leading-relaxed;

@@ -88,4 +88,36 @@
   .bearings-mark-cardinal--sweep {
     animation: bearings-cardinal-sweep 800ms ease-in-out infinite;
   }
+
+  /*
+   * Reduced-motion opt-back-in: swap the staggered sweep for a slow,
+   * uniform opacity pulse so the working state remains legible without
+   * any translation or rotation.
+   *
+   * The global ``@media (prefers-reduced-motion: reduce)`` rule in
+   * ``app.css`` collapses ``animation-duration`` to ``0.01ms !important``
+   * and ``animation-iteration-count`` to ``1 !important``; we override
+   * both with ``!important`` here to restore a perceptible (but calm)
+   * indicator. ``animation-delay`` is also cleared so all eight dots
+   * pulse together rather than in a staggered sweep.
+   *
+   * @keyframes name is verbose to avoid colliding with other keyframes in
+   * the global CSS scope (Svelte does not hash @keyframes).
+   */
+  @keyframes bearings-cardinal-pulse {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 0.9;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bearings-mark-cardinal--sweep {
+      animation: bearings-cardinal-pulse 2s ease-in-out infinite !important;
+      animation-delay: 0ms !important;
+    }
+  }
 </style>

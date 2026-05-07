@@ -57,6 +57,7 @@
   import { bumpCheckpointRefresh } from "../../stores/checkpointBus.svelte";
   import type { MessageTurnView } from "../../stores/conversation.svelte";
   import { reorgStore } from "../../stores/reorg.svelte";
+  import { scrollBehavior } from "../../utils/motion";
   import CollapsibleBody from "../common/CollapsibleBody.svelte";
   import ConfirmDialog from "../sidebar/ConfirmDialog.svelte";
   import RoutingBadge from "./RoutingBadge.svelte";
@@ -171,7 +172,7 @@
     /** Scroll the article element into view. */
     [MENU_ACTION_MESSAGE_JUMP_TO_TURN]: () => {
       const el = document.querySelector(`[data-turn-id="${CSS.escape(turn.id)}"]`);
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      el?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
     },
 
     /** Copy the plain-text message body to the clipboard. */
@@ -310,7 +311,7 @@
   function handleJumpToTools(): void {
     if (toolWorkEl === null) return;
     toolWorkEl.open = true;
-    toolWorkEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    toolWorkEl.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
   }
 
   // Body rendering pipeline — marked → DOMPurify. The pipeline runs

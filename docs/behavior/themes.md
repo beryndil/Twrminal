@@ -130,6 +130,67 @@ This subsystem doc does not list authoring steps. From the user's perspective, w
 * picking it works exactly like picking any other theme — synchronous re-tint, server-synced, mobile-chrome color updated;
 * the existing themes remain available unchanged.
 
+## Reduced motion (addendum — gap-cycle-14-001)
+
+Bearings respects the OS-level "Reduce motion" accessibility preference
+(Hyprland/GNOME/KDE/macOS/Windows) globally — the user does not need to
+pick a specific theme to receive the guard.
+
+### CSS-side guard
+
+`frontend/src/app.css` carries a top-level `@media (prefers-reduced-motion: reduce)`
+block targeting `*, *::before, *::after` with the four suppression rules:
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+```
+
+The block is declared outside any `[data-theme]` selector so it applies to
+every theme unconditionally.  Observable effects when reduce-motion is on:
+
+* Button hover lifts and color crossfades land in a single frame.
+* The global `scroll-behavior: smooth` (where set) snaps back to `auto`.
+
+### JS-side guard
+
+`frontend/src/lib/utils/motion.ts` exports two helpers:
+
+| Export | Behaviour |
+|---|---|
+| `prefersReducedMotion(): boolean` | Reads `window.matchMedia('(prefers-reduced-motion: reduce)').matches`; returns `false` in SSR or when `matchMedia` is unavailable. |
+| `scrollBehavior(): ScrollBehavior` | Returns `'auto'` when reduced motion is active, `'smooth'` otherwise. |
+
+Every imperative scroll call site that would otherwise pass `behavior: 'smooth'`
+calls `scrollBehavior()` instead so the JS-side argument matches the CSS-side
+guard.  Current call sites:
+
+* `MessageTurn.svelte` — jump-to-turn context-menu action and jump-to-tools button.
+* `CheckpointGutter.svelte` — jump-to-anchor-message chip click.
+
+### Per-component opt-back-in
+
+The global rule collapses `animation-iteration-count` to `1`, which would make
+the `BearingsMark` loading indicator play once and stop.  To keep the working
+state legible, `BearingsMark.svelte` declares a `@media (prefers-reduced-motion: reduce)`
+block inside its own `<style>` that overrides the suppression with `!important`:
+
+* Swaps the staggered `bearings-cardinal-sweep` keyframe (fast per-dot opacity
+  chase) for a slow, uniform `bearings-cardinal-pulse` (2 s, all eight dots
+  together).
+* Clears the per-dot `animation-delay` so the pulse is synchronous and calm.
+
+The opt-back-in pattern — declare a named `@keyframes`, then override with
+`!important` inside a component-scoped `@media (prefers-reduced-motion: reduce)`
+block — is the approved technique for any future component that needs to
+substitute a non-translational indicator under reduced motion.
+
 ## Display timezone control (addendum — gap-cycle-07-006)
 
 The timezone select lives in **Settings → Appearance**, directly below the theme picker. It is a separate control from the theme — see §"What the user does NOT control via the theme picker" above.
