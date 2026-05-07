@@ -189,3 +189,17 @@ describe("Settings — Notifications unsupported state", () => {
     expect(toggle.disabled).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 7. Steady-state description renders (gap-cycle-17-003)
+// ---------------------------------------------------------------------------
+
+describe("Settings — Notifications description renders in default state", () => {
+  it("shows the toggle description when notifications are supported and not denied", async () => {
+    mockSupports.mockReturnValue(true);
+    const { getByTestId } = render(SettingsPage);
+    await waitFor(() => getByTestId("notify-description"));
+    const desc = getByTestId("notify-description");
+    expect(desc.textContent).toContain("hidden or unfocused");
+  });
+});

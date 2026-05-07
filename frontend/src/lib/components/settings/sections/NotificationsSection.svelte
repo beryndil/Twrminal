@@ -90,6 +90,10 @@
     </span>
   </label>
 
+  <p class="settings-notifications__description" data-testid="notify-description">
+    {NOTIFICATION_STRINGS.toggleDescription}
+  </p>
+
   {#if notifyUnsupported}
     <p class="settings-page__lede" data-testid="notify-unsupported">
       {NOTIFICATION_STRINGS.footnoteUnsupported}
@@ -130,5 +134,11 @@
     font-size: 0.8125rem;
     font-weight: 400;
     color: rgb(var(--bearings-fg-strong));
+  }
+  .settings-notifications__description {
+    margin: 0.375rem 0 0;
+    font-size: 0.75rem;
+    color: rgb(var(--bearings-fg-muted));
+    line-height: 1.4;
   }
 </style>

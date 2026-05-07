@@ -2417,6 +2417,8 @@ export const PROFILE_STRINGS = {
 export const NOTIFICATION_STRINGS = {
   heading: "Notifications",
   toggleLabel: "Notify when Claude finishes replying",
+  toggleDescription:
+    "Fires a tray notification for each completed agent turn — only while this tab is hidden or unfocused.",
   footnoteUnsupported: "Your browser does not support desktop notifications.",
   footnoteDenied:
     "Blocked in browser settings — re-allow notifications for this site, then re-toggle.",

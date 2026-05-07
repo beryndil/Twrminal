@@ -137,13 +137,21 @@ When `avatarUrl` is `null` the component renders a circular fallback SVG (person
 - `refreshPreferences()` — async; calls `GET /api/preferences` and updates the store. Called on layout mount. Errors are caught silently; the sidebar degrades to the fallback name / silhouette.
 - `applyPreferences(prefs: PreferencesOut)` — synchronous; updates the store from an already-fetched preferences row. Called by Profile section after every mutation so the sidebar updates without a second GET.
 
-## Notifications (gap-cycle-07-001)
+## Notifications (gap-cycle-07-001, addendum gap-cycle-17-003)
 
 The **Notifications** section renders below Defaults in the Settings page. It exposes a single toggle:
 
 | Field | Type | Default | Effect |
 |---|---|---|---|
 | `notify_on_complete` | boolean | `false` | When `true`, fires a desktop notification after each completed assistant turn while the tab is hidden or unfocused |
+
+### Steady-state description (gap-cycle-17-003)
+
+Directly below the toggle row, a description paragraph is always visible — before the user interacts, regardless of the supported / denied state:
+
+> *"Fires a tray notification for each completed agent turn — only while this tab is hidden or unfocused."*
+
+This text (`NOTIFICATION_STRINGS.toggleDescription`) explains the visibility-gating condition so users understand the toggle is conditioned on the tab being hidden or unfocused without needing to consult the documentation. The conditional footnotes for unsupported and denied states layer on top of this description — they do not replace it.
 
 ### Toggle behavior
 
