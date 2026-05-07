@@ -17,9 +17,35 @@
  *   in a per-file ``beforeEach`` and clean up with
  *   ``vi.unstubAllGlobals()`` in ``afterEach``, which takes precedence
  *   over this global assignment.
+ * - Installs a no-op ``IntersectionObserver`` stub so that components
+ *   using ``VirtualItem`` (gap-cycle-01-012) do not throw
+ *   "IntersectionObserver is not defined" in jsdom. The stub never
+ *   fires its callback, keeping all rows mounted (``visible = true``)
+ *   in tests that do not specifically exercise virtualisation. Tests
+ *   that DO exercise ``VirtualItem`` install their own controllable
+ *   mock via ``vi.stubGlobal`` in a per-file ``beforeEach``, which
+ *   takes precedence over this global assignment.
  */
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach } from "vitest";
+
+// Global no-op IntersectionObserver stub — jsdom does not implement it.
+// ``VirtualItem`` uses it to track row visibility; when the stub never
+// fires callbacks, all rows stay mounted (``visible = true``), which is
+// correct for tests that do not specifically exercise virtualisation.
+if (typeof window !== "undefined" && !("IntersectionObserver" in window)) {
+  window.IntersectionObserver = class NoopIntersectionObserver {
+    observe(): void {
+      // no-op
+    }
+    unobserve(): void {
+      // no-op
+    }
+    disconnect(): void {
+      // no-op
+    }
+  } as unknown as typeof IntersectionObserver;
+}
 
 // Global no-op ResizeObserver stub — jsdom does not implement it.
 // ``CollapsibleBody`` uses it to re-measure content on layout changes;

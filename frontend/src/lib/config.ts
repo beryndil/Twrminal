@@ -2311,6 +2311,14 @@ export const DATA_VIEW_STRINGS = {
   emptyFallback: "Nothing here yet.",
 } as const;
 
+/**
+ * Default IntersectionObserver ``rootMargin`` for ``VirtualItem.svelte``
+ * (gap-cycle-01-012). A 200 px vertical buffer pre-mounts rows before
+ * they enter the viewport, preventing visible blank flashes on fast
+ * scroll.
+ */
+export const VIRTUAL_ITEM_ROOT_MARGIN = "200px 0px" as const;
+
 // ---- Derivations -----------------------------------------------------------
 
 /**

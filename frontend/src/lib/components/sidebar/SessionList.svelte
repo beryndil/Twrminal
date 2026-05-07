@@ -83,6 +83,7 @@
   import SessionRow from "./SessionRow.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import MultiSelectTagPicker from "./MultiSelectTagPicker.svelte";
+  import VirtualItem from "../common/VirtualItem.svelte";
 
   /**
    * The store/refresher dependencies are injected via props so unit
@@ -606,21 +607,23 @@
           data-group-key="__last_action__"
         >
           {#each openSessions as session (session.id)}
-            <SessionRow
-              {session}
-              tags={sessionsStore.tagsBySessionId[session.id] ?? []}
-              selectedTagIds={selectedTagIdsUnion}
-              isSelected={selectedSessionId === session.id}
-              {onSelect}
-              onToggleTag={toggleTag}
-              {multiSelectHandlers}
-              onShiftClick={(id) => {
-                handleShiftClick(id);
-              }}
-              onUpdateAnchor={(id) => {
-                lastAnchorId = id;
-              }}
-            />
+            <VirtualItem>
+              <SessionRow
+                {session}
+                tags={sessionsStore.tagsBySessionId[session.id] ?? []}
+                selectedTagIds={selectedTagIdsUnion}
+                isSelected={selectedSessionId === session.id}
+                {onSelect}
+                onToggleTag={toggleTag}
+                {multiSelectHandlers}
+                onShiftClick={(id) => {
+                  handleShiftClick(id);
+                }}
+                onUpdateAnchor={(id) => {
+                  lastAnchorId = id;
+                }}
+              />
+            </VirtualItem>
           {/each}
         </section>
       {:else}
@@ -641,21 +644,23 @@
               {group.key === "__ungrouped__" ? group.label : displayLeaf(group.label)}
             </header>
             {#each group.sessions as session (`${group.key}:${session.id}`)}
-              <SessionRow
-                {session}
-                tags={sessionsStore.tagsBySessionId[session.id] ?? []}
-                selectedTagIds={selectedTagIdsUnion}
-                isSelected={selectedSessionId === session.id}
-                {onSelect}
-                onToggleTag={toggleTag}
-                {multiSelectHandlers}
-                onShiftClick={(id) => {
-                  handleShiftClick(id);
-                }}
-                onUpdateAnchor={(id) => {
-                  lastAnchorId = id;
-                }}
-              />
+              <VirtualItem>
+                <SessionRow
+                  {session}
+                  tags={sessionsStore.tagsBySessionId[session.id] ?? []}
+                  selectedTagIds={selectedTagIdsUnion}
+                  isSelected={selectedSessionId === session.id}
+                  {onSelect}
+                  onToggleTag={toggleTag}
+                  {multiSelectHandlers}
+                  onShiftClick={(id) => {
+                    handleShiftClick(id);
+                  }}
+                  onUpdateAnchor={(id) => {
+                    lastAnchorId = id;
+                  }}
+                />
+              </VirtualItem>
             {/each}
           </section>
         {/each}
@@ -688,24 +693,26 @@
           {#if showClosed}
             <div data-testid="session-list-closed-rows">
               {#each closedSessions as session (`closed:${session.id}`)}
-                <SessionRow
-                  {session}
-                  tags={sessionsStore.tagsBySessionId[session.id] ?? []}
-                  selectedTagIds={selectedTagIdsUnion}
-                  isSelected={selectedSessionId === session.id}
-                  {onSelect}
-                  onToggleTag={toggleTag}
-                  {multiSelectHandlers}
-                  onShiftClick={(id) => {
-                    handleShiftClick(id);
-                  }}
-                  onUpdateAnchor={(id) => {
-                    lastAnchorId = id;
-                  }}
-                  onReopen={(id) => {
-                    void handleReopen(id);
-                  }}
-                />
+                <VirtualItem>
+                  <SessionRow
+                    {session}
+                    tags={sessionsStore.tagsBySessionId[session.id] ?? []}
+                    selectedTagIds={selectedTagIdsUnion}
+                    isSelected={selectedSessionId === session.id}
+                    {onSelect}
+                    onToggleTag={toggleTag}
+                    {multiSelectHandlers}
+                    onShiftClick={(id) => {
+                      handleShiftClick(id);
+                    }}
+                    onUpdateAnchor={(id) => {
+                      lastAnchorId = id;
+                    }}
+                    onReopen={(id) => {
+                      void handleReopen(id);
+                    }}
+                  />
+                </VirtualItem>
               {/each}
               {#if reopenError !== null}
                 <p class="px-3 py-1 text-xs text-red-400" data-testid="session-list-reopen-error">

@@ -41,6 +41,7 @@
   import LiveTodos from "./LiveTodos.svelte";
   import MessageTurn from "./MessageTurn.svelte";
   import StopUndoInline from "./StopUndoInline.svelte";
+  import VirtualItem from "../common/VirtualItem.svelte";
   import { checkpointBus } from "../../stores/checkpointBus.svelte";
   import { recoverSession } from "../../api/sessions";
   import { pasteIntoComposer } from "../../stores/composerBridge.svelte";
@@ -230,7 +231,9 @@
         </p>
       {:else}
         {#each conversationStore.turns as turn (turn.id)}
-          <MessageTurn {turn} {sessionId} onAskForMoreDetail={handleAskForMoreDetail} />
+          <VirtualItem>
+            <MessageTurn {turn} {sessionId} onAskForMoreDetail={handleAskForMoreDetail} />
+          </VirtualItem>
         {/each}
       {/if}
     </div>
