@@ -1,24 +1,27 @@
-"""Reorg REST endpoints (gap-cycle-03-008/009).
+"""Reorg REST endpoints (gap-cycle-03-008/009, gap-cycle-13-002).
 
 Per ``docs/architecture-v1.md`` §1.1.5 this module owns:
 
 * ``POST /api/sessions/{src_id}/reorg/merge?target={dst_id}`` — merge
-  ``src_id`` into ``dst_id`` in a single atomic transaction. Re-parents
-  all messages from the source to the destination (preserving
-  ``created_at`` order), writes a ``reorg_audit`` row, then deletes the
-  source session. Returns 200 with the :class:`ReorgAuditOut` envelope.
-* ``GET /api/sessions/{id}/reorg/audits`` — list all merge audit rows
-  for the destination session ``id``, oldest-first. Used by the
-  frontend to hydrate dividers on initial conversation load.
+  ``src_id`` into ``dst_id`` atomically.  Writes a ``kind='merge'`` audit
+  row, then deletes the source session.
+* ``POST /api/sessions/{src_id}/reorg/split?target={dst_id}&from_seq={n}``
+  — split ``src_id`` at message ``n``.  Re-parents all messages with
+  ``rowid >= n`` to ``dst_id`` atomically and writes a ``kind='split'``
+  audit row.  Returns :class:`ReorgSplitOut` (audit + moved message ids).
+* ``POST /api/sessions/{src_id}/reorg/move?target={dst_id}&message_id={id}``
+  — move a single message from ``src_id`` to ``dst_id`` atomically and
+  write a ``kind='move'`` audit row.  Returns :class:`ReorgAuditOut`.
+* ``GET /api/sessions/{id}/reorg/audits`` — list all audit rows for the
+  session ``id`` (all kinds, oldest-first).
 * ``DELETE /api/sessions/{id}/reorg/audits/{audit_id}`` — atomically
-  reverse a merge and remove the audit row. Returns 200 with the id of
-  the newly created source session, 404 when the audit row is absent,
-  or 409 when the destination session has been mutated since the merge.
+  reverse any reorg operation and remove the audit row.  Returns 200 with
+  :class:`UndoReorgOut` on success, 404 when absent, 409 when stale.
 
-Error responses for merge:
+Common error responses:
 
-* 409 when ``src_id == dst_id`` (self-merge is not permitted).
-* 404 when either session does not exist.
+* 409 when ``src_id == dst_id``.
+* 404 when either session (or the specified message) does not exist.
 """
 
 from __future__ import annotations
@@ -27,7 +30,15 @@ import aiosqlite
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from bearings.db import reorg as reorg_db
-from bearings.web.models.reorg import ReorgAuditListOut, ReorgAuditOut, UndoMergeOut
+from bearings.web.models.reorg import (
+    ReorgAuditListOut,
+    ReorgAuditOut,
+    ReorgSplitOut,
+    UndoReorgOut,
+)
+
+# Backward-compat: routes that were already imported elsewhere still work.
+UndoMergeOut = UndoReorgOut
 
 router = APIRouter()
 
@@ -51,6 +62,7 @@ def _to_out(audit: reorg_db.ReorgAudit) -> ReorgAuditOut:
         merged_at=audit.merged_at,
         src_title=audit.src_title,
         boundary_msg_id=audit.boundary_msg_id,
+        kind=audit.kind,
     )
 
 
@@ -91,6 +103,84 @@ async def merge_session(
     return _to_out(result)
 
 
+@router.post(
+    "/api/sessions/{src_id}/reorg/split",
+    response_model=ReorgSplitOut,
+    status_code=status.HTTP_200_OK,
+)
+async def split_session(
+    src_id: str,
+    request: Request,
+    target: str = Query(..., description="Destination session id"),
+    from_seq: int = Query(..., description="Rowid of the first message to re-parent"),
+) -> ReorgSplitOut:
+    """Split ``src_id`` at ``from_seq`` into ``target`` atomically.
+
+    Re-parents all messages in ``src_id`` with ``rowid >= from_seq`` to
+    ``target`` in a single transaction and writes a ``kind='split'`` audit
+    row.  The divider will live in ``src_id``; ``target`` is the
+    destination that received the content.
+
+    Returns 200 with the audit row and the list of moved message ids.
+    Returns 409 when ``src_id == target`` (self-split is not permitted).
+    Returns 404 when either session does not exist.
+    """
+    if src_id == target:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="src and target session ids must differ (self-split is not permitted)",
+        )
+    db = _db(request)
+    result = await reorg_db.split_session(db, src_id, target, from_seq)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"one or both sessions not found: src={src_id!r} target={target!r}",
+        )
+    return ReorgSplitOut(
+        audit=_to_out(result.audit),
+        moved_message_ids=result.moved_message_ids,
+    )
+
+
+@router.post(
+    "/api/sessions/{src_id}/reorg/move",
+    response_model=ReorgAuditOut,
+    status_code=status.HTTP_200_OK,
+)
+async def move_message(
+    src_id: str,
+    request: Request,
+    target: str = Query(..., description="Destination session id"),
+    message_id: str = Query(..., description="Id of the message to move"),
+) -> ReorgAuditOut:
+    """Move a single message from ``src_id`` to ``target`` atomically.
+
+    Re-parents the message in a single transaction and writes a
+    ``kind='move'`` audit row.  The divider lives in ``src_id``.
+
+    Returns 200 with the audit row.
+    Returns 409 when ``src_id == target``.
+    Returns 404 when either session or the message is not found in ``src_id``.
+    """
+    if src_id == target:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="src and target session ids must differ",
+        )
+    db = _db(request)
+    audit = await reorg_db.move_message_reorg(db, src_id, target, message_id)
+    if audit is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"session or message not found: src={src_id!r} target={target!r} "
+                f"message_id={message_id!r}"
+            ),
+        )
+    return _to_out(audit)
+
+
 @router.get(
     "/api/sessions/{dst_id}/reorg/audits",
     response_model=ReorgAuditListOut,
@@ -100,11 +190,12 @@ async def list_reorg_audits(
     dst_id: str,
     request: Request,
 ) -> ReorgAuditListOut:
-    """Return all merge audit rows for ``dst_id``, oldest-first.
+    """Return all reorg audit rows for ``dst_id`` (all kinds), oldest-first.
 
+    ``dst_id`` is the session that hosts the divider for each kind.
     Used by the frontend on conversation load to hydrate persistent
-    divider rows.  Returns an empty list when no merges have been made
-    into this session.
+    divider rows.  Returns an empty list when no reorg operations have
+    been recorded for this session.
     """
     db = _db(request)
     rows = await reorg_db.list_audit_for_session(db, dst_id)
@@ -113,24 +204,25 @@ async def list_reorg_audits(
 
 @router.delete(
     "/api/sessions/{dst_id}/reorg/audits/{audit_id}",
-    response_model=UndoMergeOut,
+    response_model=UndoReorgOut,
     status_code=status.HTTP_200_OK,
 )
 async def undo_reorg_audit(
     dst_id: str,
     audit_id: str,
     request: Request,
-) -> UndoMergeOut:
-    """Atomically reverse a merge and delete the audit row.
+) -> UndoReorgOut:
+    """Atomically reverse any reorg operation and delete the audit row.
 
-    Re-creates the source session with its original title, moves the
-    merged messages back, updates message counts on both sessions, and
-    removes the audit row — all inside a single transaction.
+    Dispatches based on the audit row's ``kind``:
+
+    * ``merge``: re-creates the source session, moves merged messages back.
+    * ``split``: moves split messages from the target back to ``dst_id``.
+    * ``move``: moves the single message from the target back to ``dst_id``.
 
     Returns 200 with ``new_session_id`` on success.
     Returns 404 when ``audit_id`` is absent or does not belong to ``dst_id``.
-    Returns 409 when messages have been added to ``dst_id`` after the merge,
-    or when the boundary message has been moved away.
+    Returns 409 when the relevant session has been mutated since the operation.
     """
     db = _db(request)
     try:
@@ -145,7 +237,7 @@ async def undo_reorg_audit(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"reorg audit not found: {audit_id!r} for session {dst_id!r}",
         )
-    return UndoMergeOut(new_session_id=new_session_id)
+    return UndoReorgOut(new_session_id=new_session_id)
 
 
 __all__ = ["router"]

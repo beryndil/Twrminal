@@ -9,7 +9,12 @@
  * ReorgAuditDivider and a 30-second ReorgUndoToast appears.
  */
 import { listMessages, moveMessage } from "../api/messages";
-import { deleteReorgAudit, listReorgAudits } from "../api/reorg";
+import {
+  deleteReorgAudit,
+  listReorgAudits,
+  moveMessageReorg,
+  splitSession,
+} from "../api/reorg";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -94,10 +99,6 @@ let _undoTimer: ReturnType<typeof setTimeout> | null = null;
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeId(): string {
-  return Math.random().toString(36).slice(2, 10);
-}
-
 function clearUndoTimer(): void {
   if (_undoTimer !== null) {
     clearTimeout(_undoTimer);
@@ -131,13 +132,13 @@ export const reorgStore = {
   // ---- Server-audit hydration (called on conversation load) ---------------
 
   /**
-   * Fetch all merge-audit rows from the server for ``sessionId`` and
-   * populate ``_auditMap`` with ``kind: "merge"`` entries.  Skips any
+   * Fetch all reorg-audit rows from the server for ``sessionId`` (all
+   * kinds: merge, split, move) and populate ``_auditMap``.  Skips any
    * audit whose ``boundary_msg_id`` is null (no divider to render).
    *
-   * Idempotent: replaces any previously loaded server entries for the
-   * session rather than appending, so it is safe to call on every
-   * conversation mount.
+   * Idempotent: replaces all previously server-backed entries for the
+   * session (those with a ``serverAuditId``) and keeps any purely
+   * client-only entries.  Safe to call on every conversation mount.
    */
   async loadAudits(sessionId: string): Promise<void> {
     const list = await listReorgAudits(sessionId);
@@ -146,9 +147,8 @@ export const reorgStore = {
       .map((a) => ({
         id: a.id,
         anchorMessageId: a.boundary_msg_id as string,
-        kind: "merge" as const,
-        // count is unknown from the audit row alone; use 0 as sentinel
-        // — the divider label will show "merged from <src_title>" instead.
+        kind: a.kind,
+        // count is unknown from the audit row alone; use 0 as sentinel.
         count: 0,
         targetSessionId: a.src_session_id,
         targetSessionTitle: a.src_title,
@@ -156,10 +156,10 @@ export const reorgStore = {
         serverAuditId: a.id,
       }));
 
-    // Merge server entries with any in-memory (move/split) entries,
-    // keeping move/split entries and replacing server ones by id.
+    // Keep only entries that have no server backing; server entries are
+    // replaced wholesale by the fresh fetch.
     const existing = _auditMap.get(sessionId) ?? [];
-    const clientOnly = existing.filter((e) => e.kind !== "merge");
+    const clientOnly = existing.filter((e) => e.serverAuditId === undefined);
     const next = new Map(_auditMap);
     next.set(sessionId, [...serverEntries, ...clientOnly]);
     _auditMap = next;
@@ -180,8 +180,13 @@ export const reorgStore = {
   // ---- Commit (called by ReorgPicker on confirm) -------------------------
 
   /**
-   * Move a single message to another session and record the audit
-   * divider + undo toast.
+   * Move a single message to another session via the server-backed
+   * atomic endpoint, record the persistent audit divider, and show the
+   * undo toast.
+   *
+   * Calls ``POST /api/sessions/{src}/reorg/move`` which writes a
+   * ``kind='move'`` audit row in the same transaction.  The resulting
+   * ``serverAuditId`` enables server-side undo via the DELETE endpoint.
    */
   async commitMove(
     sourceSessionId: string,
@@ -189,16 +194,17 @@ export const reorgStore = {
     targetSessionId: string,
     targetSessionTitle: string,
   ): Promise<void> {
-    await moveMessage(messageId, targetSessionId);
+    const audit = await moveMessageReorg(sourceSessionId, targetSessionId, messageId);
 
     const entry: ReorgAuditEntry = {
-      id: makeId(),
+      id: audit.id,
       anchorMessageId: messageId,
       kind: "move",
       count: 1,
       targetSessionId,
       targetSessionTitle,
-      timestamp: new Date().toISOString(),
+      timestamp: audit.merged_at,
+      serverAuditId: audit.id,
     };
     _addAuditEntry(sourceSessionId, entry);
 
@@ -210,9 +216,13 @@ export const reorgStore = {
   },
 
   /**
-   * Split from ``startSeq`` (inclusive) — move all messages at or after
-   * that seq to the target session.  Fetches the full message list to
-   * determine the affected set; moves each in order.
+   * Split ``sourceSessionId`` at ``startSeq`` into ``targetSessionId``
+   * via the server-backed atomic endpoint.
+   *
+   * Calls ``POST /api/sessions/{src}/reorg/split`` which re-parents all
+   * messages with ``rowid >= startSeq`` in a single transaction and writes
+   * a ``kind='split'`` audit row.  The resulting ``serverAuditId`` enables
+   * server-side atomic undo via the DELETE endpoint.
    */
   async commitSplit(
     sourceSessionId: string,
@@ -221,29 +231,24 @@ export const reorgStore = {
     targetSessionId: string,
     targetSessionTitle: string,
   ): Promise<void> {
-    // Fetch full list (no limit) so we can identify all messages at/after the split.
-    const page = await listMessages(sourceSessionId);
-    const affected = page.items.filter((m) => m.seq >= startSeq);
-
-    for (const msg of affected) {
-      await moveMessage(msg.id, targetSessionId);
-    }
+    const result = await splitSession(sourceSessionId, targetSessionId, startSeq);
 
     const entry: ReorgAuditEntry = {
-      id: makeId(),
+      id: result.audit.id,
       anchorMessageId: startMessageId,
       kind: "split",
-      count: affected.length,
+      count: result.moved_message_ids.length,
       targetSessionId,
       targetSessionTitle,
-      timestamp: new Date().toISOString(),
+      timestamp: result.audit.merged_at,
+      serverAuditId: result.audit.id,
     };
     _addAuditEntry(sourceSessionId, entry);
 
     reorgStore.showUndoToast({
       entry,
       originalSessionId: sourceSessionId,
-      movedMessageIds: affected.map((m) => m.id),
+      movedMessageIds: result.moved_message_ids,
     });
   },
 
@@ -286,16 +291,33 @@ export const reorgStore = {
     }, UNDO_TIMEOUT_MS);
   },
 
-  /** Reverse a committed reorg — moves messages back to the original session. */
+  /**
+   * Reverse a committed reorg.
+   *
+   * When the entry has a ``serverAuditId`` (which is always the case for
+   * move and split after gap-cycle-13-002, and for merge), this delegates
+   * to the server-side DELETE audit endpoint for an atomic, durable undo.
+   * ``undoMerge`` also removes the entry from ``_auditMap``.
+   *
+   * The legacy per-message ``moveMessage`` path is retained as a safety
+   * net for entries that somehow lack a ``serverAuditId``.
+   */
   async undoReorg(payload: ReorgUndoPayload): Promise<void> {
     clearUndoTimer();
     _undo = null;
 
+    if (payload.entry.serverAuditId !== undefined) {
+      // Server-backed atomic undo — works for merge, split, and move.
+      // originalSessionId == dst_session_id in the audit (the session hosting the divider).
+      await reorgStore.undoMerge(payload.originalSessionId, payload.entry.serverAuditId);
+      return;
+    }
+
+    // Legacy fallback: client-only entry without a server audit row.
     for (const msgId of payload.movedMessageIds) {
       await moveMessage(msgId, payload.originalSessionId);
     }
 
-    // Remove the audit divider for this entry.
     const existing = _auditMap.get(payload.originalSessionId) ?? [];
     const updated = existing.filter((e) => e.id !== payload.entry.id);
     const next = new Map(_auditMap);

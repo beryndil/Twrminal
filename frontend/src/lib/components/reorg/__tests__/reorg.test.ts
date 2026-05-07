@@ -27,6 +27,8 @@ const {
   deleteReorgAuditMock,
   createSessionMock,
   mergeSessionMock,
+  splitSessionMock,
+  moveMessageReorgMock,
   listTagsMock,
 } = vi.hoisted(() => ({
   moveMessageMock: vi.fn(),
@@ -36,6 +38,8 @@ const {
   deleteReorgAuditMock: vi.fn(),
   createSessionMock: vi.fn(),
   mergeSessionMock: vi.fn(),
+  splitSessionMock: vi.fn(),
+  moveMessageReorgMock: vi.fn(),
   listTagsMock: vi.fn(),
 }));
 
@@ -57,6 +61,8 @@ vi.mock("../../../api/reorg", () => ({
   mergeSession: mergeSessionMock,
   listReorgAudits: listReorgAuditsMock,
   deleteReorgAudit: deleteReorgAuditMock,
+  splitSession: splitSessionMock,
+  moveMessageReorg: moveMessageReorgMock,
 }));
 
 // analyzeReorg uses listMessages internally — covered by the mock above.
@@ -220,9 +226,34 @@ const CREATED_SESSION_FIXTURE = {
   closing_summary: null,
 };
 
+const MOCK_MOVE_AUDIT = {
+  id: "rga_move1",
+  dst_session_id: "sess-a",
+  src_session_id: "sess-b",
+  merged_at: "2026-01-01T12:00:00Z",
+  src_title: "Target Session",
+  boundary_msg_id: "msg1",
+  kind: "move" as const,
+};
+
+const MOCK_SPLIT_RESULT = {
+  audit: {
+    id: "rga_split1",
+    dst_session_id: "sess-a",
+    src_session_id: "sess-b",
+    merged_at: "2026-01-01T12:00:00Z",
+    src_title: "Target Session",
+    boundary_msg_id: "msg1",
+    kind: "split" as const,
+  },
+  moved_message_ids: ["msg1", "msg2"],
+};
+
 beforeEach(() => {
   _resetReorgForTests();
   moveMessageMock.mockResolvedValue({ id: "msg1", session_id: "sess-b" });
+  moveMessageReorgMock.mockResolvedValue(MOCK_MOVE_AUDIT);
+  splitSessionMock.mockResolvedValue(MOCK_SPLIT_RESULT);
   listSessionsMock.mockResolvedValue(SESSION_FIXTURES);
   listMessagesMock.mockResolvedValue({
     items: [
@@ -330,7 +361,7 @@ describe("ReorgPicker — picker open on right-click", () => {
     expect(getByTestId("reorg-picker-confirm")).toBeDisabled();
   });
 
-  it("calls moveMessage and closes on move confirm", async () => {
+  it("calls moveMessageReorg (server endpoint) and closes on move confirm", async () => {
     reorgStore.openPicker({
       mode: "move",
       messageId: "msg1",
@@ -345,7 +376,8 @@ describe("ReorgPicker — picker open on right-click", () => {
     fireEvent.click(getByTestId("reorg-picker-confirm"));
 
     await waitFor(() => {
-      expect(moveMessageMock).toHaveBeenCalledWith("msg1", "sess-b");
+      // commitMove now uses moveMessageReorg, not per-message moveMessage.
+      expect(moveMessageReorgMock).toHaveBeenCalledWith("sess-a", "sess-b", "msg1");
     });
     await waitFor(() => expect(queryByTestId("reorg-picker")).toBeNull());
   });
@@ -550,13 +582,19 @@ describe("reorgStore — state transitions", () => {
     expect(reorgStore.picker).toBeNull();
   });
 
-  it("commitMove calls moveMessage and adds audit entry", async () => {
+  it("commitMove calls moveMessageReorg (server endpoint) and adds audit entry", async () => {
     await reorgStore.commitMove("sess-a", "msg1", "sess-b", "Target Session");
 
-    expect(moveMessageMock).toHaveBeenCalledWith("msg1", "sess-b");
+    expect(moveMessageReorgMock).toHaveBeenCalledWith("sess-a", "sess-b", "msg1");
+    expect(moveMessageMock).not.toHaveBeenCalled(); // old per-message path not used
     const entries = reorgStore.auditEntriesFor("sess-a");
     expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({ kind: "move", count: 1, targetSessionId: "sess-b" });
+    expect(entries[0]).toMatchObject({
+      kind: "move",
+      count: 1,
+      targetSessionId: "sess-b",
+      serverAuditId: "rga_move1",
+    });
   });
 
   it("commitMove shows undo toast", async () => {
@@ -566,26 +604,29 @@ describe("reorgStore — state transitions", () => {
     expect(reorgStore.undo?.originalSessionId).toBe("sess-a");
   });
 
-  it("commitSplit fetches messages and moves all at or after seq", async () => {
+  it("commitSplit calls splitSession (server endpoint, not per-message loop)", async () => {
     await reorgStore.commitSplit("sess-a", "msg1", 1, "sess-b", "Target Session");
 
-    // Both msg1 (seq=1) and msg2 (seq=2) should be moved.
-    expect(moveMessageMock).toHaveBeenCalledTimes(2);
-    expect(moveMessageMock).toHaveBeenCalledWith("msg1", "sess-b");
-    expect(moveMessageMock).toHaveBeenCalledWith("msg2", "sess-b");
-
+    expect(splitSessionMock).toHaveBeenCalledWith("sess-a", "sess-b", 1);
+    expect(moveMessageMock).not.toHaveBeenCalled(); // old loop not used
     const entries = reorgStore.auditEntriesFor("sess-a");
-    expect(entries[0]).toMatchObject({ kind: "split", count: 2 });
+    expect(entries[0]).toMatchObject({
+      kind: "split",
+      count: 2,
+      serverAuditId: "rga_split1",
+    });
   });
 
-  it("undoReorg moves messages back and clears audit entry", async () => {
+  it("undoReorg with serverAuditId delegates to deleteReorgAudit (not moveMessage)", async () => {
     await reorgStore.commitMove("sess-a", "msg1", "sess-b", "Target Session");
     const payload = reorgStore.undo!;
     moveMessageMock.mockClear();
 
     await reorgStore.undoReorg(payload);
 
-    expect(moveMessageMock).toHaveBeenCalledWith("msg1", "sess-a");
+    // Server-backed undo: uses deleteReorgAudit, NOT per-message moveMessage.
+    expect(deleteReorgAuditMock).toHaveBeenCalledWith("sess-a", "rga_move1");
+    expect(moveMessageMock).not.toHaveBeenCalled();
     expect(reorgStore.undo).toBeNull();
     expect(reorgStore.auditEntriesFor("sess-a")).toHaveLength(0);
   });
@@ -597,6 +638,7 @@ describe("reorgStore — state transitions", () => {
 
     expect(reorgStore.undo).toBeNull();
     expect(moveMessageMock).not.toHaveBeenCalled();
+    expect(deleteReorgAuditMock).not.toHaveBeenCalled();
   });
 });
 
@@ -666,6 +708,7 @@ describe("reorgStore — loadAudits and undoMerge", () => {
           merged_at: "2026-01-01T12:00:00Z",
           src_title: "Old Session",
           boundary_msg_id: "msg1",
+          kind: "merge",
         },
       ],
     });
@@ -692,6 +735,7 @@ describe("reorgStore — loadAudits and undoMerge", () => {
           merged_at: "2026-01-01T12:00:00Z",
           src_title: "Empty Source",
           boundary_msg_id: null,
+          kind: "merge",
         },
       ],
     });
@@ -701,18 +745,49 @@ describe("reorgStore — loadAudits and undoMerge", () => {
     expect(reorgStore.auditEntriesFor("sess-a")).toHaveLength(0);
   });
 
-  it("loadAudits preserves in-memory move/split entries", async () => {
-    // Add an in-memory move entry first.
+  it("loadAudits replaces server-backed entries and re-loads from server", async () => {
+    // commitMove now sets serverAuditId — entry is server-backed.
     await reorgStore.commitMove("sess-a", "msg1", "sess-b", "Target Session");
     expect(reorgStore.auditEntriesFor("sess-a")).toHaveLength(1);
 
-    // loadAudits with an empty server response.
+    // loadAudits with empty server response replaces the server-backed entry.
     listReorgAuditsMock.mockResolvedValue({ items: [] });
     await reorgStore.loadAudits("sess-a");
 
-    // Move entry should still be there.
+    // Server-backed entry cleared (server returned nothing).
+    expect(reorgStore.auditEntriesFor("sess-a")).toHaveLength(0);
+  });
+
+  it("loadAudits returns split and move kinds from server", async () => {
+    listReorgAuditsMock.mockResolvedValue({
+      items: [
+        {
+          id: "rga_s1",
+          dst_session_id: "sess-a",
+          src_session_id: "sess-b",
+          merged_at: "2026-01-01T12:00:00Z",
+          src_title: "Target",
+          boundary_msg_id: "msg1",
+          kind: "split",
+        },
+        {
+          id: "rga_m1",
+          dst_session_id: "sess-a",
+          src_session_id: "sess-b",
+          merged_at: "2026-01-01T12:01:00Z",
+          src_title: "Target",
+          boundary_msg_id: "msg2",
+          kind: "move",
+        },
+      ],
+    });
+
+    await reorgStore.loadAudits("sess-a");
+
     const entries = reorgStore.auditEntriesFor("sess-a");
-    expect(entries.some((e) => e.kind === "move")).toBe(true);
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({ kind: "split", serverAuditId: "rga_s1" });
+    expect(entries[1]).toMatchObject({ kind: "move", serverAuditId: "rga_m1" });
   });
 
   it("undoMerge calls deleteReorgAudit and removes the entry", async () => {
@@ -726,6 +801,7 @@ describe("reorgStore — loadAudits and undoMerge", () => {
           merged_at: "2026-01-01T12:00:00Z",
           src_title: "Old",
           boundary_msg_id: "msg1",
+          kind: "merge",
         },
       ],
     });
@@ -751,6 +827,7 @@ describe("reorgStore — loadAudits and undoMerge", () => {
           merged_at: "2026-01-01T12:00:00Z",
           src_title: "Old",
           boundary_msg_id: "msg1",
+          kind: "merge",
         },
       ],
     });
@@ -840,7 +917,8 @@ describe("ReorgPicker — inline create form (gap-cycle-10-011)", () => {
       );
     });
     await waitFor(() => {
-      expect(moveMessageMock).toHaveBeenCalledWith("msg1", "sess-new");
+      // commitMove now calls moveMessageReorg, not per-message moveMessage.
+      expect(moveMessageReorgMock).toHaveBeenCalledWith("sess-a", "sess-new", "msg1");
     });
     // Picker closes after success.
     await waitFor(() => expect(queryByTestId("reorg-picker")).toBeNull());

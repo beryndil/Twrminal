@@ -327,7 +327,7 @@
             {#each reorgStore.auditEntriesFor(sessionId).filter((e) => e.anchorMessageId === turn.id) as entry (entry.id)}
               <ReorgAuditDivider
                 {entry}
-                onUndo={entry.kind === "merge" && entry.serverAuditId !== undefined
+                onUndo={entry.serverAuditId !== undefined
                   ? () => {
                       void reorgStore
                         .undoMerge(sessionId, entry.serverAuditId!)

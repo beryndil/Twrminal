@@ -517,4 +517,49 @@ The `DELETE` endpoint atomically:
 
 ### Divider Undo button
 
-`ReorgAuditDivider` renders an inline **Undo** button for `kind === "merge"` entries when the conversation passes an `onUndo` callback (which calls `DELETE /api/sessions/{id}/reorg/audits/{auditId}`).  The button survives page refresh because audit rows are server-persisted.  On success the divider unmounts; on `409` the error propagates to the caller.
+`ReorgAuditDivider` renders an inline **Undo** button for any entry with a `serverAuditId` when the conversation passes an `onUndo` callback (which calls `DELETE /api/sessions/{id}/reorg/audits/{auditId}`).  The button survives page refresh because audit rows are server-persisted.  On success the divider unmounts; on `409` the error propagates to the caller.
+
+---
+
+## Addendum — gap-cycle-13-002: unified reorg contract (split + move)
+
+### New server endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/sessions/{src}/reorg/split?target={dst}&from_seq={n}` | Atomically re-parent all messages with `rowid >= n` from `src` to `dst`. Writes a `kind='split'` audit row. Returns `ReorgSplitOut` (`{audit, moved_message_ids}`). |
+| `POST` | `/api/sessions/{src}/reorg/move?target={dst}&message_id={id}` | Atomically re-parent one message from `src` to `dst`. Writes a `kind='move'` audit row. Returns `ReorgAuditOut`. |
+
+All three reorg endpoints (`merge`, `split`, `move`) share the same audit infrastructure: `GET /api/sessions/{id}/reorg/audits` returns all three kinds, and `DELETE /api/sessions/{id}/reorg/audits/{auditId}` reverses any of them.
+
+### `dst_session_id` column semantics
+
+For all three kinds, `dst_session_id` in the `reorg_audit` table is **the session that hosts the divider** (the one the user sees the boundary in):
+
+- `merge`: content flowed INTO `dst_session_id`; divider marks where the import begins.
+- `split`: content flowed OUT OF `dst_session_id`; divider marks the truncation point.
+- `move`: content flowed OUT OF `dst_session_id`; divider marks where the message was.
+
+`src_session_id` is always the "other" session (deleted for merge; still-live for split/move).
+
+### Undo semantics by kind
+
+The `DELETE` endpoint dispatches by `kind`:
+
+- **merge**: creates a new session, moves messages back, returns `new_session_id` (freshly created).
+- **split**: moves split messages from the target back to `dst_session_id` (original source), returns `dst_session_id`.
+- **move**: moves the single message from the target back to `dst_session_id`, returns `dst_session_id`.
+
+Stale checks for split: new messages added to the target session after the split timestamp → `409`.
+Stale checks for move: the moved message no longer exists in the target session → `409`.
+
+### Frontend store changes
+
+- `commitMove` — replaced per-message `POST /api/messages/{id}/move` with `POST /api/sessions/{src}/reorg/move`. The returned audit row sets `serverAuditId` immediately; the undo toast uses the DELETE endpoint.
+- `commitSplit` — replaced `listMessages` + per-message `moveMessage` loop with `POST /api/sessions/{src}/reorg/split`. Returns the audit row and `moved_message_ids` in one atomic call.
+- `loadAudits` — now handles all three kinds from the server (not just `merge`).
+- `undoReorg` (toast undo) — delegates to `undoMerge` (DELETE endpoint) when `serverAuditId` is present, which is always the case after this gap.
+
+### Divider rendering
+
+`ReorgAuditDivider` already renders all three kinds correctly. `Conversation.svelte` now passes `onUndo` for any entry with a `serverAuditId` (previously only for `kind === "merge"`).

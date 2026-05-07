@@ -178,11 +178,35 @@ export const sessionReorgAuditsEndpoint = (sessionId: string): string =>
   `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/reorg/audits`;
 
 /**
- * ``DELETE /api/sessions/{id}/reorg/audits/{auditId}`` — undo a merge
- * operation and remove its audit row (gap-cycle-03-009).
+ * ``DELETE /api/sessions/{id}/reorg/audits/{auditId}`` — undo a reorg
+ * operation (merge, split, or move) and remove its audit row
+ * (gap-cycle-03-009, gap-cycle-13-002).
  */
 export const sessionReorgAuditEndpoint = (sessionId: string, auditId: string): string =>
   `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/reorg/audits/${encodeURIComponent(auditId)}`;
+
+/**
+ * ``POST /api/sessions/{src}/reorg/split?target={dst}&from_seq={n}`` —
+ * split src at the given message rowid, moving all messages with
+ * rowid >= n to dst atomically (gap-cycle-13-002).
+ */
+export const sessionReorgSplitEndpoint = (
+  srcId: string,
+  dstId: string,
+  fromSeq: number,
+): string =>
+  `${API_BASE}/sessions/${encodeURIComponent(srcId)}/reorg/split?target=${encodeURIComponent(dstId)}&from_seq=${fromSeq}`;
+
+/**
+ * ``POST /api/sessions/{src}/reorg/move?target={dst}&message_id={id}`` —
+ * move a single message from src to dst atomically (gap-cycle-13-002).
+ */
+export const sessionReorgMoveEndpoint = (
+  srcId: string,
+  dstId: string,
+  messageId: string,
+): string =>
+  `${API_BASE}/sessions/${encodeURIComponent(srcId)}/reorg/move?target=${encodeURIComponent(dstId)}&message_id=${encodeURIComponent(messageId)}`;
 
 /**
  * ``GET /api/sessions/{id}/tool_calls`` — persisted tool-call rows for

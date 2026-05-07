@@ -440,3 +440,326 @@ async def test_undo_audit_returns_409_when_new_messages_present(
     with TestClient(app) as client:
         resp = client.delete(f"/api/sessions/{dst}/reorg/audits/{audit_id}")
     assert resp.status_code == 409
+
+
+# ===========================================================================
+# POST /api/sessions/{src}/reorg/split (gap-cycle-13-002)
+# ===========================================================================
+
+
+async def test_split_returns_audit_row_and_moved_ids(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """split returns kind='split' audit row + non-empty moved_message_ids."""
+    app, conn = app_and_db
+    src = await _new_chat(conn, "Source")
+    dst = await _new_chat(conn, "Target")
+    msg1 = await _seed_user_msg(conn, src, "first")
+    msg2 = await _seed_user_msg(conn, src, "second")
+    msg3 = await _seed_user_msg(conn, src, "third")
+
+    # Find the rowid (seq) of msg2 — split at msg2.
+    cursor = await conn.execute("SELECT rowid FROM messages WHERE id = ?", (msg2,))
+    row = await cursor.fetchone()
+    await cursor.close()
+    assert row is not None
+    from_seq = int(row[0])
+
+    with TestClient(app) as client:
+        resp = client.post(f"/api/sessions/{src}/reorg/split?target={dst}&from_seq={from_seq}")
+    assert resp.status_code == 200
+    body = resp.json()
+    audit = body["audit"]
+    assert audit["kind"] == "split"
+    assert audit["dst_session_id"] == src  # divider host = source
+    assert audit["src_session_id"] == dst  # content went to dst
+    assert audit["boundary_msg_id"] == msg2
+    assert set(body["moved_message_ids"]) == {msg2, msg3}
+
+    # msg1 stays in src; msg2/msg3 move to dst.
+    msgs_src = await messages_db.list_for_session(conn, src)
+    assert [m.id for m in msgs_src] == [msg1]
+    msgs_dst = await messages_db.list_for_session(conn, dst)
+    assert {m.id for m in msgs_dst} == {msg2, msg3}
+
+
+async def test_split_self_returns_409(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    app, conn = app_and_db
+    src = await _new_chat(conn, "src")
+    with TestClient(app) as client:
+        resp = client.post(f"/api/sessions/{src}/reorg/split?target={src}&from_seq=1")
+    assert resp.status_code == 409
+
+
+async def test_split_missing_session_returns_404(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    app, conn = app_and_db
+    src = await _new_chat(conn, "src")
+    with TestClient(app) as client:
+        resp = client.post(f"/api/sessions/{src}/reorg/split?target=ses_nonexistent&from_seq=1")
+    assert resp.status_code == 404
+
+
+async def test_split_audit_row_in_list_audits(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """GET /reorg/audits returns the split audit row for the source session."""
+    app, conn = app_and_db
+    src = await _new_chat(conn, "src")
+    dst = await _new_chat(conn, "dst")
+    msg = await _seed_user_msg(conn, src, "msg")
+    cursor = await conn.execute("SELECT rowid FROM messages WHERE id = ?", (msg,))
+    row = await cursor.fetchone()
+    await cursor.close()
+    assert row is not None
+    from_seq = int(row[0])
+
+    with TestClient(app) as client:
+        client.post(f"/api/sessions/{src}/reorg/split?target={dst}&from_seq={from_seq}")
+        list_resp = client.get(f"/api/sessions/{src}/reorg/audits")
+    assert list_resp.status_code == 200
+    items = list_resp.json()["items"]
+    assert len(items) == 1
+    assert items[0]["kind"] == "split"
+    assert items[0]["dst_session_id"] == src
+
+
+async def test_split_atomicity(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """A forced split failure leaves src messages in place and no audit row."""
+    app, conn = app_and_db
+    src = await _new_chat(conn, "src")
+    dst = await _new_chat(conn, "dst")
+    await _seed_user_msg(conn, src, "should-stay")
+
+    async def _failing_split(
+        connection: aiosqlite.Connection, src_id: str, dst_id: str, from_seq: int
+    ) -> reorg_db.SplitResult | None:
+        cursor = await connection.execute(
+            "SELECT id FROM sessions WHERE id IN (?, ?)", (src_id, dst_id)
+        )
+        rows = list(await cursor.fetchall())
+        await cursor.close()
+        if len(rows) < 2:
+            return None
+        await connection.execute(
+            "UPDATE messages SET session_id = ? WHERE session_id = ? AND rowid >= ?",
+            (dst_id, src_id, from_seq),
+        )
+        raise RuntimeError("simulated split failure")
+
+    with patch.object(reorg_db, "split_session", side_effect=_failing_split):
+        with TestClient(app, raise_server_exceptions=False) as client:
+            resp = client.post(f"/api/sessions/{src}/reorg/split?target={dst}&from_seq=1")
+        assert resp.status_code == 500
+
+    audit_rows = await reorg_db.list_audit_for_session(conn, src)
+    assert len(audit_rows) == 0
+
+
+async def test_split_undo_restores_messages(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """DELETE reverses a split: messages move back to the source session."""
+    app, conn = app_and_db
+    src = await _new_chat(conn, "Source")
+    dst = await _new_chat(conn, "Target")
+    msg1 = await _seed_user_msg(conn, src, "keep")
+    msg2 = await _seed_user_msg(conn, src, "split-off")
+    cursor = await conn.execute("SELECT rowid FROM messages WHERE id = ?", (msg2,))
+    row = await cursor.fetchone()
+    await cursor.close()
+    assert row is not None
+    from_seq = int(row[0])
+
+    with TestClient(app) as client:
+        split_resp = client.post(
+            f"/api/sessions/{src}/reorg/split?target={dst}&from_seq={from_seq}"
+        )
+        assert split_resp.status_code == 200
+        audit_id = split_resp.json()["audit"]["id"]
+
+        undo_resp = client.delete(f"/api/sessions/{src}/reorg/audits/{audit_id}")
+    assert undo_resp.status_code == 200
+    assert undo_resp.json()["new_session_id"] == src
+
+    # msg2 must be back in src.
+    msgs_src = await messages_db.list_for_session(conn, src)
+    assert {m.id for m in msgs_src} == {msg1, msg2}
+    msgs_dst = await messages_db.list_for_session(conn, dst)
+    assert msgs_dst == []
+
+
+async def test_split_undo_stale_409(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """DELETE returns 409 when new messages were added to the target after split."""
+    app, conn = app_and_db
+    src = await _new_chat(conn, "src")
+    dst = await _new_chat(conn, "dst")
+    msg = await _seed_user_msg(conn, src, "split-off")
+    cursor = await conn.execute("SELECT rowid FROM messages WHERE id = ?", (msg,))
+    row = await cursor.fetchone()
+    await cursor.close()
+    assert row is not None
+    from_seq = int(row[0])
+
+    with TestClient(app) as client:
+        split_resp = client.post(
+            f"/api/sessions/{src}/reorg/split?target={dst}&from_seq={from_seq}"
+        )
+        assert split_resp.status_code == 200
+        audit_id = split_resp.json()["audit"]["id"]
+
+    await asyncio.sleep(0.01)
+    await _seed_user_msg(conn, dst, "new post-split message")
+
+    with TestClient(app) as client:
+        resp = client.delete(f"/api/sessions/{src}/reorg/audits/{audit_id}")
+    assert resp.status_code == 409
+
+
+# ===========================================================================
+# POST /api/sessions/{src}/reorg/move (gap-cycle-13-002)
+# ===========================================================================
+
+
+async def test_move_returns_audit_row(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """move returns kind='move' audit row with boundary_msg_id set."""
+    app, conn = app_and_db
+    src = await _new_chat(conn, "Source")
+    dst = await _new_chat(conn, "Target")
+    msg = await _seed_user_msg(conn, src, "hello")
+
+    with TestClient(app) as client:
+        resp = client.post(f"/api/sessions/{src}/reorg/move?target={dst}&message_id={msg}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["kind"] == "move"
+    assert body["dst_session_id"] == src
+    assert body["src_session_id"] == dst
+    assert body["boundary_msg_id"] == msg
+
+    # Message must now be in dst.
+    msgs_dst = await messages_db.list_for_session(conn, dst)
+    assert any(m.id == msg for m in msgs_dst)
+    msgs_src = await messages_db.list_for_session(conn, src)
+    assert not any(m.id == msg for m in msgs_src)
+
+
+async def test_move_self_returns_409(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    app, conn = app_and_db
+    src = await _new_chat(conn, "src")
+    msg = await _seed_user_msg(conn, src, "hi")
+    with TestClient(app) as client:
+        resp = client.post(f"/api/sessions/{src}/reorg/move?target={src}&message_id={msg}")
+    assert resp.status_code == 409
+
+
+async def test_move_missing_message_returns_404(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    app, conn = app_and_db
+    src = await _new_chat(conn, "src")
+    dst = await _new_chat(conn, "dst")
+    with TestClient(app) as client:
+        resp = client.post(
+            f"/api/sessions/{src}/reorg/move?target={dst}&message_id=msg_nonexistent"
+        )
+    assert resp.status_code == 404
+
+
+async def test_move_audit_row_in_list_audits(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """GET /reorg/audits returns the move audit row for the source session."""
+    app, conn = app_and_db
+    src = await _new_chat(conn, "src")
+    dst = await _new_chat(conn, "dst")
+    msg = await _seed_user_msg(conn, src, "hi")
+
+    with TestClient(app) as client:
+        client.post(f"/api/sessions/{src}/reorg/move?target={dst}&message_id={msg}")
+        list_resp = client.get(f"/api/sessions/{src}/reorg/audits")
+    items = list_resp.json()["items"]
+    assert len(items) == 1
+    assert items[0]["kind"] == "move"
+    assert items[0]["dst_session_id"] == src
+
+
+async def test_move_undo_restores_message(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """DELETE reverses a move: message moves back to the source session."""
+    app, conn = app_and_db
+    src = await _new_chat(conn, "src")
+    dst = await _new_chat(conn, "dst")
+    msg = await _seed_user_msg(conn, src, "hello")
+
+    with TestClient(app) as client:
+        move_resp = client.post(f"/api/sessions/{src}/reorg/move?target={dst}&message_id={msg}")
+        assert move_resp.status_code == 200
+        audit_id = move_resp.json()["id"]
+
+        undo_resp = client.delete(f"/api/sessions/{src}/reorg/audits/{audit_id}")
+    assert undo_resp.status_code == 200
+    assert undo_resp.json()["new_session_id"] == src
+
+    msgs_src = await messages_db.list_for_session(conn, src)
+    assert any(m.id == msg for m in msgs_src)
+    msgs_dst = await messages_db.list_for_session(conn, dst)
+    assert not any(m.id == msg for m in msgs_dst)
+
+
+async def test_move_undo_stale_409(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """DELETE returns 409 when the moved message is no longer in the target."""
+    app, conn = app_and_db
+    src = await _new_chat(conn, "src")
+    dst = await _new_chat(conn, "dst")
+    other = await _new_chat(conn, "other")
+    msg = await _seed_user_msg(conn, src, "hello")
+
+    with TestClient(app) as client:
+        move_resp = client.post(f"/api/sessions/{src}/reorg/move?target={dst}&message_id={msg}")
+        assert move_resp.status_code == 200
+        audit_id = move_resp.json()["id"]
+
+    # Move the message away from dst (simulates further mutation).
+    await messages_db.move_to_session(conn, msg, target_session_id=other)
+
+    with TestClient(app) as client:
+        resp = client.delete(f"/api/sessions/{src}/reorg/audits/{audit_id}")
+    assert resp.status_code == 409
+
+
+# ===========================================================================
+# Merge audit now includes kind field
+# ===========================================================================
+
+
+async def test_merge_audit_has_kind_merge(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Merge response and list now include kind='merge'."""
+    app, conn = app_and_db
+    src = await _new_chat(conn, "src")
+    dst = await _new_chat(conn, "dst")
+
+    with TestClient(app) as client:
+        resp = client.post(f"/api/sessions/{src}/reorg/merge?target={dst}")
+    assert resp.status_code == 200
+    assert resp.json()["kind"] == "merge"
+
+    with TestClient(app) as client:
+        list_resp = client.get(f"/api/sessions/{dst}/reorg/audits")
+    assert list_resp.json()["items"][0]["kind"] == "merge"

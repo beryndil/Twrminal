@@ -731,7 +731,8 @@ CREATE TABLE IF NOT EXISTS reorg_audit (
     src_session_id  TEXT    NOT NULL,
     merged_at       TEXT    NOT NULL,
     src_title       TEXT    NOT NULL,
-    boundary_msg_id TEXT
+    boundary_msg_id TEXT,
+    kind            TEXT    NOT NULL DEFAULT 'merge'
 );
 
 CREATE INDEX IF NOT EXISTS idx_reorg_audit_dst_session_id
