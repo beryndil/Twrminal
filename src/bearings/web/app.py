@@ -214,6 +214,7 @@ def create_app(
     extra_routers: Iterable[APIRouter] | None = None,
     enable_driver_dispatch: bool = False,
     billing_mode: str = DEFAULT_BILLING_MODE,
+    data_dir: Path | None = None,
 ) -> FastAPI:
     """Construct the FastAPI app.
 
@@ -340,6 +341,11 @@ def create_app(
     # poller is wired. Production callers (``cli/serve.py`` once item
     # 1.10 lands) attach a real poller via the lifespan event.
     app.state.quota_poller = quota_poller
+    # Data directory (gap-cycle-07-003). Surfaced by ``GET /api/health``
+    # so the Settings Privacy section can display and open the dir. Set
+    # by ``cli/serve.py`` to ``settings.db_path.parent``; tests that do
+    # not need this can leave the default empty string.
+    app.state.data_dir = str(data_dir) if data_dir is not None else ""
 
     @app.websocket("/ws/sessions/{session_id}")
     async def stream_endpoint(websocket: WebSocket, session_id: str) -> None:

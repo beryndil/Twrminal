@@ -78,6 +78,7 @@ def _run(args: argparse.Namespace) -> int:
         db_connection=db,
         enable_driver_dispatch=True,
         billing_mode=settings.billing.mode,
+        data_dir=settings.db_path.parent,
     )
 
     @app.on_event("shutdown")

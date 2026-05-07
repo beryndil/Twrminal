@@ -46,6 +46,11 @@ def _start_time(request: Request) -> float:
     return float(started)
 
 
+def _data_dir(request: Request) -> str:
+    """Read the resolved data-directory path from ``app.state`` (empty string when absent)."""
+    return str(getattr(request.app.state, "data_dir", "") or "")
+
+
 @router.get("/api/health", response_model=HealthOut)
 async def get_health(request: Request) -> HealthOut:
     """Return the health snapshot — 200 always; readiness in body."""
@@ -55,12 +60,14 @@ async def get_health(request: Request) -> HealthOut:
         db_connection=db,
         version=__version__,
         uptime_s=uptime_s,
+        data_dir=_data_dir(request),
     )
     return HealthOut(
         status=snapshot.status,
         version=snapshot.version,
         uptime_s=snapshot.uptime_s,
         db_ok=snapshot.db_ok,
+        data_dir=snapshot.data_dir,
     )
 
 

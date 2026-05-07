@@ -34,6 +34,7 @@ class HealthSnapshot:
     version: str
     uptime_s: float
     db_ok: bool
+    data_dir: str
 
 
 async def _probe_db(conn: aiosqlite.Connection | None) -> bool:
@@ -57,6 +58,7 @@ async def build_health(
     db_connection: aiosqlite.Connection | None,
     version: str,
     uptime_s: float,
+    data_dir: str = "",
 ) -> HealthSnapshot:
     """Assemble the health snapshot, probing the DB when configured."""
     db_ok = await _probe_db(db_connection)
@@ -66,6 +68,7 @@ async def build_health(
         version=version,
         uptime_s=uptime_s,
         db_ok=db_ok,
+        data_dir=data_dir,
     )
 
 

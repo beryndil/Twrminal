@@ -15,6 +15,7 @@ class HealthOut(BaseModel):
     version: str
     uptime_s: float
     db_ok: bool
+    data_dir: str
 
 
 __all__ = ["HealthOut"]

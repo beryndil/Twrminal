@@ -114,6 +114,28 @@ The **Authentication** section renders below Notifications in the Settings page.
 - **Clear path**: clearing the field removes the stored token. The gate will reappear on the next 4401 WebSocket close.
 - **Section lede** explains: "Your auth token is stored on this device only — it is never sent to the Bearings server as a preference."
 
+## Privacy (gap-cycle-07-003)
+
+The **Privacy** section renders below Authentication in the Settings page. It has two rows and no form submission.
+
+### Row 1 — Telemetry promise
+
+Displays the headline **"Your data stays on this device"** with an external link labelled "No telemetry — audit the promise" pointing to `https://github.com/Beryndil/Bearings/blob/main/TELEMETRY.md` (`target="_blank"`, `rel="noopener noreferrer"`).
+
+### Row 2 — Data directory
+
+On mount, calls `GET /api/health` and displays the resolved `data_dir` field (typically `~/.local/share/bearings-v1/`) in a monospace code element.
+
+An **"Open data dir"** button appears alongside the path:
+
+| Outcome | Behaviour |
+|---|---|
+| `POST /api/shell/exec` returns 2xx | Button briefly shows **"Opened"** (resets after 2 s) |
+| Non-2xx (shell command not allowed / unavailable) | Falls back to `navigator.clipboard.writeText(dataDir)`; button shows **"Path copied"**; a footnote appears: *"To open in a file manager, add xdg-open to shell.allowed_commands in ~/.config/bearings/config.toml"* |
+| Both shell open AND clipboard fail | Inline error renders with the error message |
+
+While `GET /api/health` is in flight, a loading label renders. On error, an inline error renders instead of the path and button.
+
 ## API contract summary
 
 | Method | Path | Notes |

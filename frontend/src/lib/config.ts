@@ -826,6 +826,13 @@ export const ROUTING_PREVIEW_DEBOUNCE_MS = 300;
 export const API_FS_READ_ENDPOINT = `${API_BASE}/fs/read`;
 
 /**
+ * ``GET /api/health`` — server liveness + readiness snapshot. Used by
+ * the Settings Privacy section to display the resolved data directory
+ * path (gap-cycle-07-003).
+ */
+export const API_HEALTH_ENDPOINT = `${API_BASE}/health`;
+
+/**
  * ``POST /api/shell/exec`` — dispatch an argv via the backend shell
  * allowlist (``xdg-open`` et al.).  Used by context-menu shell-open
  * actions per ``docs/behavior/context-menus.md`` §"Shell-open
@@ -2086,6 +2093,24 @@ export const AUTH_SECTION_STRINGS = {
   lede: "Your auth token is stored on this device only — it is never sent to the Bearings server as a preference.",
   tokenLabel: "Auth token",
   tokenPlaceholder: "Leave empty if the server has auth disabled",
+} as const;
+
+/** Privacy section UI strings for Settings (gap-cycle-07-003). */
+export const PRIVACY_STRINGS = {
+  heading: "Privacy",
+  telemetryLine: "Your data stays on this device",
+  telemetryLinkLabel: "No telemetry — audit the promise",
+  telemetryLinkHref: "https://github.com/Beryndil/Bearings/blob/main/TELEMETRY.md",
+  dataDirLabel: "Data directory",
+  dataDirLoading: "Loading…",
+  dataDirError: "Couldn't load data directory.",
+  openDirButton: "Open data dir",
+  openDirOpened: "Opened",
+  openDirCopied: "Path copied",
+  /** Footnote shown after clipboard fallback naming the config key to set. */
+  clipboardFallbackNote:
+    "To open in a file manager, add xdg-open to shell.allowed_commands in ~/.config/bearings/config.toml",
+  openDirError: "Couldn't open or copy the data directory path.",
 } as const;
 
 /** UI strings for the PermissionModeSelector header dropdown (item 3.3). */
