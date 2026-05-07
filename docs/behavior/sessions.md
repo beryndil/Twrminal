@@ -90,3 +90,82 @@ state or session kind).
    revokes the URL.
 3. On non-`2xx` — throws `ApiError` (the caller receives no feedback
    beyond the error; a future polish pass can add a toast).
+
+---
+
+## Import contract
+
+### Trigger
+
+**Sidebar → "Import session…"** button (below the New Session pill)
+opens the `SessionImportDialog`. The user either pastes the contents of
+a `.json` export file into the textarea, or uses the "Choose file…"
+button to pick the file directly. Clicking **Import** submits the
+payload to the backend.
+
+On success the dialog closes and the newly-imported session is opened
+in the conversation pane (same navigation path as clicking a session
+row). On a 409 or validation error the dialog stays open and the error
+detail is shown inline.
+
+### Backend endpoint
+
+```
+POST /api/sessions/import
+```
+
+The request body must be a JSON object conforming to the `SessionExport`
+wire shape (the same format produced by `GET /api/sessions/{id}/export`).
+
+**Success** — `201 Created` with the `SessionOut` for the newly-imported
+session; `Location: /api/sessions/<id>` header.
+
+**Conflict** — `409 Conflict` when `session.id` in the payload matches
+an existing session row and `?force` is absent.  Pass
+`?force=true` to delete the existing row (and cascade to messages,
+checkpoints, sdk_entries) before re-importing.
+
+**Validation error** — `422 Unprocessable Entity` when the body does not
+parse as `SessionExport` or any field fails DB-layer validation (unknown
+model name, bad `kind`, label over the cap, etc.).
+
+### Import semantics
+
+* The session row is created with its **original `id`** (the UUID from
+  the export) so the imported row is round-trip identical and the
+  `Location` header points at the original address.
+* **`checklist_item_id` is cleared** — the foreign-key target
+  (`checklist_items` row) does not exist in the destination instance.
+* Routing-decision columns (`routing_advisor_model`,
+  `routing_advisor_max_uses`, `routing_effort_level`) are set to their
+  schema defaults (`NULL / 5 / auto`) because `SessionOut` does not
+  carry them.
+* `error_pending` is unconditionally `false` on import — the session is
+  not in an error state from the destination runner's perspective.
+* Messages are inserted with their **original ids and all field values**
+  (routing columns, token counts, `pinned`, `hidden_from_context`).
+  `message_count` on the session row is set from the length of the
+  imported messages array.
+* Checkpoints are inserted with their **original ids and timestamps**.
+* `tool_calls` (SDK transcript entries) are appended in order; the
+  destination assigns new sequential `seq` values (monotonically
+  increasing from 0 within the session).
+
+### Frontend implementation notes
+
+`importSessionJson(exportJson, options?)` in
+`frontend/src/lib/api/sessions.ts`:
+
+1. `POST /api/sessions/import` (or `?force=true` when
+   `options.force === true`) with `exportJson` as the request body.
+2. Returns the `SessionOut` on 201.
+3. Throws `ApiError` on non-`2xx` (caller surfaces the `.body.detail`
+   inline in the dialog).
+
+`SessionImportDialog.svelte` in
+`frontend/src/lib/components/sidebar/SessionImportDialog.svelte`:
+
+* Textarea + "Choose file…" button (reads file text client-side).
+* Submit: JSON-parses the textarea content, calls `importSessionJson`,
+  invokes `onImported(session)` on 201, shows `detail` inline on error.
+* Dismiss: Cancel button, backdrop click, or Escape key → `onCancel()`.

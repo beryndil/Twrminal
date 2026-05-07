@@ -27,6 +27,11 @@ owns:
                                             (session + messages + tool_calls
                                             + checkpoints + attachments)
                                             per ``docs/behavior/sessions.md``.
+* ``POST   /api/sessions/import``         — restore a session from an
+                                            export blob; 409 when the
+                                            session_id already exists
+                                            (use ``?force=true`` to
+                                            overwrite).
 * ``POST   /api/sessions/{id}/prompt``    — the prompt endpoint per
                                             ``docs/behavior/prompt-endpoint.md``.
 
@@ -651,7 +656,7 @@ async def get_paired_chat_info_route(session_id: str, request: Request) -> Paire
     return PairedChatInfo(parent_title=parent_title, item_label=item_label)
 
 
-# ---- export ----------------------------------------------------------------
+# ---- export / import -------------------------------------------------------
 
 
 def _slugify(title: str) -> str:
@@ -757,6 +762,107 @@ async def export_session(session_id: str, request: Request) -> Response:
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{slug}.json"'},
     )
+
+
+@router.post(
+    "/api/sessions/import",
+    response_model=SessionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def import_session(
+    body: SessionExport,
+    request: Request,
+    response: Response,
+    force: bool = False,
+) -> SessionOut:
+    """Restore a session from an export blob.
+
+    Per ``docs/behavior/sessions.md`` §"Import contract":
+
+    * ``201`` — session row (plus messages, tool_calls, checkpoints)
+      inserted; ``Location`` header points at the new row.
+    * ``409`` — ``session_id`` already exists AND ``force=false``.
+      Pass ``?force=true`` to delete the existing row first and
+      reimport.
+    * ``422`` — body does not parse as ``SessionExport`` or a field
+      fails DB-layer validation (e.g. unknown model name, bad kind).
+
+    ``checklist_item_id`` is cleared on import — the FK target
+    (``checklist_items``) does not exist in the destination instance.
+    Routing-decision columns default to ``auto/5/null`` because
+    ``SessionOut`` does not carry them.
+    """
+    db = _db(request)
+    session_id = body.session.id
+    if await sessions_db.exists(db, session_id):
+        if not force:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(f"session {session_id!r} already exists; pass ?force=true to overwrite"),
+            )
+        await sessions_db.delete(db, session_id)
+        broadcaster = _sessions_broadcaster(request)
+        if broadcaster is not None:
+            broadcaster.publish_delete(session_id)
+    s = body.session
+    try:
+        row = await sessions_db.import_session(
+            db,
+            session_id=s.id,
+            kind=s.kind,
+            title=s.title,
+            description=s.description,
+            session_instructions=s.session_instructions,
+            working_dir=s.working_dir,
+            model=s.model,
+            permission_mode=s.permission_mode,
+            max_budget_usd=s.max_budget_usd,
+            total_cost_usd=s.total_cost_usd,
+            message_count=len(body.messages),
+            last_context_pct=s.last_context_pct,
+            last_context_tokens=s.last_context_tokens,
+            last_context_max=s.last_context_max,
+            pinned=s.pinned,
+            closed_at=s.closed_at,
+            closing_summary=s.closing_summary,
+            created_at=s.created_at,
+            updated_at=s.updated_at,
+            last_viewed_at=s.last_viewed_at,
+            last_completed_at=s.last_completed_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    if body.messages:
+        try:
+            await messages_db.import_messages(db, messages=[m.model_dump() for m in body.messages])
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
+    for cp in body.checkpoints:
+        try:
+            await checkpoints_db.import_checkpoint(
+                db,
+                checkpoint_id=cp.id,
+                session_id=cp.session_id,
+                message_id=cp.message_id,
+                label=cp.label,
+                created_at=cp.created_at,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
+    if body.tool_calls:
+        await sdk_entries_db.append(db, session_id=session_id, entries=body.tool_calls)
+    out = _to_out(row)
+    broadcaster = _sessions_broadcaster(request)
+    if broadcaster is not None:
+        broadcaster.publish_upsert(out)
+    response.headers["Location"] = f"/api/sessions/{session_id}"
+    return out
 
 
 # ---- regenerate ------------------------------------------------------------

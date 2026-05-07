@@ -92,6 +92,7 @@ ROUTE_HANDLER_VERB_VOCAB: Final[frozenset[str]] = frozenset(
         "export",
         "fork",
         "get",
+        "import",
         "indent",
         "link",
         "list",

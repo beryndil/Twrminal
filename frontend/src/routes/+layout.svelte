@@ -56,8 +56,9 @@
   import { refreshOps } from "$lib/stores/pending.svelte";
   import ContextMeter from "$lib/components/conversation/ContextMeter.svelte";
   import SidebarSearch from "$lib/components/sidebar/SidebarSearch.svelte";
+  import SessionImportDialog from "$lib/components/sidebar/SessionImportDialog.svelte";
   import PairedChatIndicator from "$lib/components/conversation/PairedChatIndicator.svelte";
-  import { reopenSession, getPairedChatInfo, type PairedChatInfo } from "$lib/api/sessions";
+  import { reopenSession, getPairedChatInfo, type PairedChatInfo, type SessionOut } from "$lib/api/sessions";
   import { sidebarNavNext, sidebarNavPrev, sidebarNavSlot } from "$lib/keyboard/sidebarNav";
   import BackendStatusBanner from "$lib/components/feedback/BackendStatusBanner.svelte";
   import AuthGate from "$lib/components/feedback/AuthGate.svelte";
@@ -126,6 +127,12 @@
 
   let isReopeningSession = $state(false);
   let pairedChatInfo = $state<PairedChatInfo | null>(null);
+  let showImportDialog = $state(false);
+
+  function handleImported(session: SessionOut): void {
+    showImportDialog = false;
+    void goto(`/sessions/${encodeURIComponent(session.id)}`);
+  }
 
   async function handleReopenSession(): Promise<void> {
     if (selectedSessionId === null) return;
@@ -285,8 +292,8 @@
             <PendingOpsBadge />
           </div>
 
-          <!-- New Session -->
-          <div class="px-2 pb-2">
+          <!-- New Session + Import -->
+          <div class="px-2 pb-2 flex flex-col gap-1">
             <button
               type="button"
               class="flex w-full items-center justify-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-muted focus:outline-none focus:ring-2 focus:ring-accent/70"
@@ -296,6 +303,16 @@
             >
               <span aria-hidden="true">+</span>
               <span>{SIDEBAR_STRINGS.newSessionLabel}</span>
+            </button>
+            <button
+              type="button"
+              class="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-surface-1 hover:text-fg focus:outline-none focus:ring-2 focus:ring-accent/70"
+              aria-label="Import session from JSON export"
+              data-testid="import-session-btn"
+              onclick={() => { showImportDialog = true; }}
+            >
+              <span aria-hidden="true">↓</span>
+              <span>Import session…</span>
             </button>
           </div>
 
@@ -609,6 +626,14 @@
     <!-- Item 2.4 — sidebar search overlay. Mounted inside KeybindingsProvider
          so its bindHandler call has access to the live keybindings store. -->
     <SidebarSearch />
+    <!-- Session import dialog (gap-cycle-03-004). Rendered as
+         position:fixed so it overlays without disturbing the grid. -->
+    {#if showImportDialog}
+      <SessionImportDialog
+        onImported={handleImported}
+        onCancel={() => { showImportDialog = false; }}
+      />
+    {/if}
   </KeybindingsProvider>
 </ThemeProvider>
 

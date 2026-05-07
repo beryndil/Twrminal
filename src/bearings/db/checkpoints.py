@@ -216,6 +216,41 @@ async def delete(connection: aiosqlite.Connection, checkpoint_id: str) -> bool:
     return rowcount > 0
 
 
+async def import_checkpoint(
+    connection: aiosqlite.Connection,
+    *,
+    checkpoint_id: str,
+    session_id: str,
+    message_id: str,
+    label: str,
+    created_at: str,
+) -> Checkpoint:
+    """Insert a checkpoint row preserving the original id and timestamps.
+
+    Used exclusively by ``POST /api/sessions/import`` to restore a
+    checkpoint from an export blob.  Unlike :func:`create`, which
+    generates a new id and timestamp, this function preserves the
+    original values so a round-trip export→import produces identical
+    checkpoint ids and ordering.  Validation fires via
+    :class:`Checkpoint.__post_init__` before the INSERT so a bad shape
+    surfaces as a ``ValueError`` rather than a DB constraint failure.
+    """
+    cp = Checkpoint(
+        id=checkpoint_id,
+        session_id=session_id,
+        message_id=message_id,
+        label=label,
+        created_at=created_at,
+    )
+    await connection.execute(
+        "INSERT INTO checkpoints (id, session_id, message_id, label, created_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (cp.id, cp.session_id, cp.message_id, cp.label, cp.created_at),
+    )
+    await connection.commit()
+    return cp
+
+
 def _row_to_checkpoint(row: aiosqlite.Row | tuple[object, ...]) -> Checkpoint:
     """Translate a raw SELECT tuple to a validated :class:`Checkpoint`."""
     return Checkpoint(
@@ -233,5 +268,6 @@ __all__ = [
     "create",
     "delete",
     "get",
+    "import_checkpoint",
     "list_for_session",
 ]

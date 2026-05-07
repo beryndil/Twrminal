@@ -311,6 +311,120 @@ async def get(
     return None if row is None else _row_to_session(row)
 
 
+async def import_session(
+    connection: aiosqlite.Connection,
+    *,
+    session_id: str,
+    kind: str,
+    title: str,
+    description: str | None,
+    session_instructions: str | None,
+    working_dir: str,
+    model: str,
+    permission_mode: str | None,
+    max_budget_usd: float | None,
+    total_cost_usd: float,
+    message_count: int,
+    last_context_pct: float | None,
+    last_context_tokens: int | None,
+    last_context_max: int | None,
+    pinned: bool,
+    closed_at: str | None,
+    closing_summary: str | None,
+    created_at: str,
+    updated_at: str,
+    last_viewed_at: str | None,
+    last_completed_at: str | None,
+) -> Session:
+    """Insert a session row preserving the original id and timestamps.
+
+    Used exclusively by ``POST /api/sessions/import`` to restore a
+    session from an export blob.  Unlike :func:`create`, which generates
+    a new id and timestamp, this function preserves the original values
+    so a round-trip export→import produces an identical session id.
+
+    ``checklist_item_id`` is always ``None`` on import — the FK target
+    (a ``checklist_items`` row) does not exist in the destination
+    instance.  The routing-decision columns
+    (``routing_advisor_model``, ``routing_advisor_max_uses``,
+    ``routing_effort_level``) are set to their schema defaults (``NULL``,
+    ``5``, ``'auto'``) because ``SessionOut`` does not carry them.
+
+    Raises ``ValueError`` when any field fails :class:`Session.__post_init__`
+    validation so the route can surface a 422.  ``error_pending`` is
+    unconditionally cleared — an imported session is never in an error
+    state from the destination runner's perspective.
+    """
+    # Phantom-construct for validation before any DB write.
+    Session(
+        id=session_id,
+        kind=kind,
+        title=title,
+        description=description,
+        session_instructions=session_instructions,
+        working_dir=working_dir,
+        model=model,
+        permission_mode=permission_mode,
+        max_budget_usd=max_budget_usd,
+        total_cost_usd=total_cost_usd,
+        message_count=message_count,
+        last_context_pct=last_context_pct,
+        last_context_tokens=last_context_tokens,
+        last_context_max=last_context_max,
+        pinned=pinned,
+        error_pending=False,
+        checklist_item_id=None,
+        created_at=created_at,
+        updated_at=updated_at,
+        last_viewed_at=last_viewed_at,
+        last_completed_at=last_completed_at,
+        closed_at=closed_at,
+        closing_summary=closing_summary,
+        routing_advisor_model=None,
+        routing_advisor_max_uses=5,
+        routing_effort_level="auto",
+    )
+    await connection.execute(
+        "INSERT INTO sessions "
+        "(id, kind, title, description, session_instructions, working_dir, model, "
+        "permission_mode, max_budget_usd, total_cost_usd, message_count, "
+        "last_context_pct, last_context_tokens, last_context_max, "
+        "pinned, error_pending, checklist_item_id, "
+        "closed_at, closing_summary, created_at, updated_at, "
+        "last_viewed_at, last_completed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, "
+        "?, ?, ?, ?, ?, ?)",
+        (
+            session_id,
+            kind,
+            title,
+            description,
+            session_instructions,
+            working_dir,
+            model,
+            permission_mode,
+            max_budget_usd,
+            total_cost_usd,
+            message_count,
+            last_context_pct,
+            last_context_tokens,
+            last_context_max,
+            pinned,
+            closed_at,
+            closing_summary,
+            created_at,
+            updated_at,
+            last_viewed_at,
+            last_completed_at,
+        ),
+    )
+    await connection.commit()
+    fetched = await get(connection, session_id)
+    if fetched is None:  # pragma: no cover — INSERT just succeeded
+        raise RuntimeError(f"sessions.import_session: row {session_id!r} vanished after INSERT")
+    return fetched
+
+
 async def exists(
     connection: aiosqlite.Connection,
     session_id: str,
@@ -900,6 +1014,7 @@ __all__ = [
     "get",
     "get_kind",
     "get_paired_chat_info",
+    "import_session",
     "is_closed",
     "list_all",
     "reopen",

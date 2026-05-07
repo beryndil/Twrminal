@@ -483,3 +483,30 @@ export async function patchSessionTitle(
   const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}`;
   return await patchJson<SessionOut>(path, { title }, options);
 }
+
+/**
+ * Import a session from an export JSON blob via
+ * ``POST /api/sessions/import``.
+ *
+ * ``exportJson`` must be a parsed object matching the ``SessionExport``
+ * wire shape (the same object you get from
+ * ``GET /api/sessions/{id}/export``).  Pass ``force=true`` to overwrite
+ * an existing session with the same id (default: ``false`` — returns a
+ * 409 :class:`ApiError` when the session_id is already present).
+ *
+ * @returns The newly created :class:`SessionOut` row (HTTP 201).
+ * @throws :class:`ApiError` on 409 (duplicate, force not set), 422
+ *   (malformed export), or 5xx.
+ *
+ * Per ``docs/behavior/sessions.md`` §"Import contract".
+ */
+export async function importSessionJson(
+  exportJson: object,
+  options: RequestOptions & { force?: boolean } = {},
+): Promise<SessionOut> {
+  const { force = false, ...rest } = options;
+  const path = force
+    ? `${API_SESSIONS_ENDPOINT}/import?force=true`
+    : `${API_SESSIONS_ENDPOINT}/import`;
+  return await postJson<SessionOut>(path, exportJson, rest);
+}

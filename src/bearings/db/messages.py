@@ -530,6 +530,73 @@ _SELECT_MESSAGE_COLUMNS = (
 )
 
 
+async def import_messages(
+    connection: aiosqlite.Connection,
+    *,
+    messages: list[dict[str, object]],
+) -> None:
+    """Bulk-insert message rows preserving original ids and all field values.
+
+    Used exclusively by ``POST /api/sessions/import``.  Unlike
+    :func:`insert_user` / :func:`insert_assistant`, this path accepts
+    full-fidelity rows from an export blob and inserts them verbatim —
+    including original ids, timestamps, routing columns, and token
+    counts.  ``message_count`` on the parent session is managed by the
+    route handler (set once from the export, not incremented per row
+    here).
+
+    ``messages`` is a list of dicts whose keys match the column names
+    of the ``messages`` table.  Each dict is the ``model_dump()`` of a
+    :class:`bearings.web.models.sessions.MessageExport` instance.
+
+    Raises ``ValueError`` when the role of any message is outside
+    :data:`KNOWN_MESSAGE_ROLES` (validated before any INSERT).
+    """
+    if not messages:
+        return
+    for m in messages:
+        role = str(m.get("role", ""))
+        if role not in KNOWN_MESSAGE_ROLES:
+            raise ValueError(f"import_messages: role {role!r} not in {sorted(KNOWN_MESSAGE_ROLES)}")
+    rows = [
+        (
+            str(m["id"]),
+            str(m["session_id"]),
+            str(m["role"]),
+            str(m["content"]),
+            str(m["created_at"]),
+            m.get("executor_model"),
+            m.get("advisor_model"),
+            m.get("effort_level"),
+            m.get("routing_source"),
+            m.get("routing_reason"),
+            m.get("matched_rule_id"),
+            m.get("executor_input_tokens"),
+            m.get("executor_output_tokens"),
+            m.get("advisor_input_tokens"),
+            m.get("advisor_output_tokens"),
+            m.get("advisor_calls_count"),
+            m.get("cache_read_tokens"),
+            m.get("input_tokens"),
+            m.get("output_tokens"),
+            int(bool(m.get("pinned", False))),
+            int(bool(m.get("hidden_from_context", False))),
+        )
+        for m in messages
+    ]
+    await connection.executemany(
+        "INSERT INTO messages "
+        "(id, session_id, role, content, created_at, "
+        "executor_model, advisor_model, effort_level, routing_source, routing_reason, "
+        "matched_rule_id, executor_input_tokens, executor_output_tokens, "
+        "advisor_input_tokens, advisor_output_tokens, advisor_calls_count, "
+        "cache_read_tokens, input_tokens, output_tokens, pinned, hidden_from_context) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+    await connection.commit()
+
+
 def _row_to_message(row: aiosqlite.Row | tuple[object, ...]) -> Message:
     """Translate a raw SELECT tuple into a validated :class:`Message`."""
     return Message(
@@ -564,6 +631,7 @@ __all__ = [
     "count_for_session",
     "delete",
     "get",
+    "import_messages",
     "insert_assistant",
     "insert_system",
     "insert_user",
