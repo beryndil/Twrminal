@@ -18,6 +18,12 @@ manages focus on open based on the `destructive` prop:
   for informational confirms where the action is safe and keyboard-confirm
   without mouse travel is desirable.
 
+The dialog is named by its message via `aria-labelledby="confirm-dialog-message"`,
+pointing at the `<p id="confirm-dialog-message">` that carries the `message` prop.
+Screen readers therefore announce the operator-supplied text (e.g. "Delete session
+'foo'? — dialog") the moment focus moves to the initial focus target, so the user
+can act on the keyboard without first navigating into the body.
+
 Focus is queued via `queueMicrotask` inside `onMount` so any pending
 Svelte DOM changes are fully settled before `.focus()` is called.
 

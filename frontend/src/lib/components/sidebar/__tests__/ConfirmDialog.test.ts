@@ -1,6 +1,6 @@
 /**
- * Unit tests for ``ConfirmDialog`` — focus management on open and
- * async pending state.
+ * Unit tests for ``ConfirmDialog`` — focus management on open,
+ * async pending state, and accessible name (aria-labelledby).
  *
  * Covers gap-cycle-10-005 acceptance criteria:
  *
@@ -17,6 +17,12 @@
  *   flight; re-enables after the promise resolves.
  * - Rejected promise surfaces the error message inline and re-enables
  *   buttons without closing the dialog.
+ *
+ * Covers gap-cycle-12-001 acceptance criteria:
+ *
+ * - The ``<div role="alertdialog">`` uses ``aria-labelledby`` referencing
+ *   the message element's id so the dialog's accessible name is the
+ *   operator-supplied ``message`` prop verbatim — not a generic literal.
  *
  * Behavior anchor: ``docs/behavior/modals.md`` §"ConfirmDialog focus"
  * and §"ConfirmDialog async pending".
@@ -72,6 +78,39 @@ describe("ConfirmDialog — focus management on open (gap-cycle-10-005)", () => 
     const cancelBtn = getByTestId("confirm-dialog-cancel");
     await new Promise<void>((resolve) => queueMicrotask(resolve));
     expect(document.activeElement).toBe(cancelBtn);
+  });
+});
+
+describe("ConfirmDialog — accessible name via aria-labelledby (gap-cycle-12-001)", () => {
+  it("alertdialog accessible name is the message prop verbatim", () => {
+    const message = 'Delete "foo"?';
+    const { getByRole } = render(ConfirmDialog, {
+      props: {
+        message,
+        onConfirm: vi.fn(),
+        onCancel: vi.fn(),
+      },
+    });
+    const dialog = getByRole("alertdialog");
+    expect(dialog).toHaveAccessibleName(message);
+  });
+
+  it("accessible name updates when message prop changes between renders", () => {
+    const { getByRole, rerender } = render(ConfirmDialog, {
+      props: {
+        message: "Delete session 'alpha'?",
+        onConfirm: vi.fn(),
+        onCancel: vi.fn(),
+      },
+    });
+    expect(getByRole("alertdialog")).toHaveAccessibleName("Delete session 'alpha'?");
+
+    rerender({
+      message: "Dismiss 'pending op X'?",
+      onConfirm: vi.fn(),
+      onCancel: vi.fn(),
+    });
+    expect(getByRole("alertdialog")).toHaveAccessibleName("Dismiss 'pending op X'?");
   });
 });
 

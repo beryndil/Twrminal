@@ -135,13 +135,13 @@
     class="confirm-dialog"
     role="alertdialog"
     aria-modal="true"
-    aria-label="Confirm action"
+    aria-labelledby="confirm-dialog-message"
     tabindex="-1"
     data-testid="confirm-dialog"
     onclick={(e) => e.stopPropagation()}
     onkeydown={(e) => e.stopPropagation()}
   >
-    <p class="confirm-dialog__message" data-testid="confirm-dialog-message">{message}</p>
+    <p id="confirm-dialog-message" class="confirm-dialog__message" data-testid="confirm-dialog-message">{message}</p>
     {#if showSuppressCheckbox}
       <label class="confirm-dialog__suppress" data-testid="confirm-dialog-suppress-label">
         <input
