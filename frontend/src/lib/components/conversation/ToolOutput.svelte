@@ -164,12 +164,18 @@
     class="tool-output__body border-t border-border px-2 py-2 text-xs"
     data-testid="tool-output-body"
   >
+    <CollapsibleBody>
+      <pre
+        class="whitespace-pre-wrap break-words font-mono text-fg-muted"
+        data-testid="tool-output-input"
+      >{call.inputJson}</pre>
+    </CollapsibleBody>
     {#if call.output.length === 0 && !call.done}
-      <p class="text-fg-muted" data-testid="tool-output-empty">
+      <p class="mt-2 text-fg-muted" data-testid="tool-output-empty">
         {CONVERSATION_STRINGS.toolStatusRunning}…
       </p>
     {:else}
-      <CollapsibleBody>
+      <CollapsibleBody class="mt-2">
         <pre
           class="whitespace-pre-wrap break-words font-mono text-fg"
           data-testid="tool-output-stream">{call.output}</pre>

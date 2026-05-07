@@ -9,7 +9,7 @@ Sibling subsystems referenced here:
 
 The user observes streaming only inside a chat conversation pane while a turn is in flight. The sequence:
 
-1. The assistant decides to call a tool. A new row appears inside the **tool-work drawer** (the collapsible `<details>` block above the assistant bubble — see [chat](chat.md)). The row shows the tool name, an elapsed-time readout starting at 00:00, and an empty output area.
+1. The assistant decides to call a tool. A new row appears inside the **tool-work drawer** (the collapsible `<details>` block above the assistant bubble — see [chat](chat.md)). The row shows the tool name, an elapsed-time readout starting at 00:00, the pretty-printed tool input JSON (muted, above the output area), and an empty output area.
 2. As the tool produces stdout / stderr / structured output, the row's output area grows in place. Output appears character-by-character (or chunk-by-chunk for high-bandwidth tools) as it arrives. There is no spinner blocking the output — the elapsed-time readout serves as the live signal.
 3. When the tool completes, the row gains a finished marker:
    * **Success.** Green check; final output is preserved as the row's body. The elapsed-time freezes at the final wall-clock duration.

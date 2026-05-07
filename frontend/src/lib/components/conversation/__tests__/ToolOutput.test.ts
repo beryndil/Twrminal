@@ -84,6 +84,52 @@ describe("ToolOutput", () => {
 });
 
 /**
+ * Input JSON visibility (gap-cycle-06-003).
+ *
+ * Three criteria from the gap + empty-input compact rendering:
+ *   (a) row body contains the inputJson text.
+ *   (b) row body still contains the output stream.
+ *   (c) inputJson with multi-line JSON renders as multi-line.
+ *   (+) empty / ``{}`` input renders as a compact one-liner.
+ */
+describe("ToolOutput — input JSON visibility (gap-cycle-06-003)", () => {
+  it("(a) row body contains the inputJson", () => {
+    const { getByTestId } = render(ToolOutput, {
+      props: { call: tool({ inputJson: '{"command": "ls -la"}' }) },
+    });
+    expect(getByTestId("tool-output-input")).toHaveTextContent('"command": "ls -la"');
+  });
+
+  it("(b) row body still contains the output stream", () => {
+    const { getByTestId } = render(ToolOutput, {
+      props: { call: tool({ inputJson: '{"command": "ls"}', output: "file1\nfile2\n" }) },
+    });
+    expect(getByTestId("tool-output-input")).toBeInTheDocument();
+    expect(getByTestId("tool-output-stream")).toHaveTextContent("file1");
+  });
+
+  it("(c) inputJson with multi-line JSON renders as multi-line", () => {
+    const multiline = JSON.stringify({ command: "ls -la", cwd: "/tmp" }, null, 2);
+    const { getByTestId } = render(ToolOutput, {
+      props: { call: tool({ inputJson: multiline }) },
+    });
+    const pre = getByTestId("tool-output-input");
+    expect(pre.textContent).toContain("\n");
+    expect(pre.textContent).toContain('"command"');
+    expect(pre.textContent).toContain('"cwd"');
+  });
+
+  it("empty {} input renders as a compact one-liner", () => {
+    const { getByTestId } = render(ToolOutput, {
+      props: { call: tool({ inputJson: "{}" }) },
+    });
+    expect(getByTestId("tool-output-input")).toHaveTextContent("{}");
+    // No newlines in a one-liner.
+    expect(getByTestId("tool-output-input").textContent).not.toContain("\n");
+  });
+});
+
+/**
  * Live-clock behaviour (gap-cycle-06-001).
  *
  * The three sub-cases mirror the acceptance criteria directly:
