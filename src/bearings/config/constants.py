@@ -1179,6 +1179,7 @@ ROUTE_TAG_PREFERENCES: Final[str] = "preferences"
 ROUTE_TAG_IMPORT: Final[str] = "import"
 ROUTE_TAG_CHECKPOINTS: Final[str] = "checkpoints"
 ROUTE_TAG_TEMPLATES: Final[str] = "templates"
+ROUTE_TAG_REORG: Final[str] = "reorg"
 
 # History search result hard cap. The search endpoint returns at most this
 # many hits (sessions + messages combined) per query to keep response sizes
@@ -1384,6 +1385,7 @@ __all__ = [
     "ROUTE_TAG_PAIRED_CHATS",
     "ROUTE_TAG_PREFERENCES",
     "ROUTE_TAG_QUOTA",
+    "ROUTE_TAG_REORG",
     "ROUTE_TAG_ROUTING",
     "ROUTE_TAG_SESSIONS",
     "ROUTE_TAG_SHELL",

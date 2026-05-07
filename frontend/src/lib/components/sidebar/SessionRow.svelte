@@ -50,6 +50,7 @@
     MENU_ACTION_SESSION_DUPLICATE,
     MENU_ACTION_SESSION_EDIT_TAGS,
     MENU_ACTION_SESSION_EXPORT_JSON,
+    MENU_ACTION_SESSION_MERGE_INTO,
     MENU_ACTION_SESSION_OPEN_IN_NEW_TAB,
     MENU_ACTION_SESSION_OPEN_IN_TERMINAL,
     MENU_ACTION_SESSION_PIN,
@@ -62,6 +63,7 @@
     SESSION_KIND_CHAT,
     SIDEBAR_STRINGS,
   } from "../../config";
+  import { goto } from "$app/navigation";
   import { shellOpenInTerminal } from "../../api/shell";
   import { showShellOpError } from "../../stores/shellOpNotification.svelte";
   import { refreshSessions } from "../../stores/sessions.svelte";
@@ -73,6 +75,7 @@
   } from "../../stores/multiSelection.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import SessionTagPicker from "./SessionTagPicker.svelte";
+  import SessionPickerModal from "../menus/SessionPickerModal.svelte";
 
   interface Props {
     session: SessionOut;
@@ -222,6 +225,10 @@
 
   let showDeleteConfirm = $state(false);
 
+  // ---- merge-into state (gap-cycle-03-008) --------------------------------
+
+  let showMergePicker = $state(false);
+
   async function handleDeleteConfirm(): Promise<void> {
     showDeleteConfirm = false;
     try {
@@ -296,6 +303,9 @@
     [MENU_ACTION_SESSION_DELETE]: () => {
       showDeleteConfirm = true;
     },
+    [MENU_ACTION_SESSION_MERGE_INTO]: () => {
+      showMergePicker = true;
+    },
     // Open in terminal — advanced; only wired when working_dir is set.
     ...(session.working_dir !== null &&
     session.working_dir !== undefined &&
@@ -333,6 +343,21 @@
     onConfirm={() => void handleDeleteConfirm()}
     onCancel={() => {
       showDeleteConfirm = false;
+    }}
+  />
+{/if}
+
+{#if showMergePicker}
+  <SessionPickerModal
+    srcSession={session}
+    onMerged={(dstId) => {
+      showMergePicker = false;
+      void refreshSessions(currentFilter()).then(() =>
+        goto(`/sessions/${encodeURIComponent(dstId)}`),
+      );
+    }}
+    onCancel={() => {
+      showMergePicker = false;
     }}
   />
 {/if}

@@ -82,6 +82,8 @@ EXPECTED_TABLES = frozenset(
         # swap, idle reap, server restart, recovery from ERROR) restore
         # full conversation context to the new subprocess.
         "sdk_session_entries",
+        # gap-cycle-03-008 — one row per successful session merge.
+        "reorg_audit",
     }
 )
 

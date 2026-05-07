@@ -281,3 +281,31 @@ These belong to other subsystems:
 * The execution chain that produced the routing decision — see the **Inspector Routing** subsection (per spec §6: current models + source + reason, per-message badge timeline, advisor totals, quota delta this session, "Why this model?" expandable evaluation chain).
 * The full per-week token rollups — see the **Inspector Usage** subsection (per spec §10: 7-day headroom chart, by-model table, advisor-effectiveness widget, rules-to-review list).
 * The autonomous driver progress for a paired chat — see [checklists](checklists.md).
+
+## Session merge (gap-cycle-03-008)
+
+**Trigger:** Sidebar context-menu on a session row → "Merge into…".
+
+**Picker:** `SessionPickerModal` opens and lists all other sessions (excluding the source). The user can filter by title. Clicking a destination session row triggers the merge immediately.
+
+**API contract:**
+
+```
+POST /api/sessions/{src_id}/reorg/merge?target={dst_id}
+```
+
+Atomic transaction:
+1. All messages from `src_id` are re-parented to `dst_id` (preserving `created_at` order).
+2. `message_count` on `dst_id` is updated.
+3. A `reorg_audit` row is written (`id` prefix `rga_`), carrying `src_title`, `merged_at`, and `boundary_msg_id` (the id of the first message originally from the source — `NULL` when the source had no messages).
+4. `src_id` is deleted (cascades to its checkpoints, tags, sdk entries, etc.).
+
+Returns `200` with the `ReorgAuditOut` envelope on success.
+
+**Error responses:**
+- `409` — self-merge (`src_id == dst_id`).
+- `404` — either session does not exist.
+
+**After merge:** The frontend navigates to the destination session (`/sessions/{dst_id}`). The `reorg_audit` row serves as the audit trail for the operation.
+
+**Divider:** The `boundary_msg_id` field returned by the API identifies the first message from the merged source. The frontend may use this to render a visual divider in the merged conversation transcript at that boundary point (future UI enhancement; the data is persisted from day one).

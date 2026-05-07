@@ -157,6 +157,13 @@ export const sessionModelEndpoint = (sessionId: string): string =>
   `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/model`;
 
 /**
+ * ``POST /api/sessions/{src}/reorg/merge?target={dst}`` — merge src
+ * into dst (gap-cycle-03-008).
+ */
+export const sessionReorgMergeEndpoint = (srcId: string, dstId: string): string =>
+  `${API_BASE}/sessions/${encodeURIComponent(srcId)}/reorg/merge?target=${encodeURIComponent(dstId)}`;
+
+/**
  * ``GET /api/commands`` — slash-command list for the composer typeahead
  * (item 2.3). No session scoping — the scanner merges user + project
  * locations server-side.
@@ -843,6 +850,18 @@ export const TEMPLATE_PICKER_STRINGS = {
   deleteConfirmLabel: "Delete",
   deleteCancelLabel: "Cancel",
   ariaLabel: "Template picker",
+} as const;
+
+/** String table for :class:`SessionPickerModal` (gap-cycle-03-008). */
+export const SESSION_PICKER_STRINGS = {
+  mergePickerTitle: "Merge into…",
+  mergePickerSubtitle: (srcTitle: string) =>
+    `Select a destination session to merge "${srcTitle}" into.`,
+  mergePickerSearchPlaceholder: "Filter sessions…",
+  mergePickerLoading: "Loading sessions…",
+  mergePickerEmpty: "No other sessions found.",
+  mergePickerMsgCount: "msgs",
+  mergePickerCancel: "Cancel",
 } as const;
 
 /**
@@ -2163,6 +2182,7 @@ export const MENU_ACTION_SESSION_COPY_SHARE_LINK = "session.copy_share_link";
 export const MENU_ACTION_SESSION_DELETE = "session.delete";
 export const MENU_ACTION_SESSION_EXPORT_JSON = "session.export_json";
 export const MENU_ACTION_SESSION_OPEN_IN_TERMINAL = "session.open_in_terminal";
+export const MENU_ACTION_SESSION_MERGE_INTO = "session.merge_into";
 
 export const MENU_ACTION_MESSAGE_JUMP_TO_TURN = "message.jump_to_turn";
 export const MENU_ACTION_MESSAGE_COPY_CONTENT = "message.copy_content";
@@ -2261,6 +2281,7 @@ export const CONTEXT_MENU_STRINGS = {
     [MENU_ACTION_SESSION_DELETE]: "Delete session",
     [MENU_ACTION_SESSION_EXPORT_JSON]: "Export session JSON",
     [MENU_ACTION_SESSION_OPEN_IN_TERMINAL]: "Open in terminal",
+    [MENU_ACTION_SESSION_MERGE_INTO]: "Merge into…",
     [MENU_ACTION_MESSAGE_JUMP_TO_TURN]: "Scroll into view",
     [MENU_ACTION_MESSAGE_COPY_CONTENT]: "Copy message text",
     [MENU_ACTION_MESSAGE_COPY_AS_MARKDOWN]: "Copy as Markdown",

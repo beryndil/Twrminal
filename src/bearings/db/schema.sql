@@ -657,6 +657,35 @@ CREATE INDEX IF NOT EXISTS idx_sdk_session_entries_session
     ON sdk_session_entries(session_id);
 
 -- ---------------------------------------------------------------------------
+-- reorg_audit — one row per successful session merge operation.
+--
+-- Records that ``src_session_id`` was merged into ``dst_session_id`` at
+-- ``merged_at``. The source session is deleted on merge; this row is the
+-- only durable record that it existed and was folded in. Kept for undo
+-- affordance (the frontend renders a visual divider in the merged
+-- conversation at the boundary point) and for audit history.
+--
+-- ``dst_session_id`` carries ON DELETE CASCADE so cleaning up a session
+-- also removes its merge audit rows; ``src_session_id`` is plain TEXT
+-- (no FK) because the source session no longer exists after the merge.
+--
+-- ``boundary_msg_id`` is the id of the first message re-parented from
+-- src to dst (the first message after the divider line). May be NULL if
+-- the source session had no messages.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS reorg_audit (
+    id              TEXT    PRIMARY KEY,
+    dst_session_id  TEXT    NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    src_session_id  TEXT    NOT NULL,
+    merged_at       TEXT    NOT NULL,
+    src_title       TEXT    NOT NULL,
+    boundary_msg_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_reorg_audit_dst_session_id
+    ON reorg_audit(dst_session_id);
+
+-- ---------------------------------------------------------------------------
 -- Default system_routing_rules seed.
 --
 -- Verbatim from docs/model-routing-v1-spec.md §3 default rule table.
