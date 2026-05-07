@@ -55,7 +55,7 @@
   import { renderMarkdown } from "../../render";
   import { sanitizeHtml } from "../../sanitize";
   import { bumpCheckpointRefresh } from "../../stores/checkpointBus.svelte";
-  import type { MessageTurnView } from "../../stores/conversation.svelte";
+  import { conversationStore, type MessageTurnView } from "../../stores/conversation.svelte";
   import { reorgStore } from "../../stores/reorg.svelte";
   import { scrollBehavior } from "../../utils/motion";
   import CollapsibleBody from "../common/CollapsibleBody.svelte";
@@ -117,6 +117,19 @@
     isPaired = false,
     workingDir = null,
   }: Props = $props();
+
+  /**
+   * True when this turn's ``id`` is no longer present in
+   * ``conversationStore.turns`` — meaning it was removed (e.g. via a
+   * paired-chats reorg or a WS-driven deletion) between the user
+   * pressing the mouse button and the ``contextmenu`` event firing.
+   * Passed to ``use:contextMenu`` so the menu opens with every action
+   * greyed and the stale-target caption per
+   * ``docs/behavior/context-menus.md`` §"Failure modes".
+   */
+  const isTurnStale = $derived(
+    !conversationStore.turns.some((t) => t.id === turn.id),
+  );
 
   function handleAskForMoreDetail(): void {
     onAskForMoreDetail?.();
@@ -374,6 +387,7 @@
     target: MENU_TARGET_MESSAGE,
     handlers: menuHandlers,
     data: { messageId: turn.id, sessionId },
+    stale: isTurnStale,
   }}
 >
   {#if turn.role === "user"}

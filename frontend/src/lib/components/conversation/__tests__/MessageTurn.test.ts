@@ -1,8 +1,8 @@
 /**
  * Component tests for ``MessageTurn`` — user/assistant rendering,
- * routing badge surface, error block, tool drawer counter, and
+ * routing badge surface, error block, tool drawer counter,
  * "Regenerate from here" context-menu / confirm-dialog behavior
- * (gap-cycle-03-006).
+ * (gap-cycle-03-006), and stale-target detection (gap-cycle-15-004).
  */
 import { fireEvent, render, waitFor } from "@testing-library/svelte";
 import { flushSync } from "svelte";
@@ -11,7 +11,11 @@ import { _resetForTests, contextMenuStore } from "../../../context-menu/store.sv
 import { CONVERSATION_STRINGS, MENU_ACTION_MESSAGE_REGENERATE } from "../../../config";
 
 import MessageTurn from "../MessageTurn.svelte";
-import type { MessageTurnView } from "../../../stores/conversation.svelte";
+import {
+  conversationStore,
+  _resetForTests as resetConversationStore,
+  type MessageTurnView,
+} from "../../../stores/conversation.svelte";
 
 function turn(overrides: Partial<MessageTurnView> = {}): MessageTurnView {
   return {
@@ -481,5 +485,61 @@ describe("MessageTurn — ⤴ TOOLS jump button click handler (gap-cycle-06-002)
 
     expect(drawer.open).toBe(true);
     expect(scrollSpy).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// gap-cycle-15-004 — stale-target detection via conversationStore.turns
+// ---------------------------------------------------------------------------
+
+describe("MessageTurn — stale-target detection (gap-cycle-15-004)", () => {
+  beforeEach(() => {
+    _resetForTests();
+    resetConversationStore();
+  });
+
+  afterEach(() => {
+    _resetForTests();
+    resetConversationStore();
+  });
+
+  it("right-clicking when turn is absent from conversationStore passes stale: true", async () => {
+    // conversationStore.turns is [] after reset — the turn is not present.
+    const { getByTestId } = render(MessageTurn, {
+      props: { turn: turn({ id: "t1", role: "assistant", body: "hello" }) },
+    });
+    flushSync();
+    await fireEvent.contextMenu(getByTestId("message-turn"));
+    expect(contextMenuStore.open?.stale).toBe(true);
+  });
+
+  it("right-clicking when turn is present in conversationStore passes stale: false", async () => {
+    // Seed the turn before mounting so the derived value starts false.
+    flushSync(() => {
+      conversationStore.turns = [turn({ id: "t1", role: "assistant", body: "hello" })];
+    });
+    const { getByTestId } = render(MessageTurn, {
+      props: { turn: turn({ id: "t1", role: "assistant", body: "hello" }) },
+    });
+    flushSync();
+    await fireEvent.contextMenu(getByTestId("message-turn"));
+    expect(contextMenuStore.open?.stale).toBe(false);
+  });
+
+  it("stale flag transitions to true when turn is removed from the store after mount", async () => {
+    // Start with the turn present.
+    flushSync(() => {
+      conversationStore.turns = [turn({ id: "t1", role: "assistant", body: "hello" })];
+    });
+    const { getByTestId } = render(MessageTurn, {
+      props: { turn: turn({ id: "t1", role: "assistant", body: "hello" }) },
+    });
+    flushSync();
+    // Simulate WS-driven deletion (e.g., paired-chats reorg removes the row).
+    flushSync(() => {
+      conversationStore.turns = [];
+    });
+    await fireEvent.contextMenu(getByTestId("message-turn"));
+    expect(contextMenuStore.open?.stale).toBe(true);
   });
 });

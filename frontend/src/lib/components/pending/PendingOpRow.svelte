@@ -26,7 +26,7 @@
     PENDING_OPS_CARD_STRINGS,
   } from "../../config";
   import { contextMenu } from "../../actions/contextMenu";
-  import type { PendingOp } from "../../stores/pending.svelte";
+  import { pendingOpsStore, type PendingOp } from "../../stores/pending.svelte";
   import { shellOpenInEditor } from "../../api/shell";
   import { showShellOpError } from "../../stores/shellOpNotification.svelte";
 
@@ -37,6 +37,18 @@
   }
 
   const { op, onResolve, onDismiss }: Props = $props();
+
+  /**
+   * True when this op's ``name`` is no longer present in
+   * ``pendingOpsStore.ops`` — meaning it was resolved or dismissed
+   * (by this or a sister tab) between mouse-down and the
+   * ``contextmenu`` event firing. Passed to ``use:contextMenu`` so
+   * the menu opens with every action greyed and the stale-target
+   * caption per ``docs/behavior/context-menus.md`` §"Failure modes".
+   */
+  const isOpStale = $derived(
+    !pendingOpsStore.ops.some((o) => o.name === op.name),
+  );
 
   // ---- Live age ticker -------------------------------------------------------
 
@@ -111,6 +123,7 @@
     target: MENU_TARGET_PENDING_OPERATION,
     handlers: menuHandlers,
     data: { name: op.name },
+    stale: isOpStale,
   }}
 >
   <!-- Name + age on same line -->
