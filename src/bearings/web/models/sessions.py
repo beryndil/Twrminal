@@ -224,12 +224,99 @@ class PairedChatInfo(BaseModel):
     item_label: str
 
 
+class MessageExport(BaseModel):
+    """Full-fidelity row mirror for the ``messages`` table in an export.
+
+    All columns are included so the export is self-contained. Nullable
+    fields mirror the dataclass — only assistant rows carry the routing
+    and token columns; user/system/tool rows leave them ``None``.
+
+    Per ``docs/behavior/sessions.md`` §"Export schema".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    session_id: str
+    role: str
+    content: str
+    created_at: str
+    executor_model: str | None
+    advisor_model: str | None
+    effort_level: str | None
+    routing_source: str | None
+    routing_reason: str | None
+    matched_rule_id: int | None
+    executor_input_tokens: int | None
+    executor_output_tokens: int | None
+    advisor_input_tokens: int | None
+    advisor_output_tokens: int | None
+    advisor_calls_count: int | None
+    cache_read_tokens: int | None
+    input_tokens: int | None
+    output_tokens: int | None
+    seq: int
+    pinned: bool
+    hidden_from_context: bool
+
+
+class CheckpointExport(BaseModel):
+    """Full-fidelity row mirror for the ``checkpoints`` table in an export.
+
+    Per ``docs/behavior/sessions.md`` §"Export schema".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    session_id: str
+    message_id: str
+    label: str
+    created_at: str
+
+
+class SessionExport(BaseModel):
+    """Response shape for ``GET /api/sessions/{id}/export``.
+
+    Contains a full snapshot of the session's DB state at the time the
+    request is made. Per ``docs/behavior/sessions.md`` §"Export schema":
+
+    * ``session`` — the session row (same shape as ``GET /api/sessions/{id}``).
+    * ``messages`` — every message in chronological order (all roles:
+      ``user``, ``assistant``, ``system``, ``tool``).
+    * ``tool_calls`` — raw SDK transcript entries (opaque JSON blobs
+      stored by :mod:`bearings.db.sdk_entries`) in write order. These
+      are the structured tool-input / tool-output records produced by
+      the Claude Code CLI during execution.
+    * ``checkpoints`` — every checkpoint attached to the session,
+      chronological order.
+    * ``attachments`` — always ``[]`` in v0.18.x: uploads are content-
+      addressed and shared globally; there is no per-session attachment
+      linking table yet.
+
+    Closed sessions are exportable — this endpoint returns 200 for any
+    session that exists, regardless of ``closed_at``.
+    """
+
+    # mypy: disable-error-code=explicit-any (tool_calls is list[dict] — opaque SDK blobs)
+    model_config = ConfigDict(extra="forbid")
+
+    session: SessionOut
+    messages: list[MessageExport]
+    tool_calls: list[dict]  # type: ignore[type-arg]
+    checkpoints: list[CheckpointExport]
+    attachments: list[dict]  # type: ignore[type-arg]
+
+
 __all__ = [
+    "CheckpointExport",
+    "MessageExport",
     "PairedChatInfo",
     "PromptAck",
     "PromptIn",
     "SessionCreate",
     "SessionDescriptionUpdate",
+    "SessionExport",
     "SessionModelUpdate",
     "SessionOut",
     "SessionPermissionModeUpdate",

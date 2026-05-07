@@ -2149,6 +2149,7 @@ export const MENU_ACTION_SESSION_COPY_ID = "session.copy_id";
 export const MENU_ACTION_SESSION_COPY_TITLE = "session.copy_title";
 export const MENU_ACTION_SESSION_COPY_SHARE_LINK = "session.copy_share_link";
 export const MENU_ACTION_SESSION_DELETE = "session.delete";
+export const MENU_ACTION_SESSION_EXPORT_JSON = "session.export_json";
 export const MENU_ACTION_SESSION_OPEN_IN_TERMINAL = "session.open_in_terminal";
 
 export const MENU_ACTION_MESSAGE_JUMP_TO_TURN = "message.jump_to_turn";
@@ -2246,6 +2247,7 @@ export const CONTEXT_MENU_STRINGS = {
     [MENU_ACTION_SESSION_COPY_TITLE]: "Copy session title",
     [MENU_ACTION_SESSION_COPY_SHARE_LINK]: "Copy share link",
     [MENU_ACTION_SESSION_DELETE]: "Delete session",
+    [MENU_ACTION_SESSION_EXPORT_JSON]: "Export session JSON",
     [MENU_ACTION_SESSION_OPEN_IN_TERMINAL]: "Open in terminal",
     [MENU_ACTION_MESSAGE_JUMP_TO_TURN]: "Scroll into view",
     [MENU_ACTION_MESSAGE_COPY_CONTENT]: "Copy message text",

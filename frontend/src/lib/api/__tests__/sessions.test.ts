@@ -1,13 +1,14 @@
 /**
  * Tests for the ``/api/sessions`` typed-client surface — focused on
- * the new ``reopenSession`` helper. The list-sessions wire shape is
- * already exercised through the SessionList integration test; the
- * reopen helper has its own unit coverage so a wire-shape regression
- * surfaces here rather than via a Slice B4 UX failure.
+ * the new ``reopenSession`` and ``exportSessionJson`` helpers. The
+ * list-sessions wire shape is already exercised through the SessionList
+ * integration test; these helpers have their own unit coverage so a
+ * wire-shape regression surfaces here rather than via a Slice B4 UX
+ * failure.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { reopenSession, type SessionOut } from "../sessions";
+import { exportSessionJson, reopenSession, type SessionOut } from "../sessions";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -69,5 +70,95 @@ describe("reopenSession", () => {
     expect(String(fetchMock.mock.calls[0][0])).toBe(
       "/api/sessions/ses%20with%20spaces%2Fand%20slashes/reopen",
     );
+  });
+});
+
+describe("exportSessionJson", () => {
+  const exportSession: SessionOut = {
+    ...baseRow,
+    id: "ses_export",
+    title: "My Export Session",
+    closed_at: null,
+    closing_summary: null,
+  };
+
+  // jsdom does not implement URL.createObjectURL/revokeObjectURL — install
+  // no-op stubs so vi.spyOn can intercept them in each test.
+  beforeEach(() => {
+    if (!URL.createObjectURL) {
+      URL.createObjectURL = () => "blob:stub";
+    }
+    if (!URL.revokeObjectURL) {
+      URL.revokeObjectURL = () => {};
+    }
+  });
+
+  /** Build a stub anchor and wire up the DOM mocks, return the anchor. */
+  function stubAnchor(): HTMLAnchorElement {
+    const anchor = { href: "", download: "", click: vi.fn() } as unknown as HTMLAnchorElement;
+    vi.spyOn(document, "createElement").mockReturnValueOnce(anchor);
+    vi.spyOn(document.body, "appendChild").mockReturnValueOnce(anchor);
+    vi.spyOn(document.body, "removeChild").mockReturnValueOnce(anchor);
+    return anchor;
+  }
+
+  it("GETs /api/sessions/<id>/export and triggers URL.createObjectURL", async () => {
+    const blob = new Blob(['{"session":{}}'], { type: "application/json" });
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(blob, { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    const createObjectURL = vi.spyOn(URL, "createObjectURL").mockReturnValueOnce("blob:fake");
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementationOnce(() => {});
+    const anchor = stubAnchor();
+
+    await exportSessionJson(exportSession);
+
+    // Correct endpoint called
+    expect(String((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0])).toBe(
+      "/api/sessions/ses_export/export",
+    );
+    // createObjectURL called with the response blob
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    // revokeObjectURL called to free memory
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:fake");
+    // anchor download attribute set to slugified title
+    expect(anchor.download).toBe("my-export-session.json");
+  });
+
+  it("slugifies the title for the download filename", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(new Blob(["{}"], { type: "application/json" }), { status: 200 }),
+    );
+    vi.spyOn(URL, "createObjectURL").mockReturnValueOnce("blob:x");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementationOnce(() => {});
+    const anchor = stubAnchor();
+
+    await exportSessionJson({ ...exportSession, title: "Hello World! (v2)" });
+    expect(anchor.download).toBe("hello-world-v2.json");
+  });
+
+  it("falls back to session.json when slug is empty", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(new Blob(["{}"], { type: "application/json" }), { status: 200 }),
+    );
+    vi.spyOn(URL, "createObjectURL").mockReturnValueOnce("blob:x");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementationOnce(() => {});
+    const anchor = stubAnchor();
+
+    await exportSessionJson({ ...exportSession, title: "---!!!" });
+    expect(anchor.download).toBe("session.json");
+  });
+
+  it("works for closed sessions (no 409 expectation on client)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(new Blob(["{}"], { type: "application/json" }), { status: 200 }),
+    );
+    vi.spyOn(URL, "createObjectURL").mockReturnValueOnce("blob:x");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementationOnce(() => {});
+    const anchor = stubAnchor();
+
+    // Closed session — endpoint returns 200
+    await exportSessionJson({ ...exportSession, closed_at: "2026-01-01T12:00:00Z" });
+    expect(anchor.click).toHaveBeenCalledOnce();
   });
 });

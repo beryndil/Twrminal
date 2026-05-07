@@ -23,6 +23,10 @@ owns:
 * ``POST   /api/sessions/{id}/regenerate`` — replay the latest user
                                             prompt (v1.1 closing-
                                             sweep).
+* ``GET    /api/sessions/{id}/export``     — full JSON snapshot
+                                            (session + messages + tool_calls
+                                            + checkpoints + attachments)
+                                            per ``docs/behavior/sessions.md``.
 * ``POST   /api/sessions/{id}/prompt``    — the prompt endpoint per
                                             ``docs/behavior/prompt-endpoint.md``.
 
@@ -52,14 +56,19 @@ from bearings.config.constants import (
     TAG_CLASS_PROJECT,
     TAG_CLASS_SEVERITY,
 )
+from bearings.db import checkpoints as checkpoints_db
 from bearings.db import messages as messages_db
+from bearings.db import sdk_entries as sdk_entries_db
 from bearings.db import sessions as sessions_db
 from bearings.db import tags as tags_db
 from bearings.db.sessions import Session
 from bearings.web.models.sessions import (
+    CheckpointExport,
+    MessageExport,
     PairedChatInfo,
     PromptIn,
     SessionCreate,
+    SessionExport,
     SessionModelUpdate,
     SessionOut,
     SessionPermissionModeUpdate,
@@ -640,6 +649,114 @@ async def get_paired_chat_info_route(session_id: str, request: Request) -> Paire
         return None
     parent_title, item_label = info
     return PairedChatInfo(parent_title=parent_title, item_label=item_label)
+
+
+# ---- export ----------------------------------------------------------------
+
+
+def _slugify(title: str) -> str:
+    """Convert a session title to a safe ASCII filename stem.
+
+    Collapses non-alphanumeric runs to ``-``, strips leading/trailing
+    dashes, lowercases. An empty result (title contained only special
+    chars) falls back to ``session``.
+    """
+    import re
+
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    return slug or "session"
+
+
+@router.get("/api/sessions/{session_id}/export")
+async def export_session(session_id: str, request: Request) -> Response:
+    """Snapshot-export a session to a self-contained JSON blob.
+
+    Per ``docs/behavior/sessions.md`` §"Export contract":
+
+    * ``200`` — JSON body conforming to :class:`SessionExport`; the
+      ``Content-Disposition`` header carries a suggested download
+      filename ``<slug>.json`` derived from the session title.
+    * ``404`` — session not found.
+
+    Closed sessions are exportable — ``closed_at`` being set does not
+    block this endpoint (contrast with the prompt endpoint which returns
+    409 on closed sessions).
+
+    The export body contains:
+
+    * ``session`` — session row (``SessionOut`` shape).
+    * ``messages`` — every message in chronological order.
+    * ``tool_calls`` — raw SDK transcript entries (opaque blobs).
+    * ``checkpoints`` — every checkpoint chronologically.
+    * ``attachments`` — always ``[]`` in v0.18.x (no per-session upload
+      linking table yet).
+    """
+    db = _db(request)
+    row = await sessions_db.get(db, session_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no session matches {session_id!r}",
+        )
+    # Fetch paired-chat parent title for the session row header.
+    paired_parent_title: str | None = None
+    if row.kind == "chat" and row.checklist_item_id is not None:
+        info = await sessions_db.get_paired_chat_info(db, session_id)
+        paired_parent_title = info[0] if info else None
+
+    messages = await messages_db.list_for_session(db, session_id)
+    tool_calls = await sdk_entries_db.load(db, session_id=session_id)
+    checkpoints = await checkpoints_db.list_for_session(db, session_id)
+
+    export = SessionExport(
+        session=_to_out(row, paired_parent_title=paired_parent_title),
+        messages=[
+            MessageExport(
+                id=m.id,
+                session_id=m.session_id,
+                role=m.role,
+                content=m.content,
+                created_at=m.created_at,
+                executor_model=m.executor_model,
+                advisor_model=m.advisor_model,
+                effort_level=m.effort_level,
+                routing_source=m.routing_source,
+                routing_reason=m.routing_reason,
+                matched_rule_id=m.matched_rule_id,
+                executor_input_tokens=m.executor_input_tokens,
+                executor_output_tokens=m.executor_output_tokens,
+                advisor_input_tokens=m.advisor_input_tokens,
+                advisor_output_tokens=m.advisor_output_tokens,
+                advisor_calls_count=m.advisor_calls_count,
+                cache_read_tokens=m.cache_read_tokens,
+                input_tokens=m.input_tokens,
+                output_tokens=m.output_tokens,
+                seq=m.seq,
+                pinned=m.pinned,
+                hidden_from_context=m.hidden_from_context,
+            )
+            for m in messages
+        ],
+        tool_calls=tool_calls,
+        checkpoints=[
+            CheckpointExport(
+                id=c.id,
+                session_id=c.session_id,
+                message_id=c.message_id,
+                label=c.label,
+                created_at=c.created_at,
+            )
+            for c in checkpoints
+        ],
+        attachments=[],
+    )
+    slug = _slugify(row.title)
+    body = json.dumps(export.model_dump(), ensure_ascii=False, indent=2)
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{slug}.json"'},
+    )
 
 
 # ---- regenerate ------------------------------------------------------------

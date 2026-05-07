@@ -428,6 +428,51 @@ export async function duplicateSession(
 }
 
 /**
+ * Trigger a browser download of the session's full JSON export.
+ *
+ * Calls ``GET /api/sessions/{id}/export``, converts the response to a
+ * ``Blob``, and triggers an ``<a download>`` click so the browser saves
+ * the file. The download filename is derived from the session title:
+ * non-alphanumeric runs are collapsed to ``-``, the result is
+ * lowercased, and ``".json"`` is appended. Falls back to ``session.json``
+ * when the slug is empty (title contained only special characters).
+ *
+ * Per ``docs/behavior/sessions.md`` §"Export contract" — any session
+ * (including closed ones) is exportable.
+ *
+ * @throws :class:`ApiError` on non-2xx responses (404 when the session
+ *   is missing).
+ */
+export async function exportSessionJson(
+  session: SessionOut,
+  options: RequestOptions = {},
+): Promise<void> {
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(session.id)}/export`;
+  const resp = await fetch(path, {
+    method: "GET",
+    signal: options.signal,
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    throw new ApiError(resp.status, body, `GET ${path} → ${resp.status} ${resp.statusText}`);
+  }
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const slug =
+    session.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "session";
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${slug}.json`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
+/**
  * Update the title of a session via ``PATCH /api/sessions/{id}``.
  */
 export async function patchSessionTitle(

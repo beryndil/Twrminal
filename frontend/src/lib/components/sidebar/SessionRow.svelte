@@ -31,6 +31,7 @@
     closeSession,
     deleteSession,
     duplicateSession,
+    exportSessionJson,
     patchSessionPinned,
     patchSessionTitle,
     reopenSession,
@@ -47,6 +48,7 @@
     MENU_ACTION_SESSION_DELETE,
     MENU_ACTION_SESSION_DUPLICATE,
     MENU_ACTION_SESSION_EDIT_TAGS,
+    MENU_ACTION_SESSION_EXPORT_JSON,
     MENU_ACTION_SESSION_OPEN_IN_NEW_TAB,
     MENU_ACTION_SESSION_OPEN_IN_TERMINAL,
     MENU_ACTION_SESSION_PIN,
@@ -270,6 +272,9 @@
     },
     [MENU_ACTION_SESSION_COPY_TITLE]: () => {
       void navigator.clipboard.writeText(session.title);
+    },
+    [MENU_ACTION_SESSION_EXPORT_JSON]: () => {
+      void exportSessionJson(session);
     },
     [MENU_ACTION_SESSION_DELETE]: () => {
       showDeleteConfirm = true;
