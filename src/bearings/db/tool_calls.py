@@ -115,6 +115,33 @@ async def insert_batch(
     await connection.commit()
 
 
+async def latest_todo_write_json(
+    connection: aiosqlite.Connection,
+    *,
+    session_id: str,
+) -> str | None:
+    """Return the ``input_json`` of the most-recent ``TodoWrite`` call for a session.
+
+    Used by the ``GET /api/sessions/{id}/todos`` endpoint to seed the
+    ``LiveTodos`` panel on session open.  The input shape is
+    ``{"todos": [{id, content, status, priority, ...}, ...]}``.
+
+    Returns ``None`` if the session has never emitted a ``TodoWrite``
+    call (no row with ``tool_name = 'TodoWrite'`` for this session).
+    """
+    cursor = await connection.execute(
+        "SELECT input_json FROM tool_calls "
+        "WHERE session_id = ? AND tool_name = 'TodoWrite' "
+        "ORDER BY rowid DESC LIMIT 1",
+        (session_id,),
+    )
+    try:
+        row = await cursor.fetchone()
+    finally:
+        await cursor.close()
+    return str(row[0]) if row is not None else None
+
+
 async def list_for_messages(
     connection: aiosqlite.Connection,
     *,
@@ -176,5 +203,6 @@ __all__ = [
     "ToolCall",
     "ToolCallRecord",
     "insert_batch",
+    "latest_todo_write_json",
     "list_for_messages",
 ]

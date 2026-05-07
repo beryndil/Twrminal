@@ -352,6 +352,28 @@ export function hydrateToolCalls(toolCalls: ToolCallOut[]): void {
 }
 
 /**
+ * Seed ``liveTodos`` from the persisted hydration payload returned by
+ * ``GET /api/sessions/{id}/todos`` (gap-cycle-03-013).
+ *
+ * Called once on session open before the WebSocket subscription is
+ * established so the ``LiveTodos`` panel renders immediately without
+ * waiting for the agent to re-emit a ``todo_write_update`` event.
+ * Subsequent ``todo_write_update`` WS events overwrite the seed via
+ * :func:`applyTodoState` — the same ``JSON.parse`` path is used in
+ * both cases so the behaviour is identical.
+ *
+ * Malformed JSON (defensive: the server validates the round-trip) is
+ * silently ignored — the panel stays hidden rather than crashing.
+ */
+export function hydrateTodos(todosJson: string): void {
+  try {
+    state.liveTodos = JSON.parse(todosJson) as LiveTodoItem[];
+  } catch {
+    // leave liveTodos as-is on parse failure
+  }
+}
+
+/**
  * Prepend an older page in front of the current turns (item 1.3
  * ``loadOlder()``). Called after a successful ``before=`` fetch;
  * updates ``hasMore`` + ``oldestSeq`` for the next call.

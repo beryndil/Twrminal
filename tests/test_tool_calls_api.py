@@ -24,7 +24,6 @@ from bearings.db.connection import load_schema
 from bearings.db.tool_calls import ToolCallRecord, insert_batch, list_for_messages
 from bearings.web.app import create_app
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

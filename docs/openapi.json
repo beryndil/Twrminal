@@ -2946,6 +2946,123 @@
         }
       }
     },
+    "/api/sessions/{session_id}/tool_calls": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "List Session Tool Calls",
+        "description": "Return persisted tool-call rows for the listed message ids.\n\nPer ``docs/behavior/chat.md`` \u00a7\"Tool-call hydration contract\" the\nconversation pane calls this endpoint once per fetched message page,\nalongside :func:`list_messages`, to populate tool-work drawer rows\non assistant turns whose events are no longer in the ring buffer.\n\n* ``200`` \u2014 list of :class:`ToolCallOut` (possibly empty).\n* ``404`` \u2014 session not found.\n\n``?message_ids=ID1&message_ids=ID2`` narrows the result to tool calls\nattached to the listed assistant message ids. Omitting the parameter\nreturns all tool calls for the session (useful for export / admin).\nTool calls are returned in insertion order (the order they executed\nwithin each turn).",
+        "operationId": "list_session_tool_calls_api_sessions__session_id__tool_calls_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "message_ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Message Ids"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ToolCallOut"
+                  },
+                  "title": "Response List Session Tool Calls Api Sessions  Session Id  Tool Calls Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{session_id}/todos": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Get Session Todos",
+        "description": "Return the most-recent persisted ``TodoWrite`` payload for a session.\n\nPer ``docs/behavior/chat.md`` \u00a7\"LiveTodos hydration contract\" the\nconversation pane calls this once on session open to seed the\n``LiveTodos`` panel before any WebSocket event arrives.\n\n* ``200`` with :class:`SessionTodosOut` \u2014 ``todos_json`` is the\n  serialised ``todos`` array from the most-recent ``TodoWrite``\n  call's input, identical in shape to the ``todo_write_update``\n  WebSocket event's ``todos_json`` field.\n* ``200`` with ``null`` \u2014 session exists but has never emitted a\n  ``TodoWrite`` call.\n* ``404`` \u2014 session not found.\n\nReturning ``null`` (rather than ``404``) for a session with no\ntodos avoids the client having to distinguish \"session missing\"\nfrom \"no todos yet\" \u2014 the UI reads ``null`` and leaves the panel\nhidden.",
+        "operationId": "get_session_todos_api_sessions__session_id__todos_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionTodosOut"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Session Todos Api Sessions  Session Id  Todos Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{session_id}/export": {
       "get": {
         "tags": [
@@ -8332,6 +8449,21 @@
         "title": "SessionTitleUpdate",
         "description": "Request shape for ``PATCH /api/sessions/{id}`` \u2014 title-only."
       },
+      "SessionTodosOut": {
+        "properties": {
+          "todos_json": {
+            "type": "string",
+            "title": "Todos Json"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "todos_json"
+        ],
+        "title": "SessionTodosOut",
+        "description": "Response shape for ``GET /api/sessions/{id}/todos`` (gap-cycle-03-013).\n\n``todos_json`` is the serialised ``todos`` array extracted from the\nmost-recent ``TodoWrite`` tool-call input \u2014 identical in shape to the\n``todos_json`` field on the ``todo_write_update`` WebSocket event so\nthe frontend can use the same ``JSON.parse`` path for both the hydration\nseed and live updates."
+      },
       "ShellExecIn": {
         "properties": {
           "argv": {
@@ -9208,6 +9340,87 @@
         "type": "object",
         "title": "TemplatePatch",
         "description": "Request body for ``PATCH /api/templates/{id}``.\n\nEvery field is optional; missing fields are filled from the existing\nrow so the caller only has to send the delta. The route layer fetches\nthe existing row, merges, and calls :func:`bearings.db.templates.update`\nwith the full field set."
+      },
+      "ToolCallOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "tool_name": {
+            "type": "string",
+            "title": "Tool Name"
+          },
+          "input_json": {
+            "type": "string",
+            "title": "Input Json"
+          },
+          "output": {
+            "type": "string",
+            "title": "Output"
+          },
+          "ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ok"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "session_id",
+          "message_id",
+          "tool_name",
+          "input_json",
+          "output",
+          "ok",
+          "duration_ms",
+          "error_message",
+          "created_at"
+        ],
+        "title": "ToolCallOut",
+        "description": "Response shape for ``GET /api/sessions/{id}/tool_calls`` (gap-cycle-03-012).\n\nOne row per tool invocation attached to an assistant message. The\n``message_id`` field lets the frontend group tool calls by their\nowning assistant turn without a separate join request."
       },
       "UndoMergeOut": {
         "properties": {

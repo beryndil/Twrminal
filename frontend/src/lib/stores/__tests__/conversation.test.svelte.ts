@@ -20,6 +20,7 @@ import {
   _resetForTests,
   applyEvent,
   conversationStore,
+  hydrateTodos,
   hydrateTurns,
   hydrateToolCalls,
   ingestFrame,
@@ -590,5 +591,67 @@ describe("hydrateToolCalls", () => {
     });
     const turn = turns.find((t) => t.id === "a1");
     expect(turn?.toolCalls[0].output).toBe("final"); // unchanged
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LiveTodos hydration (gap-cycle-03-013)
+// ---------------------------------------------------------------------------
+
+const sampleTodos = [
+  { id: "t1", content: "write tests", status: "in_progress" as const, priority: "high" as const },
+  { id: "t2", content: "ship it", status: "pending" as const, priority: "medium" as const },
+];
+
+describe("hydrateTodos — seed before WS event", () => {
+  it("sets liveTodos from a JSON string before any WS event arrives", () => {
+    expect(conversationStore.liveTodos).toHaveLength(0);
+    hydrateTodos(JSON.stringify(sampleTodos));
+    expect(conversationStore.liveTodos).toHaveLength(2);
+    expect(conversationStore.liveTodos[0]).toMatchObject({
+      id: "t1",
+      content: "write tests",
+      status: "in_progress",
+    });
+    expect(conversationStore.liveTodos[1]).toMatchObject({
+      id: "t2",
+      content: "ship it",
+      status: "pending",
+    });
+  });
+
+  it("silently ignores malformed JSON and leaves liveTodos unchanged", () => {
+    hydrateTodos(JSON.stringify(sampleTodos));
+    hydrateTodos("not-json{{");
+    // liveTodos unchanged from the previous valid seed
+    expect(conversationStore.liveTodos).toHaveLength(2);
+  });
+
+  it("later todo_write_update WS event replaces the hydrated seed", () => {
+    hydrateTodos(JSON.stringify(sampleTodos));
+    expect(conversationStore.liveTodos).toHaveLength(2);
+
+    const replacement = [{ content: "new task", status: "pending" as const }];
+    ingestFrame({
+      kind: WS_FRAME_KIND_EVENT,
+      seq: 1,
+      event: {
+        type: "todo_write_update",
+        session_id: "ses_a",
+        todos_json: JSON.stringify(replacement),
+      },
+    });
+    expect(conversationStore.liveTodos).toHaveLength(1);
+    expect(conversationStore.liveTodos[0]).toMatchObject({
+      content: "new task",
+      status: "pending",
+    });
+  });
+
+  it("resetConversation clears the hydrated liveTodos", () => {
+    hydrateTodos(JSON.stringify(sampleTodos));
+    expect(conversationStore.liveTodos).toHaveLength(2);
+    resetConversation(null);
+    expect(conversationStore.liveTodos).toHaveLength(0);
   });
 });

@@ -628,3 +628,34 @@ export async function spawnFromReply(
     options,
   );
 }
+
+/**
+ * Wire shape for ``GET /api/sessions/{id}/todos`` (gap-cycle-03-013).
+ *
+ * ``todos_json`` is the serialised ``todos`` array from the most-recent
+ * ``TodoWrite`` call's input — identical in shape to the ``todos_json``
+ * field on the ``todo_write_update`` WebSocket event.
+ */
+export interface SessionTodosOut {
+  todos_json: string;
+}
+
+/**
+ * Fetch the most-recent persisted ``TodoWrite`` payload for a session.
+ *
+ * Used by the conversation pane to seed ``LiveTodos`` on session open
+ * before any WebSocket event arrives.  Returns ``null`` when the session
+ * has never emitted a ``TodoWrite`` call.
+ *
+ * Per ``docs/behavior/chat.md`` §"LiveTodos hydration contract"
+ * (gap-cycle-03-013).
+ *
+ * @throws :class:`ApiError` on 404 (session not found) or 5xx.
+ */
+export async function getSessionTodos(
+  sessionId: string,
+  options: RequestOptions = {},
+): Promise<SessionTodosOut | null> {
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}/todos`;
+  return await getJson<SessionTodosOut | null>(path, options);
+}

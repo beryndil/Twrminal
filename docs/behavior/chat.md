@@ -57,6 +57,22 @@ To fill this gap, the pane calls `GET /api/sessions/{id}/tool_calls?message_ids=
 
 **Idempotency**: The hydration path skips assistant turns whose `toolCalls` array is already populated (WS replay was faster). The `tool_call_start` WS event skips inserting a drawer row if the call id is already present. `tool_output_delta` skips delta accumulation if the call is already marked `done`. This means the DB hydration and WS replay paths compose safely without duplicating drawer rows.
 
+## LiveTodos hydration contract
+
+*Added in gap-cycle-03-013.*
+
+The `LiveTodos` panel shows the agent's most-recent `TodoWrite` output as a sticky collapsible strip above the message turns. Because `TodoWrite` events are only broadcast via the ring-buffer WebSocket, a session whose runner has been reaped or whose events are older than the ring-buffer cap would show an empty panel until the user sends a new prompt — even though the last `TodoWrite` payload is durably stored in the `tool_calls` table.
+
+To fill this gap, the conversation pane calls `GET /api/sessions/{id}/todos` once on session open, before establishing the WebSocket subscription. If the response is non-null, `liveTodos` is seeded immediately and the panel renders without delay.
+
+**Endpoint**:
+* `GET /api/sessions/{id}/todos` — 404 when the session is absent; 200 with `null` when the session has never emitted a `TodoWrite`; 200 with `{todos_json: string}` when a persisted `TodoWrite` exists.
+* `todos_json` is the serialised `todos` array extracted from the raw `TodoWrite` input envelope `{"todos": [...]}` — identical in shape to the `todos_json` field on the `todo_write_update` WebSocket event.
+
+**Seed vs live event ordering**: The hydration seed is applied before the WebSocket subscription connects. Once the WS is live, any `todo_write_update` event that arrives via replay or a new turn overwrites the seeded value via the same `JSON.parse` path — the hydration and live-event paths are fully composable. The panel's visible state at any moment reflects whichever source provided the most-recent update.
+
+**Non-fatal errors**: If the hydration fetch fails (network error, 5xx), the panel stays hidden until the agent re-emits a `TodoWrite` call via the WebSocket. The error is not surfaced to the user — it is an optimistic prefetch, not a required load.
+
 ## Conversation rendering
 
 The body uses Markdown (CommonMark + GFM) with syntax-highlighted code blocks. Inside any rendered message body the linkifier auto-detects:

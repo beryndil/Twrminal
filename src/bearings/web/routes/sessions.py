@@ -89,6 +89,7 @@ from bearings.web.models.sessions import (
     SessionPermissionModeUpdate,
     SessionPinnedUpdate,
     SessionTitleUpdate,
+    SessionTodosOut,
     ToolCallOut,
 )
 from bearings.web.routes.ws_sessions import SessionsBroadcaster
@@ -777,6 +778,60 @@ async def list_session_tool_calls(
         )
         for tc in tc_rows
     ]
+
+
+# ---- todos hydration (gap-cycle-03-013) ------------------------------------
+
+
+@router.get(
+    "/api/sessions/{session_id}/todos",
+    response_model=SessionTodosOut | None,
+)
+async def get_session_todos(
+    session_id: str,
+    request: Request,
+) -> SessionTodosOut | None:
+    """Return the most-recent persisted ``TodoWrite`` payload for a session.
+
+    Per ``docs/behavior/chat.md`` §"LiveTodos hydration contract" the
+    conversation pane calls this once on session open to seed the
+    ``LiveTodos`` panel before any WebSocket event arrives.
+
+    * ``200`` with :class:`SessionTodosOut` — ``todos_json`` is the
+      serialised ``todos`` array from the most-recent ``TodoWrite``
+      call's input, identical in shape to the ``todo_write_update``
+      WebSocket event's ``todos_json`` field.
+    * ``200`` with ``null`` — session exists but has never emitted a
+      ``TodoWrite`` call.
+    * ``404`` — session not found.
+
+    Returning ``null`` (rather than ``404``) for a session with no
+    todos avoids the client having to distinguish "session missing"
+    from "no todos yet" — the UI reads ``null`` and leaves the panel
+    hidden.
+    """
+    db = _db(request)
+    if not await sessions_db.exists(db, session_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no session matches {session_id!r}",
+        )
+    input_json = await tool_calls_db.latest_todo_write_json(db, session_id=session_id)
+    if input_json is None:
+        return None
+    # Extract the ``todos`` array from the raw TodoWrite input envelope
+    # ``{"todos": [...]}`` — same extraction as ``_make_todo_update`` in
+    # ``bearings.agent.sdk_loop`` so the hydration path is consistent with
+    # the live event path.
+    import json as _json
+
+    try:
+        parsed = _json.loads(input_json)
+        todos = parsed.get("todos", [])
+        todos_json = _json.dumps(todos)
+    except (ValueError, AttributeError):
+        todos_json = "[]"
+    return SessionTodosOut(todos_json=todos_json)
 
 
 # ---- export / import -------------------------------------------------------

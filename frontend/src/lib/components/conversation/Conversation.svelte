@@ -25,9 +25,11 @@
 
   import { connectSession, disconnectSession } from "../../agent.svelte";
   import { listMessages, listToolCalls } from "../../api/messages";
+  import { getSessionTodos } from "../../api/sessions";
   import { CONVERSATION_STRINGS, MESSAGE_PAGE_SIZE } from "../../config";
   import {
     conversationStore,
+    hydrateTodos,
     hydrateTurns,
     hydrateToolCalls,
     loadOlder,
@@ -150,6 +152,18 @@
             // Non-fatal: WS replay covers recent sessions; old sessions
             // without persisted tool calls will show empty drawers.
           }
+        }
+        // Seed LiveTodos from the most-recent persisted TodoWrite payload
+        // (gap-cycle-03-013). Runs in parallel with the WS connect; errors
+        // are non-fatal — the panel will be populated by the first
+        // todo_write_update WS event once the runner resumes.
+        try {
+          const todosPayload = await getSessionTodos(sid);
+          if (!cancelled && todosPayload !== null) {
+            hydrateTodos(todosPayload.todos_json);
+          }
+        } catch {
+          // Non-fatal: panel stays hidden until the agent re-emits TodoWrite.
         }
       } catch (error) {
         if (cancelled) return;

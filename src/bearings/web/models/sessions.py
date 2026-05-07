@@ -228,6 +228,21 @@ class PairedChatInfo(BaseModel):
     item_label: str
 
 
+class SessionTodosOut(BaseModel):
+    """Response shape for ``GET /api/sessions/{id}/todos`` (gap-cycle-03-013).
+
+    ``todos_json`` is the serialised ``todos`` array extracted from the
+    most-recent ``TodoWrite`` tool-call input — identical in shape to the
+    ``todos_json`` field on the ``todo_write_update`` WebSocket event so
+    the frontend can use the same ``JSON.parse`` path for both the hydration
+    seed and live updates.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    todos_json: str
+
+
 class ToolCallOut(BaseModel):
     """Response shape for ``GET /api/sessions/{id}/tool_calls`` (gap-cycle-03-012).
 
@@ -348,5 +363,6 @@ __all__ = [
     "SessionPermissionModeUpdate",
     "SessionPinnedUpdate",
     "SessionTitleUpdate",
+    "SessionTodosOut",
     "ToolCallOut",
 ]
