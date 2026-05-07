@@ -40,6 +40,7 @@
     MENU_ACTION_MESSAGE_SPLIT_HERE,
     MENU_TARGET_MESSAGE,
   } from "../../config";
+  import { regenerateFromMessage } from "../../api/sessions";
   import { goto } from "$app/navigation";
   import { contextMenu } from "../../actions/contextMenu";
   import { markdownContextMenu } from "../../actions/markdownContextMenu";
@@ -66,9 +67,34 @@
     turn: MessageTurnView;
     sessionId?: string | null;
     onAskForMoreDetail?: () => void;
+    /**
+     * ``true`` when this assistant turn is the last one in the
+     * conversation list. When ``true`` the "Regenerate from this message…"
+     * context-menu entry is suppressed — the top-level "Regenerate"
+     * covers that case. Only meaningful for ``role="assistant"`` turns;
+     * ignored on user turns.
+     *
+     * Per ``docs/behavior/chat.md`` §"Regenerate from here"
+     * (gap-cycle-03-006).
+     */
+    isLastAssistantTurn?: boolean;
+    /**
+     * Number of turns in the conversation list that come after this turn.
+     * Used to compute the discard-count shown in the confirmation dialog.
+     * Includes the current turn's subsequent turns only, not the current
+     * turn itself (the clicked assistant turn is also discarded, so the
+     * dialog shows ``turnsAfterCount + 1`` total).
+     */
+    turnsAfterCount?: number;
   }
 
-  const { turn, sessionId, onAskForMoreDetail }: Props = $props();
+  const {
+    turn,
+    sessionId,
+    onAskForMoreDetail,
+    isLastAssistantTurn = false,
+    turnsAfterCount = 0,
+  }: Props = $props();
 
   function handleAskForMoreDetail(): void {
     onAskForMoreDetail?.();
@@ -84,9 +110,23 @@
     }
   }
 
+  async function handleRegenerateFrom(): Promise<void> {
+    if (sessionId === null || sessionId === undefined) return;
+    try {
+      await regenerateFromMessage(sessionId, turn.id);
+    } catch (err) {
+      console.error("Regenerate from here failed:", err);
+    }
+  }
+
   // ---- context-menu action state -----------------------------------------
 
   let showDeleteConfirm = $state(false);
+  /**
+   * Controls the "discard N messages?" confirmation dialog for
+   * "Regenerate from this message…" (gap-cycle-03-006).
+   */
+  let showRegenerateFromConfirm = $state(false);
 
   // ---- context-menu handlers ---------------------------------------------
 
@@ -182,7 +222,21 @@
       })();
     },
 
-    [MENU_ACTION_MESSAGE_REGENERATE]: () => void handleRegenerate(),
+    // "Regenerate from this message…" — fires the /regenerate_from/{id}
+    // endpoint which truncates and re-queues. Only active on non-last
+    // assistant turns; on the last assistant turn the existing plain
+    // "Regenerate" action covers the same need without truncation.
+    // Per docs/behavior/chat.md §"Regenerate from here" (gap-cycle-03-006).
+    ...(turn.role === "assistant" && !isLastAssistantTurn
+      ? {
+          [MENU_ACTION_MESSAGE_REGENERATE]: () => {
+            showRegenerateFromConfirm = true;
+          },
+        }
+      : {}),
+
+    // "Regenerate (rewrite in place)" — replays the latest user message
+    // via the plain /regenerate endpoint (no truncation).
     [MENU_ACTION_MESSAGE_REGENERATE_IN_PLACE]: () => void handleRegenerate(),
 
     /** Show the delete confirmation dialog. Advanced + destructive action. */
@@ -223,6 +277,22 @@
     };
   });
 </script>
+
+{#if showRegenerateFromConfirm}
+  <ConfirmDialog
+    message="Discard {turnsAfterCount + 1} message{turnsAfterCount + 1 === 1
+      ? ''
+      : 's'} and regenerate from here?"
+    confirmLabel="Regenerate"
+    onConfirm={() => {
+      showRegenerateFromConfirm = false;
+      void handleRegenerateFrom();
+    }}
+    onCancel={() => {
+      showRegenerateFromConfirm = false;
+    }}
+  />
+{/if}
 
 {#if showDeleteConfirm}
   <ConfirmDialog

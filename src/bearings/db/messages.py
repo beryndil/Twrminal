@@ -423,6 +423,69 @@ async def count_for_session(
     return 0 if row is None else int(row[0])
 
 
+async def get_preceding_user_message(
+    connection: aiosqlite.Connection,
+    session_id: str,
+    before_seq: int,
+) -> Message | None:
+    """Return the most recent user-role message with rowid < ``before_seq``.
+
+    Backs ``POST /api/sessions/{id}/regenerate_from/{message_id}`` — finds
+    the user prompt that immediately precedes the assistant turn the user
+    right-clicked. Returns ``None`` when no user message exists before that
+    seq (the assistant turn is the first message, which is unusual but
+    possible in edge cases).
+    """
+    cursor = await connection.execute(
+        _SELECT_MESSAGE_COLUMNS + " WHERE session_id = ? AND role = 'user' AND rowid < ?"
+        " ORDER BY rowid DESC LIMIT 1",
+        (session_id, before_seq),
+    )
+    try:
+        row = await cursor.fetchone()
+    finally:
+        await cursor.close()
+    return None if row is None else _row_to_message(row)
+
+
+async def truncate_after(
+    connection: aiosqlite.Connection,
+    session_id: str,
+    pivot_seq: int,
+) -> int:
+    """Delete all messages with rowid > ``pivot_seq`` on ``session_id``; fix message_count.
+
+    Returns the count of deleted rows. Used by
+    ``POST /api/sessions/{id}/regenerate_from/{message_id}`` to discard the
+    clicked assistant turn and any messages that follow it before
+    re-queuing the pivot user prompt.
+
+    The ``message_count`` decrement and the DELETE happen inside one
+    ``commit`` so the sidebar counter never drifts relative to the row count.
+    """
+    cursor = await connection.execute(
+        "SELECT COUNT(*) FROM messages WHERE session_id = ? AND rowid > ?",
+        (session_id, pivot_seq),
+    )
+    try:
+        count_row = await cursor.fetchone()
+    finally:
+        await cursor.close()
+    deleted_count = 0 if count_row is None else int(count_row[0])
+    if deleted_count == 0:
+        return 0
+    await connection.execute(
+        "DELETE FROM messages WHERE session_id = ? AND rowid > ?",
+        (session_id, pivot_seq),
+    )
+    await connection.execute(
+        "UPDATE sessions SET message_count = MAX(0, message_count - ?) WHERE id = ?",
+        (deleted_count, session_id),
+    )
+    await connection.commit()
+    return deleted_count
+
+
 async def update_pinned(
     connection: aiosqlite.Connection,
     message_id: str,
@@ -631,12 +694,14 @@ __all__ = [
     "count_for_session",
     "delete",
     "get",
+    "get_preceding_user_message",
     "import_messages",
     "insert_assistant",
     "insert_system",
     "insert_user",
     "list_for_session",
     "move_to_session",
+    "truncate_after",
     "update_hidden",
     "update_pinned",
 ]

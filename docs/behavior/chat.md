@@ -109,6 +109,29 @@ Pressing Enter (or Cmd/Ctrl+Enter, depending on the user's draft-newline prefere
 
 The composer remains usable during a turn (the user can type the next message), but pressing send while a turn is in flight queues the next prompt rather than interleaving it. See [prompt-endpoint](prompt-endpoint.md) for the same semantics over HTTP.
 
+## Regenerate from here
+
+Right-clicking any **assistant** turn in the conversation opens the context menu. When the turn is **not** the last assistant turn in the conversation, the menu includes the action **"Regenerate from this message…"**. When the turn is the last assistant turn, this action is suppressed — the top-level **"Regenerate (rewrite in place)"** action covers that case without truncating history.
+
+Selecting "Regenerate from this message…" opens a small confirmation dialog:
+
+```
+Discard N messages and regenerate from here?
+                               [Cancel]  [Regenerate]
+```
+
+`N` is the total number of messages that will be removed: the clicked assistant turn plus any turns that follow it (subsequent user/assistant exchanges).
+
+Clicking **Regenerate**:
+
+1. Fires `POST /api/sessions/{id}/regenerate_from/{message_id}`, where `message_id` is the id of the clicked assistant turn.
+2. The server finds the user message immediately preceding the clicked assistant turn (the "pivot"), deletes all messages after the pivot (including the clicked assistant turn and any subsequent turns), and re-dispatches the pivot user message content to the runner.
+3. The conversation pane reflects the truncation on the next WebSocket update; a new assistant turn begins streaming from the pivot.
+
+Clicking **Cancel** dismisses the dialog with no changes.
+
+The endpoint returns `202 Accepted` on success. It returns `404` if the session or message is not found, `409` if the session is closed, `422` if the named message is not an assistant turn, or `429` if the rate limit is exceeded.
+
 ## Stopping or interrupting a turn
 
 A **Stop** control appears in the composer area whenever a turn is in flight. Pressing it interrupts the agent at the next safe boundary; the partially-streamed assistant bubble is preserved with a `[stopped]` annotation. The user can immediately type a new message — the session is ready for the next turn.

@@ -106,6 +106,117 @@ async def test_get_returns_none_for_missing(conn: aiosqlite.Connection) -> None:
     assert await messages_db.get(conn, "msg_missing") is None
 
 
+async def _insert_assistant(
+    conn: aiosqlite.Connection,
+    session_id: str,
+    content: str = "reply",
+) -> messages_db.Message:
+    """Helper: insert a minimal assistant-role row for test purposes."""
+    return await messages_db.insert_assistant(
+        conn,
+        session_id=session_id,
+        content=content,
+        executor_model="sonnet",
+        advisor_model=None,
+        effort_level="med",
+        routing_source="default",
+        routing_reason="default routing",
+        matched_rule_id=None,
+        executor_input_tokens=None,
+        executor_output_tokens=None,
+        advisor_input_tokens=None,
+        advisor_output_tokens=None,
+        advisor_calls_count=0,
+        cache_read_tokens=None,
+    )
+
+
+async def test_get_preceding_user_message_finds_pivot(conn: aiosqlite.Connection) -> None:
+    """Returns the user message immediately before the given seq."""
+    sid = await _new_session(conn)
+    u1 = await messages_db.insert_user(conn, session_id=sid, content="first prompt")
+    a1 = await _insert_assistant(conn, sid, "first reply")
+    u2 = await messages_db.insert_user(conn, session_id=sid, content="second prompt")
+    a2 = await _insert_assistant(conn, sid, "second reply")
+
+    # Pivot for a1: should find u1.
+    pivot_for_a1 = await messages_db.get_preceding_user_message(conn, sid, a1.seq)
+    assert pivot_for_a1 is not None
+    assert pivot_for_a1.id == u1.id
+
+    # Pivot for a2: should find u2 (the closest preceding user message).
+    pivot_for_a2 = await messages_db.get_preceding_user_message(conn, sid, a2.seq)
+    assert pivot_for_a2 is not None
+    assert pivot_for_a2.id == u2.id
+
+
+async def test_get_preceding_user_message_returns_none_when_none(
+    conn: aiosqlite.Connection,
+) -> None:
+    """Returns None when no user message precedes the given seq."""
+    sid = await _new_session(conn)
+    a1 = await _insert_assistant(conn, sid, "orphan assistant")
+    result = await messages_db.get_preceding_user_message(conn, sid, a1.seq)
+    assert result is None
+
+
+async def test_truncate_after_removes_messages_and_fixes_count(
+    conn: aiosqlite.Connection,
+) -> None:
+    """Deletes rows with rowid > pivot_seq and decrements message_count."""
+    from bearings.db import sessions as sessions_db
+
+    sid = await _new_session(conn)
+    u1 = await messages_db.insert_user(conn, session_id=sid, content="q1")
+    await _insert_assistant(conn, sid, "a1")
+    await messages_db.insert_user(conn, session_id=sid, content="q2")
+    await _insert_assistant(conn, sid, "a2")
+
+    session_before = await sessions_db.get(conn, sid)
+    assert session_before is not None and session_before.message_count == 4
+
+    deleted = await messages_db.truncate_after(conn, sid, pivot_seq=u1.seq)
+    # Rows after u1 (a1, q2, a2) should be deleted — 3 rows.
+    assert deleted == 3
+
+    rows = await messages_db.list_for_session(conn, sid)
+    assert [r.id for r in rows] == [u1.id]
+
+    session_after = await sessions_db.get(conn, sid)
+    assert session_after is not None and session_after.message_count == 1
+
+
+async def test_truncate_after_no_op_when_nothing_after(conn: aiosqlite.Connection) -> None:
+    """Returns 0 when no messages exist after the pivot_seq."""
+    sid = await _new_session(conn)
+    u1 = await messages_db.insert_user(conn, session_id=sid, content="q1")
+    deleted = await messages_db.truncate_after(conn, sid, pivot_seq=u1.seq)
+    assert deleted == 0
+    rows = await messages_db.list_for_session(conn, sid)
+    assert len(rows) == 1
+
+
+async def test_truncate_after_does_not_touch_other_sessions(
+    conn: aiosqlite.Connection,
+) -> None:
+    """Only removes messages belonging to session_id, not other sessions."""
+    from bearings.db import sessions as sessions_db
+
+    sid_a = await _new_session(conn)
+    sid_b = await _new_session(conn)
+    u_a = await messages_db.insert_user(conn, session_id=sid_a, content="a1")
+    await messages_db.insert_user(conn, session_id=sid_a, content="a2")
+    await messages_db.insert_user(conn, session_id=sid_b, content="b1")
+
+    await messages_db.truncate_after(conn, sid_a, pivot_seq=u_a.seq)
+
+    # sid_b is untouched.
+    rows_b = await messages_db.list_for_session(conn, sid_b)
+    assert len(rows_b) == 1
+    session_b = await sessions_db.get(conn, sid_b)
+    assert session_b is not None and session_b.message_count == 1
+
+
 async def test_invalid_role_rejected_at_dataclass(
     conn: aiosqlite.Connection,
 ) -> None:

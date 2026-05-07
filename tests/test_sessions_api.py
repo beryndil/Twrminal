@@ -16,8 +16,10 @@ from bearings.config.constants import (
     SESSION_KIND_CHAT,
     SESSION_KIND_CHECKLIST,
 )
+from bearings.db import messages as messages_db
 from bearings.db import sessions as sessions_db
 from bearings.db.connection import load_schema
+from bearings.db.messages import Message
 from bearings.web.app import create_app
 
 
@@ -719,6 +721,127 @@ async def test_regenerate_closed_session_409(
     with TestClient(app) as client:
         response = client.post(f"/api/sessions/{sid}/regenerate")
     assert response.status_code == 409
+
+
+async def _insert_assistant_row(
+    conn: aiosqlite.Connection,
+    session_id: str,
+    content: str = "reply",
+) -> Message:
+    """Minimal assistant-role row for route-level tests."""
+    from bearings.db.messages import insert_assistant
+
+    return await insert_assistant(
+        conn,
+        session_id=session_id,
+        content=content,
+        executor_model="sonnet",
+        advisor_model=None,
+        effort_level="med",
+        routing_source="default",
+        routing_reason="default routing",
+        matched_rule_id=None,
+        executor_input_tokens=None,
+        executor_output_tokens=None,
+        advisor_input_tokens=None,
+        advisor_output_tokens=None,
+        advisor_calls_count=0,
+        cache_read_tokens=None,
+    )
+
+
+async def test_regenerate_from_unknown_session_404(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Unknown session_id returns 404."""
+    app, _ = app_and_db
+    with TestClient(app) as client:
+        response = client.post("/api/sessions/ses_missing/regenerate_from/msg_x")
+    assert response.status_code == 404
+
+
+async def test_regenerate_from_unknown_message_404(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Session exists but message_id is not in it — 404."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    with TestClient(app) as client:
+        response = client.post(f"/api/sessions/{sid}/regenerate_from/msg_missing")
+    assert response.status_code == 404
+    assert "no message matches" in response.json()["detail"]
+
+
+async def test_regenerate_from_non_assistant_message_422(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Named message is a user turn — 422."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    user_msg = await messages_db.insert_user(conn, session_id=sid, content="hello")
+    with TestClient(app) as client:
+        response = client.post(f"/api/sessions/{sid}/regenerate_from/{user_msg.id}")
+    assert response.status_code == 422
+    assert "not an assistant turn" in response.json()["detail"]
+
+
+async def test_regenerate_from_no_preceding_user_message_404(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Assistant turn exists but has no preceding user message — 404."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    # Insert an orphan assistant row (no prior user message in this session).
+    asst = await _insert_assistant_row(conn, sid, "orphan")
+    with TestClient(app) as client:
+        response = client.post(f"/api/sessions/{sid}/regenerate_from/{asst.id}")
+    assert response.status_code == 404
+    assert "no user message precedes" in response.json()["detail"]
+
+
+async def test_regenerate_from_truncates_and_requeues(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Truncation matches the pivot; the pivot user message is re-queued."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    pivot_user = await messages_db.insert_user(conn, session_id=sid, content="pivot prompt")
+    asst = await _insert_assistant_row(conn, sid, "first reply")
+    await messages_db.insert_user(conn, session_id=sid, content="follow-up")
+    await _insert_assistant_row(conn, sid, "second reply")
+
+    with TestClient(app) as client:
+        response = client.post(f"/api/sessions/{sid}/regenerate_from/{asst.id}")
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["queued"] is True
+    assert body["session_id"] == sid
+    assert response.headers["Location"] == f"/api/sessions/{sid}"
+
+    # Only the pivot user message should remain in the DB (plus the
+    # re-queued user message inserted by dispatch_prompt).
+    remaining = await messages_db.list_for_session(conn, sid)
+    # The pivot user message stays; rows after it are gone before re-dispatch.
+    remaining_ids = {m.id for m in remaining}
+    assert pivot_user.id in remaining_ids
+    assert asst.id not in remaining_ids
+
+
+async def test_regenerate_from_closed_session_409(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Closed sessions reject via 409."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    pivot_user = await messages_db.insert_user(conn, session_id=sid, content="hello")
+    asst = await _insert_assistant_row(conn, sid, "reply")
+    await sessions_db.close(conn, sid)
+    with TestClient(app) as client:
+        response = client.post(f"/api/sessions/{sid}/regenerate_from/{asst.id}")
+    assert response.status_code == 409
+    # pivot_user is referenced but not used beyond setup — keep variable for clarity.
+    _ = pivot_user
 
 
 async def test_close_session_404(

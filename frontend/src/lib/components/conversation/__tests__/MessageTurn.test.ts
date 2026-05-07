@@ -1,9 +1,13 @@
 /**
  * Component tests for ``MessageTurn`` — user/assistant rendering,
- * routing badge surface, error block, tool drawer counter.
+ * routing badge surface, error block, tool drawer counter, and
+ * "Regenerate from here" context-menu / confirm-dialog behavior
+ * (gap-cycle-03-006).
  */
 import { render, waitFor } from "@testing-library/svelte";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { _resetForTests, contextMenuStore } from "../../../context-menu/store.svelte";
+import { MENU_ACTION_MESSAGE_REGENERATE } from "../../../config";
 
 import MessageTurn from "../MessageTurn.svelte";
 import type { MessageTurnView } from "../../../stores/conversation.svelte";
@@ -25,6 +29,14 @@ function turn(overrides: Partial<MessageTurnView> = {}): MessageTurnView {
     ...overrides,
   };
 }
+
+beforeEach(() => {
+  _resetForTests();
+});
+
+afterEach(() => {
+  _resetForTests();
+});
 
 describe("MessageTurn — user role", () => {
   it("renders the user body text content", () => {
@@ -131,5 +143,109 @@ describe("MessageTurn — assistant role", () => {
     await waitFor(() => {
       expect(getByTestId("message-turn-body").innerHTML).toContain("<strong>bold</strong>");
     });
+  });
+});
+
+// ---- Regenerate from here (gap-cycle-03-006) -------------------------------
+
+describe("MessageTurn — Regenerate from here context-menu entry", () => {
+  it("includes MENU_ACTION_MESSAGE_REGENERATE handler for non-last assistant turn", () => {
+    const { getByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({ id: "a1", role: "assistant", body: "reply" }),
+        sessionId: "ses_a",
+        isLastAssistantTurn: false,
+        turnsAfterCount: 2,
+      },
+    });
+    const article = getByTestId("message-turn");
+    article.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+    const handlers = contextMenuStore.open?.handlers ?? {};
+    expect(MENU_ACTION_MESSAGE_REGENERATE in handlers).toBe(true);
+  });
+
+  it("omits MENU_ACTION_MESSAGE_REGENERATE handler for the last assistant turn", () => {
+    const { getByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({ id: "a1", role: "assistant", body: "reply" }),
+        sessionId: "ses_a",
+        isLastAssistantTurn: true,
+        turnsAfterCount: 0,
+      },
+    });
+    const article = getByTestId("message-turn");
+    article.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+    const handlers = contextMenuStore.open?.handlers ?? {};
+    expect(MENU_ACTION_MESSAGE_REGENERATE in handlers).toBe(false);
+  });
+
+  it("omits MENU_ACTION_MESSAGE_REGENERATE handler for user turns", () => {
+    const { getByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({ id: "u1", role: "user", body: "prompt" }),
+        sessionId: "ses_a",
+        isLastAssistantTurn: false,
+        turnsAfterCount: 1,
+      },
+    });
+    const article = getByTestId("message-turn");
+    article.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+    const handlers = contextMenuStore.open?.handlers ?? {};
+    expect(MENU_ACTION_MESSAGE_REGENERATE in handlers).toBe(false);
+  });
+
+  it("shows confirmation dialog with correct discard count when handler fires", async () => {
+    const { getByTestId, queryByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({ id: "a1", role: "assistant", body: "reply" }),
+        sessionId: "ses_a",
+        isLastAssistantTurn: false,
+        turnsAfterCount: 2,
+      },
+    });
+
+    // No dialog initially.
+    expect(queryByTestId("confirm-dialog")).toBeNull();
+
+    // Fire the context-menu handler.
+    const article = getByTestId("message-turn");
+    article.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+    const handler = contextMenuStore.open?.handlers[MENU_ACTION_MESSAGE_REGENERATE];
+    expect(handler).toBeDefined();
+    handler?.();
+
+    // Dialog should appear with discard count = turnsAfterCount + 1 = 3.
+    await waitFor(() => {
+      expect(queryByTestId("confirm-dialog")).not.toBeNull();
+    });
+    expect(getByTestId("confirm-dialog-message").textContent).toContain("3 message");
+  });
+
+  it("dismiss cancels without calling the API", async () => {
+    const { getByTestId, queryByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({ id: "a1", role: "assistant" }),
+        sessionId: "ses_a",
+        isLastAssistantTurn: false,
+        turnsAfterCount: 1,
+      },
+    });
+    const article = getByTestId("message-turn");
+    article.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+    contextMenuStore.open?.handlers[MENU_ACTION_MESSAGE_REGENERATE]?.();
+    await waitFor(() => expect(queryByTestId("confirm-dialog")).not.toBeNull());
+
+    getByTestId("confirm-dialog-cancel").click();
+    await waitFor(() => expect(queryByTestId("confirm-dialog")).toBeNull());
   });
 });

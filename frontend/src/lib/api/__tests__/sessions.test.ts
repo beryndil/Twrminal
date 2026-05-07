@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { exportSessionJson, reopenSession, type SessionOut } from "../sessions";
+import { exportSessionJson, regenerateFromMessage, reopenSession, type SessionOut } from "../sessions";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -160,5 +160,43 @@ describe("exportSessionJson", () => {
     // Closed session — endpoint returns 200
     await exportSessionJson({ ...exportSession, closed_at: "2026-01-01T12:00:00Z" });
     expect(anchor.click).toHaveBeenCalledOnce();
+  });
+});
+
+describe("regenerateFromMessage", () => {
+  it("POSTs to /api/sessions/<sid>/regenerate_from/<mid> and resolves on 202", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ queued: true, session_id: "ses_a" }), {
+        status: 202,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    await regenerateFromMessage("ses_a", "msg_1");
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      "/api/sessions/ses_a/regenerate_from/msg_1",
+    );
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe("POST");
+  });
+
+  it("URL-encodes both session id and message id", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("{}", { status: 202 }),
+    );
+    await regenerateFromMessage("ses a/b", "msg x/y");
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      "/api/sessions/ses%20a%2Fb/regenerate_from/msg%20x%2Fy",
+    );
+  });
+
+  it("throws ApiError on non-2xx response", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "not found" }), {
+        status: 404,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const { ApiError } = await import("../client");
+    await expect(regenerateFromMessage("ses_a", "msg_x")).rejects.toBeInstanceOf(ApiError);
   });
 });

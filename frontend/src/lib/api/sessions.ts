@@ -370,6 +370,53 @@ export async function regenerateSession(
 }
 
 /**
+ * Truncate the conversation to the pivot user message preceding
+ * ``messageId`` and re-queue that user message via
+ * ``POST /api/sessions/{id}/regenerate_from/{messageId}``.
+ *
+ * ``messageId`` must name an assistant-role turn. The server deletes all
+ * messages after the preceding user message (including the clicked
+ * assistant turn) and re-dispatches that user message to the runner.
+ *
+ * @throws :class:`ApiError` on 404 (session/message not found or no
+ *   preceding user message), 409 (session closed), 422 (not an assistant
+ *   turn), 429 (rate limited), or 5xx.
+ *
+ * Per ``docs/behavior/chat.md`` §"Regenerate from here" (gap-cycle-03-006).
+ */
+export async function regenerateFromMessage(
+  sessionId: string,
+  messageId: string,
+  options: RequestOptions = {},
+): Promise<void> {
+  const HTTP_OK_MIN = 200;
+  const HTTP_OK_MAX = 300;
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}/regenerate_from/${encodeURIComponent(messageId)}`;
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    signal: options.signal,
+  });
+  if (response.status < HTTP_OK_MIN || response.status >= HTTP_OK_MAX) {
+    let errorBody: unknown = null;
+    try {
+      errorBody = await response.json();
+    } catch {
+      try {
+        errorBody = await response.text();
+      } catch {
+        // ignore
+      }
+    }
+    throw new ApiError(
+      response.status,
+      errorBody,
+      `POST regenerate_from ${sessionId}/${messageId} → ${response.status} ${response.statusText}`,
+    );
+  }
+}
+
+/**
  * Fetch paired-chat metadata for a chat session.
  *
  * Returns ``{parent_title, item_label}`` when paired to a checklist item,

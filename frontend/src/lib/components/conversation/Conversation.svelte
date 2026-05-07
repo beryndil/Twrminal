@@ -95,6 +95,21 @@
       conversationStore.turns.some((t) => t.role === "assistant" && !t.complete),
   );
 
+  // Index of the last assistant turn in the turns list, or -1 when none.
+  // Used by each ``MessageTurn`` to determine whether "Regenerate from here"
+  // should appear in the context menu (gap-cycle-03-006 §"Regenerate from
+  // here" — the action is suppressed on the last assistant turn because the
+  // top-level "Regenerate" already covers that case).
+  const lastAssistantTurnIndex = $derived(
+    (() => {
+      const turns = conversationStore.turns;
+      for (let i = turns.length - 1; i >= 0; i--) {
+        if (turns[i].role === "assistant") return i;
+      }
+      return -1;
+    })(),
+  );
+
   $effect(() => {
     const sid = sessionId;
     if (sid === null) {
@@ -239,9 +254,16 @@
           {CONVERSATION_STRINGS.emptyTranscript}
         </p>
       {:else}
-        {#each conversationStore.turns as turn (turn.id)}
+        {#each conversationStore.turns as turn, turnIdx (turn.id)}
           <VirtualItem>
-            <MessageTurn {turn} {sessionId} onAskForMoreDetail={handleAskForMoreDetail} />
+            <MessageTurn
+              {turn}
+              {sessionId}
+              onAskForMoreDetail={handleAskForMoreDetail}
+              isLastAssistantTurn={turn.role === "assistant" &&
+                turnIdx === lastAssistantTurnIndex}
+              turnsAfterCount={conversationStore.turns.length - 1 - turnIdx}
+            />
           </VirtualItem>
           <!-- Reorg audit dividers appear after their anchor turn. -->
           {#if sessionId !== null}

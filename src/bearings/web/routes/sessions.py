@@ -23,6 +23,11 @@ owns:
 * ``POST   /api/sessions/{id}/regenerate`` — replay the latest user
                                             prompt (v1.1 closing-
                                             sweep).
+* ``POST   /api/sessions/{id}/regenerate_from/{msg_id}`` — truncate
+                                            to the user message
+                                            preceding ``msg_id`` and
+                                            re-queue it (gap-cycle-03-
+                                            006).
 * ``POST   /api/sessions/{id}/viewed``    — stamp ``last_viewed_at``
                                             to now; broadcast upsert
                                             clears the unviewed-dot
@@ -977,6 +982,114 @@ async def regenerate_session(session_id: str, request: Request) -> Response:
     raise HTTPException(  # pragma: no cover — exhaustive enum match above
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail=f"unhandled regenerate dispatch outcome {outcome.value!r}",
+    )
+
+
+# ---- regenerate from pivot message -----------------------------------------
+
+
+@router.post(
+    "/api/sessions/{session_id}/regenerate_from/{message_id}",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def regenerate_from_message(
+    session_id: str,
+    message_id: str,
+    request: Request,
+) -> Response:
+    """Truncate the transcript to the pivot user message and re-queue it.
+
+    Per ``docs/behavior/chat.md`` §"Regenerate from here" (gap-cycle-03-006).
+
+    ``message_id`` must name an **assistant**-role turn in ``session_id``.
+    The endpoint:
+
+    1. Validates ``message_id`` belongs to ``session_id`` with
+       ``role='assistant'``.
+    2. Finds the user message immediately preceding it (the pivot).
+    3. Deletes all messages with ``rowid > pivot.seq`` (the clicked
+       assistant turn plus any later messages).
+    4. Re-dispatches the pivot user message content through
+       :func:`dispatch_prompt`.
+
+    Failure modes:
+
+    * ``404`` — session missing, message not found in session, or no
+      user message precedes the named assistant turn.
+    * ``409`` — session closed (the prompt queue rejects).
+    * ``422`` — ``message_id`` exists but is not an assistant turn.
+    * ``429`` — rate limit (per-session window).
+
+    Returns ``202`` with the same JSON envelope as the prompt endpoint.
+    """
+    db = _db(request)
+    factory = _runner_factory(request)
+    limiter = _rate_limiter(request)
+    if not await sessions_db.exists(db, session_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no session matches {session_id!r}",
+        )
+    pivot_assistant = await messages_db.get(db, message_id)
+    if pivot_assistant is None or pivot_assistant.session_id != session_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no message matches {message_id!r} in session {session_id!r}",
+        )
+    if pivot_assistant.role != "assistant":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"message {message_id!r} is not an assistant turn",
+        )
+    pivot_user = await messages_db.get_preceding_user_message(
+        db, session_id, before_seq=pivot_assistant.seq
+    )
+    if pivot_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no user message precedes message {message_id!r} in session {session_id!r}",
+        )
+    await messages_db.truncate_after(db, session_id, pivot_seq=pivot_user.seq)
+    result = await dispatch_prompt(
+        db,
+        factory,
+        limiter,
+        session_id=session_id,
+        content=pivot_user.content,
+    )
+    outcome = result.outcome
+    if outcome is PromptDispatchOutcome.QUEUED:
+        body = {
+            PROMPT_ACK_QUEUED_KEY: True,
+            PROMPT_ACK_SESSION_ID_KEY: session_id,
+        }
+        return Response(
+            content=json.dumps(body),
+            status_code=status.HTTP_202_ACCEPTED,
+            media_type="application/json",
+            headers={"Location": f"/api/sessions/{session_id}"},
+        )
+    if outcome is PromptDispatchOutcome.NOT_FOUND:  # pragma: no cover — guarded above
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=result.detail or f"no session matches {session_id!r}",
+        )
+    if outcome is PromptDispatchOutcome.CLOSED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=result.detail or "session is closed",
+        )
+    if outcome is PromptDispatchOutcome.RATE_LIMITED:
+        retry_after = result.retry_after_s or 1
+        return Response(
+            content=json.dumps({"detail": result.detail or "rate limit exceeded"}),
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            media_type="application/json",
+            headers={"Retry-After": str(retry_after)},
+        )
+    raise HTTPException(  # pragma: no cover — exhaustive enum match above
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=f"unhandled regenerate_from dispatch outcome {outcome.value!r}",
     )
 
 
