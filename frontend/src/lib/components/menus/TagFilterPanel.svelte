@@ -26,22 +26,16 @@
    * chat.md is silent on whether the panel groups visually, and the
    * flat list is the simpler floor.
    */
-  import { goto } from "$app/navigation";
-
   import {
     SIDEBAR_STRINGS,
     MENU_TARGET_TAG,
-    MENU_ACTION_TAG_PIN,
-    MENU_ACTION_TAG_UNPIN,
-    MENU_ACTION_TAG_COPY_NAME,
-    MENU_ACTION_TAG_EDIT,
-    MENU_ACTION_TAG_DELETE,
   } from "../../config";
   import type { TagClass, TagOut } from "../../api/tags";
-  import { deleteTag, patchTagPinned } from "../../api/tags";
   import { contextMenu } from "../../actions/contextMenu";
   import { refreshTags, tagsByClass } from "../../stores/tags.svelte";
+  import { createTagMenuHandlers, executeTagDelete } from "../../context-menu/actions/tag";
   import ConfirmDialog from "../sidebar/ConfirmDialog.svelte";
+  import TagEdit from "./TagEdit.svelte";
 
   interface Props {
     tags: readonly TagOut[];
@@ -92,41 +86,58 @@
     deletingTag = null;
     if (tag === null) return;
     try {
-      await deleteTag(tag.id);
+      await executeTagDelete(tag.id);
       await refreshTags();
     } catch {
       // Leave the chip in place — the next refresh shows real state.
     }
   }
 
+  // ---- tag edit modal state -----------------------------------------------
+
+  let editingTag = $state<TagOut | null>(null);
+
+  function handleTagSaved(updated: TagOut): void {
+    // Optimistic local update: replace the stale chip data so the chip
+    // re-renders immediately with the new class colour without waiting
+    // for a full refreshTags() round-trip. The store refresh below keeps
+    // truth in sync.
+    void refreshTags();
+    // Close happens inside TagEdit's onSaved → onClose chain.
+    // Suppress unused-warning: `updated` carries the patched row;
+    // refreshTags() re-fetches the canonical list so we just trigger it.
+    void updated;
+  }
+
   // ---- context menu handlers per tag --------------------------------------
 
   function menuHandlersForTag(tag: TagOut): Readonly<Record<string, () => void>> {
-    return {
-      ...(tag.pinned
-        ? {
-            [MENU_ACTION_TAG_UNPIN]: () => {
-              void patchTagPinned(tag.id, false).then(() => refreshTags());
-            },
-          }
-        : {
-            [MENU_ACTION_TAG_PIN]: () => {
-              void patchTagPinned(tag.id, true).then(() => refreshTags());
-            },
-          }),
-      [MENU_ACTION_TAG_COPY_NAME]: () => {
-        void navigator.clipboard.writeText(tag.name);
+    return createTagMenuHandlers(tag, {
+      onEdit: (t) => {
+        editingTag = t;
       },
-      [MENU_ACTION_TAG_EDIT]: () => {
-        void goto("/tags");
-      },
-      [MENU_ACTION_TAG_DELETE]: () => {
-        deletingTag = tag;
+      onRequestDelete: (t) => {
+        deletingTag = t;
         showDeleteConfirm = true;
       },
-    };
+      onRefresh: () => refreshTags(),
+    });
   }
 </script>
+
+{#if editingTag !== null}
+  {@const tag = editingTag}
+  <TagEdit
+    {tag}
+    onClose={() => {
+      editingTag = null;
+    }}
+    onSaved={(updated) => {
+      handleTagSaved(updated);
+      editingTag = null;
+    }}
+  />
+{/if}
 
 {#if showDeleteConfirm && deletingTag !== null}
   <ConfirmDialog

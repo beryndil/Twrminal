@@ -2337,6 +2337,47 @@ export const DATA_VIEW_STRINGS = {
  */
 export const VIRTUAL_ITEM_ROOT_MARGIN = "200px 0px" as const;
 
+/**
+ * UI strings for the :component:`TagEdit` modal (gap-cycle-01-016).
+ *
+ * Behavior anchor: ``docs/behavior/context-menus.md`` §Tag —
+ * ``tag.edit`` action opens a modal that lets the operator reassign a
+ * tag's class (project / severity / general), update its inheritance
+ * fields (``default_model`` / ``working_dir``), and save via PATCH.
+ * Severity-class tags surface the inheritance fields disabled-and-cleared
+ * because the backend rejects non-null inheritance on severity rows.
+ */
+export const TAG_EDIT_STRINGS = {
+  /** ``aria-label`` for the dialog backdrop. */
+  dialogAriaLabel: "Edit tag",
+  /** Modal title. */
+  title: "Edit tag",
+  /** Class selector label. */
+  classLabel: "Class",
+  /** Option labels for the class selector. */
+  classOptions: {
+    project: "Project — one per session, drives sidebar grouping",
+    severity: "Severity — one per session, drives the header shield",
+    general: "Other — free-form, many per session",
+  } as const,
+  /** Default model selector label. */
+  defaultModelLabel: "Default model",
+  /** Placeholder for the default model field when no value is set. */
+  defaultModelPlaceholder: "e.g. sonnet",
+  /** Hint shown below the field when severity is selected. */
+  severityInheritanceHint: "Severity tags carry no inherited model or working dir — cleared and disabled.",
+  /** Working directory field label. */
+  workingDirLabel: "Default working dir",
+  /** Placeholder for the working dir field. */
+  workingDirPlaceholder: "/home/you/Projects/example",
+  /** Submit button label. */
+  saveLabel: "Save",
+  /** Submit button label while saving. */
+  savingLabel: "Saving…",
+  /** Cancel button label. */
+  cancelLabel: "Cancel",
+} as const;
+
 // ---- Derivations -----------------------------------------------------------
 
 /**
