@@ -811,6 +811,22 @@ export const API_FS_READ_ENDPOINT = `${API_BASE}/fs/read`;
 export const API_SHELL_EXEC_ENDPOINT = `${API_BASE}/shell/exec`;
 
 /**
+ * ``POST /api/pending/{name}/resolve?directory=<abs>`` — remove the
+ * named entry from ``.bearings/pending.toml`` (resolved semantic).
+ * Per ``docs/behavior/bearings-cli.md`` §"HTTP action endpoints".
+ */
+export const pendingResolveEndpoint = (name: string): string =>
+  `${API_BASE}/pending/${encodeURIComponent(name)}/resolve`;
+
+/**
+ * ``DELETE /api/pending/{name}?directory=<abs>`` — remove the named
+ * entry from ``.bearings/pending.toml`` (dismissed semantic).
+ * Per ``docs/behavior/bearings-cli.md`` §"HTTP action endpoints".
+ */
+export const pendingDismissEndpoint = (name: string): string =>
+  `${API_BASE}/pending/${encodeURIComponent(name)}`;
+
+/**
  * UI strings for the pending-operations floating card (toggled by
  * ``Ctrl+Shift+O`` per ``docs/behavior/keyboard-shortcuts.md`` §"Help").
  */
@@ -822,6 +838,7 @@ export const PENDING_OPS_CARD_STRINGS = {
   emptyLabel: "No pending operations.",
   loadingLabel: "Loading…",
   loadErrorLabel: "Couldn't load pending operations.",
+  actionErrorLabel: "Action failed — try again.",
   badgeAriaLabel: (count: number) =>
     `${count} pending operation${count === 1 ? "" : "s"} — click to view`,
   ageLabel: (seconds: number): string => {

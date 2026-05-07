@@ -30,6 +30,7 @@
     pendingOpsStore,
     refreshOps,
   } from "../../stores/pending.svelte";
+  import { dismissPendingOp, resolvePendingOp } from "../../api/pendingOps";
   import PendingOpRow from "./PendingOpRow.svelte";
 
   interface Props {
@@ -75,16 +76,34 @@
 
   // ---- Row actions -----------------------------------------------------------
 
-  function handleResolve(name: string): void {
-    // Optimistically remove from list; a real implementation would call
-    // the backend CLI surface (POST /api/shell/exec with
-    // "bearings pending resolve <name>") and re-refresh. For now the
-    // store is updated client-side.
-    pendingOpsStore.ops = pendingOpsStore.ops.filter((op) => op.name !== name);
+  let actionError: string | null = $state(null);
+
+  async function handleResolve(name: string): Promise<void> {
+    if (workingDir === null) {
+      actionError = PENDING_OPS_CARD_STRINGS.actionErrorLabel;
+      return;
+    }
+    try {
+      await resolvePendingOp(name, workingDir);
+      pendingOpsStore.ops = pendingOpsStore.ops.filter((op) => op.name !== name);
+      actionError = null;
+    } catch {
+      actionError = PENDING_OPS_CARD_STRINGS.actionErrorLabel;
+    }
   }
 
-  function handleDismiss(name: string): void {
-    pendingOpsStore.ops = pendingOpsStore.ops.filter((op) => op.name !== name);
+  async function handleDismiss(name: string): Promise<void> {
+    if (workingDir === null) {
+      actionError = PENDING_OPS_CARD_STRINGS.actionErrorLabel;
+      return;
+    }
+    try {
+      await dismissPendingOp(name, workingDir);
+      pendingOpsStore.ops = pendingOpsStore.ops.filter((op) => op.name !== name);
+      actionError = null;
+    } catch {
+      actionError = PENDING_OPS_CARD_STRINGS.actionErrorLabel;
+    }
   }
 </script>
 
@@ -141,6 +160,11 @@
 
     <!-- Body -->
     <div class="max-h-96 overflow-y-auto" data-testid="pending-ops-body">
+      {#if actionError !== null}
+        <p class="px-3 py-2 text-xs text-red-400" data-testid="pending-ops-action-error">
+          {actionError}
+        </p>
+      {/if}
       {#if pendingOpsStore.loading}
         <p class="px-3 py-3 text-xs text-fg-muted" data-testid="pending-ops-loading">
           {PENDING_OPS_CARD_STRINGS.loadingLabel}

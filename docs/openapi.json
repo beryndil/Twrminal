@@ -4375,6 +4375,100 @@
         }
       }
     },
+    "/api/pending/{name}/resolve": {
+      "post": {
+        "tags": [
+          "pending"
+        ],
+        "summary": "Mark a pending operation as resolved",
+        "description": "Removes the named entry from ``.bearings/pending.toml`` for the given project directory and persists the file. Returns 204 on success; 404 when the name is absent.",
+        "operationId": "resolve_pending_op_api_pending__name__resolve_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Absolute path to the project root.",
+              "title": "Directory"
+            },
+            "description": "Absolute path to the project root."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pending/{name}": {
+      "delete": {
+        "tags": [
+          "pending"
+        ],
+        "summary": "Dismiss a pending operation",
+        "description": "Removes the named entry from ``.bearings/pending.toml`` for the given project directory and persists the file. Behaviorally identical to the resolve endpoint. Returns 204 on success; 404 when the name is absent.",
+        "operationId": "dismiss_pending_op_api_pending__name__delete",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Absolute path to the project root.",
+              "title": "Directory"
+            },
+            "description": "Absolute path to the project root."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/usage/by_model": {
       "get": {
         "tags": [

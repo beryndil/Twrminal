@@ -58,6 +58,7 @@ from bearings.config.constants import (
     ROUTE_TAG_MESSAGES,
     ROUTE_TAG_METRICS,
     ROUTE_TAG_PAIRED_CHATS,
+    ROUTE_TAG_PENDING,
     ROUTE_TAG_PREFERENCES,
     ROUTE_TAG_QUOTA,
     ROUTE_TAG_REORG,
@@ -90,6 +91,7 @@ from bearings.web.routes.memories import router as memories_router
 from bearings.web.routes.messages import router as messages_router
 from bearings.web.routes.metrics import router as metrics_router
 from bearings.web.routes.paired_chats import router as paired_chats_router
+from bearings.web.routes.pending import router as pending_router
 from bearings.web.routes.preferences import router as preferences_router
 from bearings.web.routes.quota import router as quota_router
 from bearings.web.routes.reorg import router as reorg_router
@@ -374,6 +376,8 @@ def create_app(
     app.include_router(quota_router, tags=[ROUTE_TAG_QUOTA])
     # gap-cycle-03-008 — session merge.
     app.include_router(reorg_router, tags=[ROUTE_TAG_REORG])
+    # gap-cycle-03-010 — pending-ops resolve/dismiss.
+    app.include_router(pending_router, tags=[ROUTE_TAG_PENDING])
     app.include_router(usage_router, tags=[ROUTE_TAG_USAGE])
     # Item 3.2 — user preferences singleton.
     app.include_router(preferences_router, tags=[ROUTE_TAG_PREFERENCES])

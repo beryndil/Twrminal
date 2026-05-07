@@ -215,6 +215,37 @@ The user observes:
 * Editing `~/.config/bearings/config.toml` between two `bearings serve` invocations takes effect on the next serve; there is no mid-process reload.
 * `bearings init --profile <name>` reapplied after manual edits will only overwrite the keys the profile owns. User-edited keys outside the profile's scope survive.
 
+## HTTP action endpoints for pending operations
+
+The frontend fires these endpoints directly rather than shelling out to
+the CLI (`POST /api/shell/exec`). Both endpoints mutate
+`.bearings/pending.toml` in the given project directory and return 204
+on success.
+
+| Method | Path | Semantic |
+|---|---|---|
+| `POST` | `/api/pending/{name}/resolve?directory=<abs>` | Mark as resolved |
+| `DELETE` | `/api/pending/{name}?directory=<abs>` | Dismiss |
+
+Both endpoints:
+
+* Remove the named entry from the `[ops.*]` TOML table and persist the
+  file immediately (no buffered writes).
+* Return `204 No Content` on success.
+* Return `404` when the named op does not exist in the file (or the
+  file is absent).
+* Return `500` on OS-level write failures.
+
+The `directory` query parameter is the absolute path to the project
+root (the session's `working_dir`). The `name` path segment is URL-
+encoded.
+
+The frontend's `PendingOpsCard` only removes a row from the in-memory
+store after receiving a `2xx` response. A non-2xx response leaves the
+row visible and renders an inline error message inside the card.
+Closing and re-opening the card re-fetches `.bearings/pending.toml`
+from disk, so resolved/dismissed entries do not re-appear.
+
 ## What the CLI does NOT do
 
 * It does not edit message history.

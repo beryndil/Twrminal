@@ -24,7 +24,7 @@
  * Keys outside that set are silently ignored; malformed value lines
  * are skipped.
  */
-import { API_FS_READ_ENDPOINT } from "../config";
+import { API_FS_READ_ENDPOINT, pendingDismissEndpoint, pendingResolveEndpoint } from "../config";
 import { ApiError, getJson } from "./client";
 
 // ---- Types ------------------------------------------------------------------
@@ -135,4 +135,67 @@ export async function fetchPendingOps(
     throw err;
   }
   return parsePendingToml(out.content);
+}
+
+// ---- Mutation helpers -------------------------------------------------------
+
+/**
+ * Fire a pending-op action (POST or DELETE) against a 204-returning
+ * endpoint.  Throws :class:`ApiError` on non-2xx.
+ */
+async function _mutateOp(
+  method: "POST" | "DELETE",
+  url: string,
+): Promise<void> {
+  const response = await fetch(url, {
+    method,
+    headers: { Accept: "application/json" },
+  });
+  if (response.status >= 200 && response.status < 300) return;
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch {
+    try {
+      body = await response.text();
+    } catch {
+      // ignore
+    }
+  }
+  throw new ApiError(
+    response.status,
+    body,
+    `${method} ${url} → ${response.status} ${response.statusText}`,
+  );
+}
+
+/**
+ * Mark a pending operation as resolved.
+ *
+ * Fires ``POST /api/pending/{name}/resolve?directory=<workingDir>``.
+ * Returns when the server confirms the removal (204). Throws
+ * :class:`ApiError` on non-2xx (caller is responsible for leaving the
+ * row in the UI when an error is thrown).
+ */
+export async function resolvePendingOp(
+  name: string,
+  workingDir: string,
+): Promise<void> {
+  const url = `${pendingResolveEndpoint(name)}?directory=${encodeURIComponent(workingDir)}`;
+  await _mutateOp("POST", url);
+}
+
+/**
+ * Dismiss a pending operation.
+ *
+ * Fires ``DELETE /api/pending/{name}?directory=<workingDir>``.
+ * Returns when the server confirms the removal (204). Throws
+ * :class:`ApiError` on non-2xx.
+ */
+export async function dismissPendingOp(
+  name: string,
+  workingDir: string,
+): Promise<void> {
+  const url = `${pendingDismissEndpoint(name)}?directory=${encodeURIComponent(workingDir)}`;
+  await _mutateOp("DELETE", url);
 }
