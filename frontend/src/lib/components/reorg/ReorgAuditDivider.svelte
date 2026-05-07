@@ -1,12 +1,16 @@
 <script lang="ts">
   /**
    * ReorgAuditDivider — persistent inline boundary marker rendered in
-   * the conversation after a successful move or split operation.
+   * the conversation after a successful move, split, or merge operation.
    *
    * Behavior anchor: ``docs/behavior/context-menus.md`` §"Message bubble"
    * — "After commit, the source conversation gains an inline
    * ReorgAuditDivider marking the boundary ('N messages moved/split/
    * merged to <target>') with the timestamp."
+   *
+   * For ``kind === "merge"`` entries loaded from the server the divider
+   * also renders an inline **Undo** button.  The parent passes an
+   * ``onUndo`` callback; when absent the button is hidden.
    *
    * The divider is rendered by Conversation.svelte after the turn
    * whose ``id`` matches ``entry.anchorMessageId``.
@@ -15,14 +19,26 @@
 
   interface Props {
     entry: ReorgAuditEntry;
+    /** Called when the user clicks Undo on a merge divider. */
+    onUndo?: () => void;
   }
 
-  const { entry }: Props = $props();
+  const { entry, onUndo }: Props = $props();
 
-  const verbLabel = $derived(entry.kind === "split" ? "split" : "moved");
+  const isMerge = $derived(entry.kind === "merge");
 
+  const verbLabel = $derived(
+    entry.kind === "split" ? "split" : entry.kind === "merge" ? "merged from" : "moved",
+  );
+
+  // For merge entries the count field is 0 (unknown from audit row alone);
+  // suppress the count label in that case.
   const countLabel = $derived(
-    entry.count === 1 ? "1 message" : `${entry.count} messages`,
+    isMerge
+      ? ""
+      : entry.count === 1
+        ? "1 message"
+        : `${entry.count} messages`,
   );
 
   const formattedTime = $derived(
@@ -33,7 +49,9 @@
   );
 
   const label = $derived(
-    `${countLabel} ${verbLabel} to "${entry.targetSessionTitle}" at ${formattedTime}`,
+    isMerge
+      ? `Merged from "${entry.targetSessionTitle}" at ${formattedTime}`
+      : `${countLabel} ${verbLabel} to "${entry.targetSessionTitle}" at ${formattedTime}`,
   );
 </script>
 
@@ -47,8 +65,10 @@
 >
   <span class="rad__line" aria-hidden="true"></span>
   <span class="rad__label">
-    <span class="rad__count">{countLabel}</span>
-    <span class="rad__verb">{verbLabel} to</span>
+    {#if !isMerge}
+      <span class="rad__count">{countLabel}</span>
+    {/if}
+    <span class="rad__verb">{verbLabel}</span>
     <a
       href={`/sessions/${encodeURIComponent(entry.targetSessionId)}`}
       class="rad__target"
@@ -57,6 +77,14 @@
       {entry.targetSessionTitle}
     </a>
     <span class="rad__time" data-testid="reorg-audit-divider-time">{formattedTime}</span>
+    {#if onUndo !== undefined}
+      <button
+        class="rad__undo"
+        data-testid="reorg-audit-divider-undo"
+        onclick={onUndo}
+        type="button"
+      >Undo</button>
+    {/if}
   </span>
   <span class="rad__line" aria-hidden="true"></span>
 </div>
@@ -106,5 +134,24 @@
   .rad__time {
     opacity: 0.7;
     margin-left: 0.125rem;
+  }
+
+  .rad__undo {
+    margin-left: 0.375rem;
+    padding: 0 0.375rem;
+    height: 1.25rem;
+    border: 1px solid rgb(var(--bearings-border));
+    border-radius: 3px;
+    background: transparent;
+    color: rgb(var(--bearings-fg-muted));
+    font-size: 0.625rem;
+    font-weight: 500;
+    cursor: pointer;
+    line-height: 1;
+    user-select: none;
+  }
+  .rad__undo:hover {
+    background: rgb(var(--bearings-bg-hover, var(--bearings-border)));
+    color: rgb(var(--bearings-fg));
   }
 </style>

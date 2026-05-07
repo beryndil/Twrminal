@@ -142,6 +142,10 @@
       }
       if (!cancelled) {
         connectSession(sid);
+        // Hydrate persistent merge-audit dividers from the server
+        // (gap-cycle-03-009). Errors are non-fatal — dividers are a UX
+        // affordance and a failure here should not block conversation load.
+        void reorgStore.loadAudits(sid).catch(() => undefined);
       }
     })();
     return () => {
@@ -276,7 +280,16 @@
           <!-- Reorg audit dividers appear after their anchor turn. -->
           {#if sessionId !== null}
             {#each reorgStore.auditEntriesFor(sessionId).filter((e) => e.anchorMessageId === turn.id) as entry (entry.id)}
-              <ReorgAuditDivider {entry} />
+              <ReorgAuditDivider
+                {entry}
+                onUndo={entry.kind === "merge" && entry.serverAuditId !== undefined
+                  ? () => {
+                      void reorgStore
+                        .undoMerge(sessionId, entry.serverAuditId!)
+                        .catch(() => undefined);
+                    }
+                  : undefined}
+              />
             {/each}
           {/if}
         {/each}

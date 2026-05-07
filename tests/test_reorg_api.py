@@ -14,6 +14,7 @@ Acceptance-criteria coverage:
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
 from unittest.mock import patch
@@ -271,3 +272,171 @@ async def test_atomicity_on_audit_insert_failure(
     # as a proxy for commit not having occurred).
     audit_rows = await reorg_db.list_audit_for_session(conn, dst)
     assert len(audit_rows) == 0
+
+
+# ===========================================================================
+# GET /api/sessions/{id}/reorg/audits (gap-cycle-03-009)
+# ===========================================================================
+
+
+async def test_list_audits_empty_when_no_merges(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """GET returns empty list when session has no merge audit rows."""
+    app, conn = app_and_db
+    dst = await _new_chat(conn, "lonely")
+    with TestClient(app) as client:
+        resp = client.get(f"/api/sessions/{dst}/reorg/audits")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["items"] == []
+
+
+async def test_list_audits_returns_row_after_merge(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """GET returns the audit row written by a successful merge."""
+    app, conn = app_and_db
+    src = await _new_chat(conn, "src")
+    dst = await _new_chat(conn, "dst")
+    msg_id = await _seed_user_msg(conn, src)
+
+    with TestClient(app) as client:
+        merge_resp = client.post(f"/api/sessions/{src}/reorg/merge?target={dst}")
+        assert merge_resp.status_code == 200
+        audit_id = merge_resp.json()["id"]
+
+        list_resp = client.get(f"/api/sessions/{dst}/reorg/audits")
+    assert list_resp.status_code == 200
+    items = list_resp.json()["items"]
+    assert len(items) == 1
+    assert items[0]["id"] == audit_id
+    assert items[0]["dst_session_id"] == dst
+    assert items[0]["src_session_id"] == src
+    assert items[0]["boundary_msg_id"] == msg_id
+
+
+async def test_list_audits_oldest_first(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Multiple merges are returned oldest-first."""
+    app, conn = app_and_db
+    dst = await _new_chat(conn, "dst")
+    src1 = await _new_chat(conn, "src1")
+    src2 = await _new_chat(conn, "src2")
+
+    with TestClient(app) as client:
+        resp1 = client.post(f"/api/sessions/{src1}/reorg/merge?target={dst}")
+        resp2 = client.post(f"/api/sessions/{src2}/reorg/merge?target={dst}")
+        assert resp1.status_code == 200
+        assert resp2.status_code == 200
+        id1 = resp1.json()["id"]
+        id2 = resp2.json()["id"]
+
+        list_resp = client.get(f"/api/sessions/{dst}/reorg/audits")
+    items = list_resp.json()["items"]
+    assert len(items) == 2
+    assert items[0]["id"] == id1
+    assert items[1]["id"] == id2
+
+
+# ===========================================================================
+# DELETE /api/sessions/{id}/reorg/audits/{auditId} (gap-cycle-03-009)
+# ===========================================================================
+
+
+async def test_undo_audit_returns_404_when_not_found(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """DELETE returns 404 for a non-existent audit id."""
+    app, conn = app_and_db
+    dst = await _new_chat(conn, "dst")
+    with TestClient(app) as client:
+        resp = client.delete(f"/api/sessions/{dst}/reorg/audits/rga_nonexistent")
+    assert resp.status_code == 404
+
+
+async def test_undo_audit_returns_404_for_wrong_session(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """DELETE returns 404 when audit exists but belongs to a different session."""
+    app, conn = app_and_db
+    src = await _new_chat(conn, "src")
+    dst = await _new_chat(conn, "dst")
+    other = await _new_chat(conn, "other")
+
+    with TestClient(app) as client:
+        merge_resp = client.post(f"/api/sessions/{src}/reorg/merge?target={dst}")
+        assert merge_resp.status_code == 200
+        audit_id = merge_resp.json()["id"]
+
+        resp = client.delete(f"/api/sessions/{other}/reorg/audits/{audit_id}")
+    assert resp.status_code == 404
+
+
+async def test_undo_audit_success_restores_messages(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """DELETE reverses the merge: messages move to a new session."""
+    app, conn = app_and_db
+    src = await _new_chat(conn, "Original Source")
+    dst = await _new_chat(conn, "dst")
+    msg_id = await _seed_user_msg(conn, src, "hello from src")
+
+    with TestClient(app) as client:
+        merge_resp = client.post(f"/api/sessions/{src}/reorg/merge?target={dst}")
+        assert merge_resp.status_code == 200
+        audit_id = merge_resp.json()["id"]
+
+        undo_resp = client.delete(f"/api/sessions/{dst}/reorg/audits/{audit_id}")
+    assert undo_resp.status_code == 200
+    new_id = undo_resp.json()["new_session_id"]
+    assert new_id.startswith("ses_")
+
+    # Message must now live in the new session, not in dst.
+    msgs_in_new = await messages_db.list_for_session(conn, new_id)
+    assert any(m.id == msg_id for m in msgs_in_new)
+
+    msgs_in_dst = await messages_db.list_for_session(conn, dst)
+    assert not any(m.id == msg_id for m in msgs_in_dst)
+
+
+async def test_undo_audit_deletes_audit_row(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """DELETE removes the reorg_audit row on success."""
+    app, conn = app_and_db
+    src = await _new_chat(conn, "src")
+    dst = await _new_chat(conn, "dst")
+
+    with TestClient(app) as client:
+        merge_resp = client.post(f"/api/sessions/{src}/reorg/merge?target={dst}")
+        audit_id = merge_resp.json()["id"]
+        client.delete(f"/api/sessions/{dst}/reorg/audits/{audit_id}")
+
+    rows = await reorg_db.list_audit_for_session(conn, dst)
+    assert len(rows) == 0
+
+
+async def test_undo_audit_returns_409_when_new_messages_present(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """DELETE returns 409 when new messages have been added to dst after merge."""
+    app, conn = app_and_db
+    src = await _new_chat(conn, "src")
+    dst = await _new_chat(conn, "dst")
+    await _seed_user_msg(conn, src, "original msg")
+
+    with TestClient(app) as client:
+        merge_resp = client.post(f"/api/sessions/{src}/reorg/merge?target={dst}")
+        assert merge_resp.status_code == 200
+        audit_id = merge_resp.json()["id"]
+
+    # Seed a new message into dst AFTER the merge (simulates further work).
+    # Small sleep ensures the new message's created_at is strictly after merged_at.
+    await asyncio.sleep(0.01)
+    await _seed_user_msg(conn, dst, "new post-merge message")
+
+    with TestClient(app) as client:
+        resp = client.delete(f"/api/sessions/{dst}/reorg/audits/{audit_id}")
+    assert resp.status_code == 409

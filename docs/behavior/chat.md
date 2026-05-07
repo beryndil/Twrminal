@@ -308,4 +308,33 @@ Returns `200` with the `ReorgAuditOut` envelope on success.
 
 **After merge:** The frontend navigates to the destination session (`/sessions/{dst_id}`). The `reorg_audit` row serves as the audit trail for the operation.
 
-**Divider:** The `boundary_msg_id` field returned by the API identifies the first message from the merged source. The frontend may use this to render a visual divider in the merged conversation transcript at that boundary point (future UI enhancement; the data is persisted from day one).
+**Divider:** The `boundary_msg_id` field returned by the API identifies the first message from the merged source. The frontend renders a `ReorgAuditDivider` row in the merged conversation transcript at the boundary point.
+
+## Persistent reorg-audit contract (gap-cycle-03-009)
+
+Reorg audit rows written by the merge endpoint survive page refresh.  On every conversation load the frontend calls `GET /api/sessions/{id}/reorg/audits`, which returns all `reorg_audit` rows for that destination session (oldest-first).  Dividers are hydrated from this response before the first render.
+
+### Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/sessions/{id}/reorg/audits` | List all merge-audit rows for session `id`. Returns `{"items": [...]}` with `ReorgAuditOut` objects. Returns `[]` when no merges exist. |
+| `DELETE` | `/api/sessions/{id}/reorg/audits/{auditId}` | Undo the merge and delete the audit row. Returns `{"new_session_id": "ses_..."}` on success. |
+
+### Undo semantics
+
+The `DELETE` endpoint atomically:
+
+1. Validates the audit row exists and belongs to `{id}`.
+2. Stale-checks: if any message in the destination session has `created_at > merged_at`, or if the recorded `boundary_msg_id` no longer exists in the session, returns `409 Conflict` (operation cannot be safely reversed).
+3. Creates a new session with the original source title.
+4. Moves all messages in the destination whose `created_at ≥ boundary_msg.created_at` to the new session.
+5. Removes the `reorg_audit` row.
+
+**Error responses:**
+- `404` — audit row absent or belongs to a different session.
+- `409` — destination session has been mutated since the merge (stale audit).
+
+### Divider Undo button
+
+`ReorgAuditDivider` renders an inline **Undo** button for `kind === "merge"` entries when the conversation passes an `onUndo` callback (which calls `DELETE /api/sessions/{id}/reorg/audits/{auditId}`).  The button survives page refresh because audit rows are server-persisted.  On success the divider unmounts; on `409` the error propagates to the caller.

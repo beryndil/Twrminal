@@ -8,8 +8,8 @@
  * After a successful commit the source conversation gains an inline
  * ReorgAuditDivider and a 30-second ReorgUndoToast appears.
  */
-import { listMessages } from "../api/messages";
-import { moveMessage } from "../api/messages";
+import { listMessages, moveMessage } from "../api/messages";
+import { deleteReorgAudit, listReorgAudits } from "../api/reorg";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -19,11 +19,14 @@ import { moveMessage } from "../api/messages";
 export interface ReorgAuditEntry {
   /** Client-generated id for keying in ``#each``. */
   id: string;
-  /** The message ID at the boundary (moved message for "move"; first message of the split range for "split"). */
+  /** The message ID at the boundary (moved message for "move"; first message of the split range for "split"; first re-parented message for "merge"). */
   anchorMessageId: string;
-  /** "move" = single message moved; "split" = boundary carved, messages at + after moved. */
-  kind: "move" | "split";
-  /** How many messages were moved/split. */
+  /**
+   * "move" = single message moved; "split" = boundary carved;
+   * "merge" = server-backed merge operation (persistent across refresh).
+   */
+  kind: "move" | "split" | "merge";
+  /** How many messages were moved/split/merged. */
   count: number;
   /** Target session id. */
   targetSessionId: string;
@@ -31,6 +34,12 @@ export interface ReorgAuditEntry {
   targetSessionTitle: string;
   /** ISO timestamp of the operation. */
   timestamp: string;
+  /**
+   * Server-side audit row id.  Only set for ``kind === "merge"`` entries
+   * loaded from (or written to) the backend.  Used to call the DELETE
+   * undo endpoint.
+   */
+  serverAuditId?: string;
 }
 
 /** Payload kept for the 30-second undo affordance. */
@@ -119,6 +128,43 @@ export const reorgStore = {
     return _auditMap.get(sessionId) ?? [];
   },
 
+  // ---- Server-audit hydration (called on conversation load) ---------------
+
+  /**
+   * Fetch all merge-audit rows from the server for ``sessionId`` and
+   * populate ``_auditMap`` with ``kind: "merge"`` entries.  Skips any
+   * audit whose ``boundary_msg_id`` is null (no divider to render).
+   *
+   * Idempotent: replaces any previously loaded server entries for the
+   * session rather than appending, so it is safe to call on every
+   * conversation mount.
+   */
+  async loadAudits(sessionId: string): Promise<void> {
+    const list = await listReorgAudits(sessionId);
+    const serverEntries: ReorgAuditEntry[] = list.items
+      .filter((a) => a.boundary_msg_id !== null)
+      .map((a) => ({
+        id: a.id,
+        anchorMessageId: a.boundary_msg_id as string,
+        kind: "merge" as const,
+        // count is unknown from the audit row alone; use 0 as sentinel
+        // — the divider label will show "merged from <src_title>" instead.
+        count: 0,
+        targetSessionId: a.src_session_id,
+        targetSessionTitle: a.src_title,
+        timestamp: a.merged_at,
+        serverAuditId: a.id,
+      }));
+
+    // Merge server entries with any in-memory (move/split) entries,
+    // keeping move/split entries and replacing server ones by id.
+    const existing = _auditMap.get(sessionId) ?? [];
+    const clientOnly = existing.filter((e) => e.kind !== "merge");
+    const next = new Map(_auditMap);
+    next.set(sessionId, [...serverEntries, ...clientOnly]);
+    _auditMap = next;
+  },
+
   // ---- Picker controls ---------------------------------------------------
 
   /** Open the picker for the given mode + message. */
@@ -199,6 +245,30 @@ export const reorgStore = {
       originalSessionId: sourceSessionId,
       movedMessageIds: affected.map((m) => m.id),
     });
+  },
+
+  // ---- Server-backed merge undo ------------------------------------------
+
+  /**
+   * Undo a server-recorded merge by calling the DELETE endpoint.
+   *
+   * Removes the ``"merge"`` audit entry from ``_auditMap`` on success.
+   * Propagates :class:`ApiError` with status 409 when the audit is stale
+   * (caller should surface that to the user).
+   *
+   * ``sessionId`` is the destination session (the one that received the
+   * merged messages).  ``auditId`` is the server-side audit row id
+   * (``entry.serverAuditId``).
+   */
+  async undoMerge(sessionId: string, auditId: string): Promise<string> {
+    const result = await deleteReorgAudit(sessionId, auditId);
+    // Remove the divider from the map on success.
+    const existing = _auditMap.get(sessionId) ?? [];
+    const updated = existing.filter((e) => e.serverAuditId !== auditId);
+    const next = new Map(_auditMap);
+    next.set(sessionId, updated);
+    _auditMap = next;
+    return result.new_session_id;
   },
 
   // ---- Undo toast --------------------------------------------------------

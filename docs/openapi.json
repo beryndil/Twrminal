@@ -3082,6 +3082,56 @@
         }
       }
     },
+    "/api/sessions/{session_id}/regenerate_from/{message_id}": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Regenerate From Message",
+        "description": "Truncate the transcript to the pivot user message and re-queue it.\n\nPer ``docs/behavior/chat.md`` \u00a7\"Regenerate from here\" (gap-cycle-03-006).\n\n``message_id`` must name an **assistant**-role turn in ``session_id``.\nThe endpoint:\n\n1. Validates ``message_id`` belongs to ``session_id`` with\n   ``role='assistant'``.\n2. Finds the user message immediately preceding it (the pivot).\n3. Deletes all messages with ``rowid > pivot.seq`` (the clicked\n   assistant turn plus any later messages).\n4. Re-dispatches the pivot user message content through\n   :func:`dispatch_prompt`.\n\nFailure modes:\n\n* ``404`` \u2014 session missing, message not found in session, or no\n  user message precedes the named assistant turn.\n* ``409`` \u2014 session closed (the prompt queue rejects).\n* ``422`` \u2014 ``message_id`` exists but is not an assistant turn.\n* ``429`` \u2014 rate limit (per-session window).\n\nReturns ``202`` with the same JSON envelope as the prompt endpoint.",
+        "operationId": "regenerate_from_message_api_sessions__session_id__regenerate_from__message_id__post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Message Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{session_id}/stop": {
       "post": {
         "tags": [
@@ -3571,6 +3621,56 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{parent_id}/spawn_from_reply/{message_id}": {
+      "post": {
+        "tags": [
+          "paired-chats"
+        ],
+        "summary": "Spawn From Reply",
+        "description": "Create a paired chat seeded with a quote of the pivot assistant message.\n\nPer ``docs/behavior/paired-chats.md`` \u00a7\"Spawn from reply\":\n\n1. First click \u2014 201 Created with the new session id.\n2. Subsequent clicks on the same ``message_id`` while the spawned\n   chat is still open \u2014 200 OK with the existing session (idempotent).\n3. ``parent_id`` not found \u2014 404.\n4. ``message_id`` not found or does not belong to ``parent_id`` \u2014 404.\n5. ``message_id`` is not an assistant-role message \u2014 422 (only\n   assistant messages can be the pivot).",
+        "operationId": "spawn_from_reply_api_sessions__parent_id__spawn_from_reply__message_id__post",
+        "parameters": [
+          {
+            "name": "parent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Parent Id"
+            }
+          },
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Message Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -4109,6 +4209,155 @@
                     "$ref": "#/components/schemas/QuotaSnapshotOut"
                   },
                   "title": "Response Get History Api Quota History Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{src_id}/reorg/merge": {
+      "post": {
+        "tags": [
+          "reorg"
+        ],
+        "summary": "Merge Session",
+        "description": "Merge ``src_id`` into ``target`` in one atomic transaction.\n\nRe-parents every message from the source session to the destination,\nwrites a ``reorg_audit`` row (carrying the id of the first\nre-parented message as ``boundary_msg_id``), then deletes the source\nsession. Cascade deletes clean up the source's checkpoints, tags,\nsdk_session_entries, and other FK-linked rows.\n\nReturns 200 with the audit row on success.\nReturns 409 when ``src_id == target`` (self-merge).\nReturns 404 when either session does not exist.",
+        "operationId": "merge_session_api_sessions__src_id__reorg_merge_post",
+        "parameters": [
+          {
+            "name": "src_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Src Id"
+            }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Destination session id to merge into",
+              "title": "Target"
+            },
+            "description": "Destination session id to merge into"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReorgAuditOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{dst_id}/reorg/audits": {
+      "get": {
+        "tags": [
+          "reorg"
+        ],
+        "summary": "List Reorg Audits",
+        "description": "Return all merge audit rows for ``dst_id``, oldest-first.\n\nUsed by the frontend on conversation load to hydrate persistent\ndivider rows.  Returns an empty list when no merges have been made\ninto this session.",
+        "operationId": "list_reorg_audits_api_sessions__dst_id__reorg_audits_get",
+        "parameters": [
+          {
+            "name": "dst_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Dst Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReorgAuditListOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{dst_id}/reorg/audits/{audit_id}": {
+      "delete": {
+        "tags": [
+          "reorg"
+        ],
+        "summary": "Undo Reorg Audit",
+        "description": "Atomically reverse a merge and delete the audit row.\n\nRe-creates the source session with its original title, moves the\nmerged messages back, updates message counts on both sessions, and\nremoves the audit row \u2014 all inside a single transaction.\n\nReturns 200 with ``new_session_id`` on success.\nReturns 404 when ``audit_id`` is absent or does not belong to ``dst_id``.\nReturns 409 when messages have been added to ``dst_id`` after the merge,\nor when the boundary message has been moved away.",
+        "operationId": "undo_reorg_audit_api_sessions__dst_id__reorg_audits__audit_id__delete",
+        "parameters": [
+          {
+            "name": "dst_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Dst Id"
+            }
+          },
+          {
+            "name": "audit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Audit Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoMergeOut"
                 }
               }
             }
@@ -6860,6 +7109,71 @@
         "title": "RedactionOut",
         "description": "One redaction range. Mirrors :class:`bearings.agent.vault.Redaction`."
       },
+      "ReorgAuditListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReorgAuditOut"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "ReorgAuditListOut",
+        "description": "Response body for ``GET /api/sessions/{id}/reorg/audits``."
+      },
+      "ReorgAuditOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "dst_session_id": {
+            "type": "string",
+            "title": "Dst Session Id"
+          },
+          "src_session_id": {
+            "type": "string",
+            "title": "Src Session Id"
+          },
+          "merged_at": {
+            "type": "string",
+            "title": "Merged At"
+          },
+          "src_title": {
+            "type": "string",
+            "title": "Src Title"
+          },
+          "boundary_msg_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Boundary Msg Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "dst_session_id",
+          "src_session_id",
+          "merged_at",
+          "src_title",
+          "boundary_msg_id"
+        ],
+        "title": "ReorgAuditOut",
+        "description": "Response body for one merge-operation audit record."
+      },
       "RoutingPreviewIn": {
         "properties": {
           "tags": {
@@ -7667,6 +7981,28 @@
               }
             ],
             "title": "Paired Parent Title"
+          },
+          "pivot_message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pivot Message Id"
+          },
+          "parent_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Session Id"
           }
         },
         "additionalProperties": false,
@@ -8626,6 +8962,21 @@
         "type": "object",
         "title": "TemplatePatch",
         "description": "Request body for ``PATCH /api/templates/{id}``.\n\nEvery field is optional; missing fields are filled from the existing\nrow so the caller only has to send the delta. The route layer fetches\nthe existing row, merges, and calls :func:`bearings.db.templates.update`\nwith the full field set."
+      },
+      "UndoMergeOut": {
+        "properties": {
+          "new_session_id": {
+            "type": "string",
+            "title": "New Session Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "new_session_id"
+        ],
+        "title": "UndoMergeOut",
+        "description": "Response body for a successful undo (``DELETE /api/sessions/{id}/reorg/audits/{auditId}``).\n\n``new_session_id`` is the id of the newly created session that\nholds the re-parented messages from the reversed merge."
       },
       "UploadListOut": {
         "properties": {

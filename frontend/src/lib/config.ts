@@ -164,6 +164,20 @@ export const sessionReorgMergeEndpoint = (srcId: string, dstId: string): string 
   `${API_BASE}/sessions/${encodeURIComponent(srcId)}/reorg/merge?target=${encodeURIComponent(dstId)}`;
 
 /**
+ * ``GET /api/sessions/{id}/reorg/audits`` — list persistent merge-audit
+ * rows for a destination session (gap-cycle-03-009).
+ */
+export const sessionReorgAuditsEndpoint = (sessionId: string): string =>
+  `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/reorg/audits`;
+
+/**
+ * ``DELETE /api/sessions/{id}/reorg/audits/{auditId}`` — undo a merge
+ * operation and remove its audit row (gap-cycle-03-009).
+ */
+export const sessionReorgAuditEndpoint = (sessionId: string, auditId: string): string =>
+  `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/reorg/audits/${encodeURIComponent(auditId)}`;
+
+/**
  * ``GET /api/commands`` — slash-command list for the composer typeahead
  * (item 2.3). No session scoping — the scanner merges user + project
  * locations server-side.
