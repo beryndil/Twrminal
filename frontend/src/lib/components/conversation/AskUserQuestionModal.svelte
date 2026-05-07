@@ -163,6 +163,7 @@
   /** Free-text answer for legacy + unknown branches. */
   let freeText = $state("");
   let submitting = $state(false);
+  let cancelling = $state(false);
   let error = $state<string | null>(null);
 
   let firstFocusEl: HTMLElement | null = $state(null);
@@ -225,7 +226,7 @@
   }
 
   async function submit(): Promise<void> {
-    if (submitting || !canSubmit) return;
+    if (submitting || cancelling || !canSubmit) return;
     submitting = true;
     error = null;
     try {
@@ -235,6 +236,24 @@
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
       submitting = false;
+    }
+  }
+
+  /**
+   * Cancel — POSTs ``approved: false`` (no answer) so the SDK callback
+   * resolves as a denial and the agent receives a final answer rather than
+   * blocking the broker indefinitely. Mirrors ``ApprovalModal``'s Deny path.
+   */
+  async function cancel(): Promise<void> {
+    if (submitting || cancelling) return;
+    cancelling = true;
+    error = null;
+    try {
+      await postApproval(sessionId, approval.requestId, false);
+      // Modal stays visible until the approval_resolved event arrives.
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      cancelling = false;
     }
   }
 
@@ -389,11 +408,20 @@
     </div>
 
     <!-- Footer -->
-    <div class="flex justify-end border-t border-border px-4 py-3">
+    <div class="flex justify-end gap-2 border-t border-border px-4 py-3">
+      <button
+        type="button"
+        class="rounded border border-border px-4 py-1.5 text-sm font-medium text-fg-strong hover:bg-surface-2 disabled:opacity-50"
+        disabled={submitting || cancelling}
+        data-testid="ask-modal-cancel"
+        onclick={cancel}
+      >
+        {APPROVAL_STRINGS.cancelLabel}
+      </button>
       <button
         type="button"
         class="rounded bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        disabled={submitting || !canSubmit}
+        disabled={submitting || cancelling || !canSubmit}
         data-testid="ask-modal-submit"
         onclick={submit}
       >

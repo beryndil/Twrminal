@@ -214,6 +214,8 @@ When the agent invokes a tool that requires user approval, a centred modal opens
 
     * *Unrecognised input* — neither shape matches. The modal pretty-prints the raw JSON in a fixed-height scrollable block under the notice "Question shape not recognised — answer in free text:" and surfaces the same free-text textarea so the user can still respond. This is a defensive fallback against a future change to the AskUserQuestion shape.
 
+    In all three shapes a **Cancel** button sits to the left of Submit in the footer. Cancel POSTs `{approved: false}` (no answer) so the SDK callback resolves as a denial and the agent receives a final answer rather than blocking the broker indefinitely. This mirrors the **Deny** semantics of the generic tool-approval modal.
+
 The modal stays visible until the backend's `approval_resolved` event arrives over the WebSocket; submit-button errors render inline (red text) without closing the modal. There is no client-side timeout — a stuck approval is a UX bug, not a security gate.
 
 ## Sidebar system-status card (gap-cycle-08-006)

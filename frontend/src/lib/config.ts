@@ -2800,6 +2800,9 @@ export const APPROVAL_STRINGS = {
   answerLabel: "Your answer",
   answerPlaceholder: "Type your answer…",
   submitLabel: "Submit",
+  /** Cancel button — POSTs approved=false so the agent receives a denial
+   *  rather than blocking forever. Mirrors ApprovalModal's Deny semantics. */
+  cancelLabel: "Cancel",
   /**
    * AskUserQuestion variant — structured ``questions[]`` shape (one or
    * more questions, each with ``options`` and a ``multiSelect`` flag).

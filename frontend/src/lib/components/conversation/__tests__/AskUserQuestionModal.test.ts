@@ -198,6 +198,48 @@ describe("AskUserQuestionModal — legacy {question}", () => {
   });
 });
 
+describe("AskUserQuestionModal — Cancel button (gap-cycle-10-007)", () => {
+  it("renders a Cancel button alongside Submit", () => {
+    const { getByTestId } = render(AskUserQuestionModal, {
+      props: { sessionId: "ses_a", approval: makeApproval({ question: "Continue?" }) },
+    });
+    expect(getByTestId("ask-modal-cancel")).toBeTruthy();
+    expect(getByTestId("ask-modal-submit")).toBeTruthy();
+  });
+
+  it("Cancel POSTs approved=false (deny) with no answer", async () => {
+    const { getByTestId } = render(AskUserQuestionModal, {
+      props: { sessionId: "ses_b", approval: makeApproval({ question: "Proceed?" }) },
+    });
+    await fireEvent.click(getByTestId("ask-modal-cancel"));
+    await waitFor(() => {
+      expect(postApprovalMock).toHaveBeenCalledTimes(1);
+    });
+    const [sessionId, requestId, approved, answer] = postApprovalMock.mock.calls[0];
+    expect(sessionId).toBe("ses_b");
+    expect(requestId).toBe("req_test");
+    expect(approved).toBe(false);
+    expect(answer).toBeUndefined();
+  });
+
+  it("Submit still works after Cancel button is present", async () => {
+    const { getByTestId } = render(AskUserQuestionModal, {
+      props: { sessionId: "ses_c", approval: makeApproval({ question: "What?" }) },
+    });
+    const textarea = getByTestId("ask-modal-answer") as HTMLTextAreaElement;
+    await fireEvent.input(textarea, { target: { value: "my answer" } });
+    await fireEvent.click(getByTestId("ask-modal-submit"));
+    await waitFor(() => {
+      expect(postApprovalMock).toHaveBeenCalledTimes(1);
+    });
+    const [sessionId, requestId, approved, answer] = postApprovalMock.mock.calls[0];
+    expect(sessionId).toBe("ses_c");
+    expect(requestId).toBe("req_test");
+    expect(approved).toBe(true);
+    expect(answer).toBe("my answer");
+  });
+});
+
 describe("AskUserQuestionModal — unknown shape fallback", () => {
   it("pretty-prints the raw JSON and falls back to a free-text answer box", async () => {
     const { getByTestId, queryByTestId } = render(AskUserQuestionModal, {
