@@ -38,6 +38,8 @@ When the user picks a different theme, the change lands **synchronously in the s
 
 The mobile-chrome color is the only piece that can briefly drift on first load: a no-flash boot script paints the address bar before the runtime theme module loads. If the boot script's idea of the color disagrees with what the runtime would compute, the runtime corrects it on the next tick. The user observes at most a single-frame mismatch on cold load, never on a live theme switch.
 
+The boot script is implemented as a synchronous IIFE in `frontend/src/app.html` (before the `%sveltekit.head%` injection point) with its logic mirrored in `frontend/src/lib/themes/boot.ts` for testability. The runtime drift detector lives in `frontend/src/lib/themes/ThemeProvider.svelte`.
+
 ## What does NOT get re-themed live
 
 * **Image assets shown inside chat content.** A screenshot pasted into a message keeps its original colors; themes do not adjust user-supplied images.

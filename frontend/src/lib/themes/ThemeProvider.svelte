@@ -17,7 +17,7 @@
   import type { Snippet } from "svelte";
   import { onMount } from "svelte";
 
-  import { THEME_STORAGE_KEY, THEME_STRINGS } from "../config";
+  import { THEME_COLOR_HEX, THEME_META_NAME, THEME_STORAGE_KEY, THEME_STRINGS } from "../config";
   import { applyThemeToDom } from "./dom";
   import { acknowledgeSaveStatus, syncFromStorage, themeStore } from "./store.svelte";
 
@@ -34,9 +34,21 @@
    * tabs stay in lockstep per the doc §"Persistence boundary".
    */
   onMount(() => {
-    // Re-apply on mount in case the boot script in app.html disagreed
-    // with the persisted value (the single-frame mismatch the doc
-    // permits on cold load).
+    // Drift detector: console.warn if the boot script's meta-color
+    // disagrees with the runtime's value for this theme.
+    // docs/behavior/themes.md §"Failure modes" — "Drift between boot
+    // script and runtime": the runtime is authoritative; correction
+    // follows immediately via applyThemeToDom below.
+    const expectedHex = THEME_COLOR_HEX[themeStore.theme];
+    const metaEl = document.querySelector<HTMLMetaElement>(`meta[name="${THEME_META_NAME}"]`);
+    if (metaEl !== null && metaEl.content !== expectedHex) {
+      console.warn(
+        `[bearings/themes] boot-script drift on cold load: ` +
+          `meta[name="${THEME_META_NAME}"] is "${metaEl.content}" but runtime expects ` +
+          `"${expectedHex}" for theme "${themeStore.theme}". Correcting.`,
+      );
+    }
+    // Re-apply on mount — corrects any drift left by the boot script.
     applyThemeToDom(themeStore.theme);
 
     function onStorage(event: StorageEvent): void {

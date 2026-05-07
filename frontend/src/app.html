@@ -5,13 +5,69 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.png" type="image/png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <!--
-      Theme-color meta — the no-flash boot script in
-      `src/lib/themes/boot.ts` (item 2.9) updates this on cold boot before
-      the runtime theme module loads. Default matches the `evergreen` surface
-      (v0.17.x visual parity); the runtime corrects any drift on the next
-      tick (per docs/behavior/themes.md §"Persistence boundary").
+      Theme-color meta — default matches the `evergreen` surface so the
+      no-flash boot script below has a safe starting point if it throws.
+      The boot script overwrites this before SvelteKit head injection.
+      The runtime corrects any single-frame drift on the next tick per
+      docs/behavior/themes.md §"Failure modes".
     -->
     <meta name="theme-color" content="#0e131b" />
+    <!--
+      No-flash boot script — reads the persisted theme (or falls back to
+      the OS color-scheme) and writes data-theme + meta[theme-color]
+      synchronously BEFORE %sveltekit.head% so the user sees their
+      chosen theme on frame 1 with no evergreen flash.
+
+      Logic mirrors src/lib/themes/boot.ts:runBootScript() exactly.
+      The hex map must stay in sync with THEME_COLOR_HEX in
+      src/lib/config.ts — the runtime drift detector in
+      src/lib/themes/ThemeProvider.svelte console.warns on mismatch.
+    -->
+    <script>
+      (function () {
+        var STORAGE_KEY = "bearings-theme-v1";
+        var THEME_HEX = {
+          evergreen: "#0e131b",
+          "midnight-glass": "#0e1729",
+          default: "#111827",
+          "paper-light": "#faf7f0",
+        };
+        var FALLBACK_THEME = "evergreen";
+        var FALLBACK_HEX = "#0e131b";
+        try {
+          var theme = FALLBACK_THEME;
+          var hex = FALLBACK_HEX;
+          try {
+            var stored = window.localStorage.getItem(STORAGE_KEY);
+            if (stored !== null && Object.prototype.hasOwnProperty.call(THEME_HEX, stored)) {
+              theme = stored;
+              hex = THEME_HEX[stored];
+            } else if (stored === null) {
+              try {
+                if (window.matchMedia("(prefers-color-scheme: light)").matches) {
+                  theme = "paper-light";
+                  hex = THEME_HEX["paper-light"];
+                }
+              } catch (e) {
+                /* matchMedia unavailable — stay on evergreen */
+              }
+            }
+          } catch (e) {
+            /* localStorage inaccessible — stay on evergreen */
+          }
+          document.documentElement.setAttribute("data-theme", theme);
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (!meta) {
+            meta = document.createElement("meta");
+            meta.setAttribute("name", "theme-color");
+            document.head.appendChild(meta);
+          }
+          meta.setAttribute("content", hex);
+        } catch (e) {
+          /* static HTML fallbacks already in place */
+        }
+      })();
+    </script>
     <title>Bearings</title>
     %sveltekit.head%
   </head>

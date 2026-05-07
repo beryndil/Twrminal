@@ -5,30 +5,32 @@
     <link rel="icon" href="/favicon.png" type="image/png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <!--
-      Theme-color meta — the no-flash boot script in
-      `src/lib/themes/boot.ts` (item 2.9) updates this on cold boot before
-      the runtime theme module loads. Default matches the `evergreen` surface
-      (v0.17.x visual parity); the runtime corrects any drift on the next
-      tick (per docs/behavior/themes.md §"Persistence boundary").
+      Theme-color meta — default matches the `evergreen` surface so the
+      no-flash boot script below has a safe starting point if it throws.
+      The boot script overwrites this before SvelteKit head injection.
+      The runtime corrects any single-frame drift on the next tick per
+      docs/behavior/themes.md §"Failure modes".
     -->
     <meta name="theme-color" content="#0e131b" />
-    <title>Bearings</title>
-    <link href="/_app/immutable/entry/start.D3WLuW0o.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/CqU04lkG.js" rel="modulepreload">
+    <!--
+      No-flash boot script — reads the persisted theme (or falls back to
+      the OS color-scheme) and writes data-theme + meta[theme-color]
+      synchronously BEFORE <link href="/_app/immutable/entry/start.ByhiDD--.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DJUSYK7G.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DeMrx5JT.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DyEVzIZd.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.EA1Ilztf.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.xIP3UhHV.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/NGxRGcnC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DgADKEdy.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CWj6FrbW.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DliLLpCE.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cl9jpRzE.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CZ8aBC_0.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.Bh2lMbtv.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.C65kSA9u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Bny5MdWb.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/OfRhiuv1.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/dlaT-HWO.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/vaaDTL5Q.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BFVVlz_Q.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DpDf678m.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdjqXppK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BK8ShzFY.js" rel="modulepreload">
@@ -43,21 +45,75 @@
 		
 		<link href="/_app/immutable/assets/prompt.D4CaUmNn.css" rel="stylesheet">
 		<link href="/_app/immutable/assets/InspectorUsage.Cs_ot-Tk.css" rel="stylesheet">
-		<link href="/_app/immutable/assets/0.B9rjrYmd.css" rel="stylesheet">
+		<link href="/_app/immutable/assets/0.B9rjrYmd.css" rel="stylesheet"> so the user sees their
+      chosen theme on frame 1 with no evergreen flash.
+
+      Logic mirrors src/lib/themes/boot.ts:runBootScript() exactly.
+      The hex map must stay in sync with THEME_COLOR_HEX in
+      src/lib/config.ts — the runtime drift detector in
+      src/lib/themes/ThemeProvider.svelte console.warns on mismatch.
+    -->
+    <script>
+      (function () {
+        var STORAGE_KEY = "bearings-theme-v1";
+        var THEME_HEX = {
+          evergreen: "#0e131b",
+          "midnight-glass": "#0e1729",
+          default: "#111827",
+          "paper-light": "#faf7f0",
+        };
+        var FALLBACK_THEME = "evergreen";
+        var FALLBACK_HEX = "#0e131b";
+        try {
+          var theme = FALLBACK_THEME;
+          var hex = FALLBACK_HEX;
+          try {
+            var stored = window.localStorage.getItem(STORAGE_KEY);
+            if (stored !== null && Object.prototype.hasOwnProperty.call(THEME_HEX, stored)) {
+              theme = stored;
+              hex = THEME_HEX[stored];
+            } else if (stored === null) {
+              try {
+                if (window.matchMedia("(prefers-color-scheme: light)").matches) {
+                  theme = "paper-light";
+                  hex = THEME_HEX["paper-light"];
+                }
+              } catch (e) {
+                /* matchMedia unavailable — stay on evergreen */
+              }
+            }
+          } catch (e) {
+            /* localStorage inaccessible — stay on evergreen */
+          }
+          document.documentElement.setAttribute("data-theme", theme);
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (!meta) {
+            meta = document.createElement("meta");
+            meta.setAttribute("name", "theme-color");
+            document.head.appendChild(meta);
+          }
+          meta.setAttribute("content", hex);
+        } catch (e) {
+          /* static HTML fallbacks already in place */
+        }
+      })();
+    </script>
+    <title>Bearings</title>
+    %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
     <div id="app-root" style="display: contents">
 			<script>
 				{
-					__sveltekit_1k27nbv = {
+					__sveltekit_hhq792 = {
 						base: ""
 					};
 
 					const element = document.currentScript.parentElement;
 
 					Promise.all([
-						import("/_app/immutable/entry/start.D3WLuW0o.js"),
-						import("/_app/immutable/entry/app.EA1Ilztf.js")
+						import("/_app/immutable/entry/start.ByhiDD--.js"),
+						import("/_app/immutable/entry/app.xIP3UhHV.js")
 					]).then(([kit, app]) => {
 						kit.start(app, element);
 					});
