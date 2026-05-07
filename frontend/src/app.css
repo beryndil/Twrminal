@@ -30,6 +30,9 @@
     --bearings-accent: 37 136 70; /* emerald-500: forest green brand */
     --bearings-accent-muted: 30 110 56; /* emerald-600 */
     --bearings-border: 56 65 75; /* slate-700 */
+    /* Scrollbar palette — thumb lighter than dark surface (slate-700 / slate-500). */
+    --bearings-scrollbar-thumb: 51 65 85; /* slate-700 */
+    --bearings-scrollbar-thumb-hover: 100 116 139; /* slate-500 */
     /* Shiki CSS-variables palette — dark surface, light tokens. */
     --shiki-foreground: #e7eaed; /* slate-100 */
     --shiki-background: #212833; /* surface-2 hex */
@@ -55,6 +58,9 @@
     --bearings-accent: 110 168 254;
     --bearings-accent-muted: 64 110 200;
     --bearings-border: 48 64 96;
+    /* Scrollbar palette — thumb lighter than dark surface (slate-700 / slate-500). */
+    --bearings-scrollbar-thumb: 51 65 85; /* slate-700 */
+    --bearings-scrollbar-thumb-hover: 100 116 139; /* slate-500 */
     /* Shiki CSS-variables palette — dark surface, light tokens. */
     --shiki-foreground: #dce2f0;
     --shiki-background: #202f4b; /* surface-2 hex */
@@ -80,6 +86,9 @@
     --bearings-accent: 96 165 250;
     --bearings-accent-muted: 59 130 246;
     --bearings-border: 75 85 99;
+    /* Scrollbar palette — thumb lighter than dark surface (slate-700 / slate-500). */
+    --bearings-scrollbar-thumb: 51 65 85; /* slate-700 */
+    --bearings-scrollbar-thumb-hover: 100 116 139; /* slate-500 */
     /* Shiki CSS-variables palette — dark surface, light tokens. */
     --shiki-foreground: #e5e7eb; /* gray-200 */
     --shiki-background: #374151; /* surface-2 hex */
@@ -105,6 +114,9 @@
     --bearings-accent: 25 91 168;
     --bearings-accent-muted: 70 130 180;
     --bearings-border: 196 188 168;
+    /* Scrollbar palette — thumb darker than cream surface (slate-500 / slate-600). */
+    --bearings-scrollbar-thumb: 100 116 139; /* slate-500 */
+    --bearings-scrollbar-thumb-hover: 71 85 105; /* slate-600 */
     /* Shiki CSS-variables palette — light surface, dark tokens for contrast. */
     --shiki-foreground: #212933; /* dark ink */
     --shiki-background: #eae4d5; /* surface-2 hex */
@@ -164,6 +176,44 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/*
+ * Theme-aware thin scrollbars (gap-cycle-14-002).
+ *
+ * Applied globally via `*` so every scrollable surface — sidebar list,
+ * conversation pane, inspector, modals, code blocks — gets the same
+ * 8 px-wide treatment. Color tracks the active theme through
+ * `--bearings-scrollbar-thumb` / `--bearings-scrollbar-thumb-hover`,
+ * which are defined in each `[data-theme]` block above. A single
+ * attribute flip on `<html>` is all it takes to re-tint every thumb.
+ *
+ * Firefox uses the CSS Scrollbars spec (scrollbar-width + scrollbar-color).
+ * Blink/WebKit use the ::-webkit-scrollbar family. Both resolve the same
+ * CSS variables so colors stay consistent across engines.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--bearings-scrollbar-thumb)) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--bearings-scrollbar-thumb));
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--bearings-scrollbar-thumb-hover));
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* Markdown prose rendered inside assistant message bubbles. */

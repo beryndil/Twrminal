@@ -34,7 +34,8 @@ When the user picks a different theme, the change lands **synchronously in the s
 * Sidebar row backgrounds, hover states, selected-row accent;
 * Tag chips and severity shields;
 * Form controls (inputs, selects, buttons, modal chrome);
-* The browser's address-bar / mobile-chrome color (via the `<meta name="theme-color">` tag).
+* The browser's address-bar / mobile-chrome color (via the `<meta name="theme-color">` tag);
+* **Scrollbar thumb palette** across every scrollable surface (sidebar list, conversation pane, inspector, modals, code blocks) — see addendum below.
 
 The mobile-chrome color is the only piece that can briefly drift on first load: a no-flash boot script paints the address bar before the runtime theme module loads. If the boot script's idea of the color disagrees with what the runtime would compute, the runtime corrects it on the next tick. The user observes at most a single-frame mismatch on cold load, never on a live theme switch.
 
@@ -46,7 +47,7 @@ The boot script is implemented as a synchronous IIFE in `frontend/src/app.html` 
 * **`<iframe>`-embedded content.** External docs the user opens in iframes (rare) stay on their own theme.
 * **The OS window chrome.** Bearings cannot repaint the window decorations the user's compositor draws around the browser window; what the OS shows is independent of theme.
 * **Already-rendered tool-output blocks.** Tool output that contains terminal escape sequences (e.g. ANSI color codes) keeps the terminal-color palette it was rendered with. The terminal palette is a constant; the app shell around it re-tints, but the colored bytes inside the block do not change.
-* **Browser-native scroll bars** when the user's OS / browser overrides them. The app paints custom scroll bars where it can; native ones the browser hands out are unaffected.
+* **Browser-native scroll bars** when the user's OS / browser forces its own scrollbar widget (e.g. a system-level "always show scrollbars" setting). The app's CSS scrollbar rules apply where the browser honours them (Firefox, Chrome, Edge); a system override that replaces the scrollbar widget entirely is unaffected.
 
 ## Switching themes during a streaming turn
 
@@ -232,3 +233,37 @@ Switching the timezone re-renders all surfaces that use `formatAbsolute` from `f
 
 `frontend/src/lib/stores/displaySettings.svelte.ts` owns the reactive `displaySettingsStore.timezone` state.
 `frontend/src/lib/utils/datetime.ts:formatAbsolute` reads it on every call — because the store is a Svelte 5 `$state` object, any `$derived` that calls `formatAbsolute` re-runs automatically when the timezone changes, propagating the re-render without any additional subscription or effect.
+
+## Scrollbar palette (addendum — gap-cycle-14-002)
+
+Every scrollable surface — sidebar list, conversation pane, inspector, modals, code blocks — paints an 8 px-wide thin scrollbar with a transparent track. The thumb color is driven by two CSS custom properties defined per theme:
+
+| Property | Purpose |
+|---|---|
+| `--bearings-scrollbar-thumb` | RGB triple for the resting thumb color |
+| `--bearings-scrollbar-thumb-hover` | RGB triple for the hovered thumb color |
+
+Both properties are declared in the `[data-theme]` blocks inside `frontend/src/app.css`. Switching the active theme is a **pure `data-theme` attribute flip on `<html>`** — no JavaScript re-render is required; the scrollbar thumbs re-tint synchronously along with the rest of the shell.
+
+### Color strategy
+
+| Theme | Strategy | Thumb | Hover |
+|---|---|---|---|
+| `evergreen` | Thumb lighter than dark surface | slate-700 (`51 65 85`) | slate-500 (`100 116 139`) |
+| `midnight-glass` | Thumb lighter than dark navy surface | slate-700 (`51 65 85`) | slate-500 (`100 116 139`) |
+| `default` | Thumb lighter than dark gray surface | slate-700 (`51 65 85`) | slate-500 (`100 116 139`) |
+| `paper-light` | Thumb darker than cream surface | slate-500 (`100 116 139`) | slate-600 (`71 85 105`) |
+
+### Implementation
+
+Two CSS mechanisms are wired in `frontend/src/app.css` (after the `@import` theme files, before the prose block):
+
+* **Firefox** — `scrollbar-width: thin` + `scrollbar-color: rgb(var(--bearings-scrollbar-thumb)) transparent` on `*`.
+* **Blink / WebKit** — the `::-webkit-scrollbar` pseudo-element family on `*`: 8 px width/height, transparent track, pill-shaped thumb with `border-radius: 9999px` and `background-clip: padding-box`, corner transparent.
+
+Both engines resolve the same `--bearings-scrollbar-thumb*` variables so colors stay consistent across browsers.
+
+A contract test suite at `frontend/src/lib/themes/__tests__/scrollbar.test.ts` asserts that:
+* all six global scrollbar rules are present in `app.css`;
+* every theme block declares both variables with non-empty RGB triples;
+* dark-theme thumbs are brighter than their surface (above) and the paper-light thumb is darker than cream (below).
