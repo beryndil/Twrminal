@@ -282,6 +282,25 @@
     }
   }
 
+  // ---- tool-work drawer jump ---------------------------------------------
+
+  /**
+   * Bound to the tool-work ``<details>`` element so the ⤴ TOOLS jump
+   * button can open the drawer and scroll it into view.
+   *
+   * Per ``docs/behavior/tool-output-streaming.md`` §"Scroll-anchor
+   * behavior" bullet 5 and ``docs/behavior/chat.md`` §"What a message
+   * turn looks like" line 38 (gap-cycle-06-002).
+   */
+  let toolWorkEl = $state<HTMLDetailsElement | null>(null);
+
+  /** Opens the tool-work drawer and scrolls it into view (no-op when already open). */
+  function handleJumpToTools(): void {
+    if (toolWorkEl === null) return;
+    toolWorkEl.open = true;
+    toolWorkEl.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   // Body rendering pipeline — marked → DOMPurify. The pipeline runs
   // asynchronously because :func:`renderMarkdown` returns a promise;
   // we cache the resolved HTML on the turn view via a derived
@@ -376,7 +395,7 @@
     </div>
   {:else}
     {#if turn.toolCalls.length > 0}
-      <details class="rounded border border-border" data-testid="tool-work-drawer" open>
+      <details class="rounded border border-border" data-testid="tool-work-drawer" open bind:this={toolWorkEl}>
         <summary class="cursor-pointer px-2 py-1 text-xs text-fg-muted">
           {CONVERSATION_STRINGS.toolDrawerLabel} ({turn.toolCalls.length})
         </summary>
@@ -413,6 +432,18 @@
         </CollapsibleBody>
       {/if}
       <div class="mt-2 flex items-center justify-end gap-2">
+        {#if turn.toolCalls.length > 0 && turn.complete}
+          <button
+            type="button"
+            class="opacity-0 transition-opacity group-hover:opacity-100 rounded px-1.5 py-0.5 text-xs text-fg-muted hover:text-fg-strong hover:bg-surface-2"
+            title={CONVERSATION_STRINGS.toolDrawerJumpLabel}
+            aria-label={CONVERSATION_STRINGS.toolDrawerJumpLabel}
+            onclick={handleJumpToTools}
+            data-testid="message-turn-jump-to-tools"
+          >
+            {CONVERSATION_STRINGS.toolDrawerJumpLabel}
+          </button>
+        {/if}
         {#if !isPaired}
           <button
             type="button"

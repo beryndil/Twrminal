@@ -4,10 +4,11 @@
  * "Regenerate from here" context-menu / confirm-dialog behavior
  * (gap-cycle-03-006).
  */
-import { render, waitFor } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { fireEvent, render, waitFor } from "@testing-library/svelte";
+import { flushSync } from "svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { _resetForTests, contextMenuStore } from "../../../context-menu/store.svelte";
-import { MENU_ACTION_MESSAGE_REGENERATE } from "../../../config";
+import { CONVERSATION_STRINGS, MENU_ACTION_MESSAGE_REGENERATE } from "../../../config";
 
 import MessageTurn from "../MessageTurn.svelte";
 import type { MessageTurnView } from "../../../stores/conversation.svelte";
@@ -299,5 +300,186 @@ describe("MessageTurn — spawn pill (gap-cycle-03-007)", () => {
       },
     });
     expect(queryByTestId("message-turn-spawn-pill")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// gap-cycle-06-002 — ⤴ TOOLS jump button
+// ---------------------------------------------------------------------------
+
+describe("MessageTurn — ⤴ TOOLS jump button visibility (gap-cycle-06-002)", () => {
+  it("(a) renders the jump button when toolCalls.length > 0 and complete = true", () => {
+    const { queryByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({
+          toolCalls: [
+            {
+              id: "tc-1",
+              name: "Bash",
+              inputJson: "{}",
+              output: "ok",
+              rawLength: 2,
+              done: true,
+              ok: true,
+              durationMs: 120,
+              errorMessage: null,
+              liveElapsedMs: 0,
+              startedAt: 0,
+            },
+          ],
+          complete: true,
+        }),
+      },
+    });
+    expect(queryByTestId("message-turn-jump-to-tools")).not.toBeNull();
+  });
+
+  it("(b) does NOT render the jump button when toolCalls.length === 0", () => {
+    const { queryByTestId } = render(MessageTurn, {
+      props: { turn: turn({ toolCalls: [], complete: true }) },
+    });
+    expect(queryByTestId("message-turn-jump-to-tools")).toBeNull();
+  });
+
+  it("(c) does NOT render the jump button while complete = false", () => {
+    const { queryByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({
+          toolCalls: [
+            {
+              id: "tc-1",
+              name: "Bash",
+              inputJson: "{}",
+              output: "",
+              rawLength: 0,
+              done: false,
+              ok: null,
+              durationMs: null,
+              errorMessage: null,
+              liveElapsedMs: 0,
+              startedAt: 0,
+            },
+          ],
+          complete: false,
+        }),
+      },
+    });
+    expect(queryByTestId("message-turn-jump-to-tools")).toBeNull();
+  });
+
+  it("button label and aria-label use CONVERSATION_STRINGS.toolDrawerJumpLabel", () => {
+    const { getByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({
+          toolCalls: [
+            {
+              id: "tc-1",
+              name: "Read",
+              inputJson: "{}",
+              output: "",
+              rawLength: 0,
+              done: true,
+              ok: true,
+              durationMs: 50,
+              errorMessage: null,
+              liveElapsedMs: 0,
+              startedAt: 0,
+            },
+          ],
+          complete: true,
+        }),
+      },
+    });
+    const btn = getByTestId("message-turn-jump-to-tools");
+    expect(btn.textContent?.trim()).toBe(CONVERSATION_STRINGS.toolDrawerJumpLabel);
+    expect(btn.getAttribute("aria-label")).toBe(CONVERSATION_STRINGS.toolDrawerJumpLabel);
+  });
+});
+
+describe("MessageTurn — ⤴ TOOLS jump button click handler (gap-cycle-06-002)", () => {
+  beforeEach(() => {
+    // jsdom does not implement scrollIntoView — shim it so the call is trackable.
+    window.HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    _resetForTests();
+  });
+
+  it("(d) clicking opens the drawer and calls scrollIntoView({behavior:'smooth',block:'start'})", () => {
+    const { getByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({
+          toolCalls: [
+            {
+              id: "tc-1",
+              name: "Bash",
+              inputJson: "{}",
+              output: "exit 0",
+              rawLength: 6,
+              done: true,
+              ok: true,
+              durationMs: 80,
+              errorMessage: null,
+              liveElapsedMs: 0,
+              startedAt: 0,
+            },
+          ],
+          complete: true,
+        }),
+      },
+    });
+
+    const drawer = getByTestId("tool-work-drawer") as HTMLDetailsElement;
+    const scrollSpy = vi.spyOn(drawer, "scrollIntoView");
+
+    // Close the drawer so we can assert it re-opens on click.
+    drawer.open = false;
+
+    flushSync(() => {
+      fireEvent.click(getByTestId("message-turn-jump-to-tools"));
+    });
+
+    expect(drawer.open).toBe(true);
+    expect(scrollSpy).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+  });
+
+  it("(d) clicking when the drawer is already open leaves it open and still scrolls", () => {
+    const { getByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({
+          toolCalls: [
+            {
+              id: "tc-1",
+              name: "Read",
+              inputJson: "{}",
+              output: "content",
+              rawLength: 7,
+              done: true,
+              ok: true,
+              durationMs: 30,
+              errorMessage: null,
+              liveElapsedMs: 0,
+              startedAt: 0,
+            },
+          ],
+          complete: true,
+        }),
+      },
+    });
+
+    const drawer = getByTestId("tool-work-drawer") as HTMLDetailsElement;
+    const scrollSpy = vi.spyOn(drawer, "scrollIntoView");
+
+    // Drawer starts open (the component default for turns with tool calls).
+    expect(drawer.open).toBe(true);
+
+    flushSync(() => {
+      fireEvent.click(getByTestId("message-turn-jump-to-tools"));
+    });
+
+    expect(drawer.open).toBe(true);
+    expect(scrollSpy).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
   });
 });
