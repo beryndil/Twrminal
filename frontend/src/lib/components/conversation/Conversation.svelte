@@ -53,9 +53,16 @@
 
   interface Props {
     sessionId: string | null;
+    /**
+     * ``true`` when the current session is paired to a checklist item
+     * (``checklist_item_id != null``). Forwarded to each ``MessageTurn``
+     * to suppress the **＋ SPAWN** pill in paired-chat contexts
+     * (gap-cycle-03-007).
+     */
+    isPaired?: boolean;
   }
 
-  const { sessionId }: Props = $props();
+  const { sessionId, isPaired = false }: Props = $props();
 
   function handleAskForMoreDetail(): void {
     if (sessionId === null) return;
@@ -263,6 +270,7 @@
               isLastAssistantTurn={turn.role === "assistant" &&
                 turnIdx === lastAssistantTurnIndex}
               turnsAfterCount={conversationStore.turns.length - 1 - turnIdx}
+              {isPaired}
             />
           </VirtualItem>
           <!-- Reorg audit dividers appear after their anchor turn. -->

@@ -40,7 +40,7 @@
     MENU_ACTION_MESSAGE_SPLIT_HERE,
     MENU_TARGET_MESSAGE,
   } from "../../config";
-  import { regenerateFromMessage } from "../../api/sessions";
+  import { regenerateFromMessage, spawnFromReply } from "../../api/sessions";
   import { goto } from "$app/navigation";
   import { contextMenu } from "../../actions/contextMenu";
   import { markdownContextMenu } from "../../actions/markdownContextMenu";
@@ -86,6 +86,14 @@
      * dialog shows ``turnsAfterCount + 1`` total).
      */
     turnsAfterCount?: number;
+    /**
+     * ``true`` when the current session is paired to a checklist item.
+     * When ``true`` the **＋ SPAWN** pill is suppressed — paired chats
+     * are "work chat" surfaces; spawning a new reply-thread from inside
+     * a paired chat is not part of the paired-chats behavior spec
+     * (gap-cycle-03-007).
+     */
+    isPaired?: boolean;
   }
 
   const {
@@ -94,6 +102,7 @@
     onAskForMoreDetail,
     isLastAssistantTurn = false,
     turnsAfterCount = 0,
+    isPaired = false,
   }: Props = $props();
 
   function handleAskForMoreDetail(): void {
@@ -116,6 +125,22 @@
       await regenerateFromMessage(sessionId, turn.id);
     } catch (err) {
       console.error("Regenerate from here failed:", err);
+    }
+  }
+
+  /**
+   * Spawn a new paired chat seeded with a blockquote of this assistant
+   * message, then navigate to the new chat (gap-cycle-03-007).  The call
+   * is idempotent — a second click returns the already-spawned session
+   * and navigates to it without creating a duplicate.
+   */
+  async function handleSpawn(): Promise<void> {
+    if (sessionId === null || sessionId === undefined) return;
+    try {
+      const result = await spawnFromReply(sessionId, turn.id);
+      await goto(`/sessions/${encodeURIComponent(result.chat_session_id)}`);
+    } catch (err) {
+      console.error("Spawn from reply failed:", err);
     }
   }
 
@@ -385,6 +410,18 @@
         </CollapsibleBody>
       {/if}
       <div class="mt-2 flex items-center justify-end gap-2">
+        {#if !isPaired}
+          <button
+            type="button"
+            class="opacity-0 transition-opacity group-hover:opacity-100 rounded px-1.5 py-0.5 text-xs text-fg-muted hover:text-fg-strong hover:bg-surface-2"
+            title={CONVERSATION_STRINGS.spawnPillAriaLabel}
+            aria-label={CONVERSATION_STRINGS.spawnPillAriaLabel}
+            onclick={() => void handleSpawn()}
+            data-testid="message-turn-spawn-pill"
+          >
+            {CONVERSATION_STRINGS.spawnPillLabel}
+          </button>
+        {/if}
         <button
           type="button"
           class="opacity-0 transition-opacity group-hover:opacity-100"

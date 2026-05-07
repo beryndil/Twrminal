@@ -232,6 +232,8 @@ def _to_out(session: Session, paired_parent_title: str | None = None) -> Session
         closed_at=session.closed_at,
         closing_summary=session.closing_summary,
         paired_parent_title=paired_parent_title,
+        pivot_message_id=session.pivot_message_id,
+        parent_session_id=session.parent_session_id,
     )
 
 

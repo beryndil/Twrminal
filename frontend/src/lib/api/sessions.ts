@@ -14,7 +14,12 @@
  * job is to project the ``Iterable<number>`` of selected tag ids onto
  * the wire shape.
  */
-import { API_SESSIONS_ENDPOINT, sessionModelEndpoint, sessionStopEndpoint } from "../config";
+import {
+  API_SESSIONS_ENDPOINT,
+  sessionModelEndpoint,
+  sessionStopEndpoint,
+  spawnFromReplyEndpoint,
+} from "../config";
 import {
   ApiError,
   deleteResource,
@@ -69,6 +74,12 @@ export interface SessionOut {
    * Shown in the sidebar as ``↳ <parent_title>``.
    */
   paired_parent_title?: string | null;
+  /** Back-pointer to the assistant message that triggered a spawn-from-reply
+   *  (gap-cycle-03-007). ``null`` on every session not created via that flow. */
+  pivot_message_id?: string | null;
+  /** Back-pointer to the parent session for a spawn-from-reply chat.
+   *  ``null`` on every session not created via that flow. */
+  parent_session_id?: string | null;
 }
 
 interface ListSessionsParams {
@@ -576,4 +587,44 @@ export async function importSessionJson(
     ? `${API_SESSIONS_ENDPOINT}/import?force=true`
     : `${API_SESSIONS_ENDPOINT}/import`;
   return await postJson<SessionOut>(path, exportJson, rest);
+}
+
+/**
+ * Spawn-from-reply response shape — mirrors
+ * :class:`bearings.web.models.spawn_from_reply.SpawnFromReplyOut`.
+ *
+ * ``created`` is ``true`` on first spawn (HTTP 201) and ``false``
+ * when the idempotent path returned an existing open session (HTTP 200).
+ */
+export interface SpawnFromReplyOut {
+  chat_session_id: string;
+  parent_session_id: string;
+  pivot_message_id: string;
+  title: string;
+  working_dir: string;
+  model: string;
+  created: boolean;
+}
+
+/**
+ * Spawn a paired chat seeded with a blockquote of the given assistant message.
+ *
+ * Backed by ``POST /api/sessions/{parentId}/spawn_from_reply/{messageId}``
+ * (gap-cycle-03-007). The call is idempotent: a second call for the same
+ * ``messageId`` returns the already-spawned open session (HTTP 200,
+ * ``created: false``) instead of creating a duplicate.
+ *
+ * @throws :class:`ApiError` on 404 (unknown parent / message), 422
+ *   (non-assistant pivot message), or 5xx.
+ */
+export async function spawnFromReply(
+  parentSessionId: string,
+  messageId: string,
+  options: RequestOptions = {},
+): Promise<SpawnFromReplyOut> {
+  return await postJson<SpawnFromReplyOut>(
+    spawnFromReplyEndpoint(parentSessionId, messageId),
+    {},
+    options,
+  );
 }

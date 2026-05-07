@@ -88,6 +88,14 @@ export const messageMoveEndpoint = (messageId: string): string =>
   `${messageEndpoint(messageId)}/move`;
 
 /**
+ * ``POST /api/sessions/{parentId}/spawn_from_reply/{messageId}``
+ * (gap-cycle-03-007). Creates a paired chat seeded with a blockquote
+ * of the clicked assistant message.
+ */
+export const spawnFromReplyEndpoint = (parentSessionId: string, messageId: string): string =>
+  `${API_BASE}/sessions/${encodeURIComponent(parentSessionId)}/spawn_from_reply/${encodeURIComponent(messageId)}`;
+
+/**
  * ``POST /api/checkpoints`` / ``GET /api/checkpoints?session_id=...`` (G6).
  * Per ``docs/behavior/chat.md`` §"Slash commands" — the user creates
  * checkpoints intentionally; the gutter chip renders the list.
@@ -434,6 +442,9 @@ export const CONVERSATION_STRINGS = {
   errorHintLabel: "Try sending a new message to continue.",
   askForMoreDetailLabel: "Ask for more detail",
   askForMoreDetailPrompt: "Can you expand on that in more detail?",
+  // gap-cycle-03-007 — spawn-from-reply pill label on assistant bubbles.
+  spawnPillLabel: "＋ SPAWN",
+  spawnPillAriaLabel: "Spawn a new chat from this reply",
   // Phase 4 error recovery
   recoverLabel: "Recover",
   recoveringLabel: "Recovering…",

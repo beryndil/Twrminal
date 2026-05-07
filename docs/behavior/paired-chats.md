@@ -79,3 +79,25 @@ When the autonomous driver (see [checklists](checklists.md)) is running, every l
 * the driver's *visit-existing-sessions* mode reuses an item's already-paired chat for the first leg instead of spawning a new one — the user sees the existing chat selected and a fresh prompt arrive in its conversation.
 
 The driver does not modify the breadcrumb or the pairing affordances — the chat-side and item-side surfaces look the same whether a human or the driver is the one prompting.
+
+## Spawn from reply (gap-cycle-03-007)
+
+Every completed assistant message in a non-paired chat session displays a **＋ SPAWN** action pill in its reply-action row (visible on hover, alongside the "Ask for more detail" button). Clicking it:
+
+1. Calls `POST /api/sessions/{parent_id}/spawn_from_reply/{message_id}`.
+2. The server creates a fresh `kind='chat'` session whose first user message is a Markdown blockquote of the clicked assistant message body (each line prefixed with `> `).
+3. The new session records `pivot_message_id` (the clicked message) and `parent_session_id` (the originating session) so the idempotency check and future back-link rendering can locate the relationship.
+4. The UI navigates to the new chat; it appears in the sidebar under the same tag scope as any other session.
+
+The spawn is **idempotent**: clicking **＋ SPAWN** again on the same assistant message while the spawned chat is still open returns the existing session rather than creating a second one.
+
+The **＋ SPAWN** pill is suppressed in sessions that are already paired to a checklist item (`checklist_item_id != null`) — paired chats are dedicated "work chat" surfaces and do not expose the reply-thread affordance.
+
+### Spawn-from-reply endpoint contract
+
+| Parameter | Description |
+|---|---|
+| `parent_id` | The session containing the pivot message. Must exist — 404 otherwise. |
+| `message_id` | The assistant-role message to quote. Must belong to `parent_id` — 404 if absent or mismatched. 422 if the message role is not `assistant`. |
+
+HTTP 201 on first spawn; HTTP 200 (with `created: false`) on idempotent re-spawn of an open session. Response body: `SpawnFromReplyOut` (`chat_session_id`, `parent_session_id`, `pivot_message_id`, `title`, `working_dir`, `model`, `created`).

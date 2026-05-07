@@ -84,7 +84,16 @@ CREATE TABLE IF NOT EXISTS sessions (
     routing_advisor_model    TEXT,
     routing_advisor_max_uses INTEGER NOT NULL DEFAULT 5,
     routing_effort_level     TEXT    NOT NULL DEFAULT 'auto',
-    FOREIGN KEY (checklist_item_id) REFERENCES checklist_items(id) ON DELETE SET NULL
+    -- Spawn-from-reply back-pointers (gap-cycle-03-007). A chat spawned
+    -- via POST /api/sessions/{parent}/spawn_from_reply/{msg_id} records
+    -- the id of the assistant message that triggered the spawn so
+    -- idempotent re-clicks return the same session, and the parent's
+    -- session id so the UI can render the sidebar back-link.
+    pivot_message_id         TEXT,
+    parent_session_id        TEXT,
+    FOREIGN KEY (checklist_item_id) REFERENCES checklist_items(id) ON DELETE SET NULL,
+    FOREIGN KEY (pivot_message_id)  REFERENCES messages(id)        ON DELETE SET NULL,
+    FOREIGN KEY (parent_session_id) REFERENCES sessions(id)        ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_kind_updated_at
@@ -93,6 +102,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_closed_at
     ON sessions(closed_at) WHERE closed_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_sessions_checklist_item_id
     ON sessions(checklist_item_id) WHERE checklist_item_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_sessions_pivot_message_id
+    ON sessions(pivot_message_id) WHERE pivot_message_id IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- messages — assistant + user + tool-result rows for chat-kind sessions.

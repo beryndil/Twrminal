@@ -101,6 +101,12 @@ _ADDED_COLUMNS: Final[tuple[tuple[str, str, str], ...]] = (
     # Existing rows default to 0 (not pinned, not hidden).
     ("messages", "pinned", "INTEGER NOT NULL DEFAULT 0"),
     ("messages", "hidden_from_context", "INTEGER NOT NULL DEFAULT 0"),
+    # Spawn-from-reply back-pointers (gap-cycle-03-007). FK constraints
+    # cannot be added via ALTER TABLE in SQLite; declared as plain TEXT
+    # here (schema.sql carries the FKs for fresh DBs; existing rows get
+    # NULL — no pivot message, no parent).
+    ("sessions", "pivot_message_id", "TEXT"),
+    ("sessions", "parent_session_id", "TEXT"),
     # G4 tag context-menu columns — landed after initial schema.sql ship.
     # Existing tags default to 0 (unpinned).
     ("tags", "pinned", "INTEGER NOT NULL DEFAULT 0"),
@@ -125,6 +131,10 @@ _ADDED_COLUMNS: Final[tuple[tuple[str, str, str], ...]] = (
 # is gated on ``IF NOT EXISTS``.
 _POST_ALTER_INDEXES: Final[tuple[str, ...]] = (
     "CREATE INDEX IF NOT EXISTS idx_tags_class_sort_order ON tags(class, sort_order ASC, name ASC)",
+    (
+        "CREATE INDEX IF NOT EXISTS idx_sessions_pivot_message_id "
+        "ON sessions(pivot_message_id) WHERE pivot_message_id IS NOT NULL"
+    ),
 )
 
 

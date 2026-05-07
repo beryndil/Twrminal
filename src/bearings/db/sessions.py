@@ -116,6 +116,11 @@ class Session:
     routing_advisor_model: str | None
     routing_advisor_max_uses: int
     routing_effort_level: str
+    # Spawn-from-reply back-pointers (gap-cycle-03-007). Set only when
+    # the session was created via POST /api/sessions/{parent}/
+    # spawn_from_reply/{msg_id}. NULL on every other session row.
+    pivot_message_id: str | None
+    parent_session_id: str | None
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -219,6 +224,8 @@ async def create(
     routing_advisor_model: str | None = None,
     routing_advisor_max_uses: int = 5,
     routing_effort_level: str = "auto",
+    pivot_message_id: str | None = None,
+    parent_session_id: str | None = None,
 ) -> Session:
     """Insert a fresh session row.
 
@@ -230,6 +237,10 @@ async def create(
     :class:`bearings.agent.routing.RoutingDecision` projection so that
     supervisor respawns (``agent/session_bootstrap.py``) reconstruct the
     exact decision without falling back to template-wide defaults.
+
+    ``pivot_message_id`` / ``parent_session_id`` are set only by the
+    spawn-from-reply route (gap-cycle-03-007); all other callers leave
+    them ``None``.
     """
     timestamp = now_iso()
     session_id = new_id(SESSION_ID_PREFIX)
@@ -262,14 +273,17 @@ async def create(
         routing_advisor_model=routing_advisor_model,
         routing_advisor_max_uses=routing_advisor_max_uses,
         routing_effort_level=routing_effort_level,
+        pivot_message_id=pivot_message_id,
+        parent_session_id=parent_session_id,
     )
     await connection.execute(
         "INSERT INTO sessions "
         "(id, kind, title, description, session_instructions, working_dir, model, "
         "permission_mode, max_budget_usd, checklist_item_id, "
         "routing_advisor_model, routing_advisor_max_uses, routing_effort_level, "
+        "pivot_message_id, parent_session_id, "
         "created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             session_id,
             kind,
@@ -284,6 +298,8 @@ async def create(
             routing_advisor_model,
             routing_advisor_max_uses,
             routing_effort_level,
+            pivot_message_id,
+            parent_session_id,
             timestamp,
             timestamp,
         ),
@@ -383,6 +399,8 @@ async def import_session(
         routing_advisor_model=None,
         routing_advisor_max_uses=5,
         routing_effort_level="auto",
+        pivot_message_id=None,
+        parent_session_id=None,
     )
     await connection.execute(
         "INSERT INTO sessions "
@@ -962,13 +980,38 @@ async def get_paired_chat_info(
     return (str(parent_title), str(item_label))
 
 
+async def get_by_pivot_message_id(
+    connection: aiosqlite.Connection,
+    pivot_message_id: str,
+) -> Session | None:
+    """Return the open session spawned from ``pivot_message_id``, or ``None``.
+
+    Used by the spawn-from-reply route (gap-cycle-03-007) to implement
+    the idempotency clause: if a previous click already spawned a chat
+    for this assistant message, return the existing open session rather
+    than creating another.  A closed session is NOT returned — the
+    next click should spawn a fresh chat (same semantics as the
+    checklist-side paired-chat idempotency contract).
+    """
+    cursor = await connection.execute(
+        _SELECT_SESSION_COLUMNS + " WHERE pivot_message_id = ? AND closed_at IS NULL",
+        (pivot_message_id,),
+    )
+    try:
+        row = await cursor.fetchone()
+    finally:
+        await cursor.close()
+    return None if row is None else _row_to_session(row)
+
+
 _SELECT_SESSION_COLUMNS = (
     "SELECT id, kind, title, description, session_instructions, working_dir, model, "
     "permission_mode, max_budget_usd, total_cost_usd, message_count, "
     "last_context_pct, last_context_tokens, last_context_max, pinned, error_pending, "
     "checklist_item_id, created_at, updated_at, last_viewed_at, last_completed_at, "
     "closed_at, closing_summary, "
-    "routing_advisor_model, routing_advisor_max_uses, routing_effort_level "
+    "routing_advisor_model, routing_advisor_max_uses, routing_effort_level, "
+    "pivot_message_id, parent_session_id "
     "FROM sessions"
 )
 
@@ -990,7 +1033,8 @@ _SELECT_SESSION_COLUMNS_DISTINCT = (
     "sessions.last_viewed_at, sessions.last_completed_at, sessions.closed_at, "
     "sessions.closing_summary, "
     "sessions.routing_advisor_model, sessions.routing_advisor_max_uses, "
-    "sessions.routing_effort_level FROM sessions"
+    "sessions.routing_effort_level, "
+    "sessions.pivot_message_id, sessions.parent_session_id FROM sessions"
 )
 
 
@@ -1023,6 +1067,8 @@ def _row_to_session(row: aiosqlite.Row | tuple[object, ...]) -> Session:
         routing_advisor_model=None if row[23] is None else str(row[23]),
         routing_advisor_max_uses=int(str(row[24])),
         routing_effort_level=str(row[25]),
+        pivot_message_id=None if row[26] is None else str(row[26]),
+        parent_session_id=None if row[27] is None else str(row[27]),
     )
 
 
@@ -1035,6 +1081,7 @@ __all__ = [
     "delete",
     "exists",
     "get",
+    "get_by_pivot_message_id",
     "get_kind",
     "get_paired_chat_info",
     "import_session",

@@ -226,7 +226,7 @@ The audit flagged 12 spec'd route modules absent from
 * ``checkpoints.py`` — chat-undo checkpoint CRUD.
 * ``templates.py`` — Templates CRUD.
 * ``reorg.py`` — session-reorg analyze + apply.
-* ``spawn_from_reply.py`` — ``+ SPAWN`` action on a reply.
+* ~~``spawn_from_reply.py`` — ``+ SPAWN`` action on a reply.~~ (resolved: gap-cycle-03-007)
 * ``reply_actions.py`` — inline reply-action execution.
 * ``artifacts.py`` — artifact register + serve.
 * ``commands.py`` — slash-command palette scan.

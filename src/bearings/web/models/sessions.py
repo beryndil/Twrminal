@@ -101,6 +101,10 @@ class SessionOut(BaseModel):
     closed_at: str | None
     closing_summary: str | None
     paired_parent_title: str | None = None
+    # Spawn-from-reply back-pointers (gap-cycle-03-007). Null on every
+    # session that was not created via spawn_from_reply.
+    pivot_message_id: str | None = None
+    parent_session_id: str | None = None
 
 
 class SessionTitleUpdate(BaseModel):

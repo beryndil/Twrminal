@@ -94,6 +94,7 @@ from bearings.web.routes.quota import router as quota_router
 from bearings.web.routes.routing import router as routing_router
 from bearings.web.routes.sessions import router as sessions_router
 from bearings.web.routes.shell import router as shell_router
+from bearings.web.routes.spawn_from_reply import router as spawn_from_reply_router
 from bearings.web.routes.tags import router as tags_router
 from bearings.web.routes.templates import router as templates_router
 from bearings.web.routes.uploads import router as uploads_router
@@ -366,6 +367,7 @@ def create_app(
     app.include_router(approvals_router, tags=[ROUTE_TAG_APPROVALS])
     app.include_router(messages_router, tags=[ROUTE_TAG_MESSAGES])
     app.include_router(paired_chats_router, tags=[ROUTE_TAG_PAIRED_CHATS])
+    app.include_router(spawn_from_reply_router, tags=[ROUTE_TAG_PAIRED_CHATS])
     app.include_router(routing_router, tags=[ROUTE_TAG_ROUTING])
     app.include_router(quota_router, tags=[ROUTE_TAG_QUOTA])
     app.include_router(usage_router, tags=[ROUTE_TAG_USAGE])

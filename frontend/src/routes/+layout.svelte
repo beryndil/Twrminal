@@ -560,7 +560,10 @@
                 onSelectChat={handleSelectSession}
               />
             {:else if selectedSessionId !== null}
-              <Conversation sessionId={selectedSessionId} />
+              <Conversation
+                sessionId={selectedSessionId}
+                isPaired={activeSession?.checklist_item_id != null}
+              />
             {:else if children}
               {@render children()}
             {:else}

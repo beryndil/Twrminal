@@ -490,6 +490,11 @@ KNOWN_PAIRED_CHAT_SPAWNED_BY: Final[frozenset[str]] = frozenset(
     {PAIRED_CHAT_SPAWNED_BY_USER, PAIRED_CHAT_SPAWNED_BY_DRIVER}
 )
 
+# Spawn-from-reply — quote prefix prepended to the pivot assistant
+# message body when seeding the first user message in the spawned chat.
+# Markdown blockquote prefix; each line is prefixed individually.
+SPAWN_FROM_REPLY_QUOTE_PREFIX: Final[str] = "> "
+
 # Checklist item label / notes / blocked-reason maxima. Mirrors the
 # label-cap pattern used for tag names / template names so user-facing
 # labels share a single character budget.
@@ -1407,6 +1412,7 @@ __all__ = [
     "SHELL_ARGV_MAX_ENTRIES",
     "SHELL_EXEC_TIMEOUT_S",
     "SHELL_OUTPUT_MAX_BYTES",
+    "SPAWN_FROM_REPLY_QUOTE_PREFIX",
     "STREAM_HEARTBEAT_INTERVAL_S",
     "STREAM_MAX_DELTA_CHARS",
     "STREAM_MAX_TOOL_OUTPUT_CHARS",

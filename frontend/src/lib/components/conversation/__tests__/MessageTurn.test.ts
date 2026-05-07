@@ -249,3 +249,52 @@ describe("MessageTurn — Regenerate from here context-menu entry", () => {
     await waitFor(() => expect(queryByTestId("confirm-dialog")).toBeNull());
   });
 });
+
+// ---------------------------------------------------------------------------
+// gap-cycle-03-007 — spawn-from-reply pill (＋ SPAWN)
+// ---------------------------------------------------------------------------
+
+describe("MessageTurn — spawn pill (gap-cycle-03-007)", () => {
+  it("renders the spawn pill on assistant turns in non-paired sessions", () => {
+    const { getByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({ id: "a1", role: "assistant", body: "hello" }),
+        sessionId: "ses_parent",
+        isPaired: false,
+      },
+    });
+    expect(getByTestId("message-turn-spawn-pill")).toBeTruthy();
+  });
+
+  it("does NOT render the spawn pill on user turns", () => {
+    const { queryByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({ id: "u1", role: "user", body: "hi" }),
+        sessionId: "ses_parent",
+        isPaired: false,
+      },
+    });
+    expect(queryByTestId("message-turn-spawn-pill")).toBeNull();
+  });
+
+  it("does NOT render the spawn pill when the session is paired", () => {
+    const { queryByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({ id: "a1", role: "assistant", body: "hello" }),
+        sessionId: "ses_parent",
+        isPaired: true,
+      },
+    });
+    expect(queryByTestId("message-turn-spawn-pill")).toBeNull();
+  });
+
+  it("omits the spawn pill when isPaired defaults to false but role is user", () => {
+    const { queryByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({ id: "u2", role: "user", body: "hi" }),
+        sessionId: "ses_parent",
+      },
+    });
+    expect(queryByTestId("message-turn-spawn-pill")).toBeNull();
+  });
+});
