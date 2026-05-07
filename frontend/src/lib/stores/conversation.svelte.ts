@@ -49,6 +49,29 @@ export interface ToolCallView {
   liveElapsedMs: number;
 }
 
+/**
+ * An attachment chip persisted with a sent user message.
+ *
+ * Populated when the backend threads attachment metadata onto the
+ * ``MessageOut`` row or ``user_message`` event. Until that backend
+ * wiring lands the field defaults to ``[]`` on every turn — the
+ * component is a no-op in that case.
+ *
+ * Behavior anchor: ``docs/behavior/chat.md`` §"What a message turn
+ * looks like" — attachment chips at the bottom of the user bubble.
+ */
+export interface SentAttachment {
+  /** Stable id for keyed ``{#each}`` rendering. */
+  id: string;
+  /**
+   * Display label shown on the chip (e.g. ``[File 1] foo.log``).
+   * Provided by the composer or backend; the component renders it verbatim.
+   */
+  label: string;
+  /** Absolute filesystem path — drives copy-path and open-in-editor actions. */
+  path: string;
+}
+
 /** A user/assistant turn pair plus its associated tool calls. */
 export interface MessageTurnView {
   id: string;
@@ -81,6 +104,13 @@ export interface MessageTurnView {
    * secondary API call.
    */
   seq: number;
+  /**
+   * Attachment chips persisted with this user message (gap-cycle-01-015).
+   * Empty array for assistant turns and for user turns where no files were
+   * staged. Populated by ``rowToTurn`` from ``MessageOut.attachments`` once
+   * the backend exposes that field; defaults to ``[]`` in the interim.
+   */
+  attachments: readonly SentAttachment[];
 }
 
 export interface TurnRouting {
@@ -462,6 +492,7 @@ export function applyEvent(
           createdAt: null,
           resumed: false,
           seq: 0,
+          attachments: [],
         },
       ];
     case "message_start":
@@ -480,6 +511,7 @@ export function applyEvent(
           createdAt: null,
           resumed: false,
           seq: 0,
+          attachments: [],
         },
       ];
     case "token":
@@ -647,6 +679,7 @@ function attachError(turns: readonly MessageTurnView[], message: string): Messag
       createdAt: null,
       resumed: false,
       seq: 0,
+      attachments: [],
     },
   ];
 }
@@ -674,6 +707,9 @@ function rowToTurn(row: MessageOut): MessageTurnView {
     createdAt: row.created_at,
     resumed: false,
     seq: row.seq,
+    // ``MessageOut`` does not yet carry attachment metadata; default to
+    // empty array until the backend wiring lands (gap-cycle-01-015).
+    attachments: [],
   };
 }
 

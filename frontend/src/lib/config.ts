@@ -440,6 +440,18 @@ export const CONVERSATION_STRINGS = {
 } as const;
 
 /**
+ * String table for the sent-attachment chips row on a user bubble
+ * (gap-cycle-01-015). Centralised here per coding-standards §"i18n-ready
+ * string tables".
+ *
+ * Behavior anchor: ``docs/behavior/chat.md`` §"What a message turn looks
+ * like" — attachment chips at the bottom of the user bubble.
+ */
+export const SENT_ATTACHMENT_STRINGS = {
+  chipsAreaAriaLabel: "Attached files",
+} as const;
+
+/**
  * Height threshold (px) above which ``CollapsibleBody`` clamps content
  * and shows the fold affordance (gap-cycle-01-010).
  *

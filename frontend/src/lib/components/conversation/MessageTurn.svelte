@@ -59,6 +59,7 @@
   import CollapsibleBody from "../common/CollapsibleBody.svelte";
   import ConfirmDialog from "../sidebar/ConfirmDialog.svelte";
   import RoutingBadge from "./RoutingBadge.svelte";
+  import SentAttachmentChips from "./SentAttachmentChips.svelte";
   import ToolOutput from "./ToolOutput.svelte";
 
   interface Props {
@@ -269,6 +270,10 @@
              through ``sanitizeHtml`` for defense in depth. -->
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         {@html sanitizeHtml(linkifyToHtml(turn.body))}
+        <!-- Attachment chips at the bottom of the user bubble —
+             gap-cycle-01-015 / docs/behavior/chat.md §"What a message
+             turn looks like". Renders nothing when the array is empty. -->
+        <SentAttachmentChips attachments={turn.attachments} />
       </div>
     </div>
   {:else}

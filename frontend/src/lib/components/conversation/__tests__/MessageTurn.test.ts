@@ -21,6 +21,7 @@ function turn(overrides: Partial<MessageTurnView> = {}): MessageTurnView {
     createdAt: null,
     resumed: false,
     seq: 0,
+    attachments: [],
     ...overrides,
   };
 }
