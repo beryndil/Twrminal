@@ -7,8 +7,10 @@
    * — "ReorgProposalEditor is the LLM-assisted analyzer view that
    * suggests a multi-message reorg before commit."
    *
-   * Opening: rendered by the conversation header or sidebar via the
-   * ``open`` prop.  Calls ``analyzeReorg()`` from the reorg store to
+   * Opening: mounted by ``ConversationHeader.svelte`` below the controls
+   * row when the user clicks the "Analyze and reorg" (scissors) button
+   * (gap-cycle-11-003).  The ``open`` prop is toggled by header state.
+   * Calls ``analyzeReorg()`` from the reorg store to
    * produce heuristic proposals.  The user can accept (opens
    * ReorgPicker pre-filled at the proposed boundary) or dismiss
    * individual proposals.

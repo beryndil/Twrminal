@@ -46,6 +46,8 @@
 
   import {
     CONVERSATION_HEADER_STRINGS,
+    REORG_BUTTON_STRINGS,
+    SESSION_KIND_CHAT,
     apiChecklistItemEndpoint,
   } from "../../config";
   import { getJson } from "../../api/client";
@@ -65,6 +67,7 @@
   import QuotaBars from "../new_session/QuotaBars.svelte";
   import FeedbackButton from "../feedback/FeedbackButton.svelte";
   import TokenMeter from "../inspector/TokenMeter.svelte";
+  import ReorgProposalEditor from "../reorg/ReorgProposalEditor.svelte";
 
   interface Props {
     sessionId: string | null;
@@ -199,6 +202,21 @@
     };
   });
 
+  // ---- Reorg panel -----------------------------------------------------------
+
+  /**
+   * ``true`` when the ReorgProposalEditor panel is open.  The button in
+   * the controls row toggles this.  Reset to ``false`` on panel close.
+   */
+  let reorgPanelOpen = $state(false);
+
+  /**
+   * Whether the active session is a plain chat — only chat-kind sessions
+   * have message content that can be split.  The button is disabled for
+   * all other kinds (e.g. checklist).
+   */
+  const isChat = $derived(session !== null && session.kind === SESSION_KIND_CHAT);
+
   // ---- Quota bars ------------------------------------------------------------
 
   /** Latest quota snapshot fetched from ``GET /api/quota/current``. */
@@ -322,10 +340,64 @@
       <!-- Quota bars (overall + Sonnet; spec §10) -->
       <QuotaBars snapshot={quotaSnapshot} />
 
+      <!-- Analyze-and-reorg button — scissors glyph; opens the
+           ReorgProposalEditor panel (gap-cycle-11-003). Disabled for
+           non-chat sessions (checklists have no message content to split). -->
+      <button
+        type="button"
+        class="rounded p-0.5 text-fg-muted hover:bg-surface-2 hover:text-fg disabled:opacity-50"
+        aria-label={REORG_BUTTON_STRINGS.ariaLabel}
+        title={REORG_BUTTON_STRINGS.tooltip}
+        data-testid="analyze-reorg-button"
+        disabled={!isChat}
+        onclick={() => {
+          reorgPanelOpen = true;
+        }}
+      >
+        <!--
+          Scissors icon — Heroicons v1 outline ``scissors`` path,
+          scaled to 14×14 within a 24×24 viewBox to match sibling
+          header icon buttons (FeedbackButton, etc.).
+        -->
+        <svg
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="6" cy="6" r="3" />
+          <circle cx="6" cy="18" r="3" />
+          <line x1="20" y1="4" x2="8.12" y2="15.88" />
+          <line x1="14.47" y1="14.48" x2="20" y2="20" />
+          <line x1="8.12" y1="8.12" x2="12" y2="12" />
+        </svg>
+      </button>
+
       <!-- Feedback button — megaphone glyph; opens GitHub issues/new in a
            new tab pre-filled with env + repro scaffold (gap-cycle-01-008). -->
       <FeedbackButton />
     </div>
+
+    <!-- Reorg proposal editor panel — hidden until the user clicks the
+         "Analyze and reorg" button.  Renders below the controls row as an
+         inline card.  ReorgProposalEditor self-manages the analyzeReorg()
+         call and the accept / dismiss interactions. -->
+    {#if reorgPanelOpen && session !== null}
+      <div class="px-3 pb-2">
+        <ReorgProposalEditor
+          sessionId={session.id}
+          open={reorgPanelOpen}
+          onclose={() => {
+            reorgPanelOpen = false;
+          }}
+        />
+      </div>
+    {/if}
 
     <!-- Context / token meter — full-width strip; hidden until the first
          context_usage frame arrives (component self-hides via {#if usage !== null}). -->

@@ -1,5 +1,6 @@
 /**
- * Component tests for ``ConversationHeader`` (gap-cycle-01-005).
+ * Component tests for ``ConversationHeader`` (gap-cycle-01-005,
+ * gap-cycle-11-003).
  *
  * Acceptance criteria:
  * 1. Header renders title, severity shield, tag chips, model dropdown,
@@ -7,6 +8,11 @@
  * 2. Breadcrumb chip only renders when ``checklist_item_id`` is set;
  *    absent for an unpaired session.
  * 3. Changing the model dropdown opens the spec §7 ModelSwitchDialog.
+ * 4. "Analyze and reorg" button (gap-cycle-11-003):
+ *    - Renders for chat-kind sessions; disabled for non-chat kinds.
+ *    - Click opens the ReorgProposalEditor panel (analyzeReorg runs).
+ *    - Panel's onclose restores the button to idle (panel unmounts).
+ *    - accept-proposal path calls reorgStore.openPicker with correct pivot.
  */
 import { fireEvent, render, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -51,6 +57,26 @@ vi.mock("../../../stores/conversation.svelte", () => ({
 let _billingMode: "payg" | "subscription" = "payg";
 vi.mock("../../../utils/appInfo", () => ({
   fetchBillingMode: () => Promise.resolve(_billingMode),
+}));
+
+// Reorg store — analyzeReorg is called by ReorgProposalEditor on open.
+// openPicker is called when the user accepts a proposal.
+// vi.hoisted() is required because vi.mock factories are hoisted to the top
+// of the file before variable declarations are reached.
+const { analyzeReorgMock, openPickerMock } = vi.hoisted(() => ({
+  analyzeReorgMock: vi.fn(),
+  openPickerMock: vi.fn(),
+}));
+vi.mock("../../../stores/reorg.svelte", () => ({
+  analyzeReorg: analyzeReorgMock,
+  reorgStore: { openPicker: openPickerMock },
+}));
+
+// messages API — listMessages is called by ReorgProposalEditor's
+// handleAccept to look up the seq for the accepted proposal's message.
+const { listMessagesMock } = vi.hoisted(() => ({ listMessagesMock: vi.fn() }));
+vi.mock("../../../api/messages", () => ({
+  listMessages: listMessagesMock,
 }));
 
 import type { SessionOut } from "../../../api/sessions";
@@ -142,10 +168,21 @@ beforeEach(() => {
   fetchMock.mockReset();
   setupFetch();
   vi.stubGlobal("fetch", fetchMock);
+  analyzeReorgMock.mockResolvedValue([
+    { messageId: "msg2", reason: "Natural chunk boundary" },
+  ]);
+  listMessagesMock.mockResolvedValue({
+    items: [
+      { id: "msg2", session_id: "ses_1", role: "assistant", content: "hi", seq: 2, created_at: "2026-01-01T10:01:00Z" },
+    ],
+    has_more: false,
+  });
+  openPickerMock.mockReset();
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.clearAllMocks();
 });
 
 // ---- Tests -------------------------------------------------------------
@@ -396,6 +433,85 @@ describe("ConversationHeader", () => {
       // conversationStore mock returns 1200 in / 400 out.
       expect(getByTestId("token-meter-input")).toHaveTextContent("1.2k in");
       expect(getByTestId("token-meter-output")).toHaveTextContent("400 out");
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC4: "Analyze and reorg" button + ReorgProposalEditor wiring
+// (gap-cycle-11-003)
+// ---------------------------------------------------------------------------
+
+describe("ConversationHeader — analyze-reorg button (gap-cycle-11-003)", () => {
+  it("renders the analyze-reorg button for a chat-kind session", () => {
+    setSession(makeSession({ kind: "chat" }));
+    const { getByTestId } = render(ConversationHeader, { props: { sessionId: "ses_1" } });
+    expect(getByTestId("analyze-reorg-button")).toBeDefined();
+  });
+
+  it("button is enabled for a chat-kind session", () => {
+    setSession(makeSession({ kind: "chat" }));
+    const { getByTestId } = render(ConversationHeader, { props: { sessionId: "ses_1" } });
+    expect(getByTestId("analyze-reorg-button")).not.toBeDisabled();
+  });
+
+  it("button is disabled for a non-chat (checklist) session", () => {
+    setSession(makeSession({ kind: "checklist" }));
+    const { getByTestId } = render(ConversationHeader, { props: { sessionId: "ses_1" } });
+    expect(getByTestId("analyze-reorg-button")).toBeDisabled();
+  });
+
+  it("ReorgProposalEditor panel is not visible before the button is clicked", () => {
+    setSession(makeSession({ kind: "chat" }));
+    const { queryByTestId } = render(ConversationHeader, { props: { sessionId: "ses_1" } });
+    expect(queryByTestId("reorg-proposal-editor")).toBeNull();
+  });
+
+  it("clicking the button opens the ReorgProposalEditor panel", async () => {
+    setSession(makeSession({ kind: "chat" }));
+    const { getByTestId } = render(ConversationHeader, { props: { sessionId: "ses_1" } });
+    await fireEvent.click(getByTestId("analyze-reorg-button"));
+    await waitFor(() => {
+      expect(getByTestId("reorg-proposal-editor")).toBeDefined();
+    });
+  });
+
+  it("analyzeReorg() is called once when the panel opens", async () => {
+    setSession(makeSession({ id: "ses_1", kind: "chat" }));
+    const { getByTestId } = render(ConversationHeader, { props: { sessionId: "ses_1" } });
+    await fireEvent.click(getByTestId("analyze-reorg-button"));
+    await waitFor(() => {
+      expect(analyzeReorgMock).toHaveBeenCalledTimes(1);
+      expect(analyzeReorgMock).toHaveBeenCalledWith("ses_1");
+    });
+  });
+
+  it("closing the panel (rpe-close) hides the ReorgProposalEditor", async () => {
+    setSession(makeSession({ kind: "chat" }));
+    const { getByTestId, queryByTestId } = render(ConversationHeader, {
+      props: { sessionId: "ses_1" },
+    });
+    await fireEvent.click(getByTestId("analyze-reorg-button"));
+    await waitFor(() => expect(getByTestId("reorg-proposal-editor")).toBeDefined());
+    await fireEvent.click(getByTestId("rpe-close"));
+    await waitFor(() => {
+      expect(queryByTestId("reorg-proposal-editor")).toBeNull();
+    });
+  });
+
+  it("accepting a proposal calls reorgStore.openPicker with the correct pivot", async () => {
+    setSession(makeSession({ id: "ses_1", kind: "chat" }));
+    const { getByTestId } = render(ConversationHeader, { props: { sessionId: "ses_1" } });
+    await fireEvent.click(getByTestId("analyze-reorg-button"));
+    await waitFor(() => expect(getByTestId("rpe-proposal-msg2")).toBeDefined());
+    await fireEvent.click(getByTestId("rpe-accept-msg2"));
+    await waitFor(() => {
+      expect(openPickerMock).toHaveBeenCalledWith({
+        mode: "split",
+        messageId: "msg2",
+        sourceSessionId: "ses_1",
+        seq: 2,
+      });
     });
   });
 });

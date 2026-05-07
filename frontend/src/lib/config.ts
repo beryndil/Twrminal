@@ -738,6 +738,21 @@ export const FEEDBACK_BUTTON_STRINGS = {
 } as const;
 
 /**
+ * UI strings for the "Analyze and reorg" button in the conversation
+ * header (gap-cycle-11-003).
+ *
+ * Behavior anchor: ``docs/behavior/context-menus.md`` §"Message bubble"
+ * — "ReorgProposalEditor is the LLM-assisted analyzer view that
+ * suggests a multi-message reorg before commit."
+ */
+export const REORG_BUTTON_STRINGS = {
+  /** ``aria-label`` on the ``<button>`` element. */
+  ariaLabel: "Analyze and reorg",
+  /** Tooltip shown on hover (``title`` attribute). */
+  tooltip: "Analyze conversation and propose split boundaries",
+} as const;
+
+/**
  * ``rel`` attribute for outbound anchors per chat.md §"Conversation
  * rendering" — "rendered as anchors that open in a new tab with
  * ``noopener noreferrer``". Pulled out of the linkifier so a future
