@@ -38,6 +38,7 @@
   import { APPROVAL_STRINGS } from "../../config";
   import { postApproval } from "../../api/approvals";
   import type { PendingApproval } from "../../stores/conversation.svelte";
+  import { wsConnectionStatus } from "../../stores/sessions.svelte";
 
   interface Props {
     sessionId: string;
@@ -181,6 +182,9 @@
   let cancelling = $state(false);
   let error = $state<string | null>(null);
 
+  /** True only while the sessions-broadcast WebSocket is open. */
+  const wsConnected = $derived(wsConnectionStatus.state === "open");
+
   let firstFocusEl: HTMLElement | null = $state(null);
 
   onMount(() => {
@@ -268,7 +272,7 @@
   }
 
   async function submit(): Promise<void> {
-    if (submitting || cancelling || !canSubmit) return;
+    if (submitting || cancelling || !canSubmit || !wsConnected) return;
     submitting = true;
     error = null;
     try {
@@ -287,7 +291,7 @@
    * blocking the broker indefinitely. Mirrors ``ApprovalModal``'s Deny path.
    */
   async function cancel(): Promise<void> {
-    if (submitting || cancelling) return;
+    if (submitting || cancelling || !wsConnected) return;
     cancelling = true;
     error = null;
     try {
@@ -465,6 +469,15 @@
           {APPROVAL_STRINGS.validationMissingSelection}
         </p>
       {/if}
+
+      {#if !wsConnected}
+        <p
+          class="mt-2 rounded bg-amber-500/15 px-3 py-2 text-xs text-amber-400"
+          data-testid="ask-reconnect-banner"
+        >
+          {APPROVAL_STRINGS.reconnectingBanner}
+        </p>
+      {/if}
     </div>
 
     <!-- Footer -->
@@ -472,7 +485,7 @@
       <button
         type="button"
         class="rounded border border-border px-4 py-1.5 text-sm font-medium text-fg-strong hover:bg-surface-2 disabled:opacity-50"
-        disabled={submitting || cancelling}
+        disabled={submitting || cancelling || !wsConnected}
         data-testid="ask-modal-cancel"
         onclick={cancel}
       >
@@ -481,7 +494,7 @@
       <button
         type="button"
         class="rounded bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        disabled={submitting || cancelling || !canSubmit}
+        disabled={submitting || cancelling || !canSubmit || !wsConnected}
         data-testid="ask-modal-submit"
         onclick={submit}
       >

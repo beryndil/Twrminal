@@ -28,6 +28,16 @@ vi.mock("../../../api/approvals", () => ({
   postApproval: postApprovalMock,
 }));
 
+// Mock the sessions-broadcast WS so no real socket is opened and
+// reconnect timers do not interfere.
+vi.mock("../../../api/wsSessions", () => ({
+  connectSessionsBroadcast: vi.fn().mockReturnValue(() => {}),
+}));
+
+import {
+  _resetWsStatusForTests,
+  _setWsStatusForTests,
+} from "../../../stores/sessions.svelte";
 import AskUserQuestionModal from "../AskUserQuestionModal.svelte";
 import type { PendingApproval } from "../../../stores/conversation.svelte";
 
@@ -63,8 +73,11 @@ const STRUCTURED_FIXTURE = {
 beforeEach(() => {
   postApprovalMock.mockReset();
   postApprovalMock.mockResolvedValue(undefined);
+  // Default to connected so existing tests do not need to set WS status.
+  _setWsStatusForTests({ state: "open", lastCloseCode: null });
 });
 afterEach(() => {
+  _resetWsStatusForTests();
   vi.clearAllMocks();
 });
 
@@ -371,5 +384,93 @@ describe("AskUserQuestionModal — unknown shape fallback", () => {
     });
     expect(getByTestId("ask-modal-unknown-notice")).toBeTruthy();
     expect(queryByTestId("ask-modal-structured")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WS reconnect awareness (gap-cycle-10-009)
+// ---------------------------------------------------------------------------
+
+describe("AskUserQuestionModal — WS connected: buttons enabled", () => {
+  it("Submit and Cancel are enabled when wsConnectionStatus.state is 'open'", async () => {
+    _setWsStatusForTests({ state: "open", lastCloseCode: null });
+    const { getByTestId, queryByTestId } = render(AskUserQuestionModal, {
+      props: { sessionId: "ses_a", approval: makeApproval({ question: "Continue?" }) },
+    });
+    const textarea = getByTestId("ask-modal-answer") as HTMLTextAreaElement;
+    await fireEvent.input(textarea, { target: { value: "yes" } });
+    await Promise.resolve();
+    expect((getByTestId("ask-modal-submit") as HTMLButtonElement).disabled).toBe(false);
+    expect((getByTestId("ask-modal-cancel") as HTMLButtonElement).disabled).toBe(false);
+    expect(queryByTestId("ask-reconnect-banner")).toBeNull();
+  });
+});
+
+describe("AskUserQuestionModal — WS disconnected: buttons disabled + banner", () => {
+  it("Submit and Cancel are disabled and reconnect banner renders when state is 'closed'", async () => {
+    _setWsStatusForTests({ state: "closed", lastCloseCode: null });
+    const { getByTestId, queryByTestId } = render(AskUserQuestionModal, {
+      props: { sessionId: "ses_a", approval: makeApproval({ question: "Proceed?" }) },
+    });
+    // Fill the textarea so canSubmit is true — the WS gate is the only blocker.
+    const textarea = getByTestId("ask-modal-answer") as HTMLTextAreaElement;
+    await fireEvent.input(textarea, { target: { value: "my answer" } });
+    await Promise.resolve();
+    expect((getByTestId("ask-modal-submit") as HTMLButtonElement).disabled).toBe(true);
+    expect((getByTestId("ask-modal-cancel") as HTMLButtonElement).disabled).toBe(true);
+    expect(queryByTestId("ask-reconnect-banner")).not.toBeNull();
+    expect(queryByTestId("ask-reconnect-banner")?.textContent).toContain("Reconnecting");
+  });
+});
+
+describe("AskUserQuestionModal — WS reconnect: buttons re-enable without dismissing", () => {
+  it("Submit and Cancel re-enable and banner disappears when state transitions to 'open'", async () => {
+    _setWsStatusForTests({ state: "closed", lastCloseCode: null });
+    const { getByTestId, queryByTestId } = render(AskUserQuestionModal, {
+      props: { sessionId: "ses_a", approval: makeApproval({ question: "Ready?" }) },
+    });
+    const textarea = getByTestId("ask-modal-answer") as HTMLTextAreaElement;
+    await fireEvent.input(textarea, { target: { value: "yes" } });
+    await Promise.resolve();
+    // Confirm disconnected state
+    expect((getByTestId("ask-modal-submit") as HTMLButtonElement).disabled).toBe(true);
+    expect(queryByTestId("ask-reconnect-banner")).not.toBeNull();
+    // Simulate reconnect
+    _setWsStatusForTests({ state: "open", lastCloseCode: null });
+    await Promise.resolve();
+    // Modal still present, buttons now enabled
+    expect(getByTestId("ask-user-question-modal")).toBeTruthy();
+    expect((getByTestId("ask-modal-submit") as HTMLButtonElement).disabled).toBe(false);
+    expect((getByTestId("ask-modal-cancel") as HTMLButtonElement).disabled).toBe(false);
+    expect(queryByTestId("ask-reconnect-banner")).toBeNull();
+  });
+});
+
+describe("AskUserQuestionModal — submit while disconnected blocked", () => {
+  it("clicking Submit while disconnected does not call postApproval", async () => {
+    _setWsStatusForTests({ state: "closed", lastCloseCode: null });
+    const { getByTestId } = render(AskUserQuestionModal, {
+      props: { sessionId: "ses_a", approval: makeApproval({ question: "Go?" }) },
+    });
+    const textarea = getByTestId("ask-modal-answer") as HTMLTextAreaElement;
+    await fireEvent.input(textarea, { target: { value: "yes" } });
+    await Promise.resolve();
+    // Button is disabled; function guard also returns early.
+    await fireEvent.click(getByTestId("ask-modal-submit"));
+    await waitFor(() => {
+      expect(postApprovalMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it("clicking Cancel while disconnected does not call postApproval", async () => {
+    _setWsStatusForTests({ state: "closed", lastCloseCode: null });
+    const { getByTestId } = render(AskUserQuestionModal, {
+      props: { sessionId: "ses_a", approval: makeApproval({ question: "Go?" }) },
+    });
+    await Promise.resolve();
+    await fireEvent.click(getByTestId("ask-modal-cancel"));
+    await waitFor(() => {
+      expect(postApprovalMock).not.toHaveBeenCalled();
+    });
   });
 });

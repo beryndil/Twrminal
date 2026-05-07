@@ -19,6 +19,7 @@
   import { APPROVAL_STRINGS } from "../../config";
   import { postApproval } from "../../api/approvals";
   import type { PendingApproval } from "../../stores/conversation.svelte";
+  import { wsConnectionStatus } from "../../stores/sessions.svelte";
 
   interface Props {
     sessionId: string;
@@ -30,6 +31,9 @@
   let submitting = $state(false);
   let error = $state<string | null>(null);
 
+  /** True only while the sessions-broadcast WebSocket is open. */
+  const wsConnected = $derived(wsConnectionStatus.state === "open");
+
   /** Pretty-print the JSON input for display. Falls back to raw string. */
   function formatInput(raw: string): string {
     try {
@@ -40,7 +44,7 @@
   }
 
   async function resolve(approved: boolean): Promise<void> {
-    if (submitting) return;
+    if (submitting || !wsConnected) return;
     submitting = true;
     error = null;
     try {
@@ -91,6 +95,15 @@
       {#if error !== null}
         <p class="mt-2 text-xs text-red-400" data-testid="approval-error">{error}</p>
       {/if}
+
+      {#if !wsConnected}
+        <p
+          class="mt-2 rounded bg-amber-500/15 px-3 py-2 text-xs text-amber-400"
+          data-testid="approval-reconnect-banner"
+        >
+          {APPROVAL_STRINGS.reconnectingBanner}
+        </p>
+      {/if}
     </div>
 
     <!-- Footer -->
@@ -98,7 +111,7 @@
       <button
         type="button"
         class="rounded bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-        disabled={submitting}
+        disabled={submitting || !wsConnected}
         data-testid="approval-deny"
         onclick={() => resolve(false)}
       >
@@ -107,7 +120,7 @@
       <button
         type="button"
         class="rounded bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-        disabled={submitting}
+        disabled={submitting || !wsConnected}
         data-testid="approval-allow"
         onclick={() => resolve(true)}
       >

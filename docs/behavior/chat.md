@@ -218,6 +218,8 @@ When the agent invokes a tool that requires user approval, a centred modal opens
 
 The modal stays visible until the backend's `approval_resolved` event arrives over the WebSocket; submit-button errors render inline (red text) without closing the modal. There is no client-side timeout — a stuck approval is a UX bug, not a security gate.
 
+**WebSocket reconnect guard.** Both modal flavours subscribe to `wsConnectionStatus.state` (the sessions-broadcast WebSocket, same source as the status strip). When the state is not `'open'` (i.e. `'closed'` or `'error'`), all action buttons — Allow, Deny, Submit, Cancel — are disabled and an amber inline banner reads "Reconnecting — your response will send once the socket is back." The buttons re-enable as soon as the socket transitions back to `'open'`, without dismissing the modal. This prevents the user from POSTing an approval into a dead socket, which would leave the modal open indefinitely because the `approval_resolved` event can never arrive.
+
 ## Sidebar system-status card (gap-cycle-08-006)
 
 A card-shaped container is pinned at the sidebar bottom, above the identity block. It exposes two always-visible health rows so users dwelling in the sidebar can answer "system OK?" without scanning the full-width status strip at the bottom of the app shell.

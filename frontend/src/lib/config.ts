@@ -2825,6 +2825,17 @@ export const APPROVAL_STRINGS = {
    * free-text answer box so the user can still respond.
    */
   unknownShapeNotice: "Question shape not recognised — answer in free text:",
+  /**
+   * Inline amber banner shown inside both approval modals when the
+   * sessions-broadcast WebSocket is not in the ``'open'`` state. The
+   * action buttons (Allow / Deny / Submit / Cancel) are simultaneously
+   * disabled so the user cannot POST an approval into a dead socket.
+   * Buttons re-enable as soon as the socket reconnects.
+   *
+   * Behavior anchor: ``docs/behavior/chat.md`` §"Approval modal".
+   */
+  reconnectingBanner:
+    "Reconnecting — your response will send once the socket is back.",
 } as const;
 
 /**
