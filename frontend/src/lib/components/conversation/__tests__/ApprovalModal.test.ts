@@ -118,6 +118,34 @@ describe("ApprovalModal — WS reconnect: buttons re-enable without dismissing",
   });
 });
 
+describe("ApprovalModal — Esc is blocked while the gate is up (gap-cycle-10-010)", () => {
+  it("Esc keypress is a no-op — modal stays open and postApproval is not called", async () => {
+    const { getByTestId } = render(ApprovalModal, {
+      props: { sessionId: "ses_x", approval: makeApproval() },
+    });
+    // Dispatch on the modal element so capture phase runs from window → target.
+    await fireEvent.keyDown(getByTestId("approval-modal"), { key: "Escape" });
+    // Modal element still in the DOM.
+    expect(getByTestId("approval-modal")).toBeTruthy();
+    // No resolution POST was triggered.
+    expect(postApprovalMock).not.toHaveBeenCalled();
+  });
+
+  it("Esc does not propagate to bubble-phase handlers (e.g. the Esc cascade)", async () => {
+    // Register a bubble-phase listener on window before and after render;
+    // neither should fire because the modal's capture-phase listener calls
+    // stopPropagation before the event reaches the bubble phase.
+    const outerHandler = vi.fn();
+    window.addEventListener("keydown", outerHandler);
+    const { getByTestId } = render(ApprovalModal, {
+      props: { sessionId: "ses_x", approval: makeApproval() },
+    });
+    await fireEvent.keyDown(getByTestId("approval-modal"), { key: "Escape" });
+    expect(outerHandler).not.toHaveBeenCalled();
+    window.removeEventListener("keydown", outerHandler);
+  });
+});
+
 describe("ApprovalModal — submit while disconnected blocked", () => {
   it("clicking Allow while disconnected does not call postApproval", async () => {
     _setWsStatusForTests({ state: "closed", lastCloseCode: null });

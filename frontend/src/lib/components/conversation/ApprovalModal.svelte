@@ -16,6 +16,8 @@
    * :component:`AskUserQuestionModal` by the parent
    * :component:`Conversation` before reaching this component.
    */
+  import { onMount } from "svelte";
+
   import { APPROVAL_STRINGS } from "../../config";
   import { postApproval } from "../../api/approvals";
   import type { PendingApproval } from "../../stores/conversation.svelte";
@@ -30,6 +32,24 @@
 
   let submitting = $state(false);
   let error = $state<string | null>(null);
+
+  /**
+   * Block Esc for the lifetime of this modal. A capture-phase listener
+   * on window intercepts every Escape keypress before the Esc cascade,
+   * command palette, cheat sheet, or any other handler sees it. The
+   * intent: approval / denial is click-only — accidental Esc must not
+   * resolve the gate. Mirrors v17 ApprovalModal behaviour.
+   */
+  onMount(() => {
+    function blockEsc(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }
+    window.addEventListener("keydown", blockEsc, true);
+    return () => window.removeEventListener("keydown", blockEsc, true);
+  });
 
   /** True only while the sessions-broadcast WebSocket is open. */
   const wsConnected = $derived(wsConnectionStatus.state === "open");

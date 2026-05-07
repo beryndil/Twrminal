@@ -220,6 +220,8 @@ The modal stays visible until the backend's `approval_resolved` event arrives ov
 
 **WebSocket reconnect guard.** Both modal flavours subscribe to `wsConnectionStatus.state` (the sessions-broadcast WebSocket, same source as the status strip). When the state is not `'open'` (i.e. `'closed'` or `'error'`), all action buttons — Allow, Deny, Submit, Cancel — are disabled and an amber inline banner reads "Reconnecting — your response will send once the socket is back." The buttons re-enable as soon as the socket transitions back to `'open'`, without dismissing the modal. This prevents the user from POSTing an approval into a dead socket, which would leave the modal open indefinitely because the `approval_resolved` event can never arrive.
 
+**Esc is blocked while an approval modal is open.** Both modal flavours install a window-level capture-phase `keydown` listener for the duration they are mounted. Any Escape keypress is consumed (`preventDefault` + `stopPropagation`) before it can reach the Esc cascade, the command palette, the cheat sheet, or any other overlay handler. The modals are dismiss-only via the action buttons (Allow / Deny / Submit / Cancel) — keyboard dismiss is intentionally disabled to prevent accidental gate resolution. *Added in gap-cycle-10-010.*
+
 ## Sidebar system-status card (gap-cycle-08-006)
 
 A card-shaped container is pinned at the sidebar bottom, above the identity block. It exposes two always-visible health rows so users dwelling in the sidebar can answer "system OK?" without scanning the full-width status strip at the bottom of the app shell.
