@@ -38,6 +38,7 @@
     reopenSession,
   } from "../../api/sessions";
   import type { SessionOut } from "../../api/sessions";
+  import SessionEdit from "../modals/SessionEdit.svelte";
   import { attachTagToSession, detachTagFromSession, listTags } from "../../api/tags";
   import type { TagOut } from "../../api/tags";
   import { createTemplate } from "../../api/templates";
@@ -49,6 +50,7 @@
     MENU_ACTION_SESSION_COPY_TITLE,
     MENU_ACTION_SESSION_DELETE,
     MENU_ACTION_SESSION_DUPLICATE,
+    MENU_ACTION_SESSION_EDIT,
     MENU_ACTION_SESSION_EDIT_TAGS,
     MENU_ACTION_SESSION_EXPORT_JSON,
     MENU_ACTION_SESSION_MERGE_INTO,
@@ -265,6 +267,25 @@
     await refreshSessions(currentFilter());
   }
 
+  // ---- session-edit modal state ------------------------------------------
+
+  let showEditModal = $state(false);
+  let allTagsForEdit = $state<TagOut[]>([]);
+
+  async function openEditModal(): Promise<void> {
+    try {
+      allTagsForEdit = await listTags();
+    } catch {
+      allTagsForEdit = [];
+    }
+    showEditModal = true;
+  }
+
+  async function handleEditSave(): Promise<void> {
+    showEditModal = false;
+    await refreshSessions(currentFilter());
+  }
+
   // ---- confirm delete state ----------------------------------------------
 
   let showDeleteConfirm = $state(false);
@@ -291,6 +312,9 @@
   const menuHandlers = $derived({
     [MENU_ACTION_SESSION_OPEN_IN_NEW_TAB]: () => {
       window.open(sessionHref, "_blank", "noopener");
+    },
+    [MENU_ACTION_SESSION_EDIT]: () => {
+      void openEditModal();
     },
     [MENU_ACTION_SESSION_RENAME]: startRename,
     [MENU_ACTION_SESSION_EDIT_TAGS]: () => {
@@ -381,6 +405,18 @@
       : {}),
   });
 </script>
+
+{#if showEditModal}
+  <SessionEdit
+    {session}
+    currentTags={tags}
+    allTags={allTagsForEdit}
+    onSave={() => void handleEditSave()}
+    onCancel={() => {
+      showEditModal = false;
+    }}
+  />
+{/if}
 
 {#if showTagPicker}
   <SessionTagPicker

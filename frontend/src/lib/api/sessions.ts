@@ -563,6 +563,42 @@ export async function patchSessionTitle(
 }
 
 /**
+ * Wire shape for the full ``PATCH /api/sessions/{id}`` surface.
+ *
+ * All fields are optional; only supplied fields are written (true PATCH
+ * semantics). ``null`` clears a nullable column.  ``tag_ids`` replaces
+ * the session's tag set wholesale when present.
+ *
+ * Gap: gap-cycle-10-001 (SessionEdit modal).
+ */
+export interface SessionPatchBody {
+  title?: string;
+  description?: string | null;
+  max_budget_usd?: number | null;
+  session_instructions?: string | null;
+  tag_ids?: number[];
+}
+
+/**
+ * Apply a partial update to a session via ``PATCH /api/sessions/{id}``.
+ *
+ * Any field in ``body`` overwrites the stored value; omitted fields are
+ * left unchanged. To clear a nullable field send ``null`` explicitly
+ * (e.g. ``{ description: null }``).
+ *
+ * @throws :class:`ApiError` on 404 (session not found), 422 (bad value
+ *   — e.g. empty title, negative budget, unknown tag_id), or 5xx.
+ */
+export async function patchSession(
+  sessionId: string,
+  body: SessionPatchBody,
+  options: RequestOptions = {},
+): Promise<SessionOut> {
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}`;
+  return await patchJson<SessionOut>(path, body, options);
+}
+
+/**
  * Import a session from an export JSON blob via
  * ``POST /api/sessions/import``.
  *

@@ -26,6 +26,7 @@ Action IDs (e.g. `session.copy_id`) are public — `~/.config/bearings/menus.tom
 | Section | Label | ID | Notes |
 |---|---|---|---|
 | navigate | Open in new tab | `session.open_in_new_tab` | |
+| edit | Edit session… | `session.edit` | Opens the SessionEdit modal (Title, Description, Budget, Tags, Instructions). |
 | edit | Rename… | `session.rename` | Inline edit in place. |
 | edit | Edit tags… | `session.edit_tags` | Opens tag picker. |
 | edit | Change model for continuation ▸ | `session.change_model` | Same dialog as the conversation-header model dropdown. |

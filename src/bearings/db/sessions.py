@@ -545,6 +545,96 @@ async def list_all(
     return [_row_to_session(row) for row in rows]
 
 
+_SENTINEL = object()
+
+
+async def update_fields(
+    connection: aiosqlite.Connection,
+    session_id: str,
+    *,
+    title: object = _SENTINEL,
+    description: object = _SENTINEL,
+    max_budget_usd: object = _SENTINEL,
+    session_instructions: object = _SENTINEL,
+) -> Session | None:
+    """Patch arbitrary mutable session columns in one round-trip.
+
+    Only keyword arguments whose value is not ``_SENTINEL`` are written.
+    Callers should pass exactly the columns they want to change; all
+    others are left untouched (true PATCH semantics).
+
+    Nullable columns (``description``, ``max_budget_usd``,
+    ``session_instructions``) may be passed as ``None`` to clear them.
+    ``title`` must be a non-empty string.
+
+    Returns the refreshed :class:`Session` row, or ``None`` when no
+    row matches ``session_id``.
+
+    Gap: gap-cycle-10-001 (SessionEdit modal — full PATCH surface).
+    """
+    existing = await get(connection, session_id)
+    if existing is None:
+        return None
+
+    assignments: list[str] = []
+    params: list[object] = []
+
+    if title is not _SENTINEL:
+        if not isinstance(title, str) or not title:
+            raise ValueError("update_fields: title must be a non-empty string")
+        if len(title) > SESSION_TITLE_MAX_LENGTH:
+            raise ValueError(f"update_fields: title must be ≤ {SESSION_TITLE_MAX_LENGTH} chars")
+        assignments.append("title = ?")
+        params.append(title)
+
+    if description is not _SENTINEL:
+        if description is not None:
+            if not isinstance(description, str):
+                raise ValueError("update_fields: description must be a string or None")
+            if len(description) > SESSION_DESCRIPTION_MAX_LENGTH:
+                raise ValueError(
+                    f"update_fields: description must be ≤ {SESSION_DESCRIPTION_MAX_LENGTH} chars"
+                )
+        assignments.append("description = ?")
+        params.append(description)
+
+    if max_budget_usd is not _SENTINEL:
+        if max_budget_usd is not None:
+            if not isinstance(max_budget_usd, (int, float)):
+                raise ValueError("update_fields: max_budget_usd must be a number or None")
+            if max_budget_usd < 0:
+                raise ValueError("update_fields: max_budget_usd must be ≥ 0")
+        assignments.append("max_budget_usd = ?")
+        params.append(max_budget_usd)
+
+    if session_instructions is not _SENTINEL:
+        if session_instructions is not None:
+            if not isinstance(session_instructions, str):
+                raise ValueError("update_fields: session_instructions must be a string or None")
+            if len(session_instructions) > SESSION_DESCRIPTION_MAX_LENGTH:
+                raise ValueError(
+                    f"update_fields: session_instructions must be ≤ "
+                    f"{SESSION_DESCRIPTION_MAX_LENGTH} chars"
+                )
+        assignments.append("session_instructions = ?")
+        params.append(session_instructions)
+
+    if not assignments:
+        # Nothing to write — return existing row unchanged.
+        return existing
+
+    timestamp = now_iso()
+    assignments.append("updated_at = ?")
+    params.append(timestamp)
+    params.append(session_id)
+    await connection.execute(
+        f"UPDATE sessions SET {', '.join(assignments)} WHERE id = ?",
+        params,
+    )
+    await connection.commit()
+    return await get(connection, session_id)
+
+
 async def update_title(
     connection: aiosqlite.Connection,
     session_id: str,
@@ -1088,6 +1178,7 @@ __all__ = [
     "is_closed",
     "list_all",
     "reopen",
+    "update_fields",
     "update_pinned",
     "update_routing_decision",
     "update_title",

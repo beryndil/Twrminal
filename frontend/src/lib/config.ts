@@ -1503,6 +1503,7 @@ export const INSPECTOR_STRINGS = {
   instructionsHeading: "Instructions",
   instructionsBodyLabel: "Session instructions",
   instructionsEmpty: "No per-session instructions set.",
+  instructionsEditButton: "Edit…",
   // Files subsection (gap-cycle-09-003) — derives rows from
   // conversationStore.turns via path-key extraction on each
   // ToolCallView. The three path keys (file_path, notebook_path,
@@ -1616,6 +1617,38 @@ export const INSPECTOR_STRINGS = {
   usageRulesToReviewColRate: "Override rate",
   usageRulesToReviewColFired: "Fired",
   usageRulesToReviewColOverridden: "Overridden",
+} as const;
+
+// ---- Session-edit modal string table -------------------------------------
+
+/**
+ * UI strings for the SessionEdit modal (gap-cycle-10-001).
+ *
+ * The modal exposes Title, Description, Budget USD, Tags, and Session
+ * instructions fields. AI-title-suggestion (✨) is intentionally out of
+ * scope — it depends on the absent anthropic backend (cycle 1 gap-020
+ * root cause); see ``docs/behavior/chat.md`` §"SessionEdit modal" for
+ * the documented carve-out.
+ */
+export const SESSION_EDIT_MODAL_STRINGS = {
+  title: "Edit session",
+  ariaLabel: "Edit session modal",
+  titleLabel: "Title",
+  titlePlaceholder: "Session title",
+  descriptionLabel: "Description",
+  descriptionPlaceholder: "Short description (optional)",
+  budgetLabel: "Budget cap (USD)",
+  budgetPlaceholder: "No cap",
+  tagsLabel: "Tags",
+  tagInputPlaceholder: "Type to filter or create a tag…",
+  tagCreateHint: (name: string): string => `Press Enter to create "${name}"`,
+  tagNoMatches: "No matching tags — press Enter to create",
+  instructionsLabel: "Session instructions",
+  instructionsPlaceholder: "Per-session instructions injected into every prompt (optional)",
+  saveButton: "Save",
+  savingButton: "Saving…",
+  cancelButton: "Cancel",
+  errorPrefix: "Save failed:",
 } as const;
 
 // ---- New-session dialog string table -------------------------------------
@@ -2566,6 +2599,7 @@ export type MenuSectionId = (typeof MENU_SECTION_ORDER)[number];
 // action lists" table. ``menus.toml`` references these by id; renaming
 // breaks user overrides, so each id is a stable string.
 export const MENU_ACTION_SESSION_OPEN_IN_NEW_TAB = "session.open_in_new_tab";
+export const MENU_ACTION_SESSION_EDIT = "session.edit";
 export const MENU_ACTION_SESSION_RENAME = "session.rename";
 export const MENU_ACTION_SESSION_EDIT_TAGS = "session.edit_tags";
 export const MENU_ACTION_SESSION_CHANGE_MODEL = "session.change_model";
@@ -2665,6 +2699,7 @@ export const CONTEXT_MENU_STRINGS = {
   destructiveConfirmLabel: "Confirm",
   actionLabels: {
     [MENU_ACTION_SESSION_OPEN_IN_NEW_TAB]: "Open in new tab",
+    [MENU_ACTION_SESSION_EDIT]: "Edit session…",
     [MENU_ACTION_SESSION_RENAME]: "Rename…",
     [MENU_ACTION_SESSION_EDIT_TAGS]: "Edit tags…",
     [MENU_ACTION_SESSION_CHANGE_MODEL]: "Change model for continuation",

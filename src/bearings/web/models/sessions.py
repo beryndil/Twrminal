@@ -212,6 +212,37 @@ class SessionDescriptionUpdate(BaseModel):  # pragma: no cover — reserved for 
     description: str | None = Field(default=None, max_length=SESSION_DESCRIPTION_MAX_LENGTH)
 
 
+class SessionUpdate(BaseModel):
+    """Request shape for the full ``PATCH /api/sessions/{id}`` surface.
+
+    All fields are optional; omitted fields are not written (true PATCH
+    semantics, gated by ``model_fields_set``).  Nullable fields (
+    ``description``, ``max_budget_usd``, ``session_instructions``) may
+    be sent as ``null`` to clear the column.  ``title`` must be a
+    non-empty string when present.
+
+    ``tag_ids`` when present replaces the session's tag set wholesale via
+    :func:`bearings.db.tags.set_for_session`. Omitting ``tag_ids``
+    leaves existing tags unchanged.
+
+    Supersedes :class:`SessionTitleUpdate` — existing callers that send
+    only ``{"title": "…"}`` are still served correctly because ``title``
+    is the only field in their ``model_fields_set``.
+
+    Gap: gap-cycle-10-001 (SessionEdit modal — full PATCH surface).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=SESSION_TITLE_MAX_LENGTH)
+    description: str | None = Field(default=None, max_length=SESSION_DESCRIPTION_MAX_LENGTH)
+    max_budget_usd: float | None = None
+    session_instructions: str | None = Field(
+        default=None, max_length=SESSION_DESCRIPTION_MAX_LENGTH
+    )
+    tag_ids: list[int] | None = None
+
+
 class PairedChatInfo(BaseModel):
     """Response shape for ``GET /api/sessions/{id}/paired-chat-info``.
 
@@ -364,5 +395,6 @@ __all__ = [
     "SessionPinnedUpdate",
     "SessionTitleUpdate",
     "SessionTodosOut",
+    "SessionUpdate",
     "ToolCallOut",
 ]

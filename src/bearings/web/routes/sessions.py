@@ -88,8 +88,8 @@ from bearings.web.models.sessions import (
     SessionOut,
     SessionPermissionModeUpdate,
     SessionPinnedUpdate,
-    SessionTitleUpdate,
     SessionTodosOut,
+    SessionUpdate,
     ToolCallOut,
 )
 from bearings.web.routes.ws_sessions import SessionsBroadcaster
@@ -423,13 +423,67 @@ async def get_session(session_id: str, request: Request) -> SessionOut:
 @router.patch("/api/sessions/{session_id}", response_model=SessionOut)
 async def patch_session(
     session_id: str,
-    payload: SessionTitleUpdate,
+    payload: SessionUpdate,
     request: Request,
 ) -> SessionOut:
-    """Title-only PATCH for v0.18.0; description editor lands later."""
+    """Full-field PATCH for a session.
+
+    Accepts any subset of ``title``, ``description``, ``max_budget_usd``,
+    ``session_instructions``, and ``tag_ids`` — only supplied fields are
+    written (true PATCH semantics via ``model_fields_set``).  When
+    ``tag_ids`` is present the session's tag set is replaced wholesale.
+
+    Gap: gap-cycle-10-001 (SessionEdit modal).
+    """
     db = _db(request)
+    fs = payload.model_fields_set
+
+    # Validate tag_ids before writing any fields so a bad tag list
+    # doesn't leave the session in a partially-updated state.
+    new_tag_ids: tuple[int, ...] | None = None
+    if "tag_ids" in fs and payload.tag_ids is not None:
+        tag_ids_list = payload.tag_ids
+        if tag_ids_list:
+            existing_ids = {
+                row["id"]
+                async for row in await db.execute(
+                    "SELECT id FROM tags WHERE id IN ({})".format(
+                        ",".join("?" * len(tag_ids_list))
+                    ),
+                    tag_ids_list,
+                )
+            }
+            missing = sorted({tid for tid in tag_ids_list if tid not in existing_ids})
+            if missing:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"unknown tag_ids: {missing}",
+                )
+        new_tag_ids = tuple(tag_ids_list)
+
+    # Build kwargs for update_fields from the present fields.
+    kwargs: dict[str, object] = {}
+    if "title" in fs:
+        if payload.title is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="title must not be null",
+            )
+        kwargs["title"] = payload.title
+    if "description" in fs:
+        kwargs["description"] = payload.description
+    if "max_budget_usd" in fs:
+        if payload.max_budget_usd is not None and payload.max_budget_usd < 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="max_budget_usd must be ≥ 0",
+            )
+        kwargs["max_budget_usd"] = payload.max_budget_usd
+    if "session_instructions" in fs:
+        kwargs["session_instructions"] = payload.session_instructions
+
     try:
-        row = await sessions_db.update_title(db, session_id, title=payload.title)
+        row = await sessions_db.update_fields(db, session_id, **kwargs)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
@@ -439,6 +493,10 @@ async def patch_session(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no session matches {session_id!r}",
         )
+
+    if new_tag_ids is not None:
+        await tags_db.set_for_session(db, session_id=session_id, tag_ids=new_tag_ids)
+
     out = _to_out(row)
     broadcaster = _sessions_broadcaster(request)
     if broadcaster is not None:

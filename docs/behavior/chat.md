@@ -292,7 +292,32 @@ Below the grid is an **Assembled context** section. Today it renders a placehold
 
 Exposes the per-session free-text instructions (`session_instructions` on `SessionOut`). When the value is a non-empty (post-trim) string, the body renders inside a monospace pre-block with whitespace-preserving wrap. When the value is null, empty, or whitespace-only, the user sees the empty-state copy `No per-session instructions set.` — the renderer treats whitespace-only as empty so a stray newline does not masquerade as content.
 
-The Instructions subsection is read-only in v0.18.0 — the editor surface for the field lives in the SessionEdit modal (per arch §1.2 `components/modals/`), not in the Inspector body. Inspector renders a faithful view of the persisted value; round-tripping back through the editor preserves the exact text including leading/trailing whitespace inside the bubble.
+An **Edit…** button in the Instructions subsection header opens the SessionEdit modal with the instructions textarea focused (gap-cycle-10-001). The modal is the canonical editor surface for all four session-level fields (Title, Description, Budget, Instructions) — the Inspector body remains a read-only view.
+
+## SessionEdit modal
+
+The SessionEdit modal opens from two entry points:
+
+* Right-click a sidebar session row → **Edit session…** (`session.edit` context-menu action).
+* Click **Edit…** in the Inspector → Instructions subsection header — opens the modal with the instructions textarea scrolled into view and focused.
+
+The modal presents five fields seeded from the current session row:
+
+| Field | Type | Notes |
+|---|---|---|
+| Title | text input | Required; must be non-empty. |
+| Description | multi-line textarea | Optional; blank clears the column. |
+| Budget cap (USD) | number input | Optional; blank → no cap. Negative values are rejected inline. |
+| Tags | chip list + text input | Attached tags render as chips with × to detach. Typing in the input filters the global tag pool; Enter on an existing-name match attaches it; Enter on a non-existent name creates then attaches the tag inline. |
+| Session instructions | multi-line monospace textarea | Optional; blank clears the column. |
+
+**Save** fires `PATCH /api/sessions/{id}` with all five fields. The server broadcasts an upsert via the sessions WebSocket so the sidebar row and conversation header update without a hard refresh. The modal closes on 2xx.
+
+**Cancel**, **Esc**, and clicking the backdrop all discard changes and close the modal without firing a PATCH.
+
+### SessionEdit modal — deferred features
+
+* **AI-title-suggestion (✨)** — out of scope. The feature depends on a Claude API backend call that is not yet wired in v0.18.x (root cause: cycle 1 gap-020). The ✨ button is not rendered. This carve-out is documented here and in the component source.
 
 ### Files
 

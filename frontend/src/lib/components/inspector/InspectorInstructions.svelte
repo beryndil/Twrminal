@@ -10,13 +10,9 @@
    *
    * - ``docs/architecture-v1.md`` §1.2 enumerates this component as
    *   ``InspectorInstructions.svelte`` under ``components/inspector/``.
-   * - ``docs/behavior/chat.md`` carries the per-session-instructions
-   *   field implicitly via the session shape (see ``SessionOut``);
-   *   chat.md does not yet describe an in-app editor for the field.
-   *   Item 2.5 ships read-only rendering; an editor is deferred to
-   *   later items (the v0.17.x parity surface for editing the field
-   *   lived in the SessionEdit modal — see ``components/modals/`` per
-   *   arch §1.2).
+   * - ``docs/behavior/chat.md`` §"SessionEdit modal" — the "Edit…"
+   *   button opens ``SessionEdit`` scrolled to the instructions textarea
+   *   (``focusInstructions=true``). Gap: gap-cycle-10-001.
    *
    * The pre-block uses ``whitespace-pre-wrap`` so multi-line
    * instructions render with their original line breaks while still
@@ -25,12 +21,18 @@
    */
   import { INSPECTOR_STRINGS } from "../../config";
   import type { SessionOut } from "../../api/sessions";
+  import { listTags, type TagOut } from "../../api/tags";
+  import { refreshSessions } from "../../stores/sessions.svelte";
+  import { currentFilter } from "../../stores/tags.svelte";
+  import SessionEdit from "../modals/SessionEdit.svelte";
 
   interface Props {
     session: SessionOut;
+    /** Tags currently attached to this session (from the sessions store). */
+    currentTags?: readonly TagOut[];
   }
 
-  const { session }: Props = $props();
+  const { session, currentTags = [] }: Props = $props();
 
   // ``session_instructions`` is ``string | null`` on the wire. An empty
   // string is treated the same as ``null`` for display purposes — both
@@ -38,12 +40,54 @@
   // treated as empty so a stray newline doesn't masquerade as content.
   const trimmed = $derived(session.session_instructions?.trim() ?? "");
   const hasInstructions = $derived(trimmed.length > 0);
+
+  // ---- edit modal state --------------------------------------------------
+
+  let showEditModal = $state(false);
+  let allTagsForEdit = $state<TagOut[]>([]);
+
+  async function openEditModal(): Promise<void> {
+    try {
+      allTagsForEdit = await listTags();
+    } catch {
+      allTagsForEdit = [];
+    }
+    showEditModal = true;
+  }
+
+  async function handleEditSave(): Promise<void> {
+    showEditModal = false;
+    await refreshSessions(currentFilter());
+  }
 </script>
 
+{#if showEditModal}
+  <SessionEdit
+    {session}
+    {currentTags}
+    allTags={allTagsForEdit}
+    focusInstructions={true}
+    onSave={() => void handleEditSave()}
+    onCancel={() => {
+      showEditModal = false;
+    }}
+  />
+{/if}
+
 <section class="inspector-instructions flex flex-col gap-3" data-testid="inspector-instructions">
-  <h3 class="text-xs font-semibold uppercase tracking-wider text-fg-muted">
-    {INSPECTOR_STRINGS.instructionsHeading}
-  </h3>
+  <div class="flex items-center justify-between">
+    <h3 class="text-xs font-semibold uppercase tracking-wider text-fg-muted">
+      {INSPECTOR_STRINGS.instructionsHeading}
+    </h3>
+    <button
+      type="button"
+      class="rounded border border-border bg-surface-2 px-1.5 py-0.5 text-xs text-fg hover:bg-surface-1"
+      data-testid="inspector-instructions-edit-btn"
+      onclick={() => void openEditModal()}
+    >
+      {INSPECTOR_STRINGS.instructionsEditButton}
+    </button>
+  </div>
 
   {#if hasInstructions}
     <pre
