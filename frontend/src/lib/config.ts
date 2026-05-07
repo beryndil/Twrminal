@@ -864,6 +864,7 @@ export const SIDEBAR_STRINGS = {
   sessionsLabel: "Session list",
   tagFilterLabel: "Filter by tag",
   tagFilterClearLabel: "Clear filter",
+  tagPinnedIndicatorAriaLabel: "Pinned",
   emptySessionList: "No sessions match the current filter.",
   emptySessionListUnfiltered: "No sessions yet.",
   loadingSessions: "Loading sessions…",

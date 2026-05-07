@@ -80,6 +80,15 @@ tags surface their `default_model` / `working_dir` inputs disabled
 and cleared because the backend rejects non-null inheritance fields
 on severity rows.
 
+Pinned tags float to the top of their class section and render a
+visible amber star (★) inside the chip alongside the tag name
+(`data-testid="tag-filter-chip-pinned-indicator"`, `aria-label="Pinned"`).
+A thin divider rule separates the pinned cohort from the unpinned
+cohort within each section when both cohorts are non-empty. The
+indicator appears and disappears within the same broadcast tick as
+the `tag.pin` / `tag.unpin` context-menu actions (the `onRefresh →
+refreshTags` flow already triggers a re-render).
+
 ### Tag chip (attached to a session, inside SessionEdit / NewSessionForm)
 
 | Section | Label | ID |

@@ -176,4 +176,77 @@ describe("TagFilterPanel", () => {
     expect(pressedById.get("1")).toBe("true");
     expect(pressedById.get("2")).toBe("false");
   });
+
+  it("renders no pin indicator on a chip when pinned is false", () => {
+    const { queryAllByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [tag(1, "bearings", "project")],
+        ...emptySets(),
+        onToggle: vi.fn(),
+        onClear: vi.fn(),
+      },
+    });
+    expect(queryAllByTestId("tag-filter-chip-pinned-indicator")).toHaveLength(0);
+  });
+
+  it("renders a pin indicator on a chip when pinned is true", () => {
+    const { getAllByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [{ ...tag(1, "bearings", "project"), pinned: true }],
+        ...emptySets(),
+        onToggle: vi.fn(),
+        onClear: vi.fn(),
+      },
+    });
+    const indicators = getAllByTestId("tag-filter-chip-pinned-indicator");
+    expect(indicators).toHaveLength(1);
+    expect(indicators[0]).toHaveTextContent("★");
+  });
+
+  it("pin indicator has an accessible aria-label", () => {
+    const { getByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [{ ...tag(1, "bearings", "project"), pinned: true }],
+        ...emptySets(),
+        onToggle: vi.fn(),
+        onClear: vi.fn(),
+      },
+    });
+    expect(getByTestId("tag-filter-chip-pinned-indicator")).toHaveAttribute(
+      "aria-label",
+      "Pinned",
+    );
+  });
+
+  it("renders pin indicators across all three class sections", () => {
+    const { getAllByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [
+          { ...tag(1, "bearings", "project"), pinned: true },
+          { ...tag(2, "urgent", "severity"), pinned: true },
+          { ...tag(3, "freeform", "general"), pinned: true },
+        ],
+        ...emptySets(),
+        onToggle: vi.fn(),
+        onClear: vi.fn(),
+      },
+    });
+    expect(getAllByTestId("tag-filter-chip-pinned-indicator")).toHaveLength(3);
+  });
+
+  it("renders indicator only on pinned chips in a mixed bucket", () => {
+    const { getAllByTestId, queryAllByTestId } = render(TagFilterPanel, {
+      props: {
+        tags: [
+          { ...tag(1, "pinned-proj", "project"), pinned: true },
+          tag(2, "unpinned-proj", "project"),
+        ],
+        ...emptySets(),
+        onToggle: vi.fn(),
+        onClear: vi.fn(),
+      },
+    });
+    expect(queryAllByTestId("tag-filter-chip-pinned-indicator")).toHaveLength(1);
+    expect(getAllByTestId("tag-filter-chip")).toHaveLength(2);
+  });
 });

@@ -188,7 +188,14 @@
           </p>
         {:else}
           <div class="flex flex-wrap gap-1" role="group" aria-label={`${section.label} tags`}>
-            {#each section.bucket as tag (tag.id)}
+            {#each section.bucket as tag, i (tag.id)}
+              {#if i > 0 && !tag.pinned && section.bucket[i - 1].pinned}
+                <div
+                  class="my-0.5 w-full border-t border-border/40"
+                  role="separator"
+                  aria-hidden="true"
+                ></div>
+              {/if}
               <button
                 type="button"
                 class="rounded px-1.5 py-0.5 text-xs transition-colors"
@@ -208,6 +215,13 @@
                 }}
               >
                 {tag.name}
+                {#if tag.pinned}
+                  <span
+                    class="ml-0.5 text-accent"
+                    aria-label={SIDEBAR_STRINGS.tagPinnedIndicatorAriaLabel}
+                    data-testid="tag-filter-chip-pinned-indicator"
+                  >★</span>
+                {/if}
               </button>
             {/each}
           </div>
