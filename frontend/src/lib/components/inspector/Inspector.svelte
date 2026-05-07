@@ -122,10 +122,12 @@
         type="button"
         class="inspector__tab rounded px-2 py-1 text-xs font-medium"
         class:inspector__tab--active={activeTabId === tabId}
+        id={`inspector-tab-${tabId}`}
         data-testid="inspector-tab"
         data-tab-id={tabId}
         role="tab"
         aria-selected={activeTabId === tabId}
+        aria-controls={`inspector-panel-${tabId}`}
         onclick={() => handleTabClick(tabId)}
       >
         {INSPECTOR_STRINGS.tabLabels[tabId]}
@@ -137,6 +139,7 @@
     class="inspector__body flex-1 overflow-y-auto p-3 text-sm"
     data-testid="inspector-body"
     role="tabpanel"
+    id={`inspector-panel-${activeTabId}`}
     aria-labelledby={`inspector-tab-${activeTabId}`}
   >
     {#if session === null || session === undefined}

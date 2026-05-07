@@ -350,6 +350,52 @@ describe("Inspector shell — tab state persistence (gap-cycle-09-001)", () => {
   });
 });
 
+describe("Inspector shell — ARIA tab panel labelling (gap-cycle-12-003)", () => {
+  it("tabpanel announces the active tab label for the default tab (Agent)", () => {
+    const { getByRole } = render(Inspector, { props: { session: fakeSession() } });
+    expect(getByRole("tabpanel")).toHaveAccessibleName(
+      INSPECTOR_STRINGS.tabLabels[DEFAULT_INSPECTOR_TAB],
+    );
+  });
+
+  it("each tab button carries id=inspector-tab-<tabId>", () => {
+    const { getAllByTestId } = render(Inspector, { props: { session: fakeSession() } });
+    for (const tab of getAllByTestId("inspector-tab")) {
+      const tabId = tab.dataset.tabId as InspectorTabId;
+      expect(tab.id).toBe(`inspector-tab-${tabId}`);
+    }
+  });
+
+  it("each tab button aria-controls points to inspector-panel-<tabId>", () => {
+    const { getAllByTestId } = render(Inspector, { props: { session: fakeSession() } });
+    for (const tab of getAllByTestId("inspector-tab")) {
+      const tabId = tab.dataset.tabId as InspectorTabId;
+      expect(tab.getAttribute("aria-controls")).toBe(`inspector-panel-${tabId}`);
+    }
+  });
+
+  it("tabpanel accessible name updates when the active tab changes", async () => {
+    const { getByRole } = render(Inspector, {
+      props: {
+        session: fakeSession(),
+        fetchMessages: () => new Promise(() => {}),
+        fetchHistory: () => new Promise(() => {}),
+        fetchByModel: () => new Promise(() => {}),
+        fetchOverrideRates: () => new Promise(() => {}),
+      },
+    });
+    expect(getByRole("tabpanel")).toHaveAccessibleName(
+      INSPECTOR_STRINGS.tabLabels[DEFAULT_INSPECTOR_TAB],
+    );
+    setInspectorTab(INSPECTOR_TAB_CONTEXT);
+    await waitFor(() => {
+      expect(getByRole("tabpanel")).toHaveAccessibleName(
+        INSPECTOR_STRINGS.tabLabels[INSPECTOR_TAB_CONTEXT],
+      );
+    });
+  });
+});
+
 describe("Inspector shell — empty session", () => {
   it("renders the empty-state copy when session is null", () => {
     const { getByTestId, queryByTestId } = render(Inspector, { props: { session: null } });
