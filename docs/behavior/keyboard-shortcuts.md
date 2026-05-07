@@ -8,7 +8,7 @@ Sibling subsystems referenced here:
 ## What the user sees
 
 * Pressing `?` (anywhere outside an input) opens the cheat sheet modal; pressing `?` again while the cheat sheet is open closes it. The modal lists every active binding grouped by purpose; each chord is rendered as `<kbd>`-style key caps so `Shift+C` shows as `[Shift][C]`.
-* The cheat-sheet content is generated from the same registry that wires the bindings — there is no "docs vs reality" gap.
+* The cheat sheet renders two tables in order: (1) the global keybinding registry (the same array that wires the dispatcher), then (2) a static non-registry table of context-local chords (`frontend/src/lib/keyboard/nonRegistryBindings.ts`) covering the composer (`Enter` / `Shift+Enter`), context menus (arrow navigation, `Enter`, `→`, `Esc`, mnemonics), and checklists (`Tab` / `Shift+Tab` / `Enter`). Adding a context-local row only requires editing `nonRegistryBindings.ts` — the dispatcher and registry are not touched.
 * Conflicting chords are not allowed at boot time. A duplicate registration crashes early (in development) so a typo cannot silently shadow a working key in production.
 
 ## Bindings (v1)

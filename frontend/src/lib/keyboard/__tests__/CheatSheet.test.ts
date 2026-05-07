@@ -1,6 +1,7 @@
 /**
  * Cheat sheet component tests — renders every binding from
- * :data:`KEYBINDINGS` grouped by section, close button fires onClose.
+ * :data:`KEYBINDINGS` grouped by section, renders non-registry context
+ * sections from :data:`NON_REGISTRY_SECTIONS`, close button fires onClose.
  */
 import { fireEvent, render } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,6 +13,7 @@ import {
 } from "../../config";
 import { _resetForTests as resetEsc } from "../escCascade";
 import CheatSheet from "../CheatSheet.svelte";
+import { NON_REGISTRY_SECTIONS } from "../nonRegistryBindings";
 
 beforeEach(() => {
   resetEsc();
@@ -63,5 +65,71 @@ describe("CheatSheet", () => {
     const { getByTestId } = render(CheatSheet, { props: { open: true, onClose } });
     await fireEvent.click(getByTestId("cheat-sheet-backdrop"));
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  describe("non-registry sections", () => {
+    it("renders the Conversation section with at least one row", () => {
+      const { getAllByTestId } = render(CheatSheet, {
+        props: { open: true, onClose: vi.fn() },
+      });
+      const sections = getAllByTestId("cheat-sheet-section");
+      const conversationSection = sections.find(
+        (s) => s.getAttribute("data-section") === "conversation",
+      );
+      expect(conversationSection).toBeDefined();
+      const rows = conversationSection!.querySelectorAll('[data-testid="cheat-sheet-row"]');
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("renders the Context menu section with at least one row", () => {
+      const { getAllByTestId } = render(CheatSheet, {
+        props: { open: true, onClose: vi.fn() },
+      });
+      const sections = getAllByTestId("cheat-sheet-section");
+      const contextMenuSection = sections.find(
+        (s) => s.getAttribute("data-section") === "context_menu",
+      );
+      expect(contextMenuSection).toBeDefined();
+      const rows = contextMenuSection!.querySelectorAll('[data-testid="cheat-sheet-row"]');
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("renders the Checklist section with at least one row", () => {
+      const { getAllByTestId } = render(CheatSheet, {
+        props: { open: true, onClose: vi.fn() },
+      });
+      const sections = getAllByTestId("cheat-sheet-section");
+      const checklistSection = sections.find(
+        (s) => s.getAttribute("data-section") === "checklist",
+      );
+      expect(checklistSection).toBeDefined();
+      const rows = checklistSection!.querySelectorAll('[data-testid="cheat-sheet-row"]');
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("renders all three non-registry sections defined in NON_REGISTRY_SECTIONS", () => {
+      const { getAllByTestId } = render(CheatSheet, {
+        props: { open: true, onClose: vi.fn() },
+      });
+      const sections = getAllByTestId("cheat-sheet-section");
+      const sectionIds = sections.map((s) => s.getAttribute("data-section"));
+      for (const group of NON_REGISTRY_SECTIONS) {
+        expect(sectionIds).toContain(group.id);
+      }
+    });
+
+    it("Conversation section includes Enter (send) and Shift+Enter (newline) rows", () => {
+      const { getAllByTestId } = render(CheatSheet, {
+        props: { open: true, onClose: vi.fn() },
+      });
+      const sections = getAllByTestId("cheat-sheet-section");
+      const conversationSection = sections.find(
+        (s) => s.getAttribute("data-section") === "conversation",
+      );
+      expect(conversationSection).toBeDefined();
+      const text = conversationSection!.textContent ?? "";
+      expect(text).toContain("Send message");
+      expect(text).toContain("Insert newline");
+    });
   });
 });

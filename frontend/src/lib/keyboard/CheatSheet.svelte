@@ -5,17 +5,21 @@
    * user sees". The modal opens on ``?``; ``Esc`` closes via the
    * cascade.
    *
-   * The cheat sheet content is generated from :data:`KEYBINDINGS` —
-   * the same array that wires the dispatcher — so there is no
-   * "docs vs reality" gap (the doc's promise: "the cheat-sheet
-   * content is generated from the same registry that wires the
-   * bindings — there is no 'docs vs reality' gap").
+   * Two source tables are rendered:
+   *
+   * 1. :data:`KEYBINDINGS` — the global registry that wires the
+   *    dispatcher (registry sections).
+   * 2. :data:`NON_REGISTRY_SECTIONS` — context-local chords wired by
+   *    individual components (composer, checklist, context menu) that
+   *    are not in the global registry.  Colocated here so adding a
+   *    row only requires editing this folder.
    */
   import { onMount } from "svelte";
 
   import { KEYBOARD_SHORTCUT_STRINGS } from "../config";
   import { KEYBINDINGS, KEYBINDING_SECTION_ORDER } from "./bindings";
   import { ESC_PRIORITY_OVERLAY, registerEscEntry } from "./escCascade";
+  import { NON_REGISTRY_SECTIONS } from "./nonRegistryBindings";
 
   interface Props {
     /** Open / closed flag. Driven by the keybindings provider. */
@@ -111,6 +115,32 @@
                       {/each}
                     </span>
                     <span class="cheat-sheet__label">{actionLabel(binding.id)}</span>
+                  </li>
+                {/each}
+              </ul>
+            </section>
+          {/if}
+        {/each}
+        {#each NON_REGISTRY_SECTIONS as group (group.id)}
+          {#if group.bindings.length > 0}
+            <section
+              class="cheat-sheet__section"
+              data-testid="cheat-sheet-section"
+              data-section={group.id}
+            >
+              <h3 class="cheat-sheet__section-heading">{group.heading}</h3>
+              <ul class="cheat-sheet__list">
+                {#each group.bindings as binding, i (i)}
+                  <li
+                    class="cheat-sheet__row"
+                    data-testid="cheat-sheet-row"
+                  >
+                    <span class="cheat-sheet__chord" data-testid="cheat-sheet-chord">
+                      {#each binding.keys as cap, j (j)}
+                        <kbd>{cap}</kbd>
+                      {/each}
+                    </span>
+                    <span class="cheat-sheet__label">{binding.label}</span>
                   </li>
                 {/each}
               </ul>
