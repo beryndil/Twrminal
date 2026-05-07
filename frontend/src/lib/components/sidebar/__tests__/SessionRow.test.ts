@@ -489,6 +489,45 @@ describe("SessionRow", () => {
     expect(getByTestId("session-activity-pip")).toHaveAttribute("data-pip-state", "orange");
   });
 
+  // ---- inline rename via double-click (gap-cycle-08-004) ----------------
+
+  it("double-clicking the session-title span enters rename mode", async () => {
+    const { getByTestId, queryByTestId } = render(SessionRow, {
+      props: {
+        session: baseSession,
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    // Rename input must not be present initially.
+    expect(queryByTestId("session-row-rename-input")).toBeNull();
+    // Dispatch dblclick directly on the title span.
+    await fireEvent.dblClick(getByTestId("session-title"));
+    // The rename input should now be rendered in place of the anchor.
+    expect(getByTestId("session-row-rename-input")).toBeInTheDocument();
+    // The pre-filled value should match the session title.
+    expect(getByTestId("session-row-rename-input")).toHaveValue("Hello");
+  });
+
+  it("double-clicking the title span does not fire onSelect", async () => {
+    const onSelect = vi.fn();
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: baseSession,
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect,
+        onToggleTag: vi.fn(),
+      },
+    });
+    await fireEvent.dblClick(getByTestId("session-title"));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   // ---- markSessionViewed on click ----------------------------------------
 
   it("clicking the row fires markSessionViewed with the session id", async () => {

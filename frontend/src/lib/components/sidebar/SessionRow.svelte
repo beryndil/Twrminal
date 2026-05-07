@@ -233,6 +233,19 @@
     renameError = null;
   }
 
+  // dblclick guard — a plain click on the title span starts a short timer
+  // so that if a second click follows within the dblclick window the
+  // dblclick handler can cancel navigation and enter rename instead.
+  // Plain variable (not $state): timer handles never need to trigger a
+  // re-render.
+  let titleClickTimer: ReturnType<typeof setTimeout> | null = null;
+
+  $effect(() => {
+    return () => {
+      if (titleClickTimer !== null) clearTimeout(titleClickTimer);
+    };
+  });
+
   // ---- tag picker state --------------------------------------------------
 
   let showTagPicker = $state(false);
@@ -566,7 +579,47 @@
           data-pip-state="green"
         ></span>
       {/if}
-      <span class="flex-1 truncate text-sm text-fg-strong" data-testid="session-title">
+      <!--
+        Title span: double-click enters inline rename (gap-cycle-08-004).
+        A plain click starts a 300 ms timer; if a second click arrives
+        within that window the dblclick handler fires, cancels the timer,
+        and calls startRename instead of navigating. Modifier clicks
+        (ctrl / meta / shift) return early so the anchor's multi-select
+        and range-select handlers receive them unchanged. The keyboard
+        rename path is the context menu (right-click → Rename); a
+        keyboard handler on this span would duplicate the anchor's own
+        navigation semantics, so a11y rules are suppressed here.
+      -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <span
+        class="flex-1 truncate text-sm text-fg-strong"
+        data-testid="session-title"
+        onclick={(event) => {
+          // Modifier clicks: let bubble to the anchor for ctrl/shift select.
+          if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+          // Plain click: consume the event and arm the dblclick guard.
+          event.stopPropagation();
+          if (titleClickTimer !== null) return; // second click — dblclick fires next
+          titleClickTimer = setTimeout(() => {
+            titleClickTimer = null;
+            if (multiSelectionStore.ids.size > 0) clearSelection();
+            onUpdateAnchor?.(session.id);
+            onSelect(session.id);
+            void markSessionViewed(session.id);
+            void goto(sessionHref);
+          }, 300);
+        }}
+        ondblclick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (titleClickTimer !== null) {
+            clearTimeout(titleClickTimer);
+            titleClickTimer = null;
+          }
+          startRename();
+        }}
+      >
         {session.title}
       </span>
       {#if session.pinned}

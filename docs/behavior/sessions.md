@@ -9,6 +9,30 @@ Sibling subsystems referenced here:
 [chat](chat.md), [context-menus](context-menus.md),
 [prompt-endpoint](prompt-endpoint.md).
 
+## Inline rename
+
+### Trigger
+
+Double-clicking the session-row title area (the title text span, not
+the checkbox or tag chips) enters inline rename mode. The same rename
+flow is also reachable via **Rename** from the session row right-click
+context menu (`docs/behavior/context-menus.md` §"Session row").
+
+A plain single-click within the dblclick window is consumed by the
+title span and deferred by a 300 ms guard; if no second click follows,
+normal row activation (navigation + `onSelect` + `markSessionViewed`)
+fires after the guard expires. Modifier clicks (ctrl / meta / shift) on
+the title are passed through to the anchor for multi-select and
+range-select as usual.
+
+### Behavior
+
+An `<input>` replaces the title text with the current title pre-filled
+and selected. **Enter** commits via `PATCH /api/sessions/{id}`;
+**Esc** cancels; blur commits (same as Enter).
+
+---
+
 ## Export contract
 
 ### Trigger
