@@ -806,6 +806,9 @@ export const SIDEBAR_STRINGS = {
   sortControlAriaLabel: "Session sort order",
   sortLastActionLabel: "Last action",
   sortGroupedLabel: "Grouped",
+  /** Sidebar identity block — button aria-label and display-name fallback (gap-cycle-08-002). */
+  identityBlockAriaLabel: "Open Settings",
+  identityBlockFallbackName: "Operator",
 } as const;
 
 // ---- Routing preview + quota guard tunings --------------------------------

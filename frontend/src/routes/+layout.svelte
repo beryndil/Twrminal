@@ -65,6 +65,8 @@
   import StatusBar from "$lib/components/feedback/StatusBar.svelte";
   import ShellOpNotification from "$lib/components/feedback/ShellOpNotification.svelte";
   import UndoToast from "$lib/components/context-menu/UndoToast.svelte";
+  import UserIdentityBlock from "$lib/components/identity/UserIdentityBlock.svelte";
+  import { preferencesStore, refreshPreferences } from "$lib/stores/preferences.svelte";
 
   interface Props {
     children?: Snippet;
@@ -224,6 +226,13 @@
     const target = sidebarNavPrev(openSessionsList, inspectorStore.activeSessionId);
     if (target !== null) void goto(`/sessions/${encodeURIComponent(target)}`);
   }
+
+  // Fetch user preferences for the sidebar identity block (gap-cycle-08-002).
+  // No reactive dependencies → runs once on mount.  Errors are caught inside
+  // refreshPreferences so the sidebar degrades gracefully.
+  $effect(() => {
+    void refreshPreferences();
+  });
 
   onMount(() => {
     const releases: Array<() => void> = [
@@ -479,6 +488,26 @@
           <!-- Session list -->
           <div class="app-shell__sidebar-body" data-testid="app-shell-sidebar-body">
             <SessionList {selectedSessionId} onSelect={handleSelectSession} />
+          </div>
+
+          <!-- Identity block — pinned at sidebar bottom; opens Settings on click
+               (gap-cycle-08-002). flex-shrink:0 keeps it from being squeezed
+               by the session list when the list is long. -->
+          <div class="flex-shrink-0 border-t border-border">
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-2 transition-colors focus:outline-none focus:ring-inset focus:ring-2 focus:ring-accent/70"
+              aria-label={SIDEBAR_STRINGS.identityBlockAriaLabel}
+              data-testid="sidebar-identity-btn"
+              onclick={() => void goto("/settings")}
+            >
+              <UserIdentityBlock
+                displayName={preferencesStore.displayName ?? SIDEBAR_STRINGS.identityBlockFallbackName}
+                avatarUrl={preferencesStore.avatarUrl}
+                cacheBust={preferencesStore.cacheBust}
+                size="1.75rem"
+              />
+            </button>
           </div>
         </aside>
 

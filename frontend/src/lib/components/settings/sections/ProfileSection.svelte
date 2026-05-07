@@ -20,6 +20,7 @@
     type PreferencesOut,
   } from "$lib/api/preferences";
   import UserIdentityBlock from "$lib/components/identity/UserIdentityBlock.svelte";
+  import { applyPreferences } from "$lib/stores/preferences.svelte";
 
   interface Props {
     onsaveStatus?: (status: SaveStatus) => void;
@@ -57,6 +58,9 @@
     profileDisplayName = prefs.display_name ?? "";
     profileAvatarUrl = prefs.avatar_url;
     profileUpdatedAt = prefs.updated_at;
+    // Keep the sidebar identity block in sync without a separate GET
+    // (gap-cycle-08-002).
+    applyPreferences(prefs);
   }
 
   async function saveProfile(): Promise<void> {

@@ -92,12 +92,20 @@ Both fields are written unconditionally — a subsequent sync always refreshes.
 `UserIdentityBlock` is a reusable Svelte 5 component used in:
 
 - Settings → Profile section (identity preview)
-- Sidebar top area (when wired by the layout)
+- **Sidebar bottom** — pinned below the session list via `flex-shrink:0`, wrapped in a button that navigates to `/settings` on click (gap-cycle-08-002). Props are sourced from `preferencesStore` (refreshed on layout mount and after every Profile section mutation). Display name falls back to `"Operator"` when `null`.
 - Status bar identity slot (when wired by the layout)
 
 Props: `displayName: string | null`, `avatarUrl: string | null`, `cacheBust?: string`, `size?: string` (CSS unit string, defaults to `"2.5rem"`).
 
 When `avatarUrl` is `null` the component renders a circular fallback SVG (person silhouette). When `displayName` is `null` the name slot is hidden entirely.
+
+### Preferences store (`preferencesStore`)
+
+`src/lib/stores/preferences.svelte.ts` is a singleton Svelte 5 `$state` store that caches the three identity fields needed by the sidebar: `displayName`, `avatarUrl`, `cacheBust`. It exposes:
+
+- `preferencesStore` — reactive snapshot read by the layout and any other consumer.
+- `refreshPreferences()` — async; calls `GET /api/preferences` and updates the store. Called on layout mount. Errors are caught silently; the sidebar degrades to the fallback name / silhouette.
+- `applyPreferences(prefs: PreferencesOut)` — synchronous; updates the store from an already-fetched preferences row. Called by Profile section after every mutation so the sidebar updates without a second GET.
 
 ## Notifications (gap-cycle-07-001)
 

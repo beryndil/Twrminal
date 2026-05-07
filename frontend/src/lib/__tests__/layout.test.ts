@@ -11,9 +11,12 @@
  * synthetic ``onSelect`` activations. The stubs let the layout mount
  * without a SvelteKit harness — vitest renders components against
  * the bare component runtime, not a SvelteKit page server.
+ *
+ * The preferences store is stubbed so ``refreshPreferences`` does not
+ * issue a real HTTP request on mount (gap-cycle-08-002).
  */
-import { render } from "@testing-library/svelte";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render } from "@testing-library/svelte";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("$app/state", () => ({
   page: { params: {}, route: { id: "/" }, url: { pathname: "/" } },
@@ -22,7 +25,21 @@ vi.mock("$app/navigation", () => ({
   goto: vi.fn(),
 }));
 
+// Stub the preferences store so no HTTP request is made on mount
+// (gap-cycle-08-002).  The identity block renders with the fallback
+// name / silhouette, which is all these tests need to assert.
+vi.mock("$lib/stores/preferences.svelte", () => ({
+  preferencesStore: { displayName: null, avatarUrl: null, cacheBust: "" },
+  refreshPreferences: vi.fn(),
+  applyPreferences: vi.fn(),
+}));
+
+import { goto } from "$app/navigation";
 import Layout from "../../routes/+layout.svelte";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("app shell layout", () => {
   it("renders sidebar, main and inspector regions", () => {
@@ -48,5 +65,23 @@ describe("app shell layout", () => {
     expect(getByLabelText("Sessions sidebar")).toBeInTheDocument();
     expect(getByLabelText("Conversation pane")).toBeInTheDocument();
     expect(getByLabelText("Inspector")).toBeInTheDocument();
+  });
+});
+
+describe("sidebar identity block (gap-cycle-08-002)", () => {
+  it("renders user-identity-block inside the sidebar", () => {
+    const { getByTestId } = render(Layout);
+
+    const sidebar = getByTestId("app-shell-sidebar");
+    const block = sidebar.querySelector('[data-testid="user-identity-block"]');
+    expect(block).toBeInTheDocument();
+  });
+
+  it("clicking the identity block navigates to /settings", async () => {
+    const { getByTestId } = render(Layout);
+
+    await fireEvent.click(getByTestId("sidebar-identity-btn"));
+
+    expect(goto).toHaveBeenCalledWith("/settings");
   });
 });
