@@ -23,6 +23,10 @@ owns:
 * ``POST   /api/sessions/{id}/regenerate`` — replay the latest user
                                             prompt (v1.1 closing-
                                             sweep).
+* ``POST   /api/sessions/{id}/viewed``    — stamp ``last_viewed_at``
+                                            to now; broadcast upsert
+                                            clears the unviewed-dot
+                                            on other tabs.
 * ``GET    /api/sessions/{id}/export``     — full JSON snapshot
                                             (session + messages + tool_calls
                                             + checkpoints + attachments)
@@ -587,6 +591,32 @@ async def reopen_session(session_id: str, request: Request) -> SessionOut:
     """Clear ``closed_at`` per behavior doc §"Reopen semantics"."""
     db = _db(request)
     row = await sessions_db.reopen(db, session_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no session matches {session_id!r}",
+        )
+    out = _to_out(row)
+    broadcaster = _sessions_broadcaster(request)
+    if broadcaster is not None:
+        broadcaster.publish_upsert(out)
+    return out
+
+
+@router.post("/api/sessions/{session_id}/viewed", response_model=SessionOut)
+async def update_session_viewed(session_id: str, request: Request) -> SessionOut:
+    """Stamp ``last_viewed_at`` to now; broadcast the upsert.
+
+    Called by the frontend whenever the user selects a sidebar row or
+    refocuses the browser tab while a row is already selected. The
+    broadcast clears the unviewed amber dot on every other open tab /
+    window within a single WebSocket tick.
+
+    - ``404`` — session not found.
+    - ``200`` — updated session row with a fresh ``last_viewed_at``.
+    """
+    db = _db(request)
+    row = await sessions_db.mark_viewed(db, session_id)
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

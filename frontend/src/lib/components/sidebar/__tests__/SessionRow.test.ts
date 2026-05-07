@@ -1,15 +1,28 @@
 /**
  * Component tests for ``SessionRow`` — title, kind indicator, tag
- * chips, status indicators (pinned / closed / error), and the
- * finder-click behavior (clicking a tag chip on the row triggers the
- * onToggleTag callback with that tag's id).
+ * chips, status indicators (pinned / closed / error / unviewed dot),
+ * and the finder-click behavior (clicking a tag chip on the row
+ * triggers the onToggleTag callback with that tag's id).
  */
 import { fireEvent, render } from "@testing-library/svelte";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import SessionRow from "../SessionRow.svelte";
 import type { SessionOut } from "../../../api/sessions";
 import type { TagOut } from "../../../api/tags";
+
+// Mock the sessions API so ``markSessionViewed`` doesn't hit the network.
+vi.mock("../../../api/sessions", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../../api/sessions")>();
+  return {
+    ...mod,
+    markSessionViewed: vi.fn().mockResolvedValue({}),
+  };
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
 
 const baseSession: SessionOut = {
   id: "ses_a",
@@ -272,5 +285,111 @@ describe("SessionRow", () => {
     await fireEvent.click(getAllByTestId("session-tag-chip")[0]);
     expect(onToggleTag).toHaveBeenCalled();
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  // ---- Unviewed-dot rendering --------------------------------------------
+
+  it("shows the unviewed dot when last_completed_at > last_viewed_at and not selected", () => {
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: {
+          ...baseSession,
+          last_completed_at: "2026-01-02T00:00:00Z",
+          last_viewed_at: "2026-01-01T00:00:00Z",
+        },
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    expect(getByTestId("session-unviewed-dot")).toBeInTheDocument();
+  });
+
+  it("shows the unviewed dot when last_completed_at is set but last_viewed_at is null", () => {
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: {
+          ...baseSession,
+          last_completed_at: "2026-01-02T00:00:00Z",
+          last_viewed_at: null,
+        },
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    expect(getByTestId("session-unviewed-dot")).toBeInTheDocument();
+  });
+
+  it("hides the unviewed dot when last_viewed_at >= last_completed_at", () => {
+    const { queryByTestId } = render(SessionRow, {
+      props: {
+        session: {
+          ...baseSession,
+          last_completed_at: "2026-01-01T00:00:00Z",
+          last_viewed_at: "2026-01-02T00:00:00Z",
+        },
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    expect(queryByTestId("session-unviewed-dot")).toBeNull();
+  });
+
+  it("hides the unviewed dot when the row is selected even if last_completed_at > last_viewed_at", () => {
+    const { queryByTestId } = render(SessionRow, {
+      props: {
+        session: {
+          ...baseSession,
+          last_completed_at: "2026-01-02T00:00:00Z",
+          last_viewed_at: null,
+        },
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: true,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    expect(queryByTestId("session-unviewed-dot")).toBeNull();
+  });
+
+  it("hides the unviewed dot when last_completed_at is null", () => {
+    const { queryByTestId } = render(SessionRow, {
+      props: {
+        session: { ...baseSession, last_completed_at: null, last_viewed_at: null },
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    expect(queryByTestId("session-unviewed-dot")).toBeNull();
+  });
+
+  // ---- markSessionViewed on click ----------------------------------------
+
+  it("clicking the row fires markSessionViewed with the session id", async () => {
+    const { markSessionViewed } = await import("../../../api/sessions");
+    const { getByTestId } = render(SessionRow, {
+      props: {
+        session: baseSession,
+        tags: [],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    await fireEvent.click(getByTestId("session-row"));
+    expect(markSessionViewed).toHaveBeenCalledWith("ses_a");
   });
 });

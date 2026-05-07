@@ -32,6 +32,7 @@
     deleteSession,
     duplicateSession,
     exportSessionJson,
+    markSessionViewed,
     patchSessionPinned,
     patchSessionTitle,
     reopenSession,
@@ -143,6 +144,22 @@
   const sessionHref = $derived(`/sessions/${encodeURIComponent(session.id)}`);
 
   const isClosed = $derived(session.closed_at !== null);
+
+  /**
+   * True when the session has new assistant output since the user last
+   * viewed it. The amber dot is suppressed on the currently-selected
+   * row (the view clears on selection via ``markSessionViewed``).
+   *
+   * Condition mirrors the backend broadcast: ``last_completed_at`` is
+   * stamped whenever a ``message_complete`` event is emitted; the dot
+   * shows until ``last_viewed_at`` overtakes it.
+   */
+  const isUnviewed = $derived(
+    !isSelected &&
+      session.last_completed_at !== null &&
+      (session.last_viewed_at === null ||
+        session.last_completed_at > session.last_viewed_at),
+  );
 
   const kindLabel = $derived(
     SIDEBAR_STRINGS.kindIndicatorAriaLabels[
@@ -389,6 +406,9 @@
       }
       onUpdateAnchor?.(session.id);
       onSelect(session.id);
+      // Fire-and-forget: stamp last_viewed_at so the unviewed dot
+      // clears on this and any other open tab/window via the broadcast.
+      void markSessionViewed(session.id);
     }}
     use:contextMenu={{
       target: isInSelection ? MENU_TARGET_MULTI_SELECT : MENU_TARGET_SESSION,
@@ -442,6 +462,19 @@
         >
           ★
         </span>
+      {/if}
+      {#if isUnviewed}
+        <!--
+          Amber dot: new assistant output arrived since the user last
+          opened this session. Clears when the row is selected (the
+          onclick stamps last_viewed_at and the sessions-broadcast upsert
+          removes the dot on all open tabs within the same WS tick).
+        -->
+        <span
+          class="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-amber-400"
+          aria-label={SIDEBAR_STRINGS.unviewedDotAriaLabel}
+          data-testid="session-unviewed-dot"
+        ></span>
       {/if}
       {#if session.error_pending}
         <span

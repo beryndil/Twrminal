@@ -103,6 +103,26 @@ interface ListSessionsParams {
  *   ``kind``, 5xx for backend faults).
  */
 /**
+ * Stamp ``last_viewed_at`` via ``POST /api/sessions/{id}/viewed``.
+ *
+ * Fire after the user selects a sidebar row or after the browser tab
+ * regains visibility while a session is already selected. The server
+ * upserts the updated row via the sessions-broadcast WebSocket so the
+ * unviewed amber dot clears on any other open tab/window within the
+ * same tick. Failures are cosmetic (the dot stays amber); callers
+ * should fire-and-forget.
+ *
+ * @throws :class:`ApiError` on 404 (session not found) or 5xx.
+ */
+export async function markSessionViewed(
+  sessionId: string,
+  options: RequestOptions = {},
+): Promise<SessionOut> {
+  const path = `${API_SESSIONS_ENDPOINT}/${encodeURIComponent(sessionId)}/viewed`;
+  return await postJson<SessionOut>(path, null, options);
+}
+
+/**
  * Reopen a closed session via ``POST /api/sessions/{id}/reopen``. The
  * server clears ``closed_at`` while preserving any ``closing_summary``
  * (per ``docs/behavior/paired-chats.md`` §"Reopen semantics" — the

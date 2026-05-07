@@ -763,6 +763,29 @@ async def reopen(
     return await get(connection, session_id)
 
 
+async def mark_viewed(
+    connection: aiosqlite.Connection,
+    session_id: str,
+) -> Session | None:
+    """Stamp ``last_viewed_at`` to now (idempotent — re-stamps on every call).
+
+    Called by ``POST /api/sessions/{id}/viewed`` when the user selects
+    a session row or refocuses the tab while that row is already selected.
+    The broadcast that follows clears the unviewed-dot on any other
+    open tab / window within a single WebSocket tick.
+    """
+    existing = await get(connection, session_id)
+    if existing is None:
+        return None
+    timestamp = now_iso()
+    await connection.execute(
+        "UPDATE sessions SET last_viewed_at = ?, updated_at = ? WHERE id = ?",
+        (timestamp, timestamp, session_id),
+    )
+    await connection.commit()
+    return await get(connection, session_id)
+
+
 async def update_pinned(
     connection: aiosqlite.Connection,
     session_id: str,

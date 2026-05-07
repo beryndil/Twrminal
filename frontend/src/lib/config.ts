@@ -725,6 +725,7 @@ export const SIDEBAR_STRINGS = {
   loadFailed: "Couldn't load sessions.",
   ungroupedTagsLabel: "(ungrouped)",
   pinnedIndicatorAriaLabel: "Pinned",
+  unviewedDotAriaLabel: "Unviewed",
   closedIndicatorAriaLabel: "Closed",
   errorPendingIndicatorAriaLabel: "Needs attention",
   closedGroupLabel: "Closed",

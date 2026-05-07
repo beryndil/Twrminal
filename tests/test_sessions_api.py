@@ -751,6 +751,35 @@ async def test_reopen_session_404(
     assert response.status_code == 404
 
 
+async def test_mark_session_viewed_stamps_last_viewed_at(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """POST /viewed stamps last_viewed_at on the row and returns 200."""
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    row_before = await sessions_db.get(conn, sid)
+    assert row_before is not None
+    assert row_before.last_viewed_at is None
+    with TestClient(app) as client:
+        response = client.post(f"/api/sessions/{sid}/viewed")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["last_viewed_at"] is not None
+    # DB row also reflects the stamp.
+    row_after = await sessions_db.get(conn, sid)
+    assert row_after is not None
+    assert row_after.last_viewed_at is not None
+
+
+async def test_mark_session_viewed_404(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    app, _ = app_and_db
+    with TestClient(app) as client:
+        response = client.post("/api/sessions/ses_missing/viewed")
+    assert response.status_code == 404
+
+
 async def test_delete_session(
     app_and_db: tuple[FastAPI, aiosqlite.Connection],
 ) -> None:

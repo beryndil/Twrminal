@@ -46,6 +46,7 @@
   import {
     closeSession,
     deleteSession,
+    markSessionViewed,
     reopenSession as reopenSessionDefault,
     type SessionOut,
   } from "../../api/sessions";
@@ -472,6 +473,31 @@
 
   $effect(() => {
     void refreshSessions(currentFilter());
+  });
+
+  /**
+   * Mark the selected session viewed when the browser tab becomes visible
+   * again (user switches back from another tab while a session is already
+   * selected). Complements the per-click ``markSessionViewed`` call in
+   * :class:`SessionRow` — this covers the focus-back case where no new
+   * click fires. The effect re-creates the listener whenever
+   * ``selectedSessionId`` changes so the closure always captures the
+   * current value.
+   *
+   * Per ``docs/behavior/chat.md`` §"When the user opens an existing chat"
+   * — the unviewed-dot rule.
+   */
+  $effect(() => {
+    const sid = selectedSessionId;
+    function handleVisibilityChange(): void {
+      if (document.visibilityState === "visible" && sid !== null && sid !== undefined) {
+        void markSessionViewed(sid);
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   });
 </script>
 

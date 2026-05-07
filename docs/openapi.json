@@ -2809,6 +2809,49 @@
         }
       }
     },
+    "/api/sessions/{session_id}/viewed": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Update Session Viewed",
+        "description": "Stamp ``last_viewed_at`` to now; broadcast the upsert.\n\nCalled by the frontend whenever the user selects a sidebar row or\nrefocuses the browser tab while a row is already selected. The\nbroadcast clears the unviewed amber dot on every other open tab /\nwindow within a single WebSocket tick.\n\n- ``404`` \u2014 session not found.\n- ``200`` \u2014 updated session row with a fresh ``last_viewed_at``.",
+        "operationId": "update_session_viewed_api_sessions__session_id__viewed_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{session_id}/recover": {
       "post": {
         "tags": [
@@ -2886,6 +2929,101 @@
                     }
                   ],
                   "title": "Response Get Paired Chat Info Route Api Sessions  Session Id  Paired Chat Info Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{session_id}/export": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Export Session",
+        "description": "Snapshot-export a session to a self-contained JSON blob.\n\nPer ``docs/behavior/sessions.md`` \u00a7\"Export contract\":\n\n* ``200`` \u2014 JSON body conforming to :class:`SessionExport`; the\n  ``Content-Disposition`` header carries a suggested download\n  filename ``<slug>.json`` derived from the session title.\n* ``404`` \u2014 session not found.\n\nClosed sessions are exportable \u2014 ``closed_at`` being set does not\nblock this endpoint (contrast with the prompt endpoint which returns\n409 on closed sessions).\n\nThe export body contains:\n\n* ``session`` \u2014 session row (``SessionOut`` shape).\n* ``messages`` \u2014 every message in chronological order.\n* ``tool_calls`` \u2014 raw SDK transcript entries (opaque blobs).\n* ``checkpoints`` \u2014 every checkpoint chronologically.\n* ``attachments`` \u2014 always ``[]`` in v0.18.x (no per-session upload\n  linking table yet).",
+        "operationId": "export_session_api_sessions__session_id__export_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/import": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Import Session",
+        "description": "Restore a session from an export blob.\n\nPer ``docs/behavior/sessions.md`` \u00a7\"Import contract\":\n\n* ``201`` \u2014 session row (plus messages, tool_calls, checkpoints)\n  inserted; ``Location`` header points at the new row.\n* ``409`` \u2014 ``session_id`` already exists AND ``force=false``.\n  Pass ``?force=true`` to delete the existing row first and\n  reimport.\n* ``422`` \u2014 body does not parse as ``SessionExport`` or a field\n  fails DB-layer validation (e.g. unknown model name, bad kind).\n\n``checklist_item_id`` is cleared on import \u2014 the FK target\n(``checklist_items``) does not exist in the destination instance.\nRouting-decision columns default to ``auto/5/null`` because\n``SessionOut`` does not carry them.",
+        "operationId": "import_session_api_sessions_import_post",
+        "parameters": [
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionExport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
                 }
               }
             }
@@ -5203,6 +5341,41 @@
         "title": "ChecklistOverviewOut",
         "description": "Response shape for ``GET /api/checklists/{id}``.\n\nBundles the items list + the active-run row (if any) into one\npayload so the client renders the pane without two roundtrips."
       },
+      "CheckpointExport": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "session_id",
+          "message_id",
+          "label",
+          "created_at"
+        ],
+        "title": "CheckpointExport",
+        "description": "Full-fidelity row mirror for the ``checkpoints`` table in an export.\n\nPer ``docs/behavior/sessions.md`` \u00a7\"Export schema\"."
+      },
       "CheckpointForkResult": {
         "properties": {
           "new_session_id": {
@@ -5734,6 +5907,224 @@
         ],
         "title": "LinkChatIn",
         "description": "Request shape for ``POST /api/checklist-items/{id}/link``."
+      },
+      "MessageExport": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "executor_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executor Model"
+          },
+          "advisor_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advisor Model"
+          },
+          "effort_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort Level"
+          },
+          "routing_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing Source"
+          },
+          "routing_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing Reason"
+          },
+          "matched_rule_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched Rule Id"
+          },
+          "executor_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executor Input Tokens"
+          },
+          "executor_output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executor Output Tokens"
+          },
+          "advisor_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advisor Input Tokens"
+          },
+          "advisor_output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advisor Output Tokens"
+          },
+          "advisor_calls_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advisor Calls Count"
+          },
+          "cache_read_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Tokens"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq"
+          },
+          "pinned": {
+            "type": "boolean",
+            "title": "Pinned"
+          },
+          "hidden_from_context": {
+            "type": "boolean",
+            "title": "Hidden From Context"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "session_id",
+          "role",
+          "content",
+          "created_at",
+          "executor_model",
+          "advisor_model",
+          "effort_level",
+          "routing_source",
+          "routing_reason",
+          "matched_rule_id",
+          "executor_input_tokens",
+          "executor_output_tokens",
+          "advisor_input_tokens",
+          "advisor_output_tokens",
+          "advisor_calls_count",
+          "cache_read_tokens",
+          "input_tokens",
+          "output_tokens",
+          "seq",
+          "pinned",
+          "hidden_from_context"
+        ],
+        "title": "MessageExport",
+        "description": "Full-fidelity row mirror for the ``messages`` table in an export.\n\nAll columns are included so the export is self-contained. Nullable\nfields mirror the dataclass \u2014 only assistant rows carry the routing\nand token columns; user/system/tool rows leave them ``None``.\n\nPer ``docs/behavior/sessions.md`` \u00a7\"Export schema\"."
       },
       "MessageHiddenUpdate": {
         "properties": {
@@ -6892,6 +7283,10 @@
           "db_configured": {
             "type": "boolean",
             "title": "Db Configured"
+          },
+          "billing_mode": {
+            "type": "string",
+            "title": "Billing Mode"
           }
         },
         "additionalProperties": false,
@@ -6900,7 +7295,8 @@
           "version",
           "uptime_s",
           "pid",
-          "db_configured"
+          "db_configured",
+          "billing_mode"
         ],
         "title": "ServerDiagOut",
         "description": "Response shape for ``GET /api/diag/server``."
@@ -7018,6 +7414,54 @@
         ],
         "title": "SessionCreate",
         "description": "Request shape for ``POST /api/sessions``.\n\nPer arch \u00a71.1.5 the v1 session-create surface. The Pydantic shape\nenforces field shape; the route handler enforces ``kind`` membership\nin :data:`KNOWN_SESSION_KINDS`, that ``tag_ids`` references existing\nrows, and the deeper dataclass invariants (model name format,\npermission-mode enum, etc.) via :class:`Session.__post_init__`.\n\n``working_dir`` is optional. If omitted, the route handler derives it\nfrom the first tag in ``tag_ids`` (in order) that has a non-null\n``working_dir`` set. Returns 422 if both ``working_dir`` is omitted\nand no tag provides a directory.\n\n``tag_ids`` defaults to the empty list \u2014 the new-session form\nenforces \"\u22651 tag\" at the UI layer; the API accepts zero so a CLI\nor test caller can create an untagged session without first\ncreating a tag. When multiple tags are supplied, their order in the\nlist determines priority: index 0 = highest priority.\n\nThe three ``routing_*`` fields carry the routing-decision projection\nso the supervisor respawn path can reconstruct the full\n:class:`bearings.agent.routing.RoutingDecision` without falling\nback to template defaults. ``routing_advisor_model=None`` means \"no\nadvisor\"; omitting these fields uses the same defaults as the\nsession-bootstrap fallback."
+      },
+      "SessionExport": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/SessionOut"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/MessageExport"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "tool_calls": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Tool Calls"
+          },
+          "checkpoints": {
+            "items": {
+              "$ref": "#/components/schemas/CheckpointExport"
+            },
+            "type": "array",
+            "title": "Checkpoints"
+          },
+          "attachments": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Attachments"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session",
+          "messages",
+          "tool_calls",
+          "checkpoints",
+          "attachments"
+        ],
+        "title": "SessionExport",
+        "description": "Response shape for ``GET /api/sessions/{id}/export``.\n\nContains a full snapshot of the session's DB state at the time the\nrequest is made. Per ``docs/behavior/sessions.md`` \u00a7\"Export schema\":\n\n* ``session`` \u2014 the session row (same shape as ``GET /api/sessions/{id}``).\n* ``messages`` \u2014 every message in chronological order (all roles:\n  ``user``, ``assistant``, ``system``, ``tool``).\n* ``tool_calls`` \u2014 raw SDK transcript entries (opaque JSON blobs\n  stored by :mod:`bearings.db.sdk_entries`) in write order. These\n  are the structured tool-input / tool-output records produced by\n  the Claude Code CLI during execution.\n* ``checkpoints`` \u2014 every checkpoint attached to the session,\n  chronological order.\n* ``attachments`` \u2014 always ``[]`` in v0.18.x: uploads are content-\n  addressed and shared globally; there is no per-session attachment\n  linking table yet.\n\nClosed sessions are exportable \u2014 this endpoint returns 200 for any\nsession that exists, regardless of ``closed_at``."
       },
       "SessionModelUpdate": {
         "properties": {

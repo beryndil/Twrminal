@@ -28,7 +28,7 @@ Clicking a sidebar row selects that chat. The conversation pane renders:
 * the conversation body: every message turn in chronological order, oldest at top;
 * a composer: multi-line input, attachment chips, send button, slash-command popup.
 
-Selecting the row also marks the session "viewed" (the green-pip indicator clears). See [keyboard-shortcuts](keyboard-shortcuts.md) for `j` / `k` / `Alt+1..9` navigation between sidebar rows.
+Selecting the row also marks the session "viewed": the amber unviewed dot on the sidebar row clears. An amber dot appears on a row whenever the session has new assistant output (`last_completed_at`) that the user has not yet opened (`last_completed_at > last_viewed_at`, or `last_viewed_at` is null). The dot is suppressed on the currently-selected row. Selecting the row fires `POST /api/sessions/{id}/viewed`, which stamps `last_viewed_at` server-side and emits a sessions-broadcast upsert so the dot also clears on any other open tab or window within the same WebSocket tick. Refocusing the browser tab while a session is already selected (tab visibility-change) fires the same POST. See [keyboard-shortcuts](keyboard-shortcuts.md) for `j` / `k` / `Alt+1..9` navigation between sidebar rows.
 
 ## What a message turn looks like
 
