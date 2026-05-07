@@ -975,7 +975,7 @@ export const TEMPLATE_PICKER_STRINGS = {
   ariaLabel: "Template picker",
 } as const;
 
-/** String table for :class:`SessionPickerModal` (gap-cycle-03-008). */
+/** String table for :class:`SessionPickerModal` (gap-cycle-03-008 / gap-cycle-10-011). */
 export const SESSION_PICKER_STRINGS = {
   mergePickerTitle: "Merge into…",
   mergePickerSubtitle: (srcTitle: string) =>
@@ -985,6 +985,15 @@ export const SESSION_PICKER_STRINGS = {
   mergePickerEmpty: "No other sessions found.",
   mergePickerMsgCount: "msgs",
   mergePickerCancel: "Cancel",
+  // Inline create form (gap-cycle-10-011)
+  createNewLabel: "+ Create a new session",
+  createFormTitle: "New session",
+  createTitlePlaceholder: "Session title…",
+  createTagsHint: "Tags (≥ 1 required)",
+  createSubmitLabel: "Create & merge",
+  createCancelLabel: "Back to list",
+  createTitleRequired: "Title is required.",
+  createTagRequired: "Select at least one tag.",
 } as const;
 
 /**

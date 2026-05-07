@@ -25,12 +25,18 @@ const {
   listSessionsMock,
   listReorgAuditsMock,
   deleteReorgAuditMock,
+  createSessionMock,
+  mergeSessionMock,
+  listTagsMock,
 } = vi.hoisted(() => ({
   moveMessageMock: vi.fn(),
   listMessagesMock: vi.fn(),
   listSessionsMock: vi.fn(),
   listReorgAuditsMock: vi.fn(),
   deleteReorgAuditMock: vi.fn(),
+  createSessionMock: vi.fn(),
+  mergeSessionMock: vi.fn(),
+  listTagsMock: vi.fn(),
 }));
 
 vi.mock("../../../api/messages", () => ({
@@ -40,10 +46,15 @@ vi.mock("../../../api/messages", () => ({
 
 vi.mock("../../../api/sessions", () => ({
   listSessions: listSessionsMock,
+  createSession: createSessionMock,
+}));
+
+vi.mock("../../../api/tags", () => ({
+  listTags: listTagsMock,
 }));
 
 vi.mock("../../../api/reorg", () => ({
-  mergeSession: vi.fn(),
+  mergeSession: mergeSessionMock,
   listReorgAudits: listReorgAuditsMock,
   deleteReorgAudit: deleteReorgAuditMock,
 }));
@@ -63,6 +74,7 @@ import ReorgPicker from "../ReorgPicker.svelte";
 import ReorgAuditDivider from "../ReorgAuditDivider.svelte";
 import ReorgUndoToast from "../ReorgUndoToast.svelte";
 import ReorgProposalEditor from "../ReorgProposalEditor.svelte";
+import SessionPickerModal from "../../menus/SessionPickerModal.svelte";
 import {
   reorgStore,
   _resetReorgForTests,
@@ -120,6 +132,7 @@ const SESSION_FIXTURES = [
     last_viewed_at: null,
     last_completed_at: null,
     closed_at: null,
+    closing_summary: null,
   },
   {
     id: "sess-b",
@@ -144,12 +157,68 @@ const SESSION_FIXTURES = [
     last_viewed_at: null,
     last_completed_at: null,
     closed_at: null,
+    closing_summary: null,
   },
 ];
 
 // ---------------------------------------------------------------------------
 // Setup / teardown
 // ---------------------------------------------------------------------------
+
+const TAG_FIXTURES = [
+  {
+    id: 1,
+    name: "project-alpha",
+    color: null,
+    default_model: null,
+    working_dir: null,
+    pinned: false,
+    class_: "project",
+    sort_order: 0,
+    group: null,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  },
+  {
+    id: 2,
+    name: "urgent",
+    color: null,
+    default_model: null,
+    working_dir: null,
+    pinned: false,
+    class_: "severity",
+    sort_order: 0,
+    group: null,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  },
+];
+
+const CREATED_SESSION_FIXTURE = {
+  id: "sess-new",
+  kind: "chat",
+  title: "Brand New Session",
+  description: null,
+  session_instructions: null,
+  working_dir: "/",
+  model: "sonnet",
+  permission_mode: null,
+  max_budget_usd: null,
+  total_cost_usd: 0,
+  message_count: 0,
+  last_context_pct: null,
+  last_context_tokens: null,
+  last_context_max: null,
+  pinned: false,
+  error_pending: false,
+  checklist_item_id: null,
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+  last_viewed_at: null,
+  last_completed_at: null,
+  closed_at: null,
+  closing_summary: null,
+};
 
 beforeEach(() => {
   _resetReorgForTests();
@@ -167,6 +236,9 @@ beforeEach(() => {
   ]);
   listReorgAuditsMock.mockResolvedValue({ items: [] });
   deleteReorgAuditMock.mockResolvedValue({ new_session_id: "ses_new123" });
+  createSessionMock.mockResolvedValue(CREATED_SESSION_FIXTURE);
+  mergeSessionMock.mockResolvedValue({});
+  listTagsMock.mockResolvedValue(TAG_FIXTURES);
 });
 
 afterEach(() => {
@@ -687,5 +759,157 @@ describe("reorgStore — loadAudits and undoMerge", () => {
     await expect(reorgStore.undoMerge("sess-a", "rga_stale")).rejects.toThrow();
     // Entry should still be present (not removed on failure).
     expect(reorgStore.auditEntriesFor("sess-a")).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 8. Inline create form — gap-cycle-10-011
+// ---------------------------------------------------------------------------
+
+describe("ReorgPicker — inline create form (gap-cycle-10-011)", () => {
+  it("toggle-into-create: clicking '+ Create a new session' shows create form", async () => {
+    reorgStore.openPicker({
+      mode: "move",
+      messageId: "msg1",
+      sourceSessionId: "sess-a",
+      seq: 1,
+    });
+
+    const { getByTestId, queryByTestId } = render(ReorgPicker);
+    await waitFor(() => expect(getByTestId("rp-create-new")).toBeTruthy());
+
+    fireEvent.click(getByTestId("rp-create-new"));
+
+    await waitFor(() => {
+      expect(getByTestId("rp-create-title")).toBeTruthy();
+      expect(getByTestId("rp-create-submit")).toBeTruthy();
+      expect(getByTestId("rp-create-cancel")).toBeTruthy();
+    });
+    // Session list is gone; list-view filter is gone.
+    expect(queryByTestId("reorg-picker-filter")).toBeNull();
+  });
+
+  it("inline-validation: submitting with empty title shows error", async () => {
+    reorgStore.openPicker({
+      mode: "move",
+      messageId: "msg1",
+      sourceSessionId: "sess-a",
+      seq: 1,
+    });
+
+    const { getByTestId } = render(ReorgPicker);
+    await waitFor(() => expect(getByTestId("rp-create-new")).toBeTruthy());
+    fireEvent.click(getByTestId("rp-create-new"));
+    await waitFor(() => expect(getByTestId("rp-create-submit")).toBeTruthy());
+
+    // Submit without filling in title.
+    fireEvent.click(getByTestId("rp-create-submit"));
+
+    await waitFor(() => {
+      expect(getByTestId("rp-create-error")).toHaveTextContent("Title is required.");
+    });
+    expect(createSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("create-then-move: creates session then immediately commits move", async () => {
+    reorgStore.openPicker({
+      mode: "move",
+      messageId: "msg1",
+      sourceSessionId: "sess-a",
+      seq: 1,
+    });
+
+    const { getByTestId, queryByTestId } = render(ReorgPicker);
+    await waitFor(() => expect(getByTestId("rp-create-new")).toBeTruthy());
+    fireEvent.click(getByTestId("rp-create-new"));
+    await waitFor(() => expect(getByTestId("rp-create-title")).toBeTruthy());
+
+    // Fill in title.
+    fireEvent.input(getByTestId("rp-create-title"), { target: { value: "Brand New Session" } });
+
+    // Select a tag chip.
+    await waitFor(() => expect(getByTestId("rp-create-tag-1")).toBeTruthy());
+    fireEvent.click(getByTestId("rp-create-tag-1"));
+
+    // Submit.
+    fireEvent.click(getByTestId("rp-create-submit"));
+
+    await waitFor(() => {
+      expect(createSessionMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Brand New Session", tag_ids: [1] }),
+      );
+    });
+    await waitFor(() => {
+      expect(moveMessageMock).toHaveBeenCalledWith("msg1", "sess-new");
+    });
+    // Picker closes after success.
+    await waitFor(() => expect(queryByTestId("reorg-picker")).toBeNull());
+  });
+
+  it("cancel-create-returns-to-list: Back-to-list does not close the picker", async () => {
+    reorgStore.openPicker({
+      mode: "move",
+      messageId: "msg1",
+      sourceSessionId: "sess-a",
+      seq: 1,
+    });
+
+    const { getByTestId } = render(ReorgPicker);
+    await waitFor(() => expect(getByTestId("rp-create-new")).toBeTruthy());
+
+    // Open create form.
+    fireEvent.click(getByTestId("rp-create-new"));
+    await waitFor(() => expect(getByTestId("rp-create-cancel")).toBeTruthy());
+
+    // Cancel — should go back to list, picker stays open.
+    fireEvent.click(getByTestId("rp-create-cancel"));
+
+    await waitFor(() => {
+      expect(getByTestId("reorg-picker")).toBeTruthy();
+      expect(getByTestId("reorg-picker-filter")).toBeTruthy();
+    });
+  });
+});
+
+describe("SessionPickerModal — inline create form (gap-cycle-10-011)", () => {
+  it("create-then-merge: creates session then immediately merges", async () => {
+    const onMerged = vi.fn();
+    const onCancel = vi.fn();
+    const { getByTestId, queryByTestId } = render(SessionPickerModal, {
+      props: { srcSession: SESSION_FIXTURES[0]!, onMerged, onCancel },
+    });
+
+    // Wait for the "+ Create a new session" affordance.
+    await waitFor(() => expect(getByTestId("session-picker-create-new")).toBeTruthy());
+
+    // Switch to create form.
+    fireEvent.click(getByTestId("session-picker-create-new"));
+    await waitFor(() => expect(getByTestId("session-picker-create-title")).toBeTruthy());
+
+    // Fill in title.
+    fireEvent.input(getByTestId("session-picker-create-title"), {
+      target: { value: "Brand New Session" },
+    });
+
+    // Select a tag chip.
+    await waitFor(() => expect(getByTestId("session-picker-create-tag-2")).toBeTruthy());
+    fireEvent.click(getByTestId("session-picker-create-tag-2"));
+
+    // Submit.
+    fireEvent.click(getByTestId("session-picker-create-submit"));
+
+    await waitFor(() => {
+      expect(createSessionMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Brand New Session", tag_ids: [2] }),
+      );
+    });
+    await waitFor(() => {
+      expect(mergeSessionMock).toHaveBeenCalledWith(SESSION_FIXTURES[0]!.id, "sess-new");
+    });
+    await waitFor(() => {
+      expect(onMerged).toHaveBeenCalledWith("sess-new");
+    });
+    // onCancel was NOT called — user completed the flow, not cancelled.
+    expect(onCancel).not.toHaveBeenCalled();
   });
 });

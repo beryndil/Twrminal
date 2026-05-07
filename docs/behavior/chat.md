@@ -466,6 +466,8 @@ These belong to other subsystems:
 
 **Picker:** `SessionPickerModal` opens and lists all other sessions (excluding the source). The user can filter by title. Clicking a destination session row triggers the merge immediately.
 
+**Inline create (gap-cycle-10-011):** A "+ Create a new session" affordance in the footer flips the modal body to an inline create form (Title + tag chip multi-select, ≥ 1 tag required). Submitting the form calls `POST /api/sessions` then immediately fires `POST /api/sessions/{src_id}/reorg/merge?target={new_id}` — both in one user gesture. "Back to list" returns to the session list without closing the modal. The `ReorgPicker` (move / split flows) has the same inline create affordance plus tag-filter chips above the session list that narrow candidates via server-side `tag_ids=` filtering.
+
 **API contract:**
 
 ```
