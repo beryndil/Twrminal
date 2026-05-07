@@ -61,10 +61,24 @@ The **Profile** section renders *above* Appearance in the Settings page. It expo
 ### Profile section controls
 
 - **Identity preview** — `UserIdentityBlock` showing the current avatar (or fallback icon) and display name.
-- **Display name** field — freetext input, max 120 characters. Saved via `PATCH /api/preferences` with `display_name`.
+- **Display name** field — freetext input, max 120 characters. **Autosaves on change** with a ~400 ms debounce (`PROFILE_AUTOSAVE_DEBOUNCE_MS`). Typing then pausing fires `PATCH /api/preferences` with `display_name` without any explicit Save click. There is no Save button.
 - **Upload image** button — hidden `<input type="file">` accepting JPEG, PNG, GIF, WebP. Fires `POST /api/preferences/avatar`.
 - **Remove** button — visible only when an avatar is set. Fires `DELETE /api/preferences/avatar`.
 - **Sync from system** button — fires `POST /api/preferences/sync_from_system`.
+
+#### Per-row save badges (gap-cycle-17-001)
+
+Every mutating row in the Profile section carries a per-row save badge rendered to the right of its control:
+
+| State | Text | Role | CSS modifier |
+|---|---|---|---|
+| Saving | "Saving…" | `status` | `--saving` (muted fg) |
+| Saved | "Saved" | `status` | `--saved` (accent fg) |
+| Error | "Failed to save: {message}" | `alert` | `--error` (error fg) |
+
+The badge auto-fades back to idle ~2 s after a successful save. Rows with badges: display-name, avatar upload, avatar remove, sync-from-system.
+
+The `onsaveStatus` callback continues to fire on every save event so the `SettingsShell` footer aggregates the active section's last save state ("Saving…" / "All changes saved" / "Failed to save: …").
 
 ### Avatar storage
 

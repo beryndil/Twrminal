@@ -2376,6 +2376,14 @@ export const PREFERENCES_STRINGS = {
   workingDirPlaceholder: "/path/to/project",
 } as const;
 
+/**
+ * Debounce delay (ms) for the display-name autosave in the Profile section
+ * (gap-cycle-17-001).
+ *
+ * Mirrors the ~400 ms v17 observable behaviour for SettingsTextField.
+ */
+export const PROFILE_AUTOSAVE_DEBOUNCE_MS = 400;
+
 /** Profile / identity section UI strings (gap-cycle-03-011). */
 export const PROFILE_STRINGS = {
   heading: "Profile",
@@ -2387,15 +2395,13 @@ export const PROFILE_STRINGS = {
   removeButton: "Remove",
   syncButton: "Sync from system",
   syncLede: "Copies your $USER and ~/.face into the display name and avatar.",
-  saveButton: "Save profile",
-  savedFeedback: "Saved.",
-  saveError: "Couldn't save — try again.",
   loadError: "Couldn't load profile.",
-  syncError: "Sync failed — try again.",
-  uploadError: "Upload failed — try again.",
-  removeError: "Couldn't remove avatar.",
   avatarAlt: "Profile picture",
   avatarFallbackAriaLabel: "No profile picture set",
+  /** Per-row save badges (gap-cycle-17-001). */
+  savingBadge: "Saving…",
+  savedBadge: "Saved",
+  saveFailedPrefix: "Failed to save:",
 } as const;
 
 /** Notifications section UI strings (gap-cycle-07-001). */

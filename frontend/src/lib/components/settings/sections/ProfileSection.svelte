@@ -7,9 +7,12 @@
    * self-contained: it calls ``GET /api/preferences`` on mount to load its
    * own fields (display_name, avatar_url, updated_at) and emits
    * ``onsaveStatus`` callbacks when the user saves or an error occurs.
+   *
+   * gap-cycle-17-001: autosave on display-name change (debounced ~400 ms)
+   * with per-row Saving / Saved / Error badges on all mutating rows.
    */
   import type { SaveStatus } from "../sections.js";
-  import { PROFILE_STRINGS } from "$lib/config";
+  import { PROFILE_AUTOSAVE_DEBOUNCE_MS, PROFILE_STRINGS } from "$lib/config";
   import {
     deleteAvatar,
     getPreferences,
@@ -22,6 +25,8 @@
   import UserIdentityBlock from "$lib/components/identity/UserIdentityBlock.svelte";
   import { applyPreferences } from "$lib/stores/preferences.svelte";
 
+  type RowSaveState = "idle" | "saving" | "saved" | "error";
+
   interface Props {
     onsaveStatus?: (status: SaveStatus) => void;
   }
@@ -31,14 +36,20 @@
   let profileDisplayName = $state<string>("");
   let profileAvatarUrl = $state<string | null>(null);
   let profileUpdatedAt = $state<string>("");
-  let profileSaving = $state(false);
-  let profileSavedFeedback = $state(false);
-  let profileSaveError = $state<string | null>(null);
-  let profileSyncing = $state(false);
-  let profileSyncError = $state<string | null>(null);
-  let profileUploadError = $state<string | null>(null);
-  let profileRemoveError = $state<string | null>(null);
   let loadError = $state<string | null>(null);
+
+  // Per-row save states — display name, avatar upload, avatar remove, sync.
+  let displayNameState = $state<RowSaveState>("idle");
+  let displayNameError = $state<string | null>(null);
+  let avatarUploadState = $state<RowSaveState>("idle");
+  let avatarUploadError = $state<string | null>(null);
+  let avatarRemoveState = $state<RowSaveState>("idle");
+  let avatarRemoveError = $state<string | null>(null);
+  let syncState = $state<RowSaveState>("idle");
+  let syncError = $state<string | null>(null);
+
+  // Debounce handle for display-name autosave — not reactive state.
+  let displayNameDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   $effect(() => {
     void loadPrefs();
@@ -63,10 +74,18 @@
     applyPreferences(prefs);
   }
 
-  async function saveProfile(): Promise<void> {
-    profileSaving = true;
-    profileSaveError = null;
-    profileSavedFeedback = false;
+  function handleDisplayNameInput(): void {
+    if (displayNameDebounceTimer !== null) {
+      clearTimeout(displayNameDebounceTimer);
+    }
+    displayNameDebounceTimer = setTimeout(() => {
+      void saveDisplayName();
+    }, PROFILE_AUTOSAVE_DEBOUNCE_MS);
+  }
+
+  async function saveDisplayName(): Promise<void> {
+    displayNameState = "saving";
+    displayNameError = null;
     onsaveStatus?.({ state: "saving" });
     try {
       const patch: PreferencesPatch = {
@@ -74,54 +93,77 @@
       };
       const updated = await patchPreferences(patch);
       _applyProfilePrefs(updated);
-      profileSavedFeedback = true;
+      displayNameState = "saved";
       onsaveStatus?.({ state: "saved" });
       setTimeout(() => {
-        profileSavedFeedback = false;
+        displayNameState = "idle";
       }, 2000);
     } catch (err) {
-      profileSaveError = err instanceof Error ? err.message : String(err);
-      onsaveStatus?.({ state: "error", message: profileSaveError ?? undefined });
-    } finally {
-      profileSaving = false;
+      displayNameError = err instanceof Error ? err.message : String(err);
+      displayNameState = "error";
+      onsaveStatus?.({ state: "error", message: displayNameError ?? undefined });
     }
   }
 
   async function handleAvatarUpload(e: Event): Promise<void> {
-    profileUploadError = null;
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
+    avatarUploadError = null;
+    avatarUploadState = "saving";
+    onsaveStatus?.({ state: "saving" });
     try {
       const updated = await uploadAvatar(file);
       _applyProfilePrefs(updated);
+      avatarUploadState = "saved";
+      onsaveStatus?.({ state: "saved" });
+      setTimeout(() => {
+        avatarUploadState = "idle";
+      }, 2000);
     } catch (err) {
-      profileUploadError = err instanceof Error ? err.message : String(err);
+      avatarUploadError = err instanceof Error ? err.message : String(err);
+      avatarUploadState = "error";
+      onsaveStatus?.({ state: "error", message: avatarUploadError ?? undefined });
     }
     // Reset so re-selecting the same file fires change again.
     input.value = "";
   }
 
   async function handleAvatarRemove(): Promise<void> {
-    profileRemoveError = null;
+    avatarRemoveError = null;
+    avatarRemoveState = "saving";
+    onsaveStatus?.({ state: "saving" });
     try {
       const updated = await deleteAvatar();
       _applyProfilePrefs(updated);
+      avatarRemoveState = "saved";
+      onsaveStatus?.({ state: "saved" });
+      setTimeout(() => {
+        avatarRemoveState = "idle";
+      }, 2000);
     } catch (err) {
-      profileRemoveError = err instanceof Error ? err.message : String(err);
+      avatarRemoveError = err instanceof Error ? err.message : String(err);
+      avatarRemoveState = "error";
+      onsaveStatus?.({ state: "error", message: avatarRemoveError ?? undefined });
     }
   }
 
   async function handleSyncFromSystem(): Promise<void> {
-    profileSyncing = true;
-    profileSyncError = null;
+    syncState = "saving";
+    syncError = null;
+    onsaveStatus?.({ state: "saving" });
     try {
       const updated = await syncFromSystem();
       _applyProfilePrefs(updated);
+      syncState = "saved";
+      onsaveStatus?.({ state: "saved" });
+      setTimeout(() => {
+        syncState = "idle";
+      }, 2000);
     } catch (err) {
-      profileSyncError = err instanceof Error ? err.message : String(err);
-    } finally {
-      profileSyncing = false;
+      syncError = err instanceof Error ? err.message : String(err);
+      syncState = "error";
+      onsaveStatus?.({ state: "error", message: syncError ?? undefined });
     }
   }
 </script>
@@ -141,24 +183,39 @@
       />
     </div>
 
-    <form
-      class="settings-defaults__form"
-      onsubmit={(e) => {
-        e.preventDefault();
-        void saveProfile();
-      }}
-      data-testid="settings-profile-form"
-    >
-      <label class="settings-defaults__field">
+    <div class="settings-defaults__form" data-testid="settings-profile-form">
+      <div class="settings-defaults__field">
         <span class="settings-defaults__label">{PROFILE_STRINGS.displayNameLabel}</span>
-        <input
-          type="text"
-          class="settings-defaults__input"
-          bind:value={profileDisplayName}
-          placeholder={PROFILE_STRINGS.displayNamePlaceholder}
-          data-testid="profile-display-name"
-        />
-      </label>
+        <div class="settings-profile__field-row">
+          <input
+            type="text"
+            class="settings-defaults__input"
+            bind:value={profileDisplayName}
+            oninput={handleDisplayNameInput}
+            placeholder={PROFILE_STRINGS.displayNamePlaceholder}
+            data-testid="profile-display-name"
+          />
+          {#if displayNameState === "saving"}
+            <span
+              class="settings-profile__row-badge settings-profile__row-badge--saving"
+              role="status"
+              data-testid="profile-display-name-badge"
+            >{PROFILE_STRINGS.savingBadge}</span>
+          {:else if displayNameState === "saved"}
+            <span
+              class="settings-profile__row-badge settings-profile__row-badge--saved"
+              role="status"
+              data-testid="profile-display-name-badge"
+            >{PROFILE_STRINGS.savedBadge}</span>
+          {:else if displayNameState === "error"}
+            <span
+              class="settings-profile__row-badge settings-profile__row-badge--error"
+              role="alert"
+              data-testid="profile-display-name-badge"
+            >{PROFILE_STRINGS.saveFailedPrefix} {displayNameError}</span>
+          {/if}
+        </div>
+      </div>
 
       <div class="settings-defaults__field">
         <span class="settings-defaults__label">{PROFILE_STRINGS.avatarLabel}</span>
@@ -183,57 +240,80 @@
               {PROFILE_STRINGS.removeButton}
             </button>
           {/if}
+          {#if avatarUploadState === "saving"}
+            <span
+              class="settings-profile__row-badge settings-profile__row-badge--saving"
+              role="status"
+              data-testid="profile-avatar-upload-badge"
+            >{PROFILE_STRINGS.savingBadge}</span>
+          {:else if avatarUploadState === "saved"}
+            <span
+              class="settings-profile__row-badge settings-profile__row-badge--saved"
+              role="status"
+              data-testid="profile-avatar-upload-badge"
+            >{PROFILE_STRINGS.savedBadge}</span>
+          {:else if avatarUploadState === "error"}
+            <span
+              class="settings-profile__row-badge settings-profile__row-badge--error"
+              role="alert"
+              data-testid="profile-avatar-upload-badge"
+            >{PROFILE_STRINGS.saveFailedPrefix} {avatarUploadError}</span>
+          {/if}
+          {#if avatarRemoveState === "saving"}
+            <span
+              class="settings-profile__row-badge settings-profile__row-badge--saving"
+              role="status"
+              data-testid="profile-avatar-remove-badge"
+            >{PROFILE_STRINGS.savingBadge}</span>
+          {:else if avatarRemoveState === "saved"}
+            <span
+              class="settings-profile__row-badge settings-profile__row-badge--saved"
+              role="status"
+              data-testid="profile-avatar-remove-badge"
+            >{PROFILE_STRINGS.savedBadge}</span>
+          {:else if avatarRemoveState === "error"}
+            <span
+              class="settings-profile__row-badge settings-profile__row-badge--error"
+              role="alert"
+              data-testid="profile-avatar-remove-badge"
+            >{PROFILE_STRINGS.saveFailedPrefix} {avatarRemoveError}</span>
+          {/if}
         </div>
-        {#if profileUploadError !== null}
-          <span class="settings-page__error" role="alert" data-testid="profile-upload-error">
-            {PROFILE_STRINGS.uploadError}
-          </span>
-        {/if}
-        {#if profileRemoveError !== null}
-          <span class="settings-page__error" role="alert" data-testid="profile-remove-error">
-            {PROFILE_STRINGS.removeError}
-          </span>
-        {/if}
       </div>
-
-      <div class="settings-defaults__actions">
-        <button
-          type="submit"
-          class="settings-defaults__save"
-          disabled={profileSaving}
-          data-testid="profile-save"
-        >
-          {PROFILE_STRINGS.saveButton}
-        </button>
-        {#if profileSavedFeedback}
-          <span class="settings-defaults__saved" role="status" data-testid="profile-saved">
-            {PROFILE_STRINGS.savedFeedback}
-          </span>
-        {/if}
-        {#if profileSaveError !== null}
-          <span class="settings-defaults__error" role="alert" data-testid="profile-save-error">
-            {PROFILE_STRINGS.saveError}
-          </span>
-        {/if}
-      </div>
-    </form>
+    </div>
 
     <div class="settings-profile__sync">
       <p class="settings-page__lede">{PROFILE_STRINGS.syncLede}</p>
-      <button
-        type="button"
-        class="settings-defaults__save"
-        disabled={profileSyncing}
-        onclick={handleSyncFromSystem}
-        data-testid="profile-sync"
-      >
-        {PROFILE_STRINGS.syncButton}
-      </button>
-      {#if profileSyncError !== null}
-        <span class="settings-page__error" role="alert" data-testid="profile-sync-error">
-          {PROFILE_STRINGS.syncError}
-        </span>
-      {/if}
+      <div class="settings-profile__sync-row">
+        <button
+          type="button"
+          class="settings-defaults__save"
+          disabled={syncState === "saving"}
+          onclick={handleSyncFromSystem}
+          data-testid="profile-sync"
+        >
+          {PROFILE_STRINGS.syncButton}
+        </button>
+        {#if syncState === "saving"}
+          <span
+            class="settings-profile__row-badge settings-profile__row-badge--saving"
+            role="status"
+            data-testid="profile-sync-badge"
+          >{PROFILE_STRINGS.savingBadge}</span>
+        {:else if syncState === "saved"}
+          <span
+            class="settings-profile__row-badge settings-profile__row-badge--saved"
+            role="status"
+            data-testid="profile-sync-badge"
+          >{PROFILE_STRINGS.savedBadge}</span>
+        {:else if syncState === "error"}
+          <span
+            class="settings-profile__row-badge settings-profile__row-badge--error"
+            role="alert"
+            data-testid="profile-sync-badge"
+          >{PROFILE_STRINGS.saveFailedPrefix} {syncError}</span>
+        {/if}
+      </div>
     </div>
   {/if}
 </section>
@@ -245,6 +325,11 @@
     background: rgb(var(--bearings-surface-2));
     border-radius: 0.375rem;
     display: inline-flex;
+  }
+  .settings-profile__field-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
   .settings-profile__avatar-actions {
     display: flex;
@@ -282,5 +367,24 @@
     margin-top: 0.25rem;
     padding-top: 0.75rem;
     border-top: 1px solid rgb(var(--bearings-border));
+  }
+  .settings-profile__sync-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .settings-profile__row-badge {
+    font-size: 0.75rem;
+    font-style: italic;
+    white-space: nowrap;
+  }
+  .settings-profile__row-badge--saving {
+    color: rgb(var(--bearings-fg-muted));
+  }
+  .settings-profile__row-badge--saved {
+    color: rgb(var(--bearings-accent));
+  }
+  .settings-profile__row-badge--error {
+    color: rgb(var(--bearings-error, 220 38 38));
   }
 </style>
