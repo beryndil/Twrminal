@@ -6,10 +6,17 @@ Endpoints (spec §9 verbatim):
 * ``GET /api/usage/by_tag?period=week`` — per-tag rollup.
 * ``GET /api/usage/override_rates?days=14`` — for "Review:" rules.
 
-The aggregations slice the ``messages`` table on the per-message
-routing/usage columns landed in spec §5 (item 1.9 wires the writes;
-until then the queries return zero-row aggregates, which is the
-correct response for a fresh app).
+Phase 3 analytics addition:
+
+* ``GET /api/usage/turns?period=week&session_id=<id>`` — raw per-turn
+  token rows from the ``turns`` table (landed in Phase 1).  Supports
+  the same ``period`` param as the other endpoints plus an optional
+  ``session_id`` filter.
+
+The by_model / by_tag aggregations slice the ``messages`` table on the
+per-message routing/usage columns landed in spec §5 (item 1.9 wires
+the writes; until then the queries return zero-row aggregates, which is
+the correct response for a fresh app).
 
 ``period`` accepts ``week`` (the spec-named default) and ``day``;
 the alphabet is enforced via :data:`_KNOWN_USAGE_PERIODS` so a typo
@@ -25,8 +32,10 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from bearings.agent.override_aggregator import OverrideAggregator
 from bearings.config.constants import OVERRIDE_RATE_WINDOW_DAYS
+from bearings.db.analytics import list_turns as db_list_turns
 from bearings.web.models.usage import (
     OverrideRateOut,
+    TurnOut,
     UsageByModelRow,
     UsageByTagRow,
 )
@@ -75,13 +84,14 @@ async def by_model(
     cutoff_unix = int(time.time()) - _period_to_seconds(period)
     db = _db(request)
     out: list[UsageByModelRow] = []
-    # Executor totals.
+    # Executor totals — includes cache_creation_tokens (Phase 0 column).
     cursor = await db.execute(
         "SELECT executor_model, "
         "       COALESCE(SUM(executor_input_tokens), 0), "
         "       COALESCE(SUM(executor_output_tokens), 0), "
         "       COALESCE(SUM(advisor_calls_count), 0), "
         "       COALESCE(SUM(cache_read_tokens), 0), "
+        "       COALESCE(SUM(cache_creation_tokens), 0), "
         "       COUNT(DISTINCT session_id) "
         "FROM messages "
         "WHERE executor_model IS NOT NULL "
@@ -102,15 +112,18 @@ async def by_model(
                 output_tokens=int(str(row[2])),
                 advisor_calls=int(str(row[3])),
                 cache_read_tokens=int(str(row[4])),
-                sessions=int(str(row[5])),
+                cache_creation_tokens=int(str(row[5])),
+                sessions=int(str(row[6])),
             )
         )
-    # Advisor totals.
+    # Advisor totals — cache_creation attaches to executor turns, so
+    # advisor rows always carry cache_creation_tokens=0.
     cursor = await db.execute(
         "SELECT advisor_model, "
         "       COALESCE(SUM(advisor_input_tokens), 0), "
         "       COALESCE(SUM(advisor_output_tokens), 0), "
         "       COALESCE(SUM(advisor_calls_count), 0), "
+        "       0, "
         "       0, "
         "       COUNT(DISTINCT session_id) "
         "FROM messages "
@@ -132,7 +145,8 @@ async def by_model(
                 output_tokens=int(str(row[2])),
                 advisor_calls=int(str(row[3])),
                 cache_read_tokens=0,
-                sessions=int(str(row[5])),
+                cache_creation_tokens=0,
+                sessions=int(str(row[6])),
             )
         )
     return out
@@ -169,6 +183,7 @@ async def by_tag(
         "       COALESCE(SUM(m.advisor_input_tokens), 0), "
         "       COALESCE(SUM(m.advisor_output_tokens), 0), "
         "       COALESCE(SUM(m.advisor_calls_count), 0), "
+        "       COALESCE(SUM(m.cache_creation_tokens), 0), "
         "       COUNT(DISTINCT m.session_id) "
         "FROM tags t "
         "LEFT JOIN session_tags st ON st.tag_id = t.id "
@@ -191,7 +206,8 @@ async def by_tag(
             advisor_input_tokens=int(str(row[4])),
             advisor_output_tokens=int(str(row[5])),
             advisor_calls=int(str(row[6])),
-            sessions=int(str(row[7])),
+            cache_creation_tokens=int(str(row[7])),
+            sessions=int(str(row[8])),
         )
         for row in rows
     ]
@@ -225,6 +241,56 @@ async def override_rates(
             review=r.review,
         )
         for r in rates
+    ]
+
+
+@router.get(
+    "/api/usage/turns",
+    response_model=list[TurnOut],
+    operation_id="get-usage-turns",
+)
+async def list_turns(
+    request: Request,
+    period: str = Query(default="week"),
+    session_id: str | None = Query(default=None),
+) -> list[TurnOut]:
+    """Per-turn token rows from the Phase 1 ``turns`` table.
+
+    Returns every turn whose ``timestamp`` falls within the requested
+    ``period`` window, optionally filtered to a single session.
+
+    ``period`` accepts ``week`` (default) and ``day``, matching the
+    other usage endpoints.  ``session_id`` is optional; when omitted,
+    all turns within the window are returned.
+
+    Per spec §3.2, callers must group by ``model`` before summing
+    token counts — the endpoint returns raw per-turn rows so the
+    client (or the caller) can apply the correct model-aware grouping.
+
+    Response rows are ordered by ``timestamp`` ascending then
+    ``turn_index`` ascending (chronological order).
+    """
+    if period not in _KNOWN_USAGE_PERIODS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"period {period!r} not in {sorted(_KNOWN_USAGE_PERIODS)}",
+        )
+    # turns.timestamp is unix ms; convert the period window to ms.
+    cutoff_ms = (int(time.time()) - _period_to_seconds(period)) * 1000
+    db = _db(request)
+    turn_rows = await db_list_turns(db, cutoff_ms=cutoff_ms, session_id=session_id)
+    return [
+        TurnOut(
+            session_id=t.session_id,
+            turn_index=t.turn_index,
+            timestamp=t.timestamp,
+            model=t.model,
+            input_tokens=t.input_tokens,
+            output_tokens=t.output_tokens,
+            cache_read_tokens=t.cache_read_tokens,
+            cache_creation_tokens=t.cache_creation_tokens,
+        )
+        for t in turn_rows
     ]
 
 

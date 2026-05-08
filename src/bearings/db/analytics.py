@@ -262,6 +262,61 @@ async def list_turns_for_session(
     ]
 
 
+async def list_turns(
+    connection: aiosqlite.Connection,
+    *,
+    cutoff_ms: int,
+    session_id: str | None = None,
+) -> list[Turn]:
+    """Return turns at or after ``cutoff_ms`` (unix ms), optionally for one session.
+
+    Ordered by timestamp ascending then turn_index ascending so
+    time-series consumers receive rows in chronological order.
+
+    Per spec §3.2: never aggregate token counts across models without
+    grouping by model first — callers are responsible for that
+    constraint.  This query returns raw rows so the caller can slice
+    by model as needed.
+
+    Args:
+        connection: open aiosqlite connection.
+        cutoff_ms: earliest timestamp to include (unix milliseconds).
+        session_id: when set, only rows for this session are returned.
+    """
+    if session_id is not None:
+        rows = await connection.execute_fetchall(
+            "SELECT id, session_id, turn_index, timestamp, model, "
+            "input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens "
+            "FROM turns "
+            "WHERE session_id = ? AND timestamp >= ? "
+            "ORDER BY timestamp ASC, turn_index ASC",
+            (session_id, cutoff_ms),
+        )
+    else:
+        rows = await connection.execute_fetchall(
+            "SELECT id, session_id, turn_index, timestamp, model, "
+            "input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens "
+            "FROM turns "
+            "WHERE timestamp >= ? "
+            "ORDER BY timestamp ASC, turn_index ASC",
+            (cutoff_ms,),
+        )
+    return [
+        Turn(
+            id=int(r[0]),
+            session_id=str(r[1]),
+            turn_index=int(r[2]),
+            timestamp=int(r[3]),
+            model=str(r[4]),
+            input_tokens=int(r[5]),
+            output_tokens=int(r[6]),
+            cache_read_tokens=int(r[7]),
+            cache_creation_tokens=int(r[8]),
+        )
+        for r in rows
+    ]
+
+
 # ---------------------------------------------------------------------------
 # PlugBlock queries
 # ---------------------------------------------------------------------------
@@ -547,6 +602,7 @@ __all__ = [
     "insert_turn",
     "is_warning_suppressed",
     "list_session_plug_blocks",
+    "list_turns",
     "list_turns_for_session",
     "record_session_plug_blocks",
     "search_plug_blocks_fts",

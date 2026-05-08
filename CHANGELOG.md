@@ -9,6 +9,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Analytics Phase 3 — usage routes extended:** The three existing
+  `/api/usage/` endpoints now expose the full token picture from the
+  Phase 0/1 analytics schema:
+  - `GET /api/usage/by_model` and `GET /api/usage/by_tag` gain a
+    `cache_creation_tokens` field (summed from
+    `messages.cache_creation_tokens`, landed in Phase 0; advisor rows
+    always carry `0` since cache-creation costs attach to executor turns).
+  - New `GET /api/usage/turns?period=week&session_id=<id>` endpoint
+    surfaces the Phase 1 `turns` table — one row per Claude Agent SDK
+    turn with full token counts (`input_tokens`, `output_tokens`,
+    `cache_read_tokens`, `cache_creation_tokens`, `model`, `timestamp`
+    in unix ms). Supports the same `period` param (`day` / `week`) as
+    the other usage endpoints plus an optional `session_id` filter.
+    Operation id: `get-usage-turns`. Per spec §3.2, rows carry their
+    `model` field so callers can group by model before aggregating.
+  - `db.analytics.list_turns()` — new DB helper backing the endpoint;
+    filters by unix-ms cutoff and optional session id.
+  - `web/models/usage.TurnOut` — Pydantic wire model for the new
+    endpoint.
+  - `docs/openapi.json` regenerated (135 operations, was 134).
+
 - **SDK history replay on supervisor respawn:** Mid-session model
   swap, idle reap, server restart, and recovery from ERROR all
   recycle the SDK CLI subprocess. Before this change, the new
