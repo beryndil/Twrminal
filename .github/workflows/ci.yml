@@ -259,3 +259,53 @@ jobs:
         # Verify the user-unit shape against systemd's parser. Failures here
         # would mean the unit file would refuse to load on a real machine.
         run: systemd-analyze verify --user --recursive-errors=yes config/bearings-v1.service
+
+  api-compat:
+    # feature-13-004: compare docs/openapi.json against the previous SemVer
+    # tag using oasdiff.  Fails on any breaking change so the CHANGELOG
+    # §1.0.0 additive-only promise is machine-enforced within v1.x.
+    #
+    # Guard: skips when the current ref is a v0.x tag (pre-1.0 pushes should
+    # not burn API-compat CI; the existing branch triggers fire on
+    # refs/heads/v1-rebuild where this condition is always true, but the
+    # guard protects against a future tags: [v*] trigger being added).
+    name: API compatibility (oasdiff)
+    runs-on: ubuntu-latest
+    if: "!startsWith(github.ref, 'refs/tags/v0.')"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history required so `git tag` can reach all SemVer tags.
+          fetch-depth: 0
+
+      - name: Find previous SemVer tag
+        id: prev-tag
+        run: |
+          git fetch --tags --quiet
+          # List tags matching v<digit>* sorted by version descending;
+          # take the first entry as the most recent published release.
+          PREV=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -1 || true)
+          if [ -z "$PREV" ]; then
+            echo "No previous SemVer tag found — skipping api-compat (bootstrap run)"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Comparing against previous tag: $PREV"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "tag=$PREV" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract base spec from previous tag
+        if: steps.prev-tag.outputs.skip == 'false'
+        run: |
+          git show "${{ steps.prev-tag.outputs.tag }}:docs/openapi.json" \
+            > /tmp/base-openapi.json
+
+      - name: Check for breaking API changes
+        # tufin/oasdiff-action@v1 runs `oasdiff breaking` under the hood
+        # and exits 1 when breaking changes are detected.  No `fail-on-diff`
+        # flag means only breaking changes (not additive changes) fail the job.
+        if: steps.prev-tag.outputs.skip == 'false'
+        uses: tufin/oasdiff-action@v1
+        with:
+          base: /tmp/base-openapi.json
+          revision: docs/openapi.json
