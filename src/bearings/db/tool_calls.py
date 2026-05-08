@@ -142,6 +142,41 @@ async def latest_todo_write_json(
     return str(row[0]) if row is not None else None
 
 
+async def get_output_for_session(
+    connection: aiosqlite.Connection,
+    *,
+    tool_call_id: str,
+    session_id: str,
+) -> str | None:
+    """Return the persisted output for a tool call, restricted to *session_id*.
+
+    Used by the ``bearings__get_tool_output`` MCP tool so agents can retrieve
+    full captured output when the context-window runner capped what was shown
+    in-line.
+
+    The ``session_id`` restriction prevents cross-session data access: even if
+    the agent passes a ``tool_call_id`` from a sibling session (which it should
+    never have), the query returns ``None`` rather than exposing foreign output.
+
+    Args:
+        connection: Open aiosqlite connection.
+        tool_call_id: SDK tool_call_id (e.g. ``toolu_01…``) to look up.
+        session_id: Bearings session id that must own the tool call.
+
+    Returns:
+        The ``output`` column value, or ``None`` if no matching row exists.
+    """
+    cursor = await connection.execute(
+        "SELECT output FROM tool_calls WHERE id = ? AND session_id = ?",
+        (tool_call_id, session_id),
+    )
+    try:
+        row = await cursor.fetchone()
+    finally:
+        await cursor.close()
+    return str(row[0]) if row is not None else None
+
+
 async def list_for_messages(
     connection: aiosqlite.Connection,
     *,
@@ -202,6 +237,7 @@ async def list_for_messages(
 __all__ = [
     "ToolCall",
     "ToolCallRecord",
+    "get_output_for_session",
     "insert_batch",
     "latest_todo_write_json",
     "list_for_messages",

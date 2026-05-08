@@ -25,12 +25,17 @@ landed.
 from __future__ import annotations
 
 import os.path
+from pathlib import Path
 
 import aiosqlite
 
 from bearings.agent.approval import ApprovalBroker
 from bearings.agent.bearings_mcp import (
+    BashToolDeps,
+    BearingsMcpDeps,
     CloseSessionDeps,
+    DirInitDeps,
+    GetToolOutputDeps,
     build_bearings_mcp_server,
 )
 from bearings.agent.options import (
@@ -43,8 +48,12 @@ from bearings.agent.session import AgentSession, PermissionProfile, SessionConfi
 from bearings.agent.session_store import BearingsSessionStore
 from bearings.agent.tags import resolve_claude_md_blocks
 from bearings.config.constants import (
+    BASH_TOOL_DEFAULT_TIMEOUT_S,
+    BASH_TOOL_OUTPUT_MAX_CHARS,
+    DEFAULT_BASH_TOOL_ALLOWED_COMMANDS,
     DEFAULT_TEMPLATE_ADVISOR_MODEL,
     DEFAULT_TEMPLATE_PERMISSION_PROFILE,
+    DEFAULT_TOOL_OUTPUT_CAP_CHARS,
 )
 from bearings.db import sdk_entries as sdk_entries_db
 from bearings.db import sessions as sessions_db
@@ -139,8 +148,23 @@ def build_session_setup(
         async def db_factory() -> aiosqlite.Connection:
             return db_connection
 
-        deps = CloseSessionDeps(session_id=session_id, db_factory=db_factory)
-        bearings_mcp_server = build_bearings_mcp_server(deps)
+        close_deps = CloseSessionDeps(session_id=session_id, db_factory=db_factory)
+        mcp_deps = BearingsMcpDeps(
+            close_session=close_deps,
+            bash=BashToolDeps(
+                working_dir=sdk_cwd,
+                allowed_commands=DEFAULT_BASH_TOOL_ALLOWED_COMMANDS,
+                timeout_s=BASH_TOOL_DEFAULT_TIMEOUT_S,
+                output_max_chars=BASH_TOOL_OUTPUT_MAX_CHARS,
+            ),
+            dir_init=DirInitDeps(working_dir=Path(sdk_cwd)),
+            get_tool_output=GetToolOutputDeps(
+                session_id=session_id,
+                db_factory=db_factory,
+                cap_chars=DEFAULT_TOOL_OUTPUT_CAP_CHARS,
+            ),
+        )
+        bearings_mcp_server = build_bearings_mcp_server(mcp_deps)
         broker = ApprovalBroker(runner) if enable_approval_broker else None
         # Load CLAUDE.md blocks from each tag's working_dir, ordered by tag-class
         # precedence (project > general > severity) so the highest-precedence

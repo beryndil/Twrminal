@@ -23,6 +23,7 @@ import aiosqlite
 import pytest
 
 from bearings.agent.bearings_mcp import (
+    BearingsMcpDeps,
     CloseSessionDeps,
     make_close_session_tool,
 )
@@ -134,7 +135,7 @@ async def test_server_name_and_tool_handle_match_constants() -> None:
     from bearings.agent.bearings_mcp import build_bearings_mcp_server
 
     deps = CloseSessionDeps(session_id="ses_x", db_factory=_factory_for_id())
-    server_config = build_bearings_mcp_server(deps)
+    server_config = build_bearings_mcp_server(BearingsMcpDeps.minimal(deps))
     assert server_config["type"] == "sdk"
     assert server_config["name"] == BEARINGS_MCP_SERVER_NAME
 

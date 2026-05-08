@@ -23,6 +23,7 @@ import pytest
 from claude_agent_sdk import Message
 
 from bearings.agent.bearings_mcp import (
+    BearingsMcpDeps,
     CloseSessionDeps,
     build_bearings_mcp_server,
 )
@@ -91,7 +92,7 @@ def _decision() -> RoutingDecision:
 
 def _options() -> OptionsKwargs:
     server = build_bearings_mcp_server(
-        CloseSessionDeps(session_id="ses_x", db_factory=_unused_factory())
+        BearingsMcpDeps.minimal(CloseSessionDeps(session_id="ses_x", db_factory=_unused_factory()))
     )
     return compose_session_options(
         decision=_decision(),

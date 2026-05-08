@@ -33,7 +33,7 @@ import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
 from fastapi.testclient import TestClient
 
-from bearings.agent.bearings_mcp import CloseSessionDeps, build_bearings_mcp_server
+from bearings.agent.bearings_mcp import BearingsMcpDeps, CloseSessionDeps, build_bearings_mcp_server
 from bearings.agent.options import compose_session_options
 from bearings.agent.routing import RoutingDecision
 from bearings.agent.runner import QueuedPrompt, SessionRunner
@@ -340,7 +340,9 @@ async def test_sdk_loop_prepends_instruction_when_advisor_configured(
     runner = SessionRunner(session_row.id)
     agent = _build_session(conn, session_row.id, decision)
     server = build_bearings_mcp_server(
-        CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        BearingsMcpDeps.minimal(
+            CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        )
     )
     opts = _make_options(decision, server)
 
@@ -373,7 +375,9 @@ async def test_sdk_loop_no_prefix_when_no_advisor(conn: aiosqlite.Connection) ->
     runner = SessionRunner(session_row.id)
     agent = _build_session(conn, session_row.id, decision)
     server = build_bearings_mcp_server(
-        CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        BearingsMcpDeps.minimal(
+            CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        )
     )
     opts = _make_options(decision, server)
 
@@ -403,7 +407,9 @@ async def test_sdk_loop_no_prefix_when_flag_false(conn: aiosqlite.Connection) ->
     runner = SessionRunner(session_row.id)
     agent = _build_session(conn, session_row.id, decision)
     server = build_bearings_mcp_server(
-        CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        BearingsMcpDeps.minimal(
+            CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        )
     )
     opts = _make_options(decision, server)
 

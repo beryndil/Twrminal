@@ -775,6 +775,129 @@ BEARINGS_MCP_SERVER_NAME: Final[str] = "bearings"
 # allowed-tools allowlist that pins the namespaced form.
 CLOSE_SESSION_TOOL_NAME: Final[str] = "close_session"
 
+# ``bash`` tool name. Agent-facing surface for shell command execution
+# via the Bearings MCP server. The agent calls this as
+# ``mcp__bearings__bash``.
+BASH_TOOL_NAME: Final[str] = "bash"
+
+# ``dir_init`` tool name. Agent-facing surface for directory-context
+# initialisation. Body lives in ``bearings_dir/onboarding.py`` per
+# arch §1.1.6; ``bearings_mcp.py`` is a dispatch shim only.
+DIR_INIT_TOOL_NAME: Final[str] = "dir_init"
+
+# ``get_tool_output`` tool name. Large-output retrieval escape hatch:
+# the agent passes a prior ``tool_use_id`` to fetch the full captured
+# output when the context-window cap truncated what the runner showed.
+GET_TOOL_OUTPUT_TOOL_NAME: Final[str] = "get_tool_output"
+
+# ---------------------------------------------------------------------------
+# MCP bash tool defaults (agent-side shell execution via bearings MCP server).
+#
+# The bash tool validates argv[0] against ``BASH_TOOL_ALLOWED_COMMANDS``
+# (which the caller may override via ``BashToolDeps.allowed_commands``),
+# kills the subprocess on timeout, and captures combined stdout+stderr.
+# ``shell=False`` always — the allowlist is the safety barrier.
+#
+# Timeout values: 120 s covers most build/test commands; 600 s is the
+# hard ceiling an agent cannot exceed regardless of what it requests.
+# Output cap at 200 K chars keeps any single tool call from saturating
+# the runner's per-tool-call ring-buffer budget.
+#
+# Allowlist: broad by design — the agent session uses this inside the
+# SDK subprocess where the user has already granted the session its
+# permission profile.  argv[0] must still be a bare command name (no
+# path separator) per ``agent/shell.py``'s ``validate_argv`` contract.
+# ---------------------------------------------------------------------------
+
+BASH_TOOL_DEFAULT_TIMEOUT_S: Final[float] = 120.0
+BASH_TOOL_MAX_TIMEOUT_S: Final[float] = 600.0
+BASH_TOOL_OUTPUT_MAX_CHARS: Final[int] = 200_000
+
+DEFAULT_BASH_TOOL_ALLOWED_COMMANDS: Final[frozenset[str]] = frozenset(
+    {
+        # Shells / interpreters
+        "bash",
+        "sh",
+        "python",
+        "python3",
+        # Package managers / build tools
+        "uv",
+        "pip",
+        "pip3",
+        "make",
+        "cargo",
+        "go",
+        "node",
+        "npm",
+        "npx",
+        # VCS
+        "git",
+        # POSIX file / text utils
+        "ls",
+        "cat",
+        "head",
+        "tail",
+        "grep",
+        "find",
+        "wc",
+        "sort",
+        "uniq",
+        "awk",
+        "sed",
+        "xargs",
+        "cut",
+        "tr",
+        "tee",
+        "diff",
+        "patch",
+        "stat",
+        "file",
+        # Shell builtins exposed as binaries
+        "echo",
+        "true",
+        "false",
+        "test",
+        "pwd",
+        "env",
+        "which",
+        "whoami",
+        "date",
+        "sleep",
+        # Filesystem ops
+        "mkdir",
+        "rm",
+        "cp",
+        "mv",
+        "touch",
+        "chmod",
+        "chown",
+        "ln",
+        # Archives
+        "tar",
+        "gzip",
+        "gunzip",
+        "zip",
+        "unzip",
+        # Network
+        "curl",
+        "wget",
+        # Python quality toolchain
+        "ruff",
+        "mypy",
+        "pytest",
+        "black",
+        "isort",
+        # System inspection
+        "ps",
+        "kill",
+        "pkill",
+        "systemctl",
+        "journalctl",
+        # Desktop integration
+        "xdg-open",
+    }
+)
+
 # ---------------------------------------------------------------------------
 # Bearings CLI (item 1.7; arch §1.1.1 ``cli/`` package; behavior surface
 # in ``docs/behavior/bearings-cli.md``).
@@ -1337,6 +1460,10 @@ __all__ = [
     "AUTO_DRIVER_STATE_PAUSED",
     "AUTO_DRIVER_STATE_RUNNING",
     "AVATAR_ALLOWED_MIME_TYPES",
+    "BASH_TOOL_DEFAULT_TIMEOUT_S",
+    "BASH_TOOL_MAX_TIMEOUT_S",
+    "BASH_TOOL_NAME",
+    "BASH_TOOL_OUTPUT_MAX_CHARS",
     "BEARINGS_DIR_HISTORY_CAP",
     "BEARINGS_DIR_HISTORY_FILENAME",
     "BEARINGS_DIR_MANIFEST_FILENAME",
@@ -1375,6 +1502,7 @@ __all__ = [
     "DEFAULT_ADVISOR_MAX_USES_SONNET",
     "DEFAULT_ALLOWED_SHELL_COMMANDS",
     "DEFAULT_AVATARS_STORAGE_ROOT",
+    "DEFAULT_BASH_TOOL_ALLOWED_COMMANDS",
     "DEFAULT_BILLING_MODE",
     "DEFAULT_BILLING_PLAN",
     "DEFAULT_CHECKPOINT_LABEL_TEMPLATE",
@@ -1392,6 +1520,7 @@ __all__ = [
     "DEFAULT_VAULT_TODO_GLOB",
     "DIAG_DRIVER_SAMPLE_LIMIT",
     "DIAG_RUNNER_SAMPLE_LIMIT",
+    "DIR_INIT_TOOL_NAME",
     "DISPLAY_NAME_MAX_LENGTH",
     "DRIVER_OUTCOME_COMPLETED",
     "DRIVER_OUTCOME_HALTED_EMPTY",
@@ -1408,6 +1537,7 @@ __all__ = [
     "FS_ENTRY_KIND_SYMLINK",
     "FS_LIST_MAX_ENTRIES",
     "FS_READ_MAX_BYTES",
+    "GET_TOOL_OUTPUT_TOOL_NAME",
     "HEALTH_DB_PROBE_QUERY",
     "HEALTH_STATUS_DEGRADED",
     "HEALTH_STATUS_OK",

@@ -39,6 +39,7 @@ from claude_agent_sdk import (
 )
 
 from bearings.agent.bearings_mcp import (
+    BearingsMcpDeps,
     CloseSessionDeps,
     build_bearings_mcp_server,
 )
@@ -192,7 +193,9 @@ async def test_single_turn_runs_end_to_end(conn: aiosqlite.Connection) -> None:
     runner = SessionRunner(session_row.id)
     agent = _build_session(conn, session_row.id)
     server = build_bearings_mcp_server(
-        CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        BearingsMcpDeps.minimal(
+            CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        )
     )
     opts = _options(server)
     runner.enqueue_prompt(message_id="msg_user_1", content="What is 2+2?")
@@ -291,7 +294,9 @@ async def test_loop_starts_session_lifecycle(conn: aiosqlite.Connection) -> None
     runner = SessionRunner(session_row.id)
     agent = _build_session(conn, session_row.id)
     server = build_bearings_mcp_server(
-        CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        BearingsMcpDeps.minimal(
+            CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        )
     )
 
     task = asyncio.create_task(
@@ -319,7 +324,9 @@ async def test_idle_loop_waits_on_new_prompt_event(conn: aiosqlite.Connection) -
     runner = SessionRunner(session_row.id)
     agent = _build_session(conn, session_row.id)
     server = build_bearings_mcp_server(
-        CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        BearingsMcpDeps.minimal(
+            CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        )
     )
 
     task = asyncio.create_task(
@@ -350,7 +357,9 @@ async def test_cancellation_tears_down_without_error_state(
     runner = SessionRunner(session_row.id)
     agent = _build_session(conn, session_row.id)
     server = build_bearings_mcp_server(
-        CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        BearingsMcpDeps.minimal(
+            CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        )
     )
 
     task = asyncio.create_task(
@@ -378,7 +387,9 @@ async def test_error_path_marks_session_error_and_emits_event(
     runner = SessionRunner(session_row.id)
     agent = _build_session(conn, session_row.id)
     server = build_bearings_mcp_server(
-        CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        BearingsMcpDeps.minimal(
+            CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        )
     )
     runner.enqueue_prompt(message_id="msg_u", content="boom")
 
@@ -406,7 +417,9 @@ async def test_multi_prompt_fifo_runs_in_arrival_order(
     runner = SessionRunner(session_row.id)
     agent = _build_session(conn, session_row.id)
     server = build_bearings_mcp_server(
-        CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        BearingsMcpDeps.minimal(
+            CloseSessionDeps(session_id=session_row.id, db_factory=_unused_factory())
+        )
     )
     runner.enqueue_prompt(message_id="msg_u1", content="first")
     runner.enqueue_prompt(message_id="msg_u2", content="second")

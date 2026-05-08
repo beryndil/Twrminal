@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 from bearings.agent.bearings_mcp import (
     CLOSE_SESSION_INSTRUCTION,
+    BearingsMcpDeps,
     CloseSessionDeps,
     build_bearings_mcp_server,
 )
@@ -57,7 +58,7 @@ def _factory_unused() -> Callable[[], Awaitable[aiosqlite.Connection]]:
 
 def _server() -> McpSdkServerConfig:
     return build_bearings_mcp_server(
-        CloseSessionDeps(session_id="ses_t", db_factory=_factory_unused())
+        BearingsMcpDeps.minimal(CloseSessionDeps(session_id="ses_t", db_factory=_factory_unused()))
     )
 
 
