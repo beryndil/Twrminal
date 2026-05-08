@@ -41,7 +41,6 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from bearings.config.constants import (
     BULK_OP_CLOSE,
-    BULK_OP_DELETE,
     BULK_OP_EXPORT,
     BULK_OP_TAG,
     BULK_OP_UNTAG,
@@ -278,6 +277,68 @@ async def _bulk_tag(
 
 
 # ---------------------------------------------------------------------------
+# Route helpers — extracted to keep run_sessions_bulk under grade-B CC
+# ---------------------------------------------------------------------------
+
+
+async def _handle_bulk_export(
+    db: aiosqlite.Connection,
+    session_ids: list[str],
+) -> Response:
+    """Handle the read-only export op; returns application/json."""
+    exports: list[SessionExport | None] = []
+    for sid in session_ids:
+        try:
+            exports.append(await _build_session_export(db, sid))
+        except LookupError:
+            exports.append(None)
+    body = json.dumps(BulkExportOut(sessions=exports).model_dump(), ensure_ascii=False, indent=2)
+    return Response(content=body, media_type="application/json")
+
+
+async def _handle_bulk_tag(
+    db: aiosqlite.Connection,
+    payload: BulkSessionsIn,
+    session_ids: list[str],
+) -> Response:
+    """Handle tag / untag ops; raises 422 when tag_id is missing."""
+    if payload.tag_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="tag_id is required for tag and untag ops",
+        )
+    results = await _bulk_tag(db, session_ids, payload.tag_id, attach=(payload.op == BULK_OP_TAG))
+    return Response(
+        content=BulkSessionsOut(op=payload.op, results=results).model_dump_json(),
+        media_type="application/json",
+    )
+
+
+async def _handle_bulk_close_delete(
+    db: aiosqlite.Connection,
+    broadcaster: SessionsBroadcaster | None,
+    payload: BulkSessionsIn,
+    session_ids: list[str],
+) -> list[BulkResultItem]:
+    """Handle close / delete ops; broadcast upserts / deletes as appropriate."""
+    if payload.op == BULK_OP_CLOSE:
+        close_pairs = await _bulk_close(db, session_ids)
+        results = [r for r, _ in close_pairs]
+        if broadcaster is not None:
+            for r, closed_session in close_pairs:
+                if r.ok and closed_session is not None:
+                    broadcaster.publish_upsert(_to_out(closed_session))
+        return results
+    # payload.op == BULK_OP_DELETE (KNOWN_BULK_OPS guard rejects others)
+    results = await _bulk_delete(db, session_ids)
+    if broadcaster is not None:
+        for r in results:
+            if r.ok:
+                broadcaster.publish_delete(r.session_id)
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Route
 # ---------------------------------------------------------------------------
 
@@ -314,59 +375,13 @@ async def run_sessions_bulk(payload: BulkSessionsIn, request: Request) -> Respon
     broadcaster: SessionsBroadcaster | None = _sessions_broadcaster(request)
     session_ids = payload.session_ids
 
-    # ---- export (read-only; no transaction needed) ---------------------------
     if payload.op == BULK_OP_EXPORT:
-        session_exports: list[SessionExport | None] = []
-        for sid in session_ids:
-            try:
-                exp = await _build_session_export(db, sid)
-                session_exports.append(exp)
-            except LookupError:
-                session_exports.append(None)
-        bundle = BulkExportOut(sessions=session_exports)
-        body = json.dumps(bundle.model_dump(), ensure_ascii=False, indent=2)
-        return Response(content=body, media_type="application/json")
+        return await _handle_bulk_export(db, session_ids)
 
-    # ---- tag / untag ---------------------------------------------------------
     if payload.op in (BULK_OP_TAG, BULK_OP_UNTAG):
-        if payload.tag_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="tag_id is required for tag and untag ops",
-            )
-        results = await _bulk_tag(
-            db,
-            session_ids,
-            payload.tag_id,
-            attach=(payload.op == BULK_OP_TAG),
-        )
-        out = BulkSessionsOut(op=payload.op, results=results)
-        return Response(content=out.model_dump_json(), media_type="application/json")
+        return await _handle_bulk_tag(db, payload, session_ids)
 
-    # ---- close / delete ------------------------------------------------------
-    # Structured as if/elif so both constants are referenced (ruff F401).
-    # The KNOWN_BULK_OPS guard above ensures op is "close" or "delete" here.
-    if payload.op == BULK_OP_CLOSE:
-        close_pairs = await _bulk_close(db, session_ids)
-        results = [r for r, _ in close_pairs]
-        # Broadcast upserts using rows captured inside _bulk_close's
-        # transaction — no post-commit re-fetch, no race window
-        # (feature-1-001).
-        if broadcaster is not None:
-            for r, closed_session in close_pairs:
-                if r.ok and closed_session is not None:
-                    broadcaster.publish_upsert(_to_out(closed_session))
-    elif payload.op == BULK_OP_DELETE:
-        results = await _bulk_delete(db, session_ids)
-        if broadcaster is not None:
-            for r in results:
-                if r.ok:
-                    broadcaster.publish_delete(r.session_id)
-    else:  # pragma: no cover — KNOWN_BULK_OPS guard rejects all other values
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"unhandled op {payload.op!r}",
-        )
+    results = await _handle_bulk_close_delete(db, broadcaster, payload, session_ids)
     out = BulkSessionsOut(op=payload.op, results=results)
     return Response(content=out.model_dump_json(), media_type="application/json")
 

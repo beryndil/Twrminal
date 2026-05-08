@@ -120,6 +120,58 @@ class QuotaSnapshot:
 # ---------------------------------------------------------------------------
 
 
+def _threshold_tripped(pct: float | None) -> bool:
+    """Return True when a quota percentage has hit the downgrade threshold."""
+    return pct is not None and pct >= QUOTA_THRESHOLD_PCT
+
+
+def _apply_sonnet_downgrade(
+    executor: str,
+    advisor: str | None,
+    advisor_max_uses: int,
+    sonnet_pct: float,
+) -> tuple[str, str | None, int, str, str]:
+    """Apply spec §4 step-2 sonnet-bucket downgrade; return updated fields."""
+    pct_int = round(sonnet_pct * 100)
+    return (
+        "haiku",
+        advisor,
+        DEFAULT_ADVISOR_MAX_USES_HAIKU if advisor is not None else 0,
+        "quota_downgrade",
+        f"quota guard: sonnet used {pct_int}% — Sonnet → Haiku",
+    )
+
+
+def _apply_overall_downgrade(
+    executor: str,
+    advisor: str | None,
+    advisor_max_uses: int,
+    source: str,
+    reason: str,
+    pct_int: int,
+) -> tuple[str, str | None, int, str, str]:
+    """Apply spec §4 step-1 overall-bucket downgrades; return updated fields."""
+    new_executor = executor
+    new_advisor = advisor
+    new_advisor_max_uses = advisor_max_uses
+    new_source = source
+    new_reason = reason
+
+    if new_executor in {"opus", "opusplan"}:
+        new_executor = "sonnet"
+        new_advisor_max_uses = DEFAULT_ADVISOR_MAX_USES_SONNET
+        new_source = "quota_downgrade"
+        new_reason = f"quota guard: overall used {pct_int}% — Opus → Sonnet"
+
+    if new_advisor == "opus":
+        new_advisor = None
+        if new_source != "quota_downgrade":
+            new_source = "quota_downgrade"
+            new_reason = f"quota guard: overall used {pct_int}% — advisor disabled"
+
+    return new_executor, new_advisor, new_advisor_max_uses, new_source, new_reason
+
+
 def apply_quota_guard(
     decision: RoutingDecision,
     snapshot: QuotaSnapshot | None,
@@ -160,47 +212,34 @@ def apply_quota_guard(
     sonnet = snapshot.sonnet_used_pct
     new_state = snapshot.quota_state_dict()
 
+    new_executor, new_advisor, new_advisor_max_uses, new_source, new_reason = (
+        decision.executor_model,
+        decision.advisor_model,
+        decision.advisor_max_uses,
+        decision.source,
+        decision.reason,
+    )
+
     # Step 1: overall-bucket downgrades.
-    new_executor = decision.executor_model
-    new_advisor = decision.advisor_model
-    new_advisor_max_uses = decision.advisor_max_uses
-    new_source = decision.source
-    new_reason = decision.reason
-    overall_threshold_tripped = overall is not None and overall >= QUOTA_THRESHOLD_PCT
-    sonnet_threshold_tripped = sonnet is not None and sonnet >= QUOTA_THRESHOLD_PCT
+    if _threshold_tripped(overall):
+        new_executor, new_advisor, new_advisor_max_uses, new_source, new_reason = (
+            _apply_overall_downgrade(
+                new_executor,
+                new_advisor,
+                new_advisor_max_uses,
+                new_source,
+                new_reason,
+                round((overall or 0.0) * 100),
+            )
+        )
 
-    if overall_threshold_tripped:
-        pct_int = round((overall or 0.0) * 100)
-        if new_executor in {"opus", "opusplan"}:
-            new_executor = "sonnet"
-            new_advisor_max_uses = DEFAULT_ADVISOR_MAX_USES_SONNET
-            new_source = "quota_downgrade"
-            new_reason = f"quota guard: overall used {pct_int}% — Opus → Sonnet"
-        if new_advisor == "opus":
-            new_advisor = None
-            # advisor_max_uses semantically irrelevant when advisor is
-            # None; keep the prior value so a "Use anyway" override that
-            # restores the advisor preserves the originally-rule-stated
-            # cap.
-            if new_source != "quota_downgrade":
-                new_source = "quota_downgrade"
-                new_reason = f"quota guard: overall used {pct_int}% — advisor disabled"
-
-    # Step 2: sonnet-bucket downgrade. Runs after step 1 so an
-    # opus-executor session whose overall bucket trips first lands on
-    # sonnet, and only further downgrades to haiku if the sonnet bucket
-    # is also exhausted.
-    if sonnet_threshold_tripped and new_executor == "sonnet":
-        pct_int = round((sonnet or 0.0) * 100)
-        new_executor = "haiku"
-        new_advisor_max_uses = DEFAULT_ADVISOR_MAX_USES_HAIKU if new_advisor is not None else 0
-        new_source = "quota_downgrade"
-        new_reason = f"quota guard: sonnet used {pct_int}% — Sonnet → Haiku"
+    # Step 2: sonnet-bucket downgrade (runs after step 1).
+    if _threshold_tripped(sonnet) and new_executor == "sonnet":
+        new_executor, new_advisor, new_advisor_max_uses, new_source, new_reason = (
+            _apply_sonnet_downgrade(new_executor, new_advisor, new_advisor_max_uses, sonnet or 0.0)
+        )
 
     if new_executor == decision.executor_model and new_advisor == decision.advisor_model:
-        # No downgrade fired — but still fold the snapshot's quota
-        # state onto the decision so the per-message persistence path
-        # records the at-decision picture.
         if decision.quota_state_at_decision == new_state:
             return decision
         return replace(decision, quota_state_at_decision=new_state)

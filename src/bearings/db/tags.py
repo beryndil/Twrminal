@@ -83,6 +83,53 @@ from bearings.config.constants import (
 from bearings.db._id import now_iso
 from bearings.db._validators import _is_known_model
 
+# ---------------------------------------------------------------------------
+# Tag.__post_init__ validators — extracted to keep the class CC at grade A
+# ---------------------------------------------------------------------------
+
+
+def _validate_tag_name_color(name: str, color: str | None) -> None:
+    """Raise if Tag.name is empty/over-length or Tag.color is over-length."""
+    if not name:
+        raise ValueError("Tag.name must be non-empty")
+    if len(name) > TAG_NAME_MAX_LENGTH:
+        raise ValueError(f"Tag.name must be ≤ {TAG_NAME_MAX_LENGTH} chars (got {len(name)})")
+    if color is not None and len(color) > TAG_COLOR_MAX_LENGTH:
+        raise ValueError(f"Tag.color must be ≤ {TAG_COLOR_MAX_LENGTH} chars (got {len(color)})")
+
+
+def _validate_tag_model_dir(default_model: str | None, working_dir: str | None) -> None:
+    """Raise if default_model or working_dir violate their constraints."""
+    if default_model is not None and not _is_known_model(default_model):
+        raise ValueError(
+            f"Tag.default_model {default_model!r} is neither a known short name "
+            f"{sorted(KNOWN_EXECUTOR_MODELS)} nor a full SDK ID prefixed with "
+            f"{EXECUTOR_MODEL_FULL_ID_PREFIX!r}"
+        )
+    if working_dir is not None and not working_dir:
+        raise ValueError("Tag.working_dir must be non-empty if provided")
+
+
+def _validate_tag_class_severity(
+    class_: str,
+    default_model: str | None,
+    working_dir: str | None,
+) -> None:
+    """Raise if class_ is unknown or if a severity tag carries model/dir."""
+    if class_ not in KNOWN_TAG_CLASSES:
+        raise ValueError(f"Tag.class_ {class_!r} is not in {sorted(KNOWN_TAG_CLASSES)}")
+    if class_ == TAG_CLASS_SEVERITY:
+        if default_model is not None:
+            raise ValueError(
+                "Tag.default_model must be None for severity-class tags "
+                "(severity is signalling, not configuration)"
+            )
+        if working_dir is not None:
+            raise ValueError(
+                "Tag.working_dir must be None for severity-class tags "
+                "(severity is signalling, not configuration)"
+            )
+
 
 @dataclass(frozen=True)
 class Tag:
@@ -132,37 +179,9 @@ class Tag:
     sort_order: int = TAG_DEFAULT_SORT_ORDER
 
     def __post_init__(self) -> None:
-        if not self.name:
-            raise ValueError("Tag.name must be non-empty")
-        if len(self.name) > TAG_NAME_MAX_LENGTH:
-            raise ValueError(
-                f"Tag.name must be ≤ {TAG_NAME_MAX_LENGTH} chars (got {len(self.name)})"
-            )
-        if self.color is not None and len(self.color) > TAG_COLOR_MAX_LENGTH:
-            raise ValueError(
-                f"Tag.color must be ≤ {TAG_COLOR_MAX_LENGTH} chars (got {len(self.color)})"
-            )
-        if self.default_model is not None and not _is_known_model(self.default_model):
-            raise ValueError(
-                f"Tag.default_model {self.default_model!r} is neither a known short name "
-                f"{sorted(KNOWN_EXECUTOR_MODELS)} nor a full SDK ID prefixed with "
-                f"{EXECUTOR_MODEL_FULL_ID_PREFIX!r}"
-            )
-        if self.working_dir is not None and not self.working_dir:
-            raise ValueError("Tag.working_dir must be non-empty if provided")
-        if self.class_ not in KNOWN_TAG_CLASSES:
-            raise ValueError(f"Tag.class_ {self.class_!r} is not in {sorted(KNOWN_TAG_CLASSES)}")
-        if self.class_ == TAG_CLASS_SEVERITY:
-            if self.default_model is not None:
-                raise ValueError(
-                    "Tag.default_model must be None for severity-class tags "
-                    "(severity is signalling, not configuration)"
-                )
-            if self.working_dir is not None:
-                raise ValueError(
-                    "Tag.working_dir must be None for severity-class tags "
-                    "(severity is signalling, not configuration)"
-                )
+        _validate_tag_name_color(self.name, self.color)
+        _validate_tag_model_dir(self.default_model, self.working_dir)
+        _validate_tag_class_severity(self.class_, self.default_model, self.working_dir)
         if self.sort_order < 0:
             raise ValueError(f"Tag.sort_order must be non-negative (got {self.sort_order})")
 
@@ -282,6 +301,31 @@ async def get_by_name(connection: aiosqlite.Connection, name: str) -> Tag | None
     return None if row is None else _row_to_tag(row)
 
 
+def _build_tag_filter_clauses(
+    *,
+    class_: str | None,
+    group: str | None,
+    table_prefix: str = "tags.",
+) -> tuple[list[str], list[object]]:
+    """Build (clauses, params) for class_/group filtering on the tags table.
+
+    ``table_prefix`` distinguishes the qualified ``tags.class`` column used
+    in multi-join queries (default) from the bare ``class`` column used in
+    simple single-table queries (pass ``""``).
+    """
+    clauses: list[str] = []
+    params: list[object] = []
+    if class_ is not None:
+        if class_ not in KNOWN_TAG_CLASSES:
+            raise ValueError(f"list_all: class_ {class_!r} not in {sorted(KNOWN_TAG_CLASSES)}")
+        clauses.append(f"{table_prefix}class = ?")
+        params.append(class_)
+    if group:
+        clauses.append(f"{table_prefix}name LIKE ?")
+        params.append(f"{group}{TAG_GROUP_SEPARATOR}%")
+    return clauses, params
+
+
 async def list_all(
     connection: aiosqlite.Connection,
     *,
@@ -304,16 +348,7 @@ async def list_all(
     for legacy callers; it composes with ``class_`` via AND. Prefer
     ``class_`` for new code.
     """
-    clauses: list[str] = []
-    params: list[object] = []
-    if class_ is not None:
-        if class_ not in KNOWN_TAG_CLASSES:
-            raise ValueError(f"list_all: class_ {class_!r} not in {sorted(KNOWN_TAG_CLASSES)}")
-        clauses.append("class = ?")
-        params.append(class_)
-    if group:
-        clauses.append("name LIKE ?")
-        params.append(f"{group}{TAG_GROUP_SEPARATOR}%")
+    clauses, params = _build_tag_filter_clauses(class_=class_, group=group, table_prefix="")
     where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     order_sql = " ORDER BY class ASC, sort_order ASC, name ASC"
     cursor = await connection.execute(
@@ -352,18 +387,7 @@ async def list_all_with_counts(
     :class:`bearings.web.models.tags.TagOut` wire shape for the sidebar
     tag-filter panel.
     """
-    clauses: list[str] = []
-    params: list[object] = []
-    if class_ is not None:
-        if class_ not in KNOWN_TAG_CLASSES:
-            raise ValueError(
-                f"list_all_with_counts: class_ {class_!r} not in {sorted(KNOWN_TAG_CLASSES)}"
-            )
-        clauses.append("tags.class = ?")
-        params.append(class_)
-    if group:
-        clauses.append("tags.name LIKE ?")
-        params.append(f"{group}{TAG_GROUP_SEPARATOR}%")
+    clauses, params = _build_tag_filter_clauses(class_=class_, group=group)
     where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     # COUNT(st.session_id) counts non-NULL values — naturally 0 for
     # tags with no session attachments (LEFT JOIN yields NULL for the
@@ -703,6 +727,20 @@ async def update_pinned(
     )
 
 
+def _validate_sort_order_ids(
+    found_classes: dict[int, str],
+    ordered_ids: tuple[int, ...],
+    class_: str,
+) -> None:
+    """Raise if any ordered_id is not found or belongs to a different class."""
+    missing = [tag_id for tag_id in ordered_ids if tag_id not in found_classes]
+    if missing:
+        raise ValueError(f"update_sort_orders: tag ids {missing} not found")
+    cross_class = [tag_id for tag_id in ordered_ids if found_classes[tag_id] != class_]
+    if cross_class:
+        raise ValueError(f"update_sort_orders: tag ids {cross_class} are not in class {class_!r}")
+
+
 async def update_sort_orders(
     connection: aiosqlite.Connection,
     *,
@@ -745,12 +783,7 @@ async def update_sort_orders(
     finally:
         await cursor.close()
     found_classes = {int(str(row[0])): str(row[1]) for row in rows}
-    missing = [tag_id for tag_id in ordered_ids if tag_id not in found_classes]
-    if missing:
-        raise ValueError(f"update_sort_orders: tag ids {missing} not found")
-    cross_class = [tag_id for tag_id in ordered_ids if found_classes[tag_id] != class_]
-    if cross_class:
-        raise ValueError(f"update_sort_orders: tag ids {cross_class} are not in class {class_!r}")
+    _validate_sort_order_ids(found_classes, ordered_ids, class_)
     for index, tag_id in enumerate(ordered_ids):
         await connection.execute(
             "UPDATE tags SET sort_order = ? WHERE id = ?",

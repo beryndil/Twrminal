@@ -200,6 +200,83 @@ def _build_leg_session_factory(
     return _leg_session_factory
 
 
+def _configure_app_state(
+    app: FastAPI,
+    *,
+    billing_mode: str,
+    uploads_cfg: UploadsCfg | None,
+    fs_cfg: FsCfg | None,
+    shell_cfg: ShellCfg | None,
+    avatars_root: Path | None,
+    prompt_rate_limiter: RateLimiter | None,
+    quota_poller: QuotaPoller | None,
+    data_dir: Path | None,
+) -> None:
+    """Populate the per-app optional configuration state slots."""
+    app.state.billing_mode = billing_mode
+    app.state.uploads_cfg = uploads_cfg if uploads_cfg is not None else UploadsCfg()
+    app.state.fs_cfg = fs_cfg if fs_cfg is not None else FsCfg()
+    app.state.shell_cfg = shell_cfg if shell_cfg is not None else ShellCfg()
+    app.state.avatars_root = avatars_root
+    app.state.start_time_monotonic = time.monotonic()
+    app.state.metrics = BearingsMetrics(version=__version__)
+    app.state.prompt_rate_limiter = (
+        prompt_rate_limiter if prompt_rate_limiter is not None else RateLimiter()
+    )
+    app.state.quota_poller = quota_poller
+    app.state.data_dir = str(data_dir) if data_dir is not None else ""
+
+
+def _build_runner_factory(
+    runner_factory: RunnerFactory | None,
+    db_connection: aiosqlite.Connection | None,
+    sessions_broadcaster: SessionsBroadcaster,
+) -> RunnerFactory:
+    """Resolve the runner factory from the injected value or build a default."""
+    if runner_factory is not None:
+        return runner_factory
+    if db_connection is not None:
+        return build_in_process_factory(
+            session_setup=build_session_setup(db_connection),
+            sessions_broadcaster=sessions_broadcaster,
+        )
+    return build_in_process_factory(sessions_broadcaster=sessions_broadcaster)
+
+
+def _build_driver_runtime(
+    app: FastAPI,
+    db_connection: aiosqlite.Connection | None,
+    enable_driver_dispatch: bool,
+    factory: RunnerFactory,
+    sessions_broadcaster: SessionsBroadcaster,
+) -> object:
+    """Build the auto-driver runtime when both a DB and the flag are present."""
+    if db_connection is None or not enable_driver_dispatch:
+        return None
+    _turn_driver = build_turn_driver(db_connection=db_connection)
+    _leg_factory = _build_leg_session_factory(
+        db=db_connection,
+        sessions_broadcaster=sessions_broadcaster,
+    )
+    _db_ref = db_connection
+    _bc_ref = sessions_broadcaster
+
+    async def _close_leg_session(leg_session_id: str) -> None:
+        from bearings.db import sessions as sessions_db
+        from bearings.web.routes.sessions import _to_out
+
+        closed = await sessions_db.close(_db_ref, leg_session_id)
+        if closed is not None:
+            _bc_ref.publish_upsert(_to_out(closed))
+
+    return build_runtime(
+        runner_factory=factory,
+        turn_driver=_turn_driver,
+        leg_session_factory=_leg_factory,
+        close_session_callback=_close_leg_session,
+    )
+
+
 def create_app(
     *,
     runner_factory: RunnerFactory | None = None,
@@ -263,20 +340,10 @@ def create_app(
     # ``/ws/sessions`` endpoint is always available; route handlers call
     # ``broadcaster.publish_*`` after every session mutation to fan
     # updates to all open sidebar tabs.
+    # Sessions-broadcast hub (item 2.6). Created unconditionally so the
+    # ``/ws/sessions`` endpoint is always available.
     sessions_broadcaster = SessionsBroadcaster()
-
-    factory: RunnerFactory
-    if runner_factory is not None:
-        factory = runner_factory
-    elif db_connection is not None:
-        factory = build_in_process_factory(
-            session_setup=build_session_setup(db_connection),
-            sessions_broadcaster=sessions_broadcaster,
-        )
-    else:
-        factory = build_in_process_factory(
-            sessions_broadcaster=sessions_broadcaster,
-        )
+    factory = _build_runner_factory(runner_factory, db_connection, sessions_broadcaster)
     app = FastAPI(
         title=OPENAPI_TITLE,
         description=OPENAPI_DESCRIPTION,
@@ -290,82 +357,24 @@ def create_app(
     app.state.auto_driver_registry = (
         auto_driver_registry if auto_driver_registry is not None else build_registry()
     )
-    # Auto-driver runtime (plan wiring-autodriver-dispatch). Built only
-    # when both a DB connection is wired AND ``enable_driver_dispatch=True``
-    # is passed. The flag defaults to ``False`` so test harnesses that
-    # inject a DB connection (but do not want an autonomous driver running
-    # in the background) are unaffected. Production callers (bearings serve CLI)
-    # pass ``enable_driver_dispatch=True`` to activate the dispatch wire.
-    if db_connection is not None and enable_driver_dispatch:
-        _turn_driver = build_turn_driver(db_connection=db_connection)
-        _leg_factory = _build_leg_session_factory(
-            db=db_connection,
-            sessions_broadcaster=sessions_broadcaster,
-        )
-        # Leg-cutover close-and-broadcast callback (feature-6-008 / CCW-3).
-        # Stamps closed_at on the predecessor leg session and fans a
-        # session_upsert frame so the sidebar shows the row move to Closed
-        # without a page reload. Lives here (web/ layer) because it needs
-        # both the DB connection and the broadcaster — the agent/ layer
-        # must not import web/.
-        _db_ref = db_connection
-        _bc_ref = sessions_broadcaster
-
-        async def _close_leg_session(leg_session_id: str) -> None:
-            from bearings.db import sessions as sessions_db
-            from bearings.web.routes.sessions import _to_out
-
-            closed = await sessions_db.close(_db_ref, leg_session_id)
-            if closed is not None:
-                _bc_ref.publish_upsert(_to_out(closed))
-
-        app.state.driver_runtime = build_runtime(
-            runner_factory=factory,
-            turn_driver=_turn_driver,
-            leg_session_factory=_leg_factory,
-            close_session_callback=_close_leg_session,
-        )
-    else:
-        app.state.driver_runtime = None
+    # Auto-driver runtime — built only when both a DB and the flag are present.
+    app.state.driver_runtime = _build_driver_runtime(
+        app, db_connection, enable_driver_dispatch, factory, sessions_broadcaster
+    )
     # Billing mode — surfaced via ``GET /api/diag/server`` so the
     # frontend can switch between PAYG (dollar figures) and subscription
     # (token-meter) display modes without a page reload.
-    app.state.billing_mode = billing_mode
-    # Misc-API sub-configurations (item 1.10; arch §1.1.5).
-    app.state.uploads_cfg = uploads_cfg if uploads_cfg is not None else UploadsCfg()
-    app.state.fs_cfg = fs_cfg if fs_cfg is not None else FsCfg()
-    app.state.shell_cfg = shell_cfg if shell_cfg is not None else ShellCfg()
-    # Avatar storage root (gap-cycle-03-011). Tests inject a tmp_path;
-    # production callers leave None and the route helper resolves the
-    # DEFAULT_AVATARS_STORAGE_ROOT constant on first access.
-    app.state.avatars_root = avatars_root
-    # Process-uptime anchor (item 1.10; consumed by health + metrics +
-    # diag/server). ``time.monotonic`` so a system-clock jump does not
-    # fold uptime negative.
-    app.state.start_time_monotonic = time.monotonic()
-    # Per-app metrics bundle (arch §1.1.7). Owned by ``app.state`` so
-    # parallel test runs don't clash on the global Prometheus
-    # registry.
-    app.state.metrics = BearingsMetrics(version=__version__)
-    # Per-app rate limiter for the prompt endpoint (item 1.7;
-    # ``docs/behavior/prompt-endpoint.md`` §"Rate-limit observable
-    # behavior"). One limiter per app so parallel test runs do not
-    # share rate-limit state across the in-memory deque.
-    app.state.prompt_rate_limiter = (
-        prompt_rate_limiter if prompt_rate_limiter is not None else RateLimiter()
+    _configure_app_state(
+        app,
+        billing_mode=billing_mode,
+        uploads_cfg=uploads_cfg,
+        fs_cfg=fs_cfg,
+        shell_cfg=shell_cfg,
+        avatars_root=avatars_root,
+        prompt_rate_limiter=prompt_rate_limiter,
+        quota_poller=quota_poller,
+        data_dir=data_dir,
     )
-    # Optional quota poller (item 1.8; spec §4). The poller is
-    # ``None``-able because tests routinely construct apps without
-    # network access; the routing-preview + quota endpoints
-    # gracefully fall back to the latest persisted snapshot when no
-    # poller is wired. Production callers (``cli/serve.py`` once item
-    # 1.10 lands) attach a real poller via the lifespan event.
-    app.state.quota_poller = quota_poller
-    # Data directory (gap-cycle-07-003). Surfaced by ``GET /api/health``
-    # so the Settings Privacy section can display and open the dir. Set
-    # by ``cli/serve.py`` to ``settings.db_path.parent``; tests that do
-    # not need this can leave the default empty string.
-    app.state.data_dir = str(data_dir) if data_dir is not None else ""
 
     @app.websocket("/ws/sessions/{session_id}")
     async def stream_endpoint(websocket: WebSocket, session_id: str) -> None:

@@ -140,6 +140,49 @@ class PermissionProfile(enum.StrEnum):
 
 
 # ---------------------------------------------------------------------------
+# SessionConfig validators
+# ---------------------------------------------------------------------------
+
+
+def _validate_config_basics(
+    session_id: str,
+    working_dir: str,
+    tool_output_cap_chars: int,
+    max_budget_usd: float | None,
+) -> None:
+    """Raise if required strings are empty or numeric bounds are violated."""
+    if not session_id:
+        raise ValueError("SessionConfig.session_id must be non-empty")
+    if not working_dir:
+        raise ValueError("SessionConfig.working_dir must be non-empty")
+    if tool_output_cap_chars <= 0:
+        raise ValueError(
+            f"SessionConfig.tool_output_cap_chars must be > 0 (got {tool_output_cap_chars})"
+        )
+    if max_budget_usd is not None and max_budget_usd < 0:
+        raise ValueError(f"SessionConfig.max_budget_usd must be >= 0 if set (got {max_budget_usd})")
+
+
+def _validate_config_perms(
+    permission_mode: str | None,
+    setting_sources: tuple[str, ...] | None,
+) -> None:
+    """Raise if permission_mode or setting_sources fall outside their alphabets."""
+    if permission_mode is not None and permission_mode not in KNOWN_SDK_PERMISSION_MODES:
+        raise ValueError(
+            f"SessionConfig.permission_mode {permission_mode!r} is not "
+            f"in {sorted(KNOWN_SDK_PERMISSION_MODES)}"
+        )
+    if setting_sources is not None:
+        for src in setting_sources:
+            if src not in KNOWN_SDK_SETTING_SOURCES:
+                raise ValueError(
+                    f"SessionConfig.setting_sources entry {src!r} is not "
+                    f"in {sorted(KNOWN_SDK_SETTING_SOURCES)}"
+                )
+
+
+# ---------------------------------------------------------------------------
 # Config dataclass
 # ---------------------------------------------------------------------------
 
@@ -178,34 +221,13 @@ class SessionConfig:
     max_budget_usd: float | None = None
 
     def __post_init__(self) -> None:
-        if not self.session_id:
-            raise ValueError("SessionConfig.session_id must be non-empty")
-        if not self.working_dir:
-            raise ValueError("SessionConfig.working_dir must be non-empty")
-        if self.tool_output_cap_chars <= 0:
-            raise ValueError(
-                "SessionConfig.tool_output_cap_chars must be > 0 "
-                f"(got {self.tool_output_cap_chars})"
-            )
-        if self.max_budget_usd is not None and self.max_budget_usd < 0:
-            raise ValueError(
-                f"SessionConfig.max_budget_usd must be >= 0 if set (got {self.max_budget_usd})"
-            )
-        if (
-            self.permission_mode is not None
-            and self.permission_mode not in KNOWN_SDK_PERMISSION_MODES
-        ):
-            raise ValueError(
-                f"SessionConfig.permission_mode {self.permission_mode!r} is not "
-                f"in {sorted(KNOWN_SDK_PERMISSION_MODES)}"
-            )
-        if self.setting_sources is not None:
-            for src in self.setting_sources:
-                if src not in KNOWN_SDK_SETTING_SOURCES:
-                    raise ValueError(
-                        f"SessionConfig.setting_sources entry {src!r} is not "
-                        f"in {sorted(KNOWN_SDK_SETTING_SOURCES)}"
-                    )
+        _validate_config_basics(
+            self.session_id,
+            self.working_dir,
+            self.tool_output_cap_chars,
+            self.max_budget_usd,
+        )
+        _validate_config_perms(self.permission_mode, self.setting_sources)
 
 
 # ---------------------------------------------------------------------------

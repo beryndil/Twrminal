@@ -104,6 +104,32 @@ def extract_title(body: str) -> str | None:
     return title or None
 
 
+def _scan_plan_roots(cfg: VaultCfg, seen: dict[str, ScannedDoc]) -> None:
+    """Walk each plan root (non-recursive) and register .md files in ``seen``."""
+    for root in cfg.plan_roots:
+        if not root.exists() or not root.is_dir():
+            continue
+        for entry in sorted(root.iterdir()):
+            if not entry.is_file() or entry.suffix != _MARKDOWN_SUFFIX:
+                continue
+            doc = _build_scanned_doc(entry, kind=VAULT_KIND_PLAN)
+            if doc is not None:
+                seen[doc.path] = doc
+
+
+def _scan_todo_globs(cfg: VaultCfg, seen: dict[str, ScannedDoc]) -> None:
+    """Expand TODO globs and register docs not already claimed by a plan root."""
+    for pattern in cfg.todo_globs:
+        for raw_path in sorted(glob_module.iglob(pattern, recursive=True)):
+            candidate = Path(raw_path)
+            if not candidate.is_file():
+                continue
+            doc = _build_scanned_doc(candidate, kind=VAULT_KIND_TODO)
+            if doc is None or doc.path in seen:
+                continue
+            seen[doc.path] = doc
+
+
 def scan_filesystem(cfg: VaultCfg) -> list[ScannedDoc]:
     """Walk plan roots + TODO globs and emit one :class:`ScannedDoc` per file.
 
@@ -134,35 +160,8 @@ def scan_filesystem(cfg: VaultCfg) -> list[ScannedDoc]:
     once.
     """
     seen: dict[str, ScannedDoc] = {}
-
-    # Plans — non-recursive markdown under each plan root.
-    for root in cfg.plan_roots:
-        if not root.exists() or not root.is_dir():
-            continue
-        for entry in sorted(root.iterdir()):
-            if not entry.is_file():
-                continue
-            if entry.suffix != _MARKDOWN_SUFFIX:
-                continue
-            doc = _build_scanned_doc(entry, kind=VAULT_KIND_PLAN)
-            if doc is not None:
-                seen[doc.path] = doc
-
-    # Todos — recursive glob expansion. Plans win on path collision.
-    for pattern in cfg.todo_globs:
-        for raw_path in sorted(glob_module.iglob(pattern, recursive=True)):
-            candidate = Path(raw_path)
-            if not candidate.is_file():
-                continue
-            doc = _build_scanned_doc(candidate, kind=VAULT_KIND_TODO)
-            if doc is None:
-                continue
-            if doc.path in seen:
-                # Plan-root scan already claimed this path; do not
-                # downgrade plan→todo.
-                continue
-            seen[doc.path] = doc
-
+    _scan_plan_roots(cfg, seen)
+    _scan_todo_globs(cfg, seen)
     return list(seen.values())
 
 

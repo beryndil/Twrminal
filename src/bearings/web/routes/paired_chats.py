@@ -33,9 +33,23 @@ from bearings.agent.session_assembly import SessionAssemblyError
 from bearings.config.constants import KNOWN_PAIRED_CHAT_SPAWNED_BY
 from bearings.db import checklists as checklists_db
 from bearings.db import sessions as sessions_db
+from bearings.db.checklists import ChecklistItem
 from bearings.web.models.paired_chats import SpawnPairedChatIn, SpawnPairedChatOut
 
 router = APIRouter()
+
+
+async def _get_pre_existing_open_chat_id(
+    db: aiosqlite.Connection,
+    item: ChecklistItem,
+) -> str | None:
+    """Return the existing open chat session id, or None when absent/closed."""
+    chat_id = item.chat_session_id
+    if chat_id is None:
+        return None
+    if await sessions_db.is_closed(db, chat_id) is False:
+        return chat_id
+    return None
 
 
 def _db(request: Request) -> aiosqlite.Connection:
@@ -84,11 +98,7 @@ async def spawn_chat(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"item {item_id} not found",
         )
-    pre_existing_open_chat_id: str | None = None
-    if item.chat_session_id is not None:
-        was_closed = await sessions_db.is_closed(db, item.chat_session_id)
-        if was_closed is False:
-            pre_existing_open_chat_id = item.chat_session_id
+    pre_existing_open_chat_id = await _get_pre_existing_open_chat_id(db, item)
     try:
         chat_id, _config = await spawn_paired_chat(
             db,

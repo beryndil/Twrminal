@@ -50,6 +50,124 @@ from bearings.config.constants import (
 )
 from bearings.db._id import new_id, now_iso
 
+# ---------------------------------------------------------------------------
+# Model-name predicate and shared __post_init__ validators for Session
+# ---------------------------------------------------------------------------
+
+
+def _is_known_model(name: str) -> bool:
+    """Match short-name or full-SDK-id model names (mirrors agent/routing.py)."""
+    return name in KNOWN_EXECUTOR_MODELS or name.startswith(EXECUTOR_MODEL_FULL_ID_PREFIX)
+
+
+def _validate_session_required(id: str, title: str, working_dir: str, model: str) -> None:
+    """Raise if any required string field is empty."""
+    if not id:
+        raise ValueError("Session.id must be non-empty")
+    if not title:
+        raise ValueError("Session.title must be non-empty")
+    if not working_dir:
+        raise ValueError("Session.working_dir must be non-empty")
+    if not model:
+        raise ValueError("Session.model must be non-empty")
+
+
+def _validate_session_lengths(
+    title: str,
+    description: str | None,
+    session_instructions: str | None,
+) -> None:
+    """Raise if title, description, or session_instructions exceed length caps."""
+    if len(title) > SESSION_TITLE_MAX_LENGTH:
+        raise ValueError(
+            f"Session.title must be ≤ {SESSION_TITLE_MAX_LENGTH} chars (got {len(title)})"
+        )
+    if description is not None and len(description) > SESSION_DESCRIPTION_MAX_LENGTH:
+        raise ValueError(
+            f"Session.description must be ≤ {SESSION_DESCRIPTION_MAX_LENGTH} chars "
+            f"(got {len(description)})"
+        )
+    if (
+        session_instructions is not None
+        and len(session_instructions) > SESSION_DESCRIPTION_MAX_LENGTH
+    ):
+        raise ValueError(
+            f"Session.session_instructions must be ≤ "
+            f"{SESSION_DESCRIPTION_MAX_LENGTH} chars (got {len(session_instructions)})"
+        )
+
+
+def _validate_session_enums(kind: str, permission_mode: str | None) -> None:
+    """Raise if kind or permission_mode fall outside their known alphabets."""
+    if kind not in KNOWN_SESSION_KINDS:
+        raise ValueError(f"Session.kind {kind!r} not in {sorted(KNOWN_SESSION_KINDS)}")
+    if permission_mode is not None and permission_mode not in KNOWN_SDK_PERMISSION_MODES:
+        raise ValueError(
+            f"Session.permission_mode {permission_mode!r} not in "
+            f"{sorted(KNOWN_SDK_PERMISSION_MODES)}"
+        )
+
+
+def _validate_session_numerics(
+    max_budget_usd: float | None,
+    total_cost_usd: float,
+    message_count: int,
+) -> None:
+    """Raise if any numeric field violates its floor constraint."""
+    if max_budget_usd is not None and max_budget_usd < 0:
+        raise ValueError(f"Session.max_budget_usd must be ≥ 0 if set (got {max_budget_usd})")
+    if total_cost_usd < 0:
+        raise ValueError(f"Session.total_cost_usd must be ≥ 0 (got {total_cost_usd})")
+    if message_count < 0:
+        raise ValueError(f"Session.message_count must be ≥ 0 (got {message_count})")
+
+
+def _validate_session_closing(closing_summary: str | None) -> None:
+    """Raise if closing_summary violates its min/max length bounds."""
+    if closing_summary is None:
+        return
+    length = len(closing_summary)
+    if length < SESSION_CLOSING_SUMMARY_MIN_LENGTH:
+        raise ValueError(
+            f"Session.closing_summary must be ≥ "
+            f"{SESSION_CLOSING_SUMMARY_MIN_LENGTH} chars when set (got {length})"
+        )
+    if length > SESSION_CLOSING_SUMMARY_MAX_LENGTH:
+        raise ValueError(
+            f"Session.closing_summary must be ≤ "
+            f"{SESSION_CLOSING_SUMMARY_MAX_LENGTH} chars (got {length})"
+        )
+
+
+def _validate_session_routing(
+    model: str,
+    routing_advisor_model: str | None,
+    routing_advisor_max_uses: int,
+    routing_effort_level: str,
+) -> None:
+    """Raise if routing fields violate model, max_uses, or effort_level constraints."""
+    if not _is_known_model(model):
+        raise ValueError(
+            f"Session.model {model!r} is neither a known short name "
+            f"{sorted(KNOWN_EXECUTOR_MODELS)} nor a full SDK ID prefixed with "
+            f"{EXECUTOR_MODEL_FULL_ID_PREFIX!r}"
+        )
+    if routing_advisor_model is not None and not _is_known_model(routing_advisor_model):
+        raise ValueError(
+            f"Session.routing_advisor_model {routing_advisor_model!r} "
+            f"is neither a known short name {sorted(KNOWN_EXECUTOR_MODELS)} "
+            f"nor a full SDK ID prefixed with {EXECUTOR_MODEL_FULL_ID_PREFIX!r}"
+        )
+    if routing_advisor_max_uses < 0:
+        raise ValueError(
+            f"Session.routing_advisor_max_uses must be ≥ 0 (got {routing_advisor_max_uses})"
+        )
+    if routing_effort_level not in KNOWN_EFFORT_LEVELS:
+        raise ValueError(
+            f"Session.routing_effort_level {routing_effort_level!r} "
+            f"not in {sorted(KNOWN_EFFORT_LEVELS)}"
+        )
+
 
 @dataclass(frozen=True)
 class Session:
@@ -123,90 +241,17 @@ class Session:
     parent_session_id: str | None
 
     def __post_init__(self) -> None:
-        if not self.id:
-            raise ValueError("Session.id must be non-empty")
-        if not self.title:
-            raise ValueError("Session.title must be non-empty")
-        if len(self.title) > SESSION_TITLE_MAX_LENGTH:
-            raise ValueError(
-                f"Session.title must be ≤ {SESSION_TITLE_MAX_LENGTH} chars (got {len(self.title)})"
-            )
-        if not self.working_dir:
-            raise ValueError("Session.working_dir must be non-empty")
-        if not self.model:
-            raise ValueError("Session.model must be non-empty")
-        if self.kind not in KNOWN_SESSION_KINDS:
-            raise ValueError(f"Session.kind {self.kind!r} not in {sorted(KNOWN_SESSION_KINDS)}")
-        if self.description is not None and len(self.description) > SESSION_DESCRIPTION_MAX_LENGTH:
-            raise ValueError(
-                f"Session.description must be ≤ {SESSION_DESCRIPTION_MAX_LENGTH} chars "
-                f"(got {len(self.description)})"
-            )
-        if (
-            self.session_instructions is not None
-            and len(self.session_instructions) > SESSION_DESCRIPTION_MAX_LENGTH
-        ):
-            raise ValueError(
-                f"Session.session_instructions must be ≤ "
-                f"{SESSION_DESCRIPTION_MAX_LENGTH} chars (got {len(self.session_instructions)})"
-            )
-        if (
-            self.permission_mode is not None
-            and self.permission_mode not in KNOWN_SDK_PERMISSION_MODES
-        ):
-            raise ValueError(
-                f"Session.permission_mode {self.permission_mode!r} not in "
-                f"{sorted(KNOWN_SDK_PERMISSION_MODES)}"
-            )
-        if not _is_known_model(self.model):
-            raise ValueError(
-                f"Session.model {self.model!r} is neither a known short name "
-                f"{sorted(KNOWN_EXECUTOR_MODELS)} nor a full SDK ID prefixed with "
-                f"{EXECUTOR_MODEL_FULL_ID_PREFIX!r}"
-            )
-        if self.max_budget_usd is not None and self.max_budget_usd < 0:
-            raise ValueError(
-                f"Session.max_budget_usd must be ≥ 0 if set (got {self.max_budget_usd})"
-            )
-        if self.total_cost_usd < 0:
-            raise ValueError(f"Session.total_cost_usd must be ≥ 0 (got {self.total_cost_usd})")
-        if self.message_count < 0:
-            raise ValueError(f"Session.message_count must be ≥ 0 (got {self.message_count})")
-        if self.closing_summary is not None:
-            length = len(self.closing_summary)
-            if length < SESSION_CLOSING_SUMMARY_MIN_LENGTH:
-                raise ValueError(
-                    f"Session.closing_summary must be ≥ "
-                    f"{SESSION_CLOSING_SUMMARY_MIN_LENGTH} chars when set (got {length})"
-                )
-            if length > SESSION_CLOSING_SUMMARY_MAX_LENGTH:
-                raise ValueError(
-                    f"Session.closing_summary must be ≤ "
-                    f"{SESSION_CLOSING_SUMMARY_MAX_LENGTH} chars (got {length})"
-                )
-        if self.routing_advisor_model is not None and not _is_known_model(
-            self.routing_advisor_model
-        ):
-            raise ValueError(
-                f"Session.routing_advisor_model {self.routing_advisor_model!r} "
-                f"is neither a known short name {sorted(KNOWN_EXECUTOR_MODELS)} "
-                f"nor a full SDK ID prefixed with {EXECUTOR_MODEL_FULL_ID_PREFIX!r}"
-            )
-        if self.routing_advisor_max_uses < 0:
-            raise ValueError(
-                f"Session.routing_advisor_max_uses must be ≥ 0 "
-                f"(got {self.routing_advisor_max_uses})"
-            )
-        if self.routing_effort_level not in KNOWN_EFFORT_LEVELS:
-            raise ValueError(
-                f"Session.routing_effort_level {self.routing_effort_level!r} "
-                f"not in {sorted(KNOWN_EFFORT_LEVELS)}"
-            )
-
-
-def _is_known_model(name: str) -> bool:
-    """Match short-name or full-SDK-id model names (mirrors agent/routing.py)."""
-    return name in KNOWN_EXECUTOR_MODELS or name.startswith(EXECUTOR_MODEL_FULL_ID_PREFIX)
+        _validate_session_required(self.id, self.title, self.working_dir, self.model)
+        _validate_session_lengths(self.title, self.description, self.session_instructions)
+        _validate_session_enums(self.kind, self.permission_mode)
+        _validate_session_numerics(self.max_budget_usd, self.total_cost_usd, self.message_count)
+        _validate_session_closing(self.closing_summary)
+        _validate_session_routing(
+            self.model,
+            self.routing_advisor_model,
+            self.routing_advisor_max_uses,
+            self.routing_effort_level,
+        )
 
 
 async def create(
@@ -504,12 +549,7 @@ async def list_all(
     When used alone it returns only sessions with no severity-class tag
     attached.
     """
-    if kind is not None and kind not in KNOWN_SESSION_KINDS:
-        raise ValueError(f"list_all: kind {kind!r} not in {sorted(KNOWN_SESSION_KINDS)}")
-    if tag_ids is not None and len(tag_ids) == 0:
-        raise ValueError(
-            "list_all: tag_ids must be non-empty when provided (use None for no filter)"
-        )
+    _validate_list_all_args(kind, tag_ids)
     clauses: list[str] = []
     args: list[object] = []
     if kind is not None:
@@ -517,57 +557,14 @@ async def list_all(
         args.append(kind)
     if not include_closed:
         clauses.append("sessions.closed_at IS NULL")
-    if tag_ids is not None:
-        placeholders = ",".join(["?"] * len(tag_ids))
-        clauses.append(f"session_tags.tag_id IN ({placeholders})")
-        args.extend(tag_ids)
-    # Project section: plain EXISTS.
-    if tag_ids_project:
-        placeholders = ",".join(["?"] * len(tag_ids_project))
-        clauses.append(
-            "EXISTS (SELECT 1 FROM session_tags st_section "
-            "WHERE st_section.session_id = sessions.id "
-            f"AND st_section.tag_id IN ({placeholders}))"
-        )
-        args.extend(tag_ids_project)
+    _append_tag_ids_filter(tag_ids, clauses, args)
+    _append_section_filter(tag_ids_project, clauses, args)
     # Severity section: severity_none and tag_ids_severity compose OR-within
     # so that selecting "No severity" alongside a real severity tag returns
     # the union rather than the (impossible) intersection.
-    _no_sev_clause = (
-        "NOT EXISTS ("
-        "SELECT 1 FROM session_tags st_sv "
-        "JOIN tags t_sv ON t_sv.id = st_sv.tag_id "
-        "WHERE st_sv.session_id = sessions.id AND t_sv.class = 'severity'"
-        ")"
-    )
-    if severity_none and tag_ids_severity:
-        placeholders = ",".join(["?"] * len(tag_ids_severity))
-        clauses.append(
-            f"({_no_sev_clause} OR EXISTS ("
-            "SELECT 1 FROM session_tags st_sv2 "
-            "WHERE st_sv2.session_id = sessions.id "
-            f"AND st_sv2.tag_id IN ({placeholders})))"
-        )
-        args.extend(tag_ids_severity)
-    elif severity_none:
-        clauses.append(_no_sev_clause)
-    elif tag_ids_severity:
-        placeholders = ",".join(["?"] * len(tag_ids_severity))
-        clauses.append(
-            "EXISTS (SELECT 1 FROM session_tags st_section "
-            "WHERE st_section.session_id = sessions.id "
-            f"AND st_section.tag_id IN ({placeholders}))"
-        )
-        args.extend(tag_ids_severity)
+    _append_severity_filter(severity_none, tag_ids_severity, clauses, args)
     # Other section: plain EXISTS.
-    if tag_ids_other:
-        placeholders = ",".join(["?"] * len(tag_ids_other))
-        clauses.append(
-            "EXISTS (SELECT 1 FROM session_tags st_section "
-            "WHERE st_section.session_id = sessions.id "
-            f"AND st_section.tag_id IN ({placeholders}))"
-        )
-        args.extend(tag_ids_other)
+    _append_section_filter(tag_ids_other, clauses, args)
     join = (
         " INNER JOIN session_tags ON session_tags.session_id = sessions.id"
         if tag_ids is not None
@@ -589,7 +586,148 @@ async def list_all(
     return [_row_to_session(row) for row in rows]
 
 
+def _validate_list_all_args(kind: str | None, tag_ids: tuple[int, ...] | None) -> None:
+    """Raise if kind or tag_ids violate list_all preconditions."""
+    if kind is not None and kind not in KNOWN_SESSION_KINDS:
+        raise ValueError(f"list_all: kind {kind!r} not in {sorted(KNOWN_SESSION_KINDS)}")
+    if tag_ids is not None and len(tag_ids) == 0:
+        raise ValueError(
+            "list_all: tag_ids must be non-empty when provided (use None for no filter)"
+        )
+
+
+def _append_tag_ids_filter(
+    tag_ids: tuple[int, ...] | None,
+    clauses: list[str],
+    args: list[object],
+) -> None:
+    """Append the legacy flat OR tag_ids JOIN clause when provided."""
+    if tag_ids is not None:
+        placeholders = ",".join(["?"] * len(tag_ids))
+        clauses.append(f"session_tags.tag_id IN ({placeholders})")
+        args.extend(tag_ids)
+
+
+def _append_section_filter(
+    tag_ids_section: tuple[int, ...] | None,
+    clauses: list[str],
+    args: list[object],
+) -> None:
+    """Append a plain EXISTS subquery for project or other tag classes."""
+    if tag_ids_section:
+        placeholders = ",".join(["?"] * len(tag_ids_section))
+        clauses.append(
+            "EXISTS (SELECT 1 FROM session_tags st_section "
+            "WHERE st_section.session_id = sessions.id "
+            f"AND st_section.tag_id IN ({placeholders}))"
+        )
+        args.extend(tag_ids_section)
+
+
+_NO_SEVERITY_EXISTS = (
+    "NOT EXISTS ("
+    "SELECT 1 FROM session_tags st_sv "
+    "JOIN tags t_sv ON t_sv.id = st_sv.tag_id "
+    "WHERE st_sv.session_id = sessions.id AND t_sv.class = 'severity'"
+    ")"
+)
+
+
+def _append_severity_filter(
+    severity_none: bool,
+    tag_ids_severity: tuple[int, ...] | None,
+    clauses: list[str],
+    args: list[object],
+) -> None:
+    """Append the severity-section filter (OR-within for severity_none + ids)."""
+    if severity_none and tag_ids_severity:
+        placeholders = ",".join(["?"] * len(tag_ids_severity))
+        clauses.append(
+            f"({_NO_SEVERITY_EXISTS} OR EXISTS ("
+            "SELECT 1 FROM session_tags st_sv2 "
+            "WHERE st_sv2.session_id = sessions.id "
+            f"AND st_sv2.tag_id IN ({placeholders})))"
+        )
+        args.extend(tag_ids_severity)
+    elif severity_none:
+        clauses.append(_NO_SEVERITY_EXISTS)
+    elif tag_ids_severity:
+        _append_section_filter(tag_ids_severity, clauses, args)
+
+
 _SENTINEL = object()
+
+
+def _apply_title_field(
+    title: object,
+    assignments: list[str],
+    params: list[object],
+) -> None:
+    """Validate and queue the title field update when not _SENTINEL."""
+    if title is _SENTINEL:
+        return
+    if not isinstance(title, str) or not title:
+        raise ValueError("update_fields: title must be a non-empty string")
+    if len(title) > SESSION_TITLE_MAX_LENGTH:
+        raise ValueError(f"update_fields: title must be ≤ {SESSION_TITLE_MAX_LENGTH} chars")
+    assignments.append("title = ?")
+    params.append(title)
+
+
+def _apply_description_field(
+    description: object,
+    assignments: list[str],
+    params: list[object],
+) -> None:
+    """Validate and queue the description field update when not _SENTINEL."""
+    if description is _SENTINEL:
+        return
+    if description is not None:
+        if not isinstance(description, str):
+            raise ValueError("update_fields: description must be a string or None")
+        if len(description) > SESSION_DESCRIPTION_MAX_LENGTH:
+            raise ValueError(
+                f"update_fields: description must be ≤ {SESSION_DESCRIPTION_MAX_LENGTH} chars"
+            )
+    assignments.append("description = ?")
+    params.append(description)
+
+
+def _apply_budget_field(
+    max_budget_usd: object,
+    assignments: list[str],
+    params: list[object],
+) -> None:
+    """Validate and queue the max_budget_usd field update when not _SENTINEL."""
+    if max_budget_usd is _SENTINEL:
+        return
+    if max_budget_usd is not None:
+        if not isinstance(max_budget_usd, (int, float)):
+            raise ValueError("update_fields: max_budget_usd must be a number or None")
+        if max_budget_usd < 0:
+            raise ValueError("update_fields: max_budget_usd must be ≥ 0")
+    assignments.append("max_budget_usd = ?")
+    params.append(max_budget_usd)
+
+
+def _apply_instructions_field(
+    session_instructions: object,
+    assignments: list[str],
+    params: list[object],
+) -> None:
+    """Validate and queue the session_instructions field update when not _SENTINEL."""
+    if session_instructions is _SENTINEL:
+        return
+    if session_instructions is not None:
+        if not isinstance(session_instructions, str):
+            raise ValueError("update_fields: session_instructions must be a string or None")
+        if len(session_instructions) > SESSION_DESCRIPTION_MAX_LENGTH:
+            raise ValueError(
+                f"update_fields: session_instructions must be ≤ "
+                f"{SESSION_DESCRIPTION_MAX_LENGTH} chars"
+            )
+    assignments.append("session_instructions = ?")
+    params.append(session_instructions)
 
 
 async def update_fields(
@@ -623,45 +761,10 @@ async def update_fields(
     assignments: list[str] = []
     params: list[object] = []
 
-    if title is not _SENTINEL:
-        if not isinstance(title, str) or not title:
-            raise ValueError("update_fields: title must be a non-empty string")
-        if len(title) > SESSION_TITLE_MAX_LENGTH:
-            raise ValueError(f"update_fields: title must be ≤ {SESSION_TITLE_MAX_LENGTH} chars")
-        assignments.append("title = ?")
-        params.append(title)
-
-    if description is not _SENTINEL:
-        if description is not None:
-            if not isinstance(description, str):
-                raise ValueError("update_fields: description must be a string or None")
-            if len(description) > SESSION_DESCRIPTION_MAX_LENGTH:
-                raise ValueError(
-                    f"update_fields: description must be ≤ {SESSION_DESCRIPTION_MAX_LENGTH} chars"
-                )
-        assignments.append("description = ?")
-        params.append(description)
-
-    if max_budget_usd is not _SENTINEL:
-        if max_budget_usd is not None:
-            if not isinstance(max_budget_usd, (int, float)):
-                raise ValueError("update_fields: max_budget_usd must be a number or None")
-            if max_budget_usd < 0:
-                raise ValueError("update_fields: max_budget_usd must be ≥ 0")
-        assignments.append("max_budget_usd = ?")
-        params.append(max_budget_usd)
-
-    if session_instructions is not _SENTINEL:
-        if session_instructions is not None:
-            if not isinstance(session_instructions, str):
-                raise ValueError("update_fields: session_instructions must be a string or None")
-            if len(session_instructions) > SESSION_DESCRIPTION_MAX_LENGTH:
-                raise ValueError(
-                    f"update_fields: session_instructions must be ≤ "
-                    f"{SESSION_DESCRIPTION_MAX_LENGTH} chars"
-                )
-        assignments.append("session_instructions = ?")
-        params.append(session_instructions)
+    _apply_title_field(title, assignments, params)
+    _apply_description_field(description, assignments, params)
+    _apply_budget_field(max_budget_usd, assignments, params)
+    _apply_instructions_field(session_instructions, assignments, params)
 
     if not assignments:
         # Nothing to write — return existing row unchanged.
@@ -1172,37 +1275,52 @@ _SELECT_SESSION_COLUMNS_DISTINCT = (
 )
 
 
+def _opt_str(v: object) -> str | None:
+    """Return ``None`` when ``v`` is ``None``, otherwise ``str(v)``."""
+    return None if v is None else str(v)
+
+
+def _opt_int(v: object) -> int | None:
+    """Return ``None`` when ``v`` is ``None``, otherwise ``int(str(v))``."""
+    return None if v is None else int(str(v))
+
+
+def _opt_float(v: object) -> float | None:
+    """Return ``None`` when ``v`` is ``None``, otherwise ``float(str(v))``."""
+    return None if v is None else float(str(v))
+
+
 def _row_to_session(row: aiosqlite.Row | tuple[object, ...]) -> Session:
     """Translate a raw SELECT tuple into a validated :class:`Session`."""
     return Session(
         id=str(row[0]),
         kind=str(row[1]),
         title=str(row[2]),
-        description=None if row[3] is None else str(row[3]),
-        session_instructions=None if row[4] is None else str(row[4]),
+        description=_opt_str(row[3]),
+        session_instructions=_opt_str(row[4]),
         working_dir=str(row[5]),
         model=str(row[6]),
-        permission_mode=None if row[7] is None else str(row[7]),
-        max_budget_usd=None if row[8] is None else float(str(row[8])),
+        permission_mode=_opt_str(row[7]),
+        max_budget_usd=_opt_float(row[8]),
         total_cost_usd=float(str(row[9])),
         message_count=int(str(row[10])),
-        last_context_pct=None if row[11] is None else float(str(row[11])),
-        last_context_tokens=None if row[12] is None else int(str(row[12])),
-        last_context_max=None if row[13] is None else int(str(row[13])),
+        last_context_pct=_opt_float(row[11]),
+        last_context_tokens=_opt_int(row[12]),
+        last_context_max=_opt_int(row[13]),
         pinned=bool(int(str(row[14]))),
         error_pending=bool(int(str(row[15]))),
-        checklist_item_id=None if row[16] is None else int(str(row[16])),
+        checklist_item_id=_opt_int(row[16]),
         created_at=str(row[17]),
         updated_at=str(row[18]),
-        last_viewed_at=None if row[19] is None else str(row[19]),
-        last_completed_at=None if row[20] is None else str(row[20]),
-        closed_at=None if row[21] is None else str(row[21]),
-        closing_summary=None if row[22] is None else str(row[22]),
-        routing_advisor_model=None if row[23] is None else str(row[23]),
+        last_viewed_at=_opt_str(row[19]),
+        last_completed_at=_opt_str(row[20]),
+        closed_at=_opt_str(row[21]),
+        closing_summary=_opt_str(row[22]),
+        routing_advisor_model=_opt_str(row[23]),
         routing_advisor_max_uses=int(str(row[24])),
         routing_effort_level=str(row[25]),
-        pivot_message_id=None if row[26] is None else str(row[26]),
-        parent_session_id=None if row[27] is None else str(row[27]),
+        pivot_message_id=_opt_str(row[26]),
+        parent_session_id=_opt_str(row[27]),
     )
 
 

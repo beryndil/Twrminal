@@ -258,6 +258,67 @@ class Driver:
 
     # -- per-item dispatch -------------------------------------------
 
+    async def _resolve_leg_session_id(
+        self, item: ChecklistItem, leg_number: int, plug: str | None
+    ) -> str:
+        """Return an existing or freshly-spawned leg session id."""
+        if self._config.visit_existing and leg_number == 1 and item.chat_session_id:
+            _LOG.debug(
+                "visit_existing: reusing session %r for item %d",
+                item.chat_session_id,
+                item.id,
+            )
+            return item.chat_session_id
+        return await self._runtime.spawn_leg(
+            item_id=item.id,
+            leg_number=leg_number,
+            plug=plug,
+        )
+
+    async def _handle_item_failed_outcome(
+        self, item: ChecklistItem, outcome: SentinelFinding
+    ) -> DriverResult | None:
+        """Record a failed outcome; return a DriverResult only on halt policy."""
+        await checklists_db.mark_outcome(
+            self._connection,
+            item.id,
+            category=ITEM_OUTCOME_FAILED,
+            reason=outcome.reason,
+        )
+        self._items_failed += 1
+        await self._save_counters(clear_current_item=True)
+        if self._config.failure_policy == AUTO_DRIVER_FAILURE_POLICY_HALT:
+            return await self._finalize(
+                state=AUTO_DRIVER_STATE_FINISHED,
+                outcome=DriverOutcome.halted_failure(item.id),
+                outcome_reason=outcome.reason,
+            )
+        return None
+
+    async def _handle_leg_cap(
+        self, item: ChecklistItem, last_failed_reason: str | None
+    ) -> DriverResult | None:
+        """Handle max_legs_per_item exceeded; return DriverResult on halt policy."""
+        reason = (
+            f"max_legs_per_item exceeded ({self._config.max_legs_per_item}); "
+            f"last failed reason: {last_failed_reason or 'n/a'}"
+        )
+        await checklists_db.mark_outcome(
+            self._connection,
+            item.id,
+            category=ITEM_OUTCOME_FAILED,
+            reason=reason,
+        )
+        self._items_failed += 1
+        await self._save_counters(clear_current_item=True)
+        if self._config.failure_policy == AUTO_DRIVER_FAILURE_POLICY_HALT:
+            return await self._finalize(
+                state=AUTO_DRIVER_STATE_FINISHED,
+                outcome=DriverOutcome.halted_failure(item.id),
+                outcome_reason=reason,
+            )
+        return None
+
     async def _drive_item(self, item: ChecklistItem) -> DriverResult | None:
         """Drive one item to a per-item terminal state.
 
@@ -277,24 +338,7 @@ class Driver:
                 self._skip_current.clear()
                 await self._record_skip(item, reason="skip-current requested")
                 return None
-            # When ``visit_existing`` is set and the item already has a
-            # paired chat session, reuse it for the first leg instead of
-            # spawning a new one. Subsequent legs (after a handoff) always
-            # spawn fresh sessions because the handoff boundary implies the
-            # prior leg's context is exhausted.
-            if self._config.visit_existing and leg_number == 1 and item.chat_session_id:
-                leg_session_id = item.chat_session_id
-                _LOG.debug(
-                    "visit_existing: reusing session %r for item %d",
-                    leg_session_id,
-                    item.id,
-                )
-            else:
-                leg_session_id = await self._runtime.spawn_leg(
-                    item_id=item.id,
-                    leg_number=leg_number,
-                    plug=plug,
-                )
+            leg_session_id = await self._resolve_leg_session_id(item, leg_number, plug)
             self._leg_session_ids.append(leg_session_id)
             self._legs_spawned += 1
             await checklists_db.record_leg(
@@ -320,7 +364,6 @@ class Driver:
                 await self._save_counters(clear_current_item=True)
                 return None
             if outcome.kind == SENTINEL_KIND_HANDOFF:
-                # Successor leg next iteration; carry the plug.
                 plug = outcome.plug or ""
                 leg_number += 1
                 continue
@@ -336,59 +379,10 @@ class Driver:
                 return None
             if outcome.kind == SENTINEL_KIND_ITEM_FAILED:
                 last_failed_reason = outcome.reason
-                if self._config.failure_policy == AUTO_DRIVER_FAILURE_POLICY_HALT:
-                    await checklists_db.mark_outcome(
-                        self._connection,
-                        item.id,
-                        category=ITEM_OUTCOME_FAILED,
-                        reason=outcome.reason,
-                    )
-                    self._items_failed += 1
-                    await self._save_counters(clear_current_item=True)
-                    return await self._finalize(
-                        state=AUTO_DRIVER_STATE_FINISHED,
-                        outcome=DriverOutcome.halted_failure(item.id),
-                        outcome_reason=outcome.reason,
-                    )
-                # skip policy — record fail, advance to next item
-                await checklists_db.mark_outcome(
-                    self._connection,
-                    item.id,
-                    category=ITEM_OUTCOME_FAILED,
-                    reason=outcome.reason,
-                )
-                self._items_failed += 1
-                await self._save_counters(clear_current_item=True)
-                return None
+                return await self._handle_item_failed_outcome(item, outcome)
         # Exited the loop without a terminal-resolving sentinel —
         # max_legs_per_item exceeded.
-        leg_cap_reason = (
-            f"max_legs_per_item exceeded ({self._config.max_legs_per_item}); "
-            f"last failed reason: {last_failed_reason or 'n/a'}"
-        )
-        if self._config.failure_policy == AUTO_DRIVER_FAILURE_POLICY_HALT:
-            await checklists_db.mark_outcome(
-                self._connection,
-                item.id,
-                category=ITEM_OUTCOME_FAILED,
-                reason=leg_cap_reason,
-            )
-            self._items_failed += 1
-            await self._save_counters(clear_current_item=True)
-            return await self._finalize(
-                state=AUTO_DRIVER_STATE_FINISHED,
-                outcome=DriverOutcome.halted_failure(item.id),
-                outcome_reason=leg_cap_reason,
-            )
-        await checklists_db.mark_outcome(
-            self._connection,
-            item.id,
-            category=ITEM_OUTCOME_FAILED,
-            reason=leg_cap_reason,
-        )
-        self._items_failed += 1
-        await self._save_counters(clear_current_item=True)
-        return None
+        return await self._handle_leg_cap(item, last_failed_reason)
 
     async def _record_skip(self, item: ChecklistItem, *, reason: str) -> None:
         """Mark ``item`` skipped + bump the counter + clear current."""

@@ -60,6 +60,48 @@ from bearings.config.constants import (
 )
 from bearings.db._id import now_iso
 
+# ---------------------------------------------------------------------------
+# ChecklistItem.__post_init__ validators
+# ---------------------------------------------------------------------------
+
+
+def _validate_checklist_item_core(checklist_id: str, label: str, notes: str | None) -> None:
+    """Raise if required strings are empty or optional fields exceed length caps."""
+    if not checklist_id:
+        raise ValueError("ChecklistItem.checklist_id must be non-empty")
+    if not label:
+        raise ValueError("ChecklistItem.label must be non-empty")
+    if len(label) > CHECKLIST_ITEM_LABEL_MAX_LENGTH:
+        raise ValueError(
+            f"ChecklistItem.label must be ≤ {CHECKLIST_ITEM_LABEL_MAX_LENGTH} chars "
+            f"(got {len(label)})"
+        )
+    if notes is not None and len(notes) > CHECKLIST_ITEM_NOTES_MAX_LENGTH:
+        raise ValueError(
+            f"ChecklistItem.notes must be ≤ {CHECKLIST_ITEM_NOTES_MAX_LENGTH} chars "
+            f"(got {len(notes)})"
+        )
+
+
+def _validate_checklist_item_blocked(
+    blocked_reason_category: str | None,
+    blocked_reason_text: str | None,
+) -> None:
+    """Raise if blocked_reason fields violate their alphabet or length cap."""
+    if blocked_reason_category is not None and blocked_reason_category not in KNOWN_ITEM_OUTCOMES:
+        raise ValueError(
+            f"ChecklistItem.blocked_reason_category {blocked_reason_category!r} "
+            f"not in {sorted(KNOWN_ITEM_OUTCOMES)}"
+        )
+    if blocked_reason_text is not None and (
+        len(blocked_reason_text) > CHECKLIST_ITEM_BLOCKED_REASON_MAX_LENGTH
+    ):
+        raise ValueError(
+            f"ChecklistItem.blocked_reason_text must be ≤ "
+            f"{CHECKLIST_ITEM_BLOCKED_REASON_MAX_LENGTH} chars "
+            f"(got {len(blocked_reason_text)})"
+        )
+
 
 @dataclass(frozen=True)
 class ChecklistItem:
@@ -89,36 +131,8 @@ class ChecklistItem:
     updated_at: str
 
     def __post_init__(self) -> None:
-        if not self.checklist_id:
-            raise ValueError("ChecklistItem.checklist_id must be non-empty")
-        if not self.label:
-            raise ValueError("ChecklistItem.label must be non-empty")
-        if len(self.label) > CHECKLIST_ITEM_LABEL_MAX_LENGTH:
-            raise ValueError(
-                f"ChecklistItem.label must be ≤ {CHECKLIST_ITEM_LABEL_MAX_LENGTH} chars "
-                f"(got {len(self.label)})"
-            )
-        if self.notes is not None and len(self.notes) > CHECKLIST_ITEM_NOTES_MAX_LENGTH:
-            raise ValueError(
-                f"ChecklistItem.notes must be ≤ {CHECKLIST_ITEM_NOTES_MAX_LENGTH} chars "
-                f"(got {len(self.notes)})"
-            )
-        if (
-            self.blocked_reason_category is not None
-            and self.blocked_reason_category not in KNOWN_ITEM_OUTCOMES
-        ):
-            raise ValueError(
-                f"ChecklistItem.blocked_reason_category {self.blocked_reason_category!r} "
-                f"not in {sorted(KNOWN_ITEM_OUTCOMES)}"
-            )
-        if self.blocked_reason_text is not None and (
-            len(self.blocked_reason_text) > CHECKLIST_ITEM_BLOCKED_REASON_MAX_LENGTH
-        ):
-            raise ValueError(
-                f"ChecklistItem.blocked_reason_text must be ≤ "
-                f"{CHECKLIST_ITEM_BLOCKED_REASON_MAX_LENGTH} chars "
-                f"(got {len(self.blocked_reason_text)})"
-            )
+        _validate_checklist_item_core(self.checklist_id, self.label, self.notes)
+        _validate_checklist_item_blocked(self.blocked_reason_category, self.blocked_reason_text)
         # Schema permits parent_item_id == 0 by FK alone; reject it
         # explicitly so a buggy caller cannot create a self-referencing
         # cycle by handing back the row's own id.

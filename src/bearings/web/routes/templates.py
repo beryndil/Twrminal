@@ -26,7 +26,7 @@ collisions, 422 from Pydantic input validators (auto-emitted).
 
 from __future__ import annotations
 
-from typing import cast
+from typing import TypedDict, cast
 
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -149,6 +149,64 @@ async def get_template(template_id: int, request: Request) -> TemplateOut:
     return _to_out(template)
 
 
+class _TemplatePatchMerged(TypedDict):
+    model: str
+    description: str | None
+    advisor_model: str | None
+    advisor_max_uses: int
+    effort_level: str
+    permission_profile: str
+    system_prompt_baseline: str | None
+    working_dir_default: str | None
+    tag_names: tuple[str, ...]
+
+
+class _TemplateInstantiateMerged(TypedDict):
+    title: str
+    model: str
+    description: str | None
+    session_instructions: str | None
+    advisor_model: str | None
+    advisor_max_uses: int
+    effort_level: str
+
+
+def _merge_template_patch(payload: TemplatePatch, existing: Template) -> _TemplatePatchMerged:
+    """Merge a :class:`TemplatePatch` delta onto an existing row; return merged dict."""
+    fs = payload.model_fields_set
+    return {
+        "model": payload.model if payload.model is not None else existing.model,
+        "description": payload.description if "description" in fs else existing.description,
+        "advisor_model": payload.advisor_model if "advisor_model" in fs else existing.advisor_model,
+        "advisor_max_uses": (
+            payload.advisor_max_uses
+            if payload.advisor_max_uses is not None
+            else existing.advisor_max_uses
+        ),
+        "effort_level": (
+            payload.effort_level if payload.effort_level is not None else existing.effort_level
+        ),
+        "permission_profile": (
+            payload.permission_profile
+            if payload.permission_profile is not None
+            else existing.permission_profile
+        ),
+        "system_prompt_baseline": (
+            payload.system_prompt_baseline
+            if "system_prompt_baseline" in fs
+            else existing.system_prompt_baseline
+        ),
+        "working_dir_default": (
+            payload.working_dir_default
+            if "working_dir_default" in fs
+            else existing.working_dir_default
+        ),
+        "tag_names": (
+            tuple(payload.tag_names) if payload.tag_names is not None else existing.tag_names
+        ),
+    }
+
+
 @router.patch("/api/templates/{template_id}", response_model=TemplateOut)
 async def patch_template(template_id: int, payload: TemplatePatch, request: Request) -> TemplateOut:
     """Partial-update a template; missing fields are preserved from the existing row.
@@ -177,55 +235,21 @@ async def patch_template(template_id: int, payload: TemplatePatch, request: Requ
                 detail=f"a template named {new_name!r} already exists",
             )
     # Merge delta onto the existing row.
-    new_model = payload.model if payload.model is not None else existing.model
-    new_description = (
-        payload.description if "description" in payload.model_fields_set else existing.description
-    )
-    new_advisor_model = (
-        payload.advisor_model
-        if "advisor_model" in payload.model_fields_set
-        else existing.advisor_model
-    )
-    new_advisor_max_uses = (
-        payload.advisor_max_uses
-        if payload.advisor_max_uses is not None
-        else existing.advisor_max_uses
-    )
-    new_effort_level = (
-        payload.effort_level if payload.effort_level is not None else existing.effort_level
-    )
-    new_permission_profile = (
-        payload.permission_profile
-        if payload.permission_profile is not None
-        else existing.permission_profile
-    )
-    new_system_prompt = (
-        payload.system_prompt_baseline
-        if "system_prompt_baseline" in payload.model_fields_set
-        else existing.system_prompt_baseline
-    )
-    new_working_dir = (
-        payload.working_dir_default
-        if "working_dir_default" in payload.model_fields_set
-        else existing.working_dir_default
-    )
-    new_tag_names = (
-        tuple(payload.tag_names) if payload.tag_names is not None else existing.tag_names
-    )
+    merged = _merge_template_patch(payload, existing)
     try:
         updated = await templates_db.update(
             db,
             template_id,
             name=new_name,
-            model=new_model,
-            description=new_description,
-            advisor_model=new_advisor_model,
-            advisor_max_uses=new_advisor_max_uses,
-            effort_level=new_effort_level,
-            permission_profile=new_permission_profile,
-            system_prompt_baseline=new_system_prompt,
-            working_dir_default=new_working_dir,
-            tag_names=new_tag_names,
+            model=merged["model"],
+            description=merged["description"],
+            advisor_model=merged["advisor_model"],
+            advisor_max_uses=merged["advisor_max_uses"],
+            effort_level=merged["effort_level"],
+            permission_profile=merged["permission_profile"],
+            system_prompt_baseline=merged["system_prompt_baseline"],
+            working_dir_default=merged["working_dir_default"],
+            tag_names=merged["tag_names"],
         )
     except ValueError as exc:
         raise HTTPException(
@@ -293,6 +317,96 @@ def _session_to_out(session: Session) -> SessionOut:
     )
 
 
+def _merge_instantiate_fields(
+    payload: TemplateInstantiateIn,
+    template: Template,
+) -> _TemplateInstantiateMerged:
+    """Merge payload overrides onto template fields; return merged dict."""
+    fs = payload.model_fields_set
+    return {
+        "title": payload.title if payload.title is not None else template.name,
+        "model": payload.model if payload.model is not None else template.model,
+        "description": payload.description if "description" in fs else template.description,
+        "session_instructions": (
+            payload.session_instructions
+            if "session_instructions" in fs
+            else template.system_prompt_baseline
+        ),
+        "advisor_model": (
+            payload.advisor_model if "advisor_model" in fs else template.advisor_model
+        ),
+        "advisor_max_uses": (
+            payload.advisor_max_uses
+            if payload.advisor_max_uses is not None
+            else template.advisor_max_uses
+        ),
+        "effort_level": (
+            payload.effort_level if payload.effort_level is not None else template.effort_level
+        ),
+    }
+
+
+async def _resolve_template_tag_ids(
+    db: aiosqlite.Connection,
+    template: Template,
+) -> tuple[int, ...]:
+    """Resolve template.tag_names → existing tag ids (silently skip missing)."""
+    resolved: list[int] = []
+    for name in template.tag_names:
+        tag = await tags_db.get_by_name(db, name)
+        if tag is not None:
+            resolved.append(tag.id)
+    return tuple(resolved)
+
+
+async def _tag_working_dir_fallback(
+    db: aiosqlite.Connection,
+    tag_ids: tuple[int, ...],
+) -> str | None:
+    """Return the first working_dir from the ordered tag_ids, or None."""
+    tag_map = {t.id: t for t in await tags_db.list_all(db)}
+    for tid in tag_ids:
+        tag = tag_map.get(tid)
+        if tag is not None and tag.working_dir:
+            return tag.working_dir
+    return None
+
+
+async def _resolve_template_working_dir(
+    db: aiosqlite.Connection,
+    payload: TemplateInstantiateIn,
+    template: Template,
+    tag_ids: tuple[int, ...],
+) -> str | None:
+    """Resolve working_dir: payload override → template default → tag fallback."""
+    if payload.working_dir is not None:
+        return payload.working_dir
+    if template.working_dir_default is not None:
+        return template.working_dir_default
+    return await _tag_working_dir_fallback(db, tag_ids) if tag_ids else None
+
+
+def _resolve_template_permission_mode(
+    payload: TemplateInstantiateIn,
+    template: Template,
+) -> str | None:
+    """Map template permission_profile → SDK permission_mode.
+
+    Caller override takes precedence. Otherwise converts the template's
+    permission_profile (a Bearings profile name or raw SDK mode) to the
+    SDK-level permission_mode the session layer expects.
+    """
+    if payload.permission_mode is not None:
+        return payload.permission_mode
+    if template.permission_profile == "":
+        return None
+    if template.permission_profile in PERMISSION_PROFILE_TO_SDK_MODE:
+        return PERMISSION_PROFILE_TO_SDK_MODE[template.permission_profile]
+    if template.permission_profile in KNOWN_SDK_PERMISSION_MODES:
+        return template.permission_profile
+    return None
+
+
 @router.post(
     "/api/templates/{template_id}/instantiate",
     response_model=SessionOut,
@@ -347,27 +461,11 @@ async def create_session_from_template(
             detail=f"no template matches id {template_id}",
         )
 
-    # -- Resolve tag_names → tag_ids (skip names that no longer exist). ---
-    resolved_tag_ids: list[int] = []
-    for name in template.tag_names:
-        tag = await tags_db.get_by_name(db, name)
-        if tag is not None:
-            resolved_tag_ids.append(tag.id)
-    tag_ids = tuple(resolved_tag_ids)
+    tag_ids = await _resolve_template_tag_ids(db, template)
     if tag_ids:
         await _validate_tag_cardinality(db, tag_ids)
 
-    # -- Resolve working_dir: override > template > tag fallback > 422. ---
-    resolved_working_dir: str | None = (
-        payload.working_dir if payload.working_dir is not None else template.working_dir_default
-    )
-    if resolved_working_dir is None and tag_ids:
-        tag_list = [t for t in await tags_db.list_all(db) if t.id in set(tag_ids)]
-        for tid in tag_ids:
-            tag = next((t for t in tag_list if t.id == tid), None)
-            if tag is not None and tag.working_dir is not None:
-                resolved_working_dir = tag.working_dir
-                break
+    resolved_working_dir = await _resolve_template_working_dir(db, payload, template, tag_ids)
     if resolved_working_dir is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -377,67 +475,26 @@ async def create_session_from_template(
             ),
         )
 
-    # -- Map permission_profile → permission_mode. -------------------------
-    # Caller override takes precedence. Otherwise, convert the template's
-    # permission_profile (a Bearings profile name or raw SDK mode) to the
-    # SDK-level permission_mode the session layer expects:
-    #   "standard"   → "acceptEdits"
-    #   "restricted" → "default"
-    #   "expanded"   → "bypassPermissions"
-    #   ""           → None
-    #   raw SDK mode → passed through unchanged
-    #   unknown      → None (don't fail instantiation over a stale profile)
-    if payload.permission_mode is not None:
-        permission_mode: str | None = payload.permission_mode
-    elif template.permission_profile == "":
-        permission_mode = None
-    elif template.permission_profile in PERMISSION_PROFILE_TO_SDK_MODE:
-        permission_mode = PERMISSION_PROFILE_TO_SDK_MODE[template.permission_profile]
-    elif template.permission_profile in KNOWN_SDK_PERMISSION_MODES:
-        permission_mode = template.permission_profile
-    else:
-        permission_mode = None
+    permission_mode = _resolve_template_permission_mode(payload, template)
 
-    # -- Merge overrides onto template fields. ----------------------------
-    title = payload.title if payload.title is not None else template.name
-    model = payload.model if payload.model is not None else template.model
-    description = (
-        payload.description if "description" in payload.model_fields_set else template.description
-    )
-    session_instructions = (
-        payload.session_instructions
-        if "session_instructions" in payload.model_fields_set
-        else template.system_prompt_baseline
-    )
-    advisor_model = (
-        payload.advisor_model
-        if "advisor_model" in payload.model_fields_set
-        else template.advisor_model
-    )
-    advisor_max_uses = (
-        payload.advisor_max_uses
-        if payload.advisor_max_uses is not None
-        else template.advisor_max_uses
-    )
-    effort_level = (
-        payload.effort_level if payload.effort_level is not None else template.effort_level
-    )
+    # Merge payload overrides onto template fields.
+    merged = _merge_instantiate_fields(payload, template)
 
     # -- Create session row. ----------------------------------------------
     try:
         row = await sessions_db.create(
             db,
             kind="chat",
-            title=title,
+            title=merged["title"],
             working_dir=resolved_working_dir,
-            model=model,
-            description=description,
-            session_instructions=session_instructions,
+            model=merged["model"],
+            description=merged["description"],
+            session_instructions=merged["session_instructions"],
             permission_mode=permission_mode,
             max_budget_usd=None,
-            routing_advisor_model=advisor_model,
-            routing_advisor_max_uses=advisor_max_uses,
-            routing_effort_level=effort_level,
+            routing_advisor_model=merged["advisor_model"],
+            routing_advisor_max_uses=merged["advisor_max_uses"],
+            routing_effort_level=merged["effort_level"],
         )
     except ValueError as exc:
         raise HTTPException(

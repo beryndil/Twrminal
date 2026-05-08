@@ -63,6 +63,35 @@ class PairedChatSpawnError(ValueError):
     """
 
 
+async def _find_live_pair(
+    connection: aiosqlite.Connection,
+    item: ChecklistItem,
+) -> tuple[str, SessionConfig] | None:
+    """Return (session_id, config) when a live open pair already exists; else None.
+
+    Implements the idempotency clause: if the leaf already has a live
+    ``chat_session_id`` that is not closed, return the existing pair
+    rather than spawning a second one.
+    """
+    if item.chat_session_id is None:
+        return None
+    if await sessions_db.is_closed(connection, item.chat_session_id) is not False:
+        return None
+    existing = await sessions_db.get(connection, item.chat_session_id)
+    if existing is None:
+        return None
+    return (
+        existing.id,
+        await _rebuild_config_for_existing_session(
+            connection,
+            existing_session_id=existing.id,
+            existing_working_dir=existing.working_dir,
+            existing_model=existing.model,
+            item=item,
+        ),
+    )
+
+
 async def spawn_paired_chat(
     connection: aiosqlite.Connection,
     *,
@@ -124,24 +153,9 @@ async def spawn_paired_chat(
     # Idempotency clause: if a live pair already exists and is open,
     # return it unchanged (the doc's "navigates to the existing chat
     # rather than creating a second one").
-    if item.chat_session_id is not None:
-        existing_closed = await sessions_db.is_closed(connection, item.chat_session_id)
-        if existing_closed is False:
-            existing_session = await sessions_db.get(connection, item.chat_session_id)
-            if existing_session is not None:
-                # Reconstruct the SessionConfig from the live row +
-                # current tag overlay so a hot-spawn returns the live
-                # config without a second DB-side write.
-                return (
-                    existing_session.id,
-                    await _rebuild_config_for_existing_session(
-                        connection,
-                        existing_session_id=existing_session.id,
-                        existing_working_dir=existing_session.working_dir,
-                        existing_model=existing_session.model,
-                        item=item,
-                    ),
-                )
+    live_pair = await _find_live_pair(connection, item)
+    if live_pair is not None:
+        return live_pair
     # Build the config from the item-side overlay chain — tags from
     # the parent checklist flow through the assembler, working dir
     # likewise. The session id is materialised inside the assembler;

@@ -218,6 +218,41 @@ def _run_open(args: argparse.Namespace) -> int:
     return CLI_EXIT_OK
 
 
+def _check_entries(
+    entries: list[TodoEntry],
+    cutoff: float,
+) -> list[tuple[TodoEntry, str]]:
+    """Return (entry, message) pairs for entries failing the lint rules."""
+    findings: list[tuple[TodoEntry, str]] = []
+    for entry in entries:
+        if entry.status not in KNOWN_TODO_STATUSES:
+            findings.append((entry, f"unknown status {entry.status!r}"))
+        if entry.status in {"Open", "In Progress"} and entry.mtime < cutoff:
+            age_days = int((time.time() - entry.mtime) // 86400)
+            findings.append((entry, f"stale ({age_days} days old)"))
+    return findings
+
+
+def _emit_findings(findings: list[tuple[TodoEntry, str]], args: argparse.Namespace) -> None:
+    """Write findings to stdout in JSON or human-readable format."""
+    if args.format == _FORMAT_JSON:
+        payload = [
+            {
+                "file": str(entry.file),
+                "line": entry.line_number,
+                "title": entry.title,
+                "finding": message,
+            }
+            for entry, message in findings
+        ]
+        sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+    else:
+        if not args.quiet:
+            for entry, message in findings:
+                sys.stdout.write(f"{entry.file}:{entry.line_number}: {entry.title!r} — {message}\n")
+        sys.stdout.write(f"bearings todo check: {len(findings)} finding(s).\n")
+
+
 def _run_check(args: argparse.Namespace) -> int:
     """Implement ``bearings todo check``.
 
@@ -241,29 +276,8 @@ def _run_check(args: argparse.Namespace) -> int:
         sys.stderr.write(f"bearings todo check: {exc}\n")
         return CLI_EXIT_OPERATION_FAILURE
     cutoff = time.time() - (args.max_age_days * 86400)
-    findings: list[tuple[TodoEntry, str]] = []
-    for entry in entries:
-        if entry.status not in KNOWN_TODO_STATUSES:
-            findings.append((entry, f"unknown status {entry.status!r}"))
-        if entry.status in {"Open", "In Progress"} and entry.mtime < cutoff:
-            age_days = int((time.time() - entry.mtime) // 86400)
-            findings.append((entry, f"stale ({age_days} days old)"))
-    if args.format == _FORMAT_JSON:
-        payload = [
-            {
-                "file": str(entry.file),
-                "line": entry.line_number,
-                "title": entry.title,
-                "finding": message,
-            }
-            for entry, message in findings
-        ]
-        sys.stdout.write(json.dumps(payload, indent=2) + "\n")
-    else:
-        if not args.quiet:
-            for entry, message in findings:
-                sys.stdout.write(f"{entry.file}:{entry.line_number}: {entry.title!r} — {message}\n")
-        sys.stdout.write(f"bearings todo check: {len(findings)} finding(s).\n")
+    findings = _check_entries(entries, cutoff)
+    _emit_findings(findings, args)
     return CLI_EXIT_OPERATION_FAILURE if findings else CLI_EXIT_OK
 
 

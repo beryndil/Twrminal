@@ -50,6 +50,57 @@ from bearings.config.constants import (
 from bearings.db._id import now_iso
 from bearings.db._validators import _is_known_model
 
+# ---------------------------------------------------------------------------
+# Template.__post_init__ validators
+# ---------------------------------------------------------------------------
+
+
+def _validate_template_name(name: str, description: str | None) -> None:
+    """Raise if Template.name is empty/over-length or description is over-length."""
+    if not name:
+        raise ValueError("Template.name must be non-empty")
+    if len(name) > TEMPLATE_NAME_MAX_LENGTH:
+        raise ValueError(
+            f"Template.name must be ≤ {TEMPLATE_NAME_MAX_LENGTH} chars (got {len(name)})"
+        )
+    if description is not None and len(description) > TEMPLATE_DESCRIPTION_MAX_LENGTH:
+        raise ValueError(
+            f"Template.description must be ≤ {TEMPLATE_DESCRIPTION_MAX_LENGTH} chars "
+            f"(got {len(description)})"
+        )
+
+
+def _validate_template_routing(
+    model: str,
+    advisor_model: str | None,
+    advisor_max_uses: int,
+    effort_level: str,
+    permission_profile: str,
+) -> None:
+    """Raise if any routing field violates its alphabet or floor constraint."""
+    if not _is_known_model(model):
+        raise ValueError(
+            f"Template.model {model!r} is neither a known short name "
+            f"{sorted(KNOWN_EXECUTOR_MODELS)} nor a full SDK ID prefixed "
+            f"with {EXECUTOR_MODEL_FULL_ID_PREFIX!r}"
+        )
+    if advisor_model is not None and not _is_known_model(advisor_model):
+        raise ValueError(
+            f"Template.advisor_model {advisor_model!r} is not a known "
+            f"short name and does not begin with {EXECUTOR_MODEL_FULL_ID_PREFIX!r}"
+        )
+    if advisor_max_uses < 0:
+        raise ValueError(f"Template.advisor_max_uses must be ≥ 0 (got {advisor_max_uses})")
+    if effort_level not in KNOWN_EFFORT_LEVELS:
+        raise ValueError(
+            f"Template.effort_level {effort_level!r} is not in {sorted(KNOWN_EFFORT_LEVELS)}"
+        )
+    if permission_profile not in PERMISSION_PROFILE_NAMES:
+        raise ValueError(
+            f"Template.permission_profile {permission_profile!r} is not in "
+            f"{sorted(PERMISSION_PROFILE_NAMES)}"
+        )
+
 
 @dataclass(frozen=True)
 class Template:
@@ -81,40 +132,14 @@ class Template:
     updated_at: str = ""
 
     def __post_init__(self) -> None:
-        if not self.name:
-            raise ValueError("Template.name must be non-empty")
-        if len(self.name) > TEMPLATE_NAME_MAX_LENGTH:
-            raise ValueError(
-                f"Template.name must be ≤ {TEMPLATE_NAME_MAX_LENGTH} chars (got {len(self.name)})"
-            )
-        if self.description is not None and len(self.description) > TEMPLATE_DESCRIPTION_MAX_LENGTH:
-            raise ValueError(
-                f"Template.description must be ≤ {TEMPLATE_DESCRIPTION_MAX_LENGTH} chars "
-                f"(got {len(self.description)})"
-            )
-        if not _is_known_model(self.model):
-            raise ValueError(
-                f"Template.model {self.model!r} is neither a known short name "
-                f"{sorted(KNOWN_EXECUTOR_MODELS)} nor a full SDK ID prefixed "
-                f"with {EXECUTOR_MODEL_FULL_ID_PREFIX!r}"
-            )
-        if self.advisor_model is not None and not _is_known_model(self.advisor_model):
-            raise ValueError(
-                f"Template.advisor_model {self.advisor_model!r} is not a known "
-                f"short name and does not begin with {EXECUTOR_MODEL_FULL_ID_PREFIX!r}"
-            )
-        if self.advisor_max_uses < 0:
-            raise ValueError(f"Template.advisor_max_uses must be ≥ 0 (got {self.advisor_max_uses})")
-        if self.effort_level not in KNOWN_EFFORT_LEVELS:
-            raise ValueError(
-                f"Template.effort_level {self.effort_level!r} is not in "
-                f"{sorted(KNOWN_EFFORT_LEVELS)}"
-            )
-        if self.permission_profile not in PERMISSION_PROFILE_NAMES:
-            raise ValueError(
-                f"Template.permission_profile {self.permission_profile!r} is not in "
-                f"{sorted(PERMISSION_PROFILE_NAMES)}"
-            )
+        _validate_template_name(self.name, self.description)
+        _validate_template_routing(
+            self.model,
+            self.advisor_model,
+            self.advisor_max_uses,
+            self.effort_level,
+            self.permission_profile,
+        )
 
 
 def _tag_names_to_json(tag_names: tuple[str, ...]) -> str:

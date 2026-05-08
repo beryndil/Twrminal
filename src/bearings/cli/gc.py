@@ -253,6 +253,69 @@ async def _do_gc_uploads(
     return CLI_EXIT_OPERATION_FAILURE if failed > 0 else CLI_EXIT_OK
 
 
+def _collect_orphan_candidates(
+    sha256_in_db: frozenset[str],
+    storage_root: Path,
+    cutoff_ts: float,
+    now: float,
+) -> list[_GcCandidate]:
+    """Forward pass: on-disk files not tracked in DB and outside retention window."""
+    candidates: list[_GcCandidate] = []
+    if not storage_root.exists():
+        return candidates
+    for shard_dir in sorted(storage_root.iterdir()):
+        if not shard_dir.is_dir():
+            continue
+        for content_file in sorted(shard_dir.iterdir()):
+            sha256 = content_file.name
+            if sha256 in sha256_in_db:
+                continue
+            try:
+                st = content_file.stat()
+            except OSError:
+                continue  # race: file already gone
+            if st.st_mtime >= cutoff_ts:
+                continue
+            candidates.append(
+                _GcCandidate(
+                    path=content_file,
+                    size=st.st_size,
+                    age_days=int((now - st.st_mtime) / 86400),
+                    sha256=sha256,
+                    kind="orphan",
+                    db_id=None,
+                )
+            )
+    return candidates
+
+
+def _collect_missing_candidates(
+    all_rows: list[db_uploads.UploadRow],
+    storage_root: Path,
+    cutoff_ts: float,
+    now: float,
+) -> list[_GcCandidate]:
+    """Reverse pass: DB rows whose on-disk body is absent and outside retention."""
+    candidates: list[_GcCandidate] = []
+    for row in all_rows:
+        if float(row.created_at) >= cutoff_ts:
+            continue
+        expected = body_path(storage_root, row.sha256)
+        if expected.exists():
+            continue
+        candidates.append(
+            _GcCandidate(
+                path=expected,
+                size=row.size,
+                age_days=int((now - row.created_at) / 86400),
+                sha256=row.sha256,
+                kind="missing",
+                db_id=row.id,
+            )
+        )
+    return candidates
+
+
 def _collect_candidates(
     *,
     sha256_in_db: frozenset[str],
@@ -266,53 +329,9 @@ def _collect_candidates(
     Pure computation — no I/O except filesystem stat calls during the
     forward pass.
     """
-    candidates: list[_GcCandidate] = []
-
-    # --- Forward pass: on-disk files not tracked in DB -----------------
-    if storage_root.exists():
-        for shard_dir in sorted(storage_root.iterdir()):
-            if not shard_dir.is_dir():
-                continue
-            for content_file in sorted(shard_dir.iterdir()):
-                sha256 = content_file.name
-                if sha256 in sha256_in_db:
-                    continue  # valid entry — skip
-                try:
-                    st = content_file.stat()
-                except OSError:
-                    continue  # race: file already gone
-                if st.st_mtime >= cutoff_ts:
-                    continue  # too young — outside the retention window
-                candidates.append(
-                    _GcCandidate(
-                        path=content_file,
-                        size=st.st_size,
-                        age_days=int((now - st.st_mtime) / 86400),
-                        sha256=sha256,
-                        kind="orphan",
-                        db_id=None,
-                    )
-                )
-
-    # --- Reverse pass: DB rows whose on-disk body is absent ------------
-    for row in all_rows:
-        if float(row.created_at) >= cutoff_ts:
-            continue  # too young
-        expected = body_path(storage_root, row.sha256)
-        if expected.exists():
-            continue  # body is present — not a missing-body case
-        candidates.append(
-            _GcCandidate(
-                path=expected,
-                size=row.size,
-                age_days=int((now - row.created_at) / 86400),
-                sha256=row.sha256,
-                kind="missing",
-                db_id=row.id,
-            )
-        )
-
-    return candidates
+    return _collect_orphan_candidates(
+        sha256_in_db, storage_root, cutoff_ts, now
+    ) + _collect_missing_candidates(all_rows, storage_root, cutoff_ts, now)
 
 
 async def _execute_deletions(

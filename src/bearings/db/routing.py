@@ -150,6 +150,29 @@ class SystemRoutingRule:
         )
 
 
+def _validate_rule_match(match_type: str, match_value: str | None) -> None:
+    """Raise if match_type is unknown or match_value is missing for non-always types."""
+    if match_type not in KNOWN_MATCH_TYPES:
+        raise ValueError(f"match_type {match_type!r} is not in {sorted(KNOWN_MATCH_TYPES)}")
+    if match_type != "always" and (match_value is None or not match_value):
+        raise ValueError(f"match_type {match_type!r} requires a non-empty match_value")
+
+
+def _validate_rule_models(executor_model: str, advisor_model: str | None) -> None:
+    """Raise if executor_model or advisor_model are not valid model identifiers."""
+    if not executor_model or not _is_known_model(executor_model):
+        raise ValueError(
+            f"executor_model {executor_model!r} is neither a known short name "
+            f"{sorted(KNOWN_EXECUTOR_MODELS)} nor a full SDK ID prefixed with "
+            f"{EXECUTOR_MODEL_FULL_ID_PREFIX!r}"
+        )
+    if advisor_model is not None and not _is_known_model(advisor_model):
+        raise ValueError(
+            f"advisor_model {advisor_model!r} is neither a known short name "
+            f"nor prefixed with {EXECUTOR_MODEL_FULL_ID_PREFIX!r}"
+        )
+
+
 def _validate_rule_fields(
     *,
     match_type: str,
@@ -168,21 +191,8 @@ def _validate_rule_fields(
     so the API layer surfaces a 422 with a precise diagnosis instead
     of an opaque integrity error.
     """
-    if match_type not in KNOWN_MATCH_TYPES:
-        raise ValueError(f"match_type {match_type!r} is not in {sorted(KNOWN_MATCH_TYPES)}")
-    if match_type != "always" and (match_value is None or not match_value):
-        raise ValueError(f"match_type {match_type!r} requires a non-empty match_value")
-    if not executor_model or not _is_known_model(executor_model):
-        raise ValueError(
-            f"executor_model {executor_model!r} is neither a known short name "
-            f"{sorted(KNOWN_EXECUTOR_MODELS)} nor a full SDK ID prefixed with "
-            f"{EXECUTOR_MODEL_FULL_ID_PREFIX!r}"
-        )
-    if advisor_model is not None and not _is_known_model(advisor_model):
-        raise ValueError(
-            f"advisor_model {advisor_model!r} is neither a known short name "
-            f"nor prefixed with {EXECUTOR_MODEL_FULL_ID_PREFIX!r}"
-        )
+    _validate_rule_match(match_type, match_value)
+    _validate_rule_models(executor_model, advisor_model)
     if advisor_max_uses < 0:
         raise ValueError(f"advisor_max_uses must be ≥ 0 (got {advisor_max_uses})")
     if effort_level not in KNOWN_EFFORT_LEVELS:

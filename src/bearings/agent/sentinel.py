@@ -207,6 +207,21 @@ def first_terminal(findings: list[SentinelFinding]) -> SentinelFinding | None:
     return None
 
 
+def _build_followup_finding(kind: str, body: str) -> SentinelFinding | None:
+    """Build a followup-kind finding; ``None`` when the label tag is missing."""
+    label = _extract(body, _LABEL_RE)
+    return None if not label else SentinelFinding(kind=kind, label=label)
+
+
+def _build_blocked_finding(body: str) -> SentinelFinding | None:
+    """Build an item-blocked finding; ``None`` when the category is unknown."""
+    category = _extract(body, _CATEGORY_RE) or ITEM_OUTCOME_BLOCKED
+    if category not in KNOWN_ITEM_OUTCOMES:
+        return None
+    text = _extract(body, _TEXT_RE) or _extract(body, _REASON_RE)
+    return SentinelFinding(kind=SENTINEL_KIND_ITEM_BLOCKED, category=category, reason=text)
+
+
 def _build_finding(*, kind: str, body: str) -> SentinelFinding | None:
     """Translate one open/close-form match to a finding; ``None`` if malformed.
 
@@ -217,26 +232,13 @@ def _build_finding(*, kind: str, body: str) -> SentinelFinding | None:
         return SentinelFinding(kind=kind)
     if kind == SENTINEL_KIND_HANDOFF:
         plug = _extract(body, _PLUG_RE)
-        # plug may be empty (a handoff with no body) — treated as a
-        # bare-handoff signal; the driver still cuts the runner over.
         return SentinelFinding(kind=kind, plug=plug or "")
-    if kind in {
-        SENTINEL_KIND_FOLLOWUP_BLOCKING,
-        SENTINEL_KIND_FOLLOWUP_NONBLOCKING,
-    }:
-        label = _extract(body, _LABEL_RE)
-        if not label:
-            return None
-        return SentinelFinding(kind=kind, label=label)
+    if kind in {SENTINEL_KIND_FOLLOWUP_BLOCKING, SENTINEL_KIND_FOLLOWUP_NONBLOCKING}:
+        return _build_followup_finding(kind, body)
     if kind == SENTINEL_KIND_ITEM_BLOCKED:
-        category = _extract(body, _CATEGORY_RE) or ITEM_OUTCOME_BLOCKED
-        if category not in KNOWN_ITEM_OUTCOMES:
-            return None
-        text = _extract(body, _TEXT_RE) or _extract(body, _REASON_RE)
-        return SentinelFinding(kind=kind, category=category, reason=text)
+        return _build_blocked_finding(body)
     if kind == SENTINEL_KIND_ITEM_FAILED:
-        reason = _extract(body, _REASON_RE)
-        return SentinelFinding(kind=kind, reason=reason)
+        return SentinelFinding(kind=kind, reason=_extract(body, _REASON_RE))
     return None  # pragma: no cover — guarded by KNOWN_SENTINEL_KINDS check above
 
 

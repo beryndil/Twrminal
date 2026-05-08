@@ -302,6 +302,27 @@ async def update_state(
     return replace(existing, state=state, updated_at=timestamp)
 
 
+def _resolve_counter(current: int, new: int | None) -> int:
+    """Return ``current`` when ``new`` is ``None``, otherwise ``new``."""
+    return current if new is None else new
+
+
+def _resolve_current_item(
+    current: int | None,
+    new_id: int | None,
+    clear: bool,
+) -> int | None:
+    """Resolve the current_item_id sentinel logic.
+
+    ``clear=True`` → None (driver is between items).
+    ``new_id`` not None → new_id (driver picked a new item).
+    Otherwise → preserve ``current`` unchanged.
+    """
+    if clear:
+        return None
+    return new_id if new_id is not None else current
+
+
 async def update_counters(
     connection: aiosqlite.Connection,
     run_id: int,
@@ -327,18 +348,15 @@ async def update_counters(
     existing = await get(connection, run_id)
     if existing is None:
         return None
-    new_completed = existing.items_completed if items_completed is None else items_completed
-    new_failed = existing.items_failed if items_failed is None else items_failed
-    new_blocked = existing.items_blocked if items_blocked is None else items_blocked
-    new_skipped = existing.items_skipped if items_skipped is None else items_skipped
-    new_attempted = existing.items_attempted if items_attempted is None else items_attempted
-    new_legs = existing.legs_spawned if legs_spawned is None else legs_spawned
-    if clear_current_item:
-        new_current = None
-    elif current_item_id is None:
-        new_current = existing.current_item_id
-    else:
-        new_current = current_item_id
+    new_completed = _resolve_counter(existing.items_completed, items_completed)
+    new_failed = _resolve_counter(existing.items_failed, items_failed)
+    new_blocked = _resolve_counter(existing.items_blocked, items_blocked)
+    new_skipped = _resolve_counter(existing.items_skipped, items_skipped)
+    new_attempted = _resolve_counter(existing.items_attempted, items_attempted)
+    new_legs = _resolve_counter(existing.legs_spawned, legs_spawned)
+    new_current = _resolve_current_item(
+        existing.current_item_id, current_item_id, clear_current_item
+    )
     for name, value in (
         ("items_completed", new_completed),
         ("items_failed", new_failed),

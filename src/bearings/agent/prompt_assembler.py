@@ -59,6 +59,8 @@ from bearings.agent.bearings_mcp import CLOSE_SESSION_INSTRUCTION
 from bearings.db import memories as memories_db
 from bearings.db import sessions as sessions_db
 from bearings.db import tags as tags_db
+from bearings.db.sessions import Session
+from bearings.db.tags import Tag
 
 # ---------------------------------------------------------------------------
 # Layer kind constants (exported so the route and tests share the alphabet)
@@ -209,6 +211,58 @@ def _tag_claude_md_layer(working_dir: str) -> SystemPromptLayer | None:
 # ---------------------------------------------------------------------------
 
 
+def _append_session_instructions_layer(
+    row: Session,
+    layers: list[SystemPromptLayer],
+) -> None:
+    """Add layer 1 (session_instructions) when present and non-empty."""
+    si = row.session_instructions
+    if si is not None:
+        stripped = si.strip()
+        if stripped:
+            layers.append(
+                SystemPromptLayer(
+                    kind=LAYER_KIND_SESSION_INSTRUCTIONS,
+                    body=stripped,
+                    token_count=_approx_tokens(stripped),
+                    source_path=None,
+                )
+            )
+
+
+async def _append_tag_layers(
+    connection: aiosqlite.Connection,
+    ordered_tags: list[Tag],
+    layers: list[SystemPromptLayer],
+) -> None:
+    """Add layers 4a (per-tag CLAUDE.md) and 4b (tag DB memories) to ``layers``."""
+    # Iterate in reverse so lowest-precedence tag is first, matching the
+    # splice order in :func:`bearings.agent.tags.resolve_claude_md_blocks`.
+    for tag in reversed(ordered_tags):
+        if tag.working_dir is None:
+            continue
+        layer = _tag_claude_md_layer(tag.working_dir)
+        if layer is not None:
+            layers.append(layer)
+    # Layer 4b: tag DB memories — re-read on every assemble so edits
+    # take effect on the next prompt without restarting the worker.
+    for tag in reversed(ordered_tags):
+        tag_memories = await memories_db.list_for_tag(
+            connection,
+            tag.id,
+            only_enabled=True,
+        )
+        for memory in tag_memories:
+            layers.append(
+                SystemPromptLayer(
+                    kind=LAYER_KIND_TAG_MEMORY,
+                    body=memory.body,
+                    token_count=_approx_tokens(memory.body),
+                    source_path=None,
+                )
+            )
+
+
 async def assemble_system_prompt_layers(
     connection: aiosqlite.Connection,
     session_id: str,
@@ -229,32 +283,18 @@ async def assemble_system_prompt_layers(
 
     layers: list[SystemPromptLayer] = []
 
-    # --- Layer 1: session_instructions -----------------------------------
-    si = row.session_instructions
-    if si is not None:
-        stripped = si.strip()
-        if stripped:
-            layers.append(
-                SystemPromptLayer(
-                    kind=LAYER_KIND_SESSION_INSTRUCTIONS,
-                    body=stripped,
-                    token_count=_approx_tokens(stripped),
-                    source_path=None,
-                )
-            )
-
-    # --- Layer 2: baseline (always present) ------------------------------
-    baseline_body = CLOSE_SESSION_INSTRUCTION
+    # Layer 1: session_instructions
+    _append_session_instructions_layer(row, layers)
+    # Layer 2: baseline (always present)
     layers.append(
         SystemPromptLayer(
             kind=LAYER_KIND_BASELINE,
-            body=baseline_body,
-            token_count=_approx_tokens(baseline_body),
+            body=CLOSE_SESSION_INSTRUCTION,
+            token_count=_approx_tokens(CLOSE_SESSION_INSTRUCTION),
             source_path=None,
         )
     )
-
-    # --- Layer 3: project CLAUDE.md walk-up chain ------------------------
+    # Layer 3: project CLAUDE.md walk-up chain
     if row.working_dir:
         for path, body in _walk_up_claude_md(row.working_dir):
             layers.append(
@@ -265,41 +305,11 @@ async def assemble_system_prompt_layers(
                     source_path=path,
                 )
             )
-
-    # --- Layer 4a: per-tag CLAUDE.md fragments ---------------------------
+    # Layers 4a + 4b: per-tag CLAUDE.md fragments + tag DB memories
     ordered_tags = await tags_db.list_for_session_ordered(connection, session_id)
-    # Iterate in reverse so lowest-precedence tag is first, matching the
-    # splice order in :func:`bearings.agent.tags.resolve_claude_md_blocks`.
-    for tag in reversed(ordered_tags):
-        if tag.working_dir is None:
-            continue
-        # Sync helper isolates all os.path calls to avoid ASYNC240.
-        layer = _tag_claude_md_layer(tag.working_dir)
-        if layer is not None:
-            layers.append(layer)
+    await _append_tag_layers(connection, ordered_tags, layers)
 
-    # --- Layer 4b: tag DB memories (tag_memories table) ------------------
-    # Re-read on every assemble call so edits to a memory body take effect
-    # on the next prompt without restarting the worker (per-turn re-read).
-    for tag in reversed(ordered_tags):
-        tag_memories = await memories_db.list_for_tag(connection, tag.id, only_enabled=True)
-        for memory in tag_memories:
-            layers.append(
-                SystemPromptLayer(
-                    kind=LAYER_KIND_TAG_MEMORY,
-                    body=memory.body,
-                    token_count=_approx_tokens(memory.body),
-                    source_path=None,  # DB-resident; no filesystem path
-                )
-            )
-
-    # --- Layer 5: template_baseline (deferred) ---------------------------
-    # Template baselines are baked into session_instructions at row
-    # creation; there is no template_id FK on the session row to recover
-    # the original template text.  This layer kind is defined in
-    # KNOWN_LAYER_KINDS for API-shape stability but is never emitted here.
-    # TODO: emit template_baseline when sessions carry a template_id FK
-    # (deferred — see project TODO.md).
+    # Layer 5: template_baseline (deferred — see project TODO.md).
 
     total_tokens = sum(layer.token_count for layer in layers)
     return SystemPromptLayers(layers=layers, total_tokens=total_tokens)

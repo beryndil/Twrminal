@@ -76,6 +76,19 @@ async def get_preferences(conn: aiosqlite.Connection) -> Preferences:
     return _row_to_prefs(row)
 
 
+def _add_prefs_update(
+    updates: list[str],
+    params: list[object],
+    condition: bool,
+    column: str,
+    value: object,
+) -> None:
+    """Append a SET clause and its value when ``condition`` is true."""
+    if condition:
+        updates.append(f"{column} = ?")
+        params.append(value)
+
+
 async def patch_preferences(
     conn: aiosqlite.Connection,
     *,
@@ -121,27 +134,27 @@ async def patch_preferences(
     updates: list[str] = []
     params: list[object] = []
 
-    if theme is not None:
-        updates.append("theme = ?")
-        params.append(theme)
-    if "default_model" in fields:
-        updates.append("default_model = ?")
-        params.append(default_model)
-    if "default_permission_mode" in fields:
-        updates.append("default_permission_mode = ?")
-        params.append(default_permission_mode)
-    if "default_working_dir" in fields:
-        updates.append("default_working_dir = ?")
-        params.append(default_working_dir)
-    if "display_name" in fields:
-        updates.append("display_name = ?")
-        params.append(display_name)
-    if "avatar_path" in fields:
-        updates.append("avatar_path = ?")
-        params.append(avatar_path)
-    if "avatar_mime_type" in fields:
-        updates.append("avatar_mime_type = ?")
-        params.append(avatar_mime_type)
+    _add_prefs_update(updates, params, theme is not None, "theme", theme)
+    _add_prefs_update(updates, params, "default_model" in fields, "default_model", default_model)
+    _add_prefs_update(
+        updates,
+        params,
+        "default_permission_mode" in fields,
+        "default_permission_mode",
+        default_permission_mode,
+    )
+    _add_prefs_update(
+        updates,
+        params,
+        "default_working_dir" in fields,
+        "default_working_dir",
+        default_working_dir,
+    )
+    _add_prefs_update(updates, params, "display_name" in fields, "display_name", display_name)
+    _add_prefs_update(updates, params, "avatar_path" in fields, "avatar_path", avatar_path)
+    _add_prefs_update(
+        updates, params, "avatar_mime_type" in fields, "avatar_mime_type", avatar_mime_type
+    )
     if "notify_on_complete" in fields and notify_on_complete is not None:
         updates.append("notify_on_complete = ?")
         params.append(1 if notify_on_complete else 0)

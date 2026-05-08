@@ -145,6 +145,43 @@ def _is_known_model(name: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _walk_tag_rules(
+    tags_with_rules: list[tuple[int, list[RoutingRule]]],
+    message: str,
+    evaluated_ids: list[int],
+    quota_state: dict[str, float],
+) -> RoutingDecision | None:
+    """Walk enabled tag rules in priority order; return first match or None."""
+    flat: list[RoutingRule] = []
+    for _tag_id, rules in tags_with_rules:
+        flat.extend(r for r in rules if r.enabled)
+    flat.sort(key=lambda r: (r.priority, r.id))
+    for rule in flat:
+        evaluated_ids.append(rule.id)
+        if _rule_matches(rule.match_type, rule.match_value, message):
+            return _decision_from_tag_rule(
+                rule=rule, evaluated_ids=evaluated_ids, quota_state=quota_state
+            )
+    return None
+
+
+def _walk_system_rules(
+    system_rules: list[SystemRoutingRule],
+    message: str,
+    evaluated_ids: list[int],
+    quota_state: dict[str, float],
+) -> RoutingDecision | None:
+    """Walk enabled system rules in priority order; return first match or None."""
+    enabled = sorted((r for r in system_rules if r.enabled), key=lambda r: (r.priority, r.id))
+    for rule in enabled:
+        evaluated_ids.append(rule.id)
+        if _rule_matches(rule.match_type, rule.match_value, message):
+            return _decision_from_system_rule(
+                rule=rule, evaluated_ids=evaluated_ids, quota_state=quota_state
+            )
+    return None
+
+
 def evaluate(
     message: str,
     tags_with_rules: list[tuple[int, list[RoutingRule]]],
@@ -201,35 +238,15 @@ def evaluate(
     quota_state = {} if quota_snapshot is None else quota_snapshot.quota_state_dict()
     evaluated_ids: list[int] = []
 
-    # Step 1: collect enabled tag rules across every tag, ordered by
-    # (priority ASC, id ASC) so cross-tag ties resolve deterministically.
-    flat_tag_rules: list[RoutingRule] = []
-    for _tag_id, rules in tags_with_rules:
-        flat_tag_rules.extend(r for r in rules if r.enabled)
-    flat_tag_rules.sort(key=lambda r: (r.priority, r.id))
-
-    for tag_rule in flat_tag_rules:
-        evaluated_ids.append(tag_rule.id)
-        if _rule_matches(tag_rule.match_type, tag_rule.match_value, message):
-            return _decision_from_tag_rule(
-                rule=tag_rule,
-                evaluated_ids=evaluated_ids,
-                quota_state=quota_state,
-            )
+    # Step 1-3: collect and walk enabled tag rules.
+    tag_match = _walk_tag_rules(tags_with_rules, message, evaluated_ids, quota_state)
+    if tag_match is not None:
+        return tag_match
 
     # Step 4: system rules.
-    enabled_system_rules = sorted(
-        (r for r in system_rules if r.enabled),
-        key=lambda r: (r.priority, r.id),
-    )
-    for sys_rule in enabled_system_rules:
-        evaluated_ids.append(sys_rule.id)
-        if _rule_matches(sys_rule.match_type, sys_rule.match_value, message):
-            return _decision_from_system_rule(
-                rule=sys_rule,
-                evaluated_ids=evaluated_ids,
-                quota_state=quota_state,
-            )
+    sys_match = _walk_system_rules(system_rules, message, evaluated_ids, quota_state)
+    if sys_match is not None:
+        return sys_match
 
     # Step 5: absolute default. Spec §3: "shouldn't happen given the
     # seeded ``always`` fallback, but fail safe anyway".
@@ -289,6 +306,32 @@ def _decision_from_system_rule(
     )
 
 
+def _match_keyword(match_value: str, message: str) -> bool:
+    """Case-insensitive comma-separated keyword match; any term hits."""
+    terms = [t.strip().lower() for t in match_value.split(",") if t.strip()]
+    if not terms:
+        return False
+    message_lower = message.lower()
+    return any(term in message_lower for term in terms)
+
+
+def _match_regex(match_value: str, message: str) -> bool:
+    """IGNORECASE regex match; invalid regex returns False (rule disabled)."""
+    try:
+        return re.search(match_value, message, flags=re.IGNORECASE) is not None
+    except re.error:
+        return False
+
+
+def _match_length(match_value: str, message: str, *, gt: bool) -> bool:
+    """Integer length threshold match; unparsable match_value returns False."""
+    try:
+        threshold = int(match_value)
+    except ValueError:
+        return False
+    return len(message) > threshold if gt else len(message) < threshold
+
+
 def _rule_matches(match_type: str, match_value: str | None, message: str) -> bool:
     """Spec §3 ``Match types`` — return ``True`` if ``message`` matches.
 
@@ -308,32 +351,16 @@ def _rule_matches(match_type: str, match_value: str | None, message: str) -> boo
     """
     if match_type == "always":
         return True
-    if match_value is None or not match_value:
+    if not match_value:
         return False
     if match_type == "keyword":
-        terms = [term.strip().lower() for term in match_value.split(",")]
-        terms = [t for t in terms if t]
-        if not terms:
-            return False
-        message_lower = message.lower()
-        return any(term in message_lower for term in terms)
+        return _match_keyword(match_value, message)
     if match_type == "regex":
-        try:
-            return re.search(match_value, message, flags=re.IGNORECASE) is not None
-        except re.error:
-            return False
+        return _match_regex(match_value, message)
     if match_type == "length_gt":
-        try:
-            threshold = int(match_value)
-        except ValueError:
-            return False
-        return len(message) > threshold
+        return _match_length(match_value, message, gt=True)
     if match_type == "length_lt":
-        try:
-            threshold = int(match_value)
-        except ValueError:
-            return False
-        return len(message) < threshold
+        return _match_length(match_value, message, gt=False)
     # Unknown match_type — DB-layer validation should reject, but
     # fail-safe at the runtime boundary.
     return False  # pragma: no cover — defence-in-depth fallthrough

@@ -80,6 +80,7 @@ from bearings.db import routing as routing_db
 from bearings.db import tags as tags_db
 from bearings.db import templates as templates_db
 from bearings.db.tags import Tag
+from bearings.db.templates import Template
 
 
 class SessionAssemblyError(ValueError):
@@ -90,6 +91,87 @@ class SessionAssemblyError(ValueError):
     working directory (the one mandatory field that has no default
     anywhere in the chain) versus a SessionConfig field-shape problem.
     """
+
+
+class _TemplateFields:
+    """Flat snapshot of a template's routing fields (or all-None when absent).
+
+    Replaces per-field ``None if template is None else template.X``
+    guards in :func:`build_session_config` so each resolve call uses a
+    simple attribute access instead of an inline conditional.
+    """
+
+    __slots__ = (
+        "advisor_max_uses",
+        "advisor_model",
+        "effort_level",
+        "model",
+        "name",
+        "permission_profile",
+        "working_dir_default",
+    )
+
+    def __init__(self, template: Template | None) -> None:
+        if template is None:
+            self.model: str | None = None
+            self.advisor_model: str | None = None
+            self.advisor_max_uses: int | None = None
+            self.effort_level: str | None = None
+            self.permission_profile: str | None = None
+            self.working_dir_default: str | None = None
+            self.name: str | None = None
+        else:
+            self.model = template.model
+            self.advisor_model = template.advisor_model
+            self.advisor_max_uses = template.advisor_max_uses
+            self.effort_level = template.effort_level
+            self.permission_profile = template.permission_profile
+            self.working_dir_default = template.working_dir_default
+            self.name = template.name
+
+
+def _compute_routing_source(
+    working_dir: str | None,
+    model: str | None,
+    advisor_model: str | None,
+    advisor_max_uses: int | None,
+    effort_level: str | None,
+    permission_profile: str | None,
+    template: Template | None,
+    tags: list[Tag],
+) -> str:
+    """Return ``'manual'`` when any user-side signal is present; ``'default'`` otherwise."""
+    user_supplied = any(
+        v is not None
+        for v in (
+            working_dir,
+            model,
+            advisor_model,
+            advisor_max_uses,
+            effort_level,
+            permission_profile,
+        )
+    )
+    if user_supplied or template is not None or any(t.default_model is not None for t in tags):
+        return "manual"
+    return "default"
+
+
+def _no_routing_override(
+    model: str | None,
+    advisor_model: str | None,
+    advisor_max_uses: int | None,
+    effort_level: str | None,
+    template: Template | None,
+) -> bool:
+    """Return True when no explicit routing override and no template was supplied."""
+    return (
+        model is None
+        and advisor_model is None
+        and advisor_max_uses is None
+        and effort_level is None
+        and template is None
+    )
 
 
 async def build_session_config(
@@ -161,56 +243,40 @@ async def build_session_config(
             from bearings.agent.templates import TemplateNotFoundError
 
             raise TemplateNotFoundError(f"no template with id {template_id}")
-    # Mark the source as manual when *any* user-side signal is present
-    # (explicit field, template, or non-empty tag set with a
-    # default_model). Pure global default = source="default".
-    user_supplied_anything = any(
-        value is not None
-        for value in (
-            working_dir,
-            model,
-            advisor_model,
-            advisor_max_uses,
-            effort_level,
-            permission_profile,
-        )
-    )
-    has_template_contribution = template is not None
-    tag_contributes_model = any(t.default_model is not None for t in tags)
-    source = (
-        "manual"
-        if (user_supplied_anything or has_template_contribution or tag_contributes_model)
-        else "default"
+
+    tf = _TemplateFields(template)
+    source = _compute_routing_source(
+        working_dir,
+        model,
+        advisor_model,
+        advisor_max_uses,
+        effort_level,
+        permission_profile,
+        template,
+        tags,
     )
 
     # Resolve each routing field — explicit > template > tags > global.
-    resolved_model = _resolve_executor_model(
-        explicit=model,
-        template_value=None if template is None else template.model,
-        tags=tags,
-    )
-    resolved_advisor = _resolve_advisor(
-        explicit=advisor_model,
-        template_value=None if template is None else template.advisor_model,
-    )
+    resolved_model = _resolve_executor_model(explicit=model, template_value=tf.model, tags=tags)
+    resolved_advisor = _resolve_advisor(explicit=advisor_model, template_value=tf.advisor_model)
     resolved_advisor_max = _resolve_int(
         explicit=advisor_max_uses,
-        template_value=None if template is None else template.advisor_max_uses,
+        template_value=tf.advisor_max_uses,
         global_value=DEFAULT_TEMPLATE_ADVISOR_MAX_USES,
     )
     resolved_effort = _resolve_str(
         explicit=effort_level,
-        template_value=None if template is None else template.effort_level,
+        template_value=tf.effort_level,
         global_value=DEFAULT_TEMPLATE_EFFORT_LEVEL,
     )
     resolved_profile_name = _resolve_str(
         explicit=permission_profile,
-        template_value=None if template is None else template.permission_profile,
+        template_value=tf.permission_profile,
         global_value=DEFAULT_TEMPLATE_PERMISSION_PROFILE,
     )
     resolved_working_dir = _resolve_working_dir(
         explicit=working_dir,
-        template_value=None if template is None else template.working_dir_default,
+        template_value=tf.working_dir_default,
         tags=tags,
     )
     if not resolved_working_dir:
@@ -225,19 +291,10 @@ async def build_session_config(
     # paired-chat spawns + auto-driver leg sessions (which have no
     # message at create time) still produce a valid SessionConfig.
     decision: RoutingDecision
-    no_routing_override = (
-        model is None
-        and advisor_model is None
-        and advisor_max_uses is None
-        and effort_level is None
-        and template is None
-    )
-    if first_message is not None and no_routing_override:
-        decision = await _evaluate_with_guard(
-            connection,
-            tags=tags,
-            first_message=first_message,
-        )
+    if first_message is not None and _no_routing_override(
+        model, advisor_model, advisor_max_uses, effort_level, template
+    ):
+        decision = await _evaluate_with_guard(connection, tags=tags, first_message=first_message)
     else:
         decision = RoutingDecision(
             executor_model=resolved_model,
@@ -245,11 +302,7 @@ async def build_session_config(
             advisor_max_uses=resolved_advisor_max,
             effort_level=resolved_effort,
             source=source,
-            reason=_build_reason(
-                source=source,
-                template_name=None if template is None else template.name,
-                tag_count=len(tags),
-            ),
+            reason=_build_reason(source=source, template_name=tf.name, tag_count=len(tags)),
             matched_rule_id=None,
         )
 

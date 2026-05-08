@@ -60,6 +60,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from bearings.agent.prompt_assembler import assemble_system_prompt_layers
 from bearings.agent.prompt_dispatch import (
     PromptDispatchOutcome,
+    PromptDispatchResult,
     RateLimiter,
     dispatch_prompt,
 )
@@ -190,6 +191,187 @@ def _to_out(session: Session, paired_parent_title: str | None = None) -> Session
     )
 
 
+_DISPATCH_OUTCOME_QUEUED_BODY: dict[str, object] = {
+    PROMPT_ACK_QUEUED_KEY: True,
+}
+
+
+def _dispatch_result_to_response(
+    result: PromptDispatchResult,
+    session_id: str,
+) -> Response:
+    """Translate a :class:`PromptDispatchResult` to a FastAPI Response / HTTPException.
+
+    Centralises the outcome→HTTP mapping shared by ``prompt_session``,
+    ``regenerate_session``, and ``regenerate_from_message``.  On
+    ``QUEUED`` returns a 202 JSON Response.  All other outcomes raise
+    :class:`HTTPException`.
+    """
+    outcome = result.outcome
+
+    if outcome is PromptDispatchOutcome.QUEUED:
+        body = dict(_DISPATCH_OUTCOME_QUEUED_BODY)
+        body[PROMPT_ACK_SESSION_ID_KEY] = session_id
+        return Response(
+            content=json.dumps(body),
+            status_code=status.HTTP_202_ACCEPTED,
+            media_type="application/json",
+            headers={"Location": f"/api/sessions/{session_id}"},
+        )
+    if outcome is PromptDispatchOutcome.NOT_FOUND:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=result.detail or f"no session matches {session_id!r}",
+        )
+    if outcome is PromptDispatchOutcome.CLOSED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=result.detail or "session is closed",
+        )
+    if outcome is PromptDispatchOutcome.RATE_LIMITED:
+        retry_after = result.retry_after_s or 1
+        return Response(
+            content=json.dumps({"detail": result.detail or "rate limit exceeded"}),
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            media_type="application/json",
+            headers={"Retry-After": str(retry_after)},
+        )
+    # BAD_KIND, EMPTY_CONTENT, CONTENT_TOO_LARGE, or unknown — surface detail
+    code = {
+        PromptDispatchOutcome.BAD_KIND: status.HTTP_400_BAD_REQUEST,
+        PromptDispatchOutcome.EMPTY_CONTENT: status.HTTP_400_BAD_REQUEST,
+        PromptDispatchOutcome.CONTENT_TOO_LARGE: status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+    }.get(outcome, status.HTTP_500_INTERNAL_SERVER_ERROR)
+    raise HTTPException(
+        status_code=code,
+        detail=result.detail or f"unhandled dispatch outcome {outcome.value!r}",
+    )
+
+
+async def _import_messages_and_checkpoints(
+    db: aiosqlite.Connection,
+    body: SessionExport,
+) -> None:
+    """Import messages and checkpoints from an export blob; raise 422 on error."""
+    if body.messages:
+        try:
+            await messages_db.import_messages(db, messages=[m.model_dump() for m in body.messages])
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
+    for cp in body.checkpoints:
+        try:
+            await checkpoints_db.import_checkpoint(
+                db,
+                checkpoint_id=cp.id,
+                session_id=cp.session_id,
+                message_id=cp.message_id,
+                label=cp.label,
+                created_at=cp.created_at,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
+
+
+async def _build_paired_info_map(
+    db: aiosqlite.Connection,
+    rows: list[Session],
+) -> dict[str, str | None]:
+    """Build a map of chat session_id → paired parent title for sidebar display."""
+    info_map: dict[str, str | None] = {}
+    for row in rows:
+        if row.kind == "chat" and row.checklist_item_id is not None:
+            info = await sessions_db.get_paired_chat_info(db, row.id)
+            info_map[row.id] = info[0] if info else None
+    return info_map
+
+
+async def _resolve_working_dir_from_tags(
+    db: aiosqlite.Connection,
+    tag_ids: tuple[int, ...],
+) -> str | None:
+    """Return the first non-null working_dir from the tag_ids, preserving order."""
+    tag_list = await tags_db.list_all(db)
+    tag_map = {tag.id: tag for tag in tag_list}
+    for tid in tag_ids:
+        tag = tag_map.get(tid)
+        if tag is not None and tag.working_dir is not None:
+            return tag.working_dir
+    return None
+
+
+async def _validate_session_tag_ids(
+    db: aiosqlite.Connection,
+    tag_ids: tuple[int, ...],
+) -> None:
+    """Raise 404 HTTPException when any tag_id does not exist."""
+    existing_ids = {tag.id for tag in await tags_db.list_all(db)}
+    missing = sorted({tid for tid in tag_ids if tid not in existing_ids})
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"unknown tag_ids: {missing}",
+        )
+
+
+async def _resolve_patch_tag_ids(
+    db: aiosqlite.Connection,
+    payload: SessionUpdate,
+    fs: set[str],
+) -> tuple[int, ...] | None:
+    """Validate and return the patched tag_ids, or None when not in the payload."""
+    if "tag_ids" not in fs or payload.tag_ids is None:
+        return None
+    tag_ids_list = payload.tag_ids
+    if tag_ids_list:
+        existing_ids = {
+            int(row[0])
+            async for row in await db.execute(
+                "SELECT id FROM tags WHERE id IN ({})".format(",".join("?" * len(tag_ids_list))),
+                tag_ids_list,
+            )
+        }
+        missing = sorted({tid for tid in tag_ids_list if tid not in existing_ids})
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"unknown tag_ids: {missing}",
+            )
+    new_tag_ids = tuple(tag_ids_list)
+    await _validate_tag_cardinality(db, new_tag_ids)
+    return new_tag_ids
+
+
+def _build_patch_kwargs(
+    payload: SessionUpdate,
+    fs: set[str],
+) -> dict[str, object]:
+    """Build the update_fields kwargs dict from the patch payload's set fields."""
+    kwargs: dict[str, object] = {}
+    if "title" in fs:
+        if payload.title is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="title must not be null",
+            )
+        kwargs["title"] = payload.title
+    if "description" in fs:
+        kwargs["description"] = payload.description
+    if "max_budget_usd" in fs:
+        if payload.max_budget_usd is not None and payload.max_budget_usd < 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="max_budget_usd must be ≥ 0",
+            )
+        kwargs["max_budget_usd"] = payload.max_budget_usd
+    if "session_instructions" in fs:
+        kwargs["session_instructions"] = payload.session_instructions
+    return kwargs
+
+
 # ---- list / fetch -----------------------------------------------------------
 
 
@@ -253,14 +435,7 @@ async def list_sessions(
         tag_ids_other=other_filter,
         severity_none=severity_none,
     )
-    # Fetch paired-chat parent titles for chat rows (sidebar annotation).
-    # Build a map of session_id → parent_title for efficient lookup.
-    paired_info_map: dict[str, str | None] = {}
-    for row in rows:
-        if row.kind == "chat" and row.checklist_item_id is not None:
-            info = await sessions_db.get_paired_chat_info(db, row.id)
-            paired_info_map[row.id] = info[0] if info else None
-
+    paired_info_map = await _build_paired_info_map(db, rows)
     return [_to_out(row, paired_parent_title=paired_info_map.get(row.id)) for row in rows]
 
 
@@ -304,27 +479,13 @@ async def create_session(
         )
     tag_ids = tuple(payload.tag_ids)
     if tag_ids:
-        existing_ids = {tag.id for tag in await tags_db.list_all(db)}
-        missing = sorted({tid for tid in tag_ids if tid not in existing_ids})
-        if missing:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"unknown tag_ids: {missing}",
-            )
-        # ≤1 project / ≤1 severity per session — see
-        # ``_validate_tag_cardinality`` for the rationale and the
-        # single-attach exemption.
+        await _validate_session_tag_ids(db, tag_ids)
+        # ≤1 project / ≤1 severity per session.
         await _validate_tag_cardinality(db, tag_ids)
     # Resolve working_dir: explicit > first tag with a working_dir set > error
     resolved_working_dir = payload.working_dir
     if resolved_working_dir is None and tag_ids:
-        tag_list = await tags_db.list_all(db)
-        tag_map = {tag.id: tag for tag in tag_list}
-        for tid in tag_ids:
-            tag = tag_map.get(tid)
-            if tag is not None and tag.working_dir is not None:
-                resolved_working_dir = tag.working_dir
-                break
+        resolved_working_dir = await _resolve_working_dir_from_tags(db, tag_ids)
     if resolved_working_dir is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -398,51 +559,10 @@ async def patch_session(
 
     # Validate tag_ids before writing any fields so a bad tag list
     # doesn't leave the session in a partially-updated state.
-    new_tag_ids: tuple[int, ...] | None = None
-    if "tag_ids" in fs and payload.tag_ids is not None:
-        tag_ids_list = payload.tag_ids
-        if tag_ids_list:
-            existing_ids = {
-                int(row[0])
-                async for row in await db.execute(
-                    "SELECT id FROM tags WHERE id IN ({})".format(
-                        ",".join("?" * len(tag_ids_list))
-                    ),
-                    tag_ids_list,
-                )
-            }
-            missing = sorted({tid for tid in tag_ids_list if tid not in existing_ids})
-            if missing:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"unknown tag_ids: {missing}",
-                )
-        new_tag_ids = tuple(tag_ids_list)
-        await _validate_tag_cardinality(db, new_tag_ids)
-
-    # Build kwargs for update_fields from the present fields.
-    kwargs: dict[str, object] = {}
-    if "title" in fs:
-        if payload.title is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="title must not be null",
-            )
-        kwargs["title"] = payload.title
-    if "description" in fs:
-        kwargs["description"] = payload.description
-    if "max_budget_usd" in fs:
-        if payload.max_budget_usd is not None and payload.max_budget_usd < 0:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="max_budget_usd must be ≥ 0",
-            )
-        kwargs["max_budget_usd"] = payload.max_budget_usd
-    if "session_instructions" in fs:
-        kwargs["session_instructions"] = payload.session_instructions
+    new_tag_ids = await _resolve_patch_tag_ids(db, payload, fs)
 
     try:
-        row = await sessions_db.update_fields(db, session_id, **kwargs)
+        row = await sessions_db.update_fields(db, session_id, **_build_patch_kwargs(payload, fs))
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
@@ -1154,27 +1274,7 @@ async def import_session(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
-    if body.messages:
-        try:
-            await messages_db.import_messages(db, messages=[m.model_dump() for m in body.messages])
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
-            ) from exc
-    for cp in body.checkpoints:
-        try:
-            await checkpoints_db.import_checkpoint(
-                db,
-                checkpoint_id=cp.id,
-                session_id=cp.session_id,
-                message_id=cp.message_id,
-                label=cp.label,
-                created_at=cp.created_at,
-            )
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
-            ) from exc
+    await _import_messages_and_checkpoints(db, body)
     if body.tool_calls:
         await sdk_entries_db.append(db, session_id=session_id, entries=body.tool_calls)
     out = _to_out(row)
@@ -1227,47 +1327,8 @@ async def regenerate_session(session_id: str, request: Request) -> Response:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"session {session_id!r} has no user messages to regenerate from",
         )
-    result = await dispatch_prompt(
-        db,
-        factory,
-        limiter,
-        session_id=session_id,
-        content=content,
-    )
-    outcome = result.outcome
-    if outcome is PromptDispatchOutcome.QUEUED:
-        body = {
-            PROMPT_ACK_QUEUED_KEY: True,
-            PROMPT_ACK_SESSION_ID_KEY: session_id,
-        }
-        return Response(
-            content=json.dumps(body),
-            status_code=status.HTTP_202_ACCEPTED,
-            media_type="application/json",
-            headers={"Location": f"/api/sessions/{session_id}"},
-        )
-    if outcome is PromptDispatchOutcome.NOT_FOUND:  # pragma: no cover — guarded above
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=result.detail or f"no session matches {session_id!r}",
-        )
-    if outcome is PromptDispatchOutcome.CLOSED:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=result.detail or "session is closed",
-        )
-    if outcome is PromptDispatchOutcome.RATE_LIMITED:
-        retry_after = result.retry_after_s or 1
-        return Response(
-            content=json.dumps({"detail": result.detail or "rate limit exceeded"}),
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            media_type="application/json",
-            headers={"Retry-After": str(retry_after)},
-        )
-    raise HTTPException(  # pragma: no cover — exhaustive enum match above
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail=f"unhandled regenerate dispatch outcome {outcome.value!r}",
-    )
+    result = await dispatch_prompt(db, factory, limiter, session_id=session_id, content=content)
+    return _dispatch_result_to_response(result, session_id)
 
 
 # ---- regenerate from pivot message -----------------------------------------
@@ -1336,46 +1397,9 @@ async def regenerate_from_message(
         )
     await messages_db.truncate_after(db, session_id, pivot_seq=pivot_user.seq)
     result = await dispatch_prompt(
-        db,
-        factory,
-        limiter,
-        session_id=session_id,
-        content=pivot_user.content,
+        db, factory, limiter, session_id=session_id, content=pivot_user.content
     )
-    outcome = result.outcome
-    if outcome is PromptDispatchOutcome.QUEUED:
-        body = {
-            PROMPT_ACK_QUEUED_KEY: True,
-            PROMPT_ACK_SESSION_ID_KEY: session_id,
-        }
-        return Response(
-            content=json.dumps(body),
-            status_code=status.HTTP_202_ACCEPTED,
-            media_type="application/json",
-            headers={"Location": f"/api/sessions/{session_id}"},
-        )
-    if outcome is PromptDispatchOutcome.NOT_FOUND:  # pragma: no cover — guarded above
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=result.detail or f"no session matches {session_id!r}",
-        )
-    if outcome is PromptDispatchOutcome.CLOSED:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=result.detail or "session is closed",
-        )
-    if outcome is PromptDispatchOutcome.RATE_LIMITED:
-        retry_after = result.retry_after_s or 1
-        return Response(
-            content=json.dumps({"detail": result.detail or "rate limit exceeded"}),
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            media_type="application/json",
-            headers={"Retry-After": str(retry_after)},
-        )
-    raise HTTPException(  # pragma: no cover — exhaustive enum match above
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail=f"unhandled regenerate_from dispatch outcome {outcome.value!r}",
-    )
+    return _dispatch_result_to_response(result, session_id)
 
 
 # ---- stop / cancel turn ----------------------------------------------------
@@ -1459,57 +1483,7 @@ async def prompt_session(
         content=payload.content,
         force_advisor=payload.force_advisor,
     )
-    outcome = result.outcome
-    if outcome is PromptDispatchOutcome.QUEUED:
-        body = {
-            PROMPT_ACK_QUEUED_KEY: True,
-            PROMPT_ACK_SESSION_ID_KEY: session_id,
-        }
-        return Response(
-            content=json.dumps(body),
-            status_code=status.HTTP_202_ACCEPTED,
-            media_type="application/json",
-            headers={"Location": f"/api/sessions/{session_id}"},
-        )
-    if outcome is PromptDispatchOutcome.NOT_FOUND:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=result.detail or f"no session matches {session_id!r}",
-        )
-    if outcome is PromptDispatchOutcome.BAD_KIND:  # pragma: no cover — schema CHECK
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=result.detail or "session kind does not support prompts",
-        )
-    if outcome is PromptDispatchOutcome.CLOSED:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=result.detail or "session is closed",
-        )
-    if outcome is PromptDispatchOutcome.EMPTY_CONTENT:
-        # Per behavior doc — 400 (not 422) for "content is the empty
-        # string after stripping whitespace".
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=result.detail or "content is empty",
-        )
-    if outcome is PromptDispatchOutcome.CONTENT_TOO_LARGE:  # pragma: no cover — Pydantic guards
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=result.detail or "content too large",
-        )
-    if outcome is PromptDispatchOutcome.RATE_LIMITED:
-        retry_after = result.retry_after_s or 1
-        return Response(
-            content=json.dumps({"detail": result.detail or "rate limit exceeded"}),
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            media_type="application/json",
-            headers={"Retry-After": str(retry_after)},
-        )
-    raise HTTPException(  # pragma: no cover — exhaustive enum match above
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail=f"unhandled dispatch outcome {outcome.value!r}",
-    )
+    return _dispatch_result_to_response(result, session_id)
 
 
 __all__ = ["router"]

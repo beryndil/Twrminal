@@ -705,37 +705,50 @@ async def import_messages(
     await connection.commit()
 
 
+def _opt_str(v: object) -> str | None:
+    """Return ``None`` when ``v`` is ``None``, otherwise ``str(v)``."""
+    return None if v is None else str(v)
+
+
+def _opt_int(v: object) -> int | None:
+    """Return ``None`` when ``v`` is ``None``, otherwise ``int(str(v))``."""
+    return None if v is None else int(str(v))
+
+
+def _parse_evaluated_rules(raw: object) -> list[int]:
+    """Deserialise the JSON-encoded evaluated_rules column, returning [] on error."""
+    try:
+        return json.loads(str(raw)) if raw else []
+    except (ValueError, TypeError):
+        return []
+
+
 def _row_to_message(row: aiosqlite.Row | tuple[object, ...]) -> Message:
     """Translate a raw SELECT tuple into a validated :class:`Message`."""
-    raw_evaluated = row[22]
-    try:
-        evaluated_rules: list[int] = json.loads(str(raw_evaluated)) if raw_evaluated else []
-    except (ValueError, TypeError):
-        evaluated_rules = []
     return Message(
         id=str(row[0]),
         session_id=str(row[1]),
         role=str(row[2]),
         content=str(row[3]),
         created_at=str(row[4]),
-        executor_model=None if row[5] is None else str(row[5]),
-        advisor_model=None if row[6] is None else str(row[6]),
-        effort_level=None if row[7] is None else str(row[7]),
-        routing_source=None if row[8] is None else str(row[8]),
-        routing_reason=None if row[9] is None else str(row[9]),
-        matched_rule_id=None if row[10] is None else int(str(row[10])),
-        executor_input_tokens=None if row[11] is None else int(str(row[11])),
-        executor_output_tokens=None if row[12] is None else int(str(row[12])),
-        advisor_input_tokens=None if row[13] is None else int(str(row[13])),
-        advisor_output_tokens=None if row[14] is None else int(str(row[14])),
-        advisor_calls_count=None if row[15] is None else int(str(row[15])),
-        cache_read_tokens=None if row[16] is None else int(str(row[16])),
-        input_tokens=None if row[17] is None else int(str(row[17])),
-        output_tokens=None if row[18] is None else int(str(row[18])),
+        executor_model=_opt_str(row[5]),
+        advisor_model=_opt_str(row[6]),
+        effort_level=_opt_str(row[7]),
+        routing_source=_opt_str(row[8]),
+        routing_reason=_opt_str(row[9]),
+        matched_rule_id=_opt_int(row[10]),
+        executor_input_tokens=_opt_int(row[11]),
+        executor_output_tokens=_opt_int(row[12]),
+        advisor_input_tokens=_opt_int(row[13]),
+        advisor_output_tokens=_opt_int(row[14]),
+        advisor_calls_count=_opt_int(row[15]),
+        cache_read_tokens=_opt_int(row[16]),
+        input_tokens=_opt_int(row[17]),
+        output_tokens=_opt_int(row[18]),
         seq=int(str(row[19])),
         pinned=bool(int(str(row[20]))) if row[20] is not None else False,
         hidden_from_context=bool(int(str(row[21]))) if row[21] is not None else False,
-        evaluated_rules=evaluated_rules,
+        evaluated_rules=_parse_evaluated_rules(row[22]),
     )
 
 

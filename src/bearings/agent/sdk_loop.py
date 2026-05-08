@@ -232,6 +232,58 @@ async def _run_one_turn(
             await stop_task
 
 
+async def _collect_turn_events(
+    runner: SessionRunner,
+    client: ClaudeSDKClient,
+    translator: SDKEventTranslator,
+) -> tuple[ResultMessage | None, list[ToolCallStart], dict[str, ToolCallEnd]]:
+    """Drain one SDK turn, emitting events and collecting tool-call bookkeeping.
+
+    Returns ``(last_result, pending_starts, pending_ends)`` so the
+    persistence path can attach tool-call records in the same DB round-trip.
+    """
+    last_result: ResultMessage | None = None
+    pending_starts: list[ToolCallStart] = []
+    pending_ends: dict[str, ToolCallEnd] = {}
+    async for sdk_msg in client.receive_response():
+        if isinstance(sdk_msg, ResultMessage):
+            last_result = sdk_msg
+        for event in translator.feed(sdk_msg):
+            await runner.emit(event)
+            if isinstance(event, ToolCallStart):
+                pending_starts.append(event)
+                if event.tool_name == "TodoWrite":
+                    await runner.emit(_make_todo_update(event))
+            elif isinstance(event, ToolCallEnd):
+                pending_ends[event.tool_call_id] = event
+    return last_result, pending_starts, pending_ends
+
+
+def _build_tool_records(
+    pending_starts: list[ToolCallStart],
+    pending_ends: dict[str, ToolCallEnd],
+) -> list[ToolCallRecord]:
+    """Pair start/end events into :class:`ToolCallRecord` rows for batch insert."""
+    return [
+        ToolCallRecord(
+            tool_call_id=s.tool_call_id,
+            tool_name=s.tool_name,
+            input_json=s.tool_input_json,
+            output=pending_ends[s.tool_call_id].output_summary
+            if s.tool_call_id in pending_ends
+            else "",
+            ok=pending_ends[s.tool_call_id].ok if s.tool_call_id in pending_ends else None,
+            duration_ms=pending_ends[s.tool_call_id].duration_ms
+            if s.tool_call_id in pending_ends
+            else None,
+            error_message=pending_ends[s.tool_call_id].error_message
+            if s.tool_call_id in pending_ends
+            else None,
+        )
+        for s in pending_starts
+    ]
+
+
 async def _do_run_one_turn(
     runner: SessionRunner,
     session: AgentSession,
@@ -278,23 +330,11 @@ async def _do_run_one_turn(
     # the resumed JSONL.
     sdk_uuid = bearings_to_sdk_uuid(session.config.session_id)
     await client.query(query_content, session_id=sdk_uuid)
-    last_result: ResultMessage | None = None
     # Collect tool call events during the turn so they can be persisted
     # atomically alongside the assistant message row (gap-cycle-03-012).
-    # Keyed by tool_call_id for O(1) end-event lookup.
-    pending_starts: list[ToolCallStart] = []
-    pending_ends: dict[str, ToolCallEnd] = {}
-    async for sdk_msg in client.receive_response():
-        if isinstance(sdk_msg, ResultMessage):
-            last_result = sdk_msg
-        for event in translator.feed(sdk_msg):
-            await runner.emit(event)
-            if isinstance(event, ToolCallStart):
-                pending_starts.append(event)
-                if event.tool_name == "TodoWrite":
-                    await runner.emit(_make_todo_update(event))
-            elif isinstance(event, ToolCallEnd):
-                pending_ends[event.tool_call_id] = event
+    last_result, pending_starts, pending_ends = await _collect_turn_events(
+        runner, client, translator
+    )
     # Persist the assistant row. Skipped when the turn produced no
     # body (rare: would mean a tool-only turn that the SDK terminated
     # without an assistant message — already surfaced as ErrorEvent
@@ -314,29 +354,11 @@ async def _do_run_one_turn(
         # hydration path (GET /api/sessions/{id}/tool_calls) can join
         # against the messages table by Bearings id rather than SDK id.
         if pending_starts:
-            records = [
-                ToolCallRecord(
-                    tool_call_id=s.tool_call_id,
-                    tool_name=s.tool_name,
-                    input_json=s.tool_input_json,
-                    output=pending_ends[s.tool_call_id].output_summary
-                    if s.tool_call_id in pending_ends
-                    else "",
-                    ok=pending_ends[s.tool_call_id].ok if s.tool_call_id in pending_ends else None,
-                    duration_ms=pending_ends[s.tool_call_id].duration_ms
-                    if s.tool_call_id in pending_ends
-                    else None,
-                    error_message=pending_ends[s.tool_call_id].error_message
-                    if s.tool_call_id in pending_ends
-                    else None,
-                )
-                for s in pending_starts
-            ]
             await tool_calls_db.insert_batch(
                 db,
                 session_id=session.config.session_id,
                 message_id=msg.id,
-                records=records,
+                records=_build_tool_records(pending_starts, pending_ends),
             )
 
 
@@ -405,6 +427,48 @@ async def _enter_error_state(
     )
 
 
+def _add_replay_sdk_fields(sdk_kwargs: dict[str, Any], kwargs: OptionsKwargs) -> None:
+    """Append SDK history-replay wiring fields to ``sdk_kwargs`` in place.
+
+    Lands the model-swap context-loss fix (2026-05-05): ``session_store``
+    is the BearingsSessionStore adapter; ``sdk_session_id`` pins the CLI's
+    UUID on first spawn; ``resume`` triggers transcript materialisation on
+    subsequent spawns. The compose-time precondition guarantees
+    ``sdk_session_id`` and ``resume`` are mutually exclusive.
+    """
+    if kwargs.session_store is not None:
+        sdk_kwargs["session_store"] = kwargs.session_store
+    if kwargs.sdk_session_id is not None:
+        sdk_kwargs["session_id"] = kwargs.sdk_session_id
+    if kwargs.resume is not None:
+        sdk_kwargs["resume"] = kwargs.resume
+
+
+def _add_optional_sdk_fields(sdk_kwargs: dict[str, Any], kwargs: OptionsKwargs) -> None:
+    """Append conditionally-present SDK options to ``sdk_kwargs`` in place."""
+    # ``fallback_model`` is dropped when it matches ``model`` because the
+    # SDK CLI rejects identical pairs ("Fallback model cannot be the
+    # same as the main model"). The bearings ``EXECUTOR_FALLBACK_MODEL``
+    # table encodes "haiku has no further fallback" by mapping
+    # ``haiku → haiku``; that semantic survives by simply omitting the
+    # SDK option (SDK then runs without a fallback override).
+    if kwargs.fallback_model and kwargs.fallback_model != kwargs.model:
+        sdk_kwargs["fallback_model"] = kwargs.fallback_model
+    if kwargs.effort is not None:
+        sdk_kwargs["effort"] = kwargs.effort
+    if kwargs.system_prompt:
+        sdk_kwargs["system_prompt"] = kwargs.system_prompt
+    if kwargs.cwd:
+        sdk_kwargs["cwd"] = kwargs.cwd
+    if kwargs.permission_mode:
+        sdk_kwargs["permission_mode"] = kwargs.permission_mode
+    if kwargs.setting_sources is not None:
+        sdk_kwargs["setting_sources"] = list(kwargs.setting_sources)
+    if kwargs.hooks:
+        sdk_kwargs["hooks"] = dict(kwargs.hooks)
+    _add_replay_sdk_fields(sdk_kwargs, kwargs)
+
+
 def _to_sdk_options(kwargs: OptionsKwargs) -> ClaudeAgentOptions:
     """Splat :class:`OptionsKwargs` onto :class:`ClaudeAgentOptions`.
 
@@ -436,32 +500,7 @@ def _to_sdk_options(kwargs: OptionsKwargs) -> ClaudeAgentOptions:
         "max_budget_usd": kwargs.max_budget_usd,
         "can_use_tool": kwargs.can_use_tool,
     }
-    if kwargs.fallback_model and kwargs.fallback_model != kwargs.model:
-        sdk_kwargs["fallback_model"] = kwargs.fallback_model
-    if kwargs.effort is not None:
-        sdk_kwargs["effort"] = kwargs.effort
-    if kwargs.system_prompt:
-        sdk_kwargs["system_prompt"] = kwargs.system_prompt
-    if kwargs.cwd:
-        sdk_kwargs["cwd"] = kwargs.cwd
-    if kwargs.permission_mode:
-        sdk_kwargs["permission_mode"] = kwargs.permission_mode
-    if kwargs.setting_sources is not None:
-        sdk_kwargs["setting_sources"] = list(kwargs.setting_sources)
-    if kwargs.hooks:
-        sdk_kwargs["hooks"] = dict(kwargs.hooks)
-    # SDK history-replay wiring (lands the model-swap context-loss fix
-    # diagnosed 2026-05-05). ``session_store`` is the BearingsSessionStore
-    # adapter; ``sdk_session_id`` pins the CLI's UUID on first spawn;
-    # ``resume`` triggers transcript materialisation on subsequent spawns.
-    # The compose-time precondition guarantees ``sdk_session_id`` and
-    # ``resume`` are mutually exclusive at this point.
-    if kwargs.session_store is not None:
-        sdk_kwargs["session_store"] = kwargs.session_store
-    if kwargs.sdk_session_id is not None:
-        sdk_kwargs["session_id"] = kwargs.sdk_session_id
-    if kwargs.resume is not None:
-        sdk_kwargs["resume"] = kwargs.resume
+    _add_optional_sdk_fields(sdk_kwargs, kwargs)
     return ClaudeAgentOptions(**sdk_kwargs)
 
 

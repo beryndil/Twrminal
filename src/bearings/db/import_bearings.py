@@ -172,6 +172,54 @@ async def _import_tags(
     return imported, skipped
 
 
+def _int_flag(val: object) -> int:
+    """Coerce a nullable SQLite integer flag to 0 when NULL."""
+    return val if val is not None else 0  # type: ignore[return-value]
+
+
+async def _import_one_session(
+    dest: aiosqlite.Connection,
+    row: aiosqlite.Row | tuple[object, ...],
+) -> bool:
+    """Insert one session row; return True if the row was new (not skipped)."""
+    # Access by index to avoid tuple-unpacking type loss (mypy infers all
+    # unpacked variables as ``object`` when the source is untyped).
+    safe_title = str(row[5]) if row[5] else "(untitled)"
+    changes_before = dest.total_changes
+    await dest.execute(
+        """
+        INSERT OR IGNORE INTO sessions
+        (id, created_at, updated_at, working_dir, model, title,
+         max_budget_usd, total_cost_usd, description, session_instructions,
+         permission_mode, last_context_pct, last_context_tokens,
+         last_context_max, closed_at, kind, pinned, error_pending,
+         message_count, closing_summary)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)
+        """,
+        (
+            row[0],  # id
+            row[1],  # created_at
+            row[2],  # updated_at
+            str(row[3]) if row[3] else "",  # working_dir
+            str(row[4]) if row[4] else "",  # model
+            safe_title,  # title
+            float(str(row[6])) if row[6] else 0.0,  # max_budget_usd
+            float(str(row[7])) if row[7] else 0.0,  # total_cost_usd
+            row[8],  # description
+            row[9],  # session_instructions
+            row[10],  # permission_mode
+            row[11],  # last_context_pct
+            row[12],  # last_context_tokens
+            row[13],  # last_context_max
+            row[14],  # closed_at
+            str(row[15]) if row[15] else "chat",  # kind
+            _int_flag(row[16]),  # pinned
+            _int_flag(row[17]),  # error_pending
+        ),
+    )
+    return dest.total_changes > changes_before
+
+
 async def _import_sessions(
     source: aiosqlite.Connection,
     dest: aiosqlite.Connection,
@@ -193,63 +241,8 @@ async def _import_sessions(
     skipped = 0
 
     for row in source_rows:
-        (
-            session_id,
-            created_at,
-            updated_at,
-            working_dir,
-            model,
-            title,
-            max_budget_usd,
-            total_cost_usd,
-            description,
-            session_instructions,
-            permission_mode,
-            last_context_pct,
-            last_context_tokens,
-            last_context_max,
-            closed_at,
-            kind,
-            pinned,
-            error_pending,
-        ) = row
-
         try:
-            # v1 title NOT NULL — coerce NULL/empty to sentinel (mirrors migration script)
-            safe_title = title if title else "(untitled)"
-            changes_before = dest.total_changes
-            await dest.execute(
-                """
-                INSERT OR IGNORE INTO sessions
-                (id, created_at, updated_at, working_dir, model, title,
-                 max_budget_usd, total_cost_usd, description, session_instructions,
-                 permission_mode, last_context_pct, last_context_tokens,
-                 last_context_max, closed_at, kind, pinned, error_pending,
-                 message_count, closing_summary)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)
-                """,
-                (
-                    session_id,
-                    created_at,
-                    updated_at,
-                    working_dir or "",
-                    model or "",
-                    safe_title,
-                    max_budget_usd or 0.0,
-                    total_cost_usd or 0.0,
-                    description,
-                    session_instructions,
-                    permission_mode,
-                    last_context_pct,
-                    last_context_tokens,
-                    last_context_max,
-                    closed_at,
-                    kind or "chat",  # default to 'chat' if None
-                    pinned if pinned is not None else 0,
-                    error_pending if error_pending is not None else 0,
-                ),
-            )
-            if dest.total_changes > changes_before:
+            if await _import_one_session(dest, row):
                 imported += 1
             else:
                 skipped += 1
