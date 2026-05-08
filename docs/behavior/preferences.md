@@ -212,6 +212,36 @@ An **"Open data dir"** button appears alongside the path:
 
 While `GET /api/health` is in flight, a loading label renders. On error, an inline error renders instead of the path and button.
 
+## Data import (wiring-v1-daily-driver item 3.5)
+
+The **Data import** section in Settings (section id `import`, weight 80)
+exposes a single action: **Import now**. Clicking it calls
+`POST /api/import/bearings`, which copies the following tables from the
+main Bearings v0.18 database (`~/.local/share/bearings/db.sqlite`) into
+the v1 database:
+
+- `sessions`, `messages`, `tags`, `session_tags`, `tag_memories`,
+  `checklist_items`.
+
+The operation is **all-or-nothing** (wrapped in a single transaction).
+Duplicate rows — matched by primary key — are silently skipped; no
+existing v1 data is overwritten. Column mappings handle schema
+differences between v0.18 and v1 (e.g. `working_dir` vs `default_working_dir`
+on tags; `message_count = 0` and `closing_summary = NULL` on imported
+sessions).
+
+**Result display:** on success the section shows per-table
+imported / skipped counts (e.g. "Sessions: 42 imported, 3 skipped").
+On error, the server's `detail` message renders inline in red.
+
+The source database path is not configurable from the UI; the endpoint
+always reads from the fixed v0.18 path. If the source database does not
+exist, the endpoint returns a descriptive 422.
+
+**API endpoint:** `POST /api/import/bearings` — no request body.
+Response: `ImportResultOut` with per-table `*_imported` and `*_skipped`
+integer fields.
+
 ## Help (gap-cycle-07-004)
 
 The **Help** section renders below Data import in the Settings page. It is read-only — no PATCH calls are made.
