@@ -44,7 +44,7 @@ behavior docs, and tests; findings were posted back to orchestrator session
 | 4  | Inspector (5-tab + context meter)        | **CLOSED** (commit `bf1d7df`) · re-verified 2026-05-08 (verifier `0cbd67a3`, 0 regressions) | `c2c372f04df64cf090ab4f230cb8a324` |
 | 5  | Tags & sidebar                           | INTERIM  | `60ee46d9f2284bb88093f13fbaaa68cd` |
 | 6  | Checklists, paired chats, auto-driver    | INTERIM  | `b0f4e9f9ba554a09821f3f3183ccbb3c` |
-| 7  | Vault & memories                         | INTERIM  | `9e6f171e143542ecb8f45fbdb4864d69` |
+| 7  | Vault & memories                         | **CLOSED** (closer `196d05814b1b485b9c69e9e0ef55f39a` · 2026-05-08) | `9e6f171e143542ecb8f45fbdb4864d69` |
 | 8  | Preferences & settings                   | INTERIM  | `49d639582f05465eaf1e3f84500b19a3` |
 | 9  | Themes, keybindings, context menus       | INTERIM  | `45c0a427aea04e6d91ef11b10eb971bb` |
 | 10 | Filesystem, uploads, shell, MCP          | **CLOSED** (closer `deae2e1e526c443da0b098e9d2771332` · 2026-05-08) | `e7525f366f864bdd83d49e888a29549e` |

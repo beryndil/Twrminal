@@ -74,20 +74,23 @@ once, then cleared.
 
 ---
 
-## System-prompt injection status (v1.0)
+## System-prompt injection
 
-Tag memories are stored in the ``tag_memories`` table and fully
-manageable through the UI described above. However, **memories are not
-currently injected into the agent's system prompt** in v1.0.
+Tag memories stored in the ``tag_memories`` table are injected into
+the agent's system prompt on every turn. The loader
+(``resolve_tag_memory_blocks`` in ``bearings.agent.tags``) reads every
+enabled memory for each tag attached to the session, ordered by tag
+precedence (lowest-precedence tag first, highest last). The resolved
+blocks are appended to ``extra_system_prompt_parts`` in
+``session_bootstrap.py`` — after the per-tag ``CLAUDE.md`` blocks, so
+memory bodies win on any directive conflicts.
 
-The system-prompt assembler (``bearings.agent.system_prompt.
-build_system_prompt``) accepts an ``extras`` tuple for future
-per-tag memory blocks, but no caller passes memories to it yet.
-Practically: the CRUD surface is complete and memories persist
-correctly to the database, but the agent does not see them on
-any turn.
+**What the user observes:** editing a memory and sending the next
+prompt (without restarting the worker) reflects the updated memory body
+in the assembled system prompt. Disabled memories are excluded; deleted
+memories are absent on the next prompt without a runner respawn.
 
-**What the user observes as a consequence:** creating or editing
-memories has no effect on agent behaviour in v1.0. The memories
-remain available in the UI and will be injectable once the wiring
-lands in a future release.
+The Instructions inspector tab distinguishes two layer kinds:
+``tag_claude_md`` (per-tag ``CLAUDE.md`` filesystem content) and
+``tag_memory`` (DB-resident memory rows; ``source_path`` is ``null``
+for these layers). Both are visible in the inspector breakdown.
