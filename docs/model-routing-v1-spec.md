@@ -239,8 +239,9 @@ if overall_used_pct >= 0.80:
     if executor == 'opus':
         downgrade executor → 'sonnet', set routing_source = 'quota_downgrade'
     if advisor == 'opus':
-        disable advisor (set advisor_model = NULL),
-            set advisor_disabled_reason = 'quota_overall_high'
+        disable advisor (set advisor_model = NULL,
+                         source = 'quota_downgrade',
+                         reason = 'advisor disabled — overall quota ≥ 80%')
 
 if sonnet_used_pct >= 0.80 and executor == 'sonnet':
     downgrade executor → 'haiku',
@@ -299,7 +300,7 @@ Hovering the badge shows the routing reason ("matched tag rule: bearings/archite
 
 ## 6. New-session dialog
 
-Replaces the dialog described in `V0.2.0_SPEC.md` for the model section.
+Replaces the model-section dialog described in the v0.6-era `BEARINGS_MODEL_ROUTING.md`.
 
 ### Layout
 
@@ -422,6 +423,12 @@ GET    /api/routing/system                      # list system rules
 POST   /api/routing/system                      # add system rule
 PATCH  /api/routing/system/{id}
 DELETE /api/routing/system/{id}
+PATCH  /api/routing/system/reorder             # body: { rule_ids: [id, id, ...] }
+                                               # → reordered system rule list
+                                               # Mirrors PATCH /api/tags/{id}/routing/reorder.
+                                               # Frontend uses this single call instead of N
+                                               # sequential PATCH /{id} calls. Implementation
+                                               # lands in feature 3 cleanup (doc-only here).
 
 POST   /api/routing/preview                     # body: { tags: [ids], message: "..." }
                                                 # → { executor, advisor, advisor_max_uses,
@@ -593,3 +600,21 @@ class RoutingDecision:
 - **Effort level** — adaptive-thinking control. `auto` lets the model decide per-step; `low/medium/high/xhigh` are fixed levels. `xhigh` is Opus 4.7 only.
 - **Quota guard** — Bearings logic that downgrades executor/advisor when bucket use exceeds a threshold.
 - **Override rate** — fraction of sessions where the user manually changed routing before send. Used to identify rules that are wrong.
+
+---
+
+## Errata
+
+Historical inconsistencies corrected during CCW-5 (spec consistency audit). Preserved here for traceability.
+
+### E-1: `advisor_disabled_reason` (struck from §4)
+
+The original §4 guard-rules block set a field `advisor_disabled_reason = 'quota_overall_high'` when the advisor was disabled due to quota pressure. This field does not exist in the frozen `RoutingDecision` dataclass (Appendix A). Code correctly followed Appendix A throughout. The body text has been updated: advisor-disabled state is conveyed via `advisor_model = None` (already in the original block), `source = 'quota_downgrade'`, and the `reason` string — all of which are `RoutingDecision` fields.
+
+### E-2: `V0.2.0_SPEC.md` cross-reference (updated in §6)
+
+§6 referenced `V0.2.0_SPEC.md` as the predecessor dialog spec. That file does not exist in the repository; the header of this document correctly identifies the predecessor as the v0.6-era `BEARINGS_MODEL_ROUTING.md`. The §6 reference has been updated to match.
+
+### E-3: System-rule reorder endpoint (added to §9)
+
+No system-rule reorder endpoint was specified, leaving the frontend to fall back on N sequential `PATCH /api/routing/system/{id}` calls when reordering. `PATCH /api/routing/system/reorder` has been added to §9 to match the tag-rule reorder surface. Implementation is deferred to feature 3 cleanup.
