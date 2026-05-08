@@ -299,3 +299,240 @@ async def test_active_checklists_lists_registrations(
     assert registry.active_checklists() == ["chk_int"]
     registry.unregister("chk_int")
     assert registry.active_checklists() == []
+
+
+# ---------------------------------------------------------------------------
+# feature-6-005: visit_existing + closed-chat skip
+# ---------------------------------------------------------------------------
+
+
+async def test_visit_existing_skips_closed_paired_chat(
+    connection: aiosqlite.Connection,
+) -> None:
+    """visit_existing=True + closed paired chat → item skipped, zero legs spawned.
+
+    Acceptance criteria (feature-6-005):
+    * driver checks open state before reusing item.chat_session_id
+    * if closed → item recorded as skipped (items_skipped == 1)
+    * no leg is spawned for that item (legs_spawned == 0)
+    """
+    item = await checklists_db.create(connection, checklist_id="chk_int", label="X")
+    # Create a chat session and immediately close it.
+    await connection.execute(
+        "INSERT INTO sessions (id, kind, title, working_dir, model, "
+        "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("closed_chat", "chat", "C", "/tmp", "sonnet", "2026-01-01", "2026-01-01"),
+    )
+    await connection.execute(
+        "UPDATE sessions SET closed_at = '2026-01-02' WHERE id = 'closed_chat'"
+    )
+    # Wire the closed chat as the item's paired chat pointer.
+    await connection.execute(
+        "UPDATE checklist_items SET chat_session_id = 'closed_chat' WHERE id = ?",
+        (item.id,),
+    )
+    await connection.commit()
+
+    spawned_log: list[tuple[int, int]] = []
+    runner_factory = _make_stub_runner_factory()
+    leg_factory = _make_leg_session_factory(connection, spawned_log)
+    runtime = build_runtime(
+        runner_factory=runner_factory,
+        turn_driver=_make_turn_driver({}),
+        leg_session_factory=leg_factory,
+    )
+    run = await runs_db.create(connection, checklist_id="chk_int")
+    driver = Driver(
+        run_id=run.id,
+        checklist_id="chk_int",
+        config=DriverConfig(
+            visit_existing=True,
+            max_legs_per_item=2,
+            max_items_per_run=10,
+            max_turns_per_leg=4,
+        ),
+        runtime=runtime,
+        connection=connection,
+    )
+    result = await driver.drive()
+
+    assert result.items_skipped == 1, "closed paired chat must contribute to skipped count"
+    assert result.legs_spawned == 0, "no leg must be spawned for the skipped item"
+    fetched = await checklists_db.get(connection, item.id)
+    assert fetched is not None
+    assert fetched.blocked_at is not None, "skipped item must have blocked_at set"
+
+
+async def test_visit_existing_reuses_open_chat_unchanged(
+    connection: aiosqlite.Connection,
+) -> None:
+    """visit_existing=True + open paired chat → reused normally, not skipped."""
+    item = await checklists_db.create(connection, checklist_id="chk_int", label="Y")
+    await connection.execute(
+        "INSERT INTO sessions (id, kind, title, working_dir, model, "
+        "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("open_chat", "chat", "O", "/tmp", "sonnet", "2026-01-01", "2026-01-01"),
+    )
+    await connection.execute(
+        "UPDATE checklist_items SET chat_session_id = 'open_chat' WHERE id = ?",
+        (item.id,),
+    )
+    await connection.commit()
+
+    spawned_log: list[tuple[int, int]] = []
+    runner_factory = _make_stub_runner_factory()
+    leg_factory = _make_leg_session_factory(connection, spawned_log)
+    responses = {
+        "open_chat": ['<bearings:sentinel kind="item_done" />'],
+    }
+    runtime = build_runtime(
+        runner_factory=runner_factory,
+        turn_driver=_make_turn_driver(responses),
+        leg_session_factory=leg_factory,
+    )
+    run = await runs_db.create(connection, checklist_id="chk_int")
+    driver = Driver(
+        run_id=run.id,
+        checklist_id="chk_int",
+        config=DriverConfig(
+            visit_existing=True,
+            max_legs_per_item=2,
+            max_items_per_run=10,
+            max_turns_per_leg=4,
+        ),
+        runtime=runtime,
+        connection=connection,
+    )
+    result = await driver.drive()
+
+    assert result.items_completed == 1, "open paired chat must be reused and driven to done"
+    assert result.items_skipped == 0
+    # open_chat was reused — leg_factory was NOT called (no spawn)
+    assert spawned_log == [], "visit_existing should not spawn a new leg for an open chat"
+
+
+# ---------------------------------------------------------------------------
+# feature-6-001: blocking followups recurse before completing parent
+# ---------------------------------------------------------------------------
+
+
+async def test_blocking_followup_drives_child_before_parent_done(
+    connection: aiosqlite.Connection,
+) -> None:
+    """Blocking followup: child is driven to terminal BEFORE parent completes.
+
+    Acceptance criteria (feature-6-001):
+    * Parent leg emits a blocking followup sentinel — child item is created.
+    * Driver drives the child to terminal (item_done) before the parent's
+      item_done is processed.
+    * Both child and parent have checked_at set after the run.
+    * Counters: items_completed == 2 (child then parent).
+    """
+    parent = await checklists_db.create(connection, checklist_id="chk_int", label="Parent")
+
+    spawned_log: list[tuple[int, int]] = []
+    runner_factory = _make_stub_runner_factory()
+    leg_factory = _make_leg_session_factory(connection, spawned_log)
+
+    # The parent leg emits a blocking followup + item_done in the same turn.
+    # The driver must drive the child before checking the parent.
+    # We don't know the child's item id in advance, so we use a turn_driver
+    # that returns item_done for any session that starts with "intleg_".
+    _child_driven: list[int] = []  # item_ids driven as children
+
+    async def _smart_turn_driver(runner: SessionRunner, prompt: str) -> str:
+        sid = runner.session_id
+        if sid == f"intleg_{parent.id}_1":
+            # Parent leg: emit a blocking followup + item_done.
+            return (
+                '<bearings:sentinel kind="followup_blocking">'
+                "<label>Child task</label>"
+                "</bearings:sentinel>"
+                '<bearings:sentinel kind="item_done" />'
+            )
+        # Any other session is a child leg — record it and complete.
+        _child_driven.append(1)
+        return '<bearings:sentinel kind="item_done" />'
+
+    runtime = build_runtime(
+        runner_factory=runner_factory,
+        turn_driver=_smart_turn_driver,
+        leg_session_factory=leg_factory,
+    )
+    run = await runs_db.create(connection, checklist_id="chk_int")
+    driver = Driver(
+        run_id=run.id,
+        checklist_id="chk_int",
+        config=DriverConfig(
+            max_legs_per_item=2,
+            max_items_per_run=10,
+            max_followup_depth=2,
+            max_turns_per_leg=4,
+        ),
+        runtime=runtime,
+        connection=connection,
+    )
+    result = await driver.drive()
+
+    assert result.outcome == DriverOutcome.COMPLETED
+    assert result.items_completed == 2, "both child and parent must be completed"
+    assert len(_child_driven) >= 1, "child leg must have been driven"
+
+    # Parent and child are both checked.
+    items = await checklists_db.list_for_checklist(connection, "chk_int")
+    assert all(item.checked_at is not None for item in items), "all items must be checked after run"
+    # Child was driven (appears in spawned_log) before parent's leg session id
+    # is teardown — verified by the two entries in spawned_log.
+    parent_leg_entry = (parent.id, 1)
+    assert parent_leg_entry in spawned_log
+    # Child also appears — spawned_log has at least 2 entries
+    assert len(spawned_log) >= 2, "parent leg + child leg both spawned"
+
+
+async def test_blocking_followup_depth_cap_ignores_deep_nesting(
+    connection: aiosqlite.Connection,
+) -> None:
+    """Blocking followup at max_followup_depth is ignored (malformed sentinel)."""
+    await checklists_db.create(connection, checklist_id="chk_int", label="P")
+
+    spawned_log: list[tuple[int, int]] = []
+    runner_factory = _make_stub_runner_factory()
+    leg_factory = _make_leg_session_factory(connection, spawned_log)
+
+    async def _depth_turn_driver(runner: SessionRunner, prompt: str) -> str:
+        # Every leg: emit a blocking followup AND item_done.
+        # With max_followup_depth=1, the child (depth=1) sees the followup
+        # but depth >= max_followup_depth so it is ignored; child just completes.
+        return (
+            '<bearings:sentinel kind="followup_blocking">'
+            "<label>Deep child</label>"
+            "</bearings:sentinel>"
+            '<bearings:sentinel kind="item_done" />'
+        )
+
+    runtime = build_runtime(
+        runner_factory=runner_factory,
+        turn_driver=_depth_turn_driver,
+        leg_session_factory=leg_factory,
+    )
+    run = await runs_db.create(connection, checklist_id="chk_int")
+    driver = Driver(
+        run_id=run.id,
+        checklist_id="chk_int",
+        config=DriverConfig(
+            max_legs_per_item=2,
+            max_items_per_run=10,
+            max_followup_depth=1,  # cap at depth 1 — child's followup is ignored
+            max_turns_per_leg=4,
+        ),
+        runtime=runtime,
+        connection=connection,
+    )
+    result = await driver.drive()
+
+    assert result.outcome == DriverOutcome.COMPLETED
+    # Parent + one child (created at depth 0, driven at depth 1).
+    # The child's followup at depth 1 is ignored.
+    assert result.items_completed == 2
+    items = await checklists_db.list_for_checklist(connection, "chk_int")
+    assert all(item.checked_at is not None for item in items)

@@ -60,6 +60,7 @@ from bearings.config.constants import (
 )
 from bearings.db import auto_driver_runs as runs_db
 from bearings.db import checklists as checklists_db
+from bearings.db import sessions as sessions_db
 from bearings.db.checklists import ChecklistItem
 
 _LOG = logging.getLogger(__name__)
@@ -150,6 +151,10 @@ class Driver:
         # Per-item leg session ids — used to teardown all legs at
         # halt time.
         self._leg_session_ids: list[str] = []
+        # Stash for a run-level DriverResult produced inside a recursive
+        # blocking-followup _drive_item call. Set by _apply_followups;
+        # consumed and cleared by the _drive_item that spawned the child.
+        self._followup_halt: DriverResult | None = None
 
     # -- public control surface --------------------------------------
 
@@ -319,19 +324,33 @@ class Driver:
             )
         return None
 
-    async def _drive_item(self, item: ChecklistItem) -> DriverResult | None:
+    async def _drive_item(
+        self, item: ChecklistItem, *, followup_depth: int = 0
+    ) -> DriverResult | None:
         """Drive one item to a per-item terminal state.
 
         Returns a :class:`DriverResult` only if the run as a whole
         terminates inside this method (e.g. halt-on-failure under
         ``halt`` policy); otherwise returns ``None`` and the caller
         picks the next pending item.
+
+        ``followup_depth`` tracks blocking-followup recursion; callers
+        pass the current depth + 1 so :meth:`_apply_followups` can
+        enforce :attr:`DriverConfig.max_followup_depth`.
         """
         self._items_attempted += 1
         await self._save_counters(current_item_id=item.id)
         leg_number = await checklists_db.count_legs(self._connection, item.id) + 1
         plug: str | None = None  # populated on handoff
         last_failed_reason: str | None = None
+        # feature-6-005: visit_existing + closed-chat guard.
+        # Per behavior/checklists.md §"Run-control surface": items whose paired
+        # chat is closed (or missing) under visit_existing are skipped.
+        if self._config.visit_existing and leg_number == 1 and item.chat_session_id:
+            closed = await sessions_db.is_closed(self._connection, item.chat_session_id)
+            if closed is not False:  # True (closed) or None (row absent) → skip
+                await self._record_skip(item, reason="visit_existing: paired chat is closed")
+                return None
         for _ in range(self._config.max_legs_per_item):
             self._raise_if_stopped()
             if self._skip_current.is_set():
@@ -356,8 +375,16 @@ class Driver:
                 item=item,
                 leg_session_id=leg_session_id,
                 handoff_plug=plug,
+                followup_depth=followup_depth,
             )
             await self._runtime.teardown_leg(leg_session_id=leg_session_id)
+            # feature-6-001: a blocking followup may have driven a child item
+            # that triggered a run-level halt; propagate it before processing
+            # the parent's own outcome.
+            if self._followup_halt is not None:
+                halt = self._followup_halt
+                self._followup_halt = None
+                return halt
             if outcome.kind == SENTINEL_KIND_ITEM_DONE:
                 await checklists_db.mark_checked(self._connection, item.id)
                 self._items_completed += 1
@@ -403,6 +430,7 @@ class Driver:
         item: ChecklistItem,
         leg_session_id: str,
         handoff_plug: str | None,
+        followup_depth: int = 0,
     ) -> SentinelFinding:
         """Loop turns on the leg until a terminal sentinel surfaces.
 
@@ -432,11 +460,18 @@ class Driver:
             findings = parse(body)
             terminal = first_terminal(findings)
             if terminal is not None:
-                await self._apply_followups(item=item, findings=findings, depth=0)
+                await self._apply_followups(item=item, findings=findings, depth=followup_depth)
                 return terminal
             # No terminal sentinel — apply any non-terminal followups
             # the agent emitted before deciding next action.
-            await self._apply_followups(item=item, findings=findings, depth=0)
+            await self._apply_followups(item=item, findings=findings, depth=followup_depth)
+            # feature-6-001: a blocking followup may have set _followup_halt.
+            # Break out of the turn loop so _drive_item can propagate the halt.
+            if self._followup_halt is not None:
+                return SentinelFinding(
+                    kind=SENTINEL_KIND_ITEM_FAILED,
+                    reason="blocking_followup_halt_propagated",
+                )
             pressure = self._runtime.last_context_percentage(leg_session_id)
             if (
                 not nudge_used
@@ -480,10 +515,13 @@ class Driver:
         findings: list[SentinelFinding],
         depth: int,
     ) -> None:
-        """Append followup items as the agent requested.
+        """Append followup items as the agent requested; recurse on blocking ones.
 
         Per behavior/checklists.md:
-        * ``followup_blocking`` → child item under current.
+        * ``followup_blocking`` → child item under current; driver recurses
+          into the child before resuming any further leg turns on the parent
+          (feature-6-001 fix). The ``depth`` parameter enforces
+          ``max_followup_depth`` across recursive levels.
         * ``followup_nonblocking`` → sibling at end of checklist.
         * Blocking-followup nesting beyond ``max_followup_depth`` is
           treated as a malformed sentinel and ignored.
@@ -493,12 +531,21 @@ class Driver:
         for finding in findings:
             label = finding.label
             if finding.kind == SENTINEL_KIND_FOLLOWUP_BLOCKING and label:
-                await checklists_db.create(
+                child = await checklists_db.create(
                     self._connection,
                     checklist_id=self._checklist_id,
                     label=label,
                     parent_item_id=item.id,
                 )
+                # Recurse: drive child to terminal before resuming parent.
+                # depth + 1 threads the recursion guard through _drive_item
+                # → _run_leg_turns → _apply_followups.
+                child_halt = await self._drive_item(child, followup_depth=depth + 1)
+                if child_halt is not None:
+                    # Child triggered a run-level halt; stash for the
+                    # enclosing _drive_item to propagate.
+                    self._followup_halt = child_halt
+                    return
             elif finding.kind == SENTINEL_KIND_FOLLOWUP_NONBLOCKING and label:
                 await checklists_db.create(
                     self._connection,

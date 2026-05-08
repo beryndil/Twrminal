@@ -330,6 +330,14 @@ async def test_request_skip_current_marks_skipped(
 async def test_followup_blocking_creates_child(
     connection: aiosqlite.Connection,
 ) -> None:
+    """Blocking followup creates a child item AND drives it before the parent.
+
+    Updated for feature-6-001: the driver now recurses into the child before
+    resuming the parent. Here the child has no scripted responses so it exhausts
+    the turn budget and is recorded as failed. With failure_policy='skip' the
+    run continues; the parent's queued item_done then fires and the parent
+    completes.
+    """
     parent = await _add_item(connection, "parent")
     runtime = StubRuntime(connection=connection)
     runtime.leg_responses[_leg_id(parent, 1)] = [
@@ -337,6 +345,7 @@ async def test_followup_blocking_creates_child(
         '<bearings:sentinel kind="item_done" />',
     ]
     cfg = DriverConfig(
+        failure_policy="skip",  # child failure must not halt the whole run
         max_legs_per_item=2,
         max_items_per_run=10,
         max_followup_depth=2,
@@ -345,8 +354,12 @@ async def test_followup_blocking_creates_child(
     driver = await _build_driver(connection, runtime, config=cfg)
     result = await driver.drive()
     items = await checklists_db.list_for_checklist(connection, "chk_1")
+    # Child item was created.
     assert any(i.label == "new child" for i in items)
-    assert result.items_completed >= 1
+    # Child was driven (and failed — no responses provided) before parent completed.
+    assert result.items_failed == 1, "child should have been driven and failed"
+    # Parent completed after the child's failure was recorded.
+    assert result.items_completed == 1, "parent should complete after child is resolved"
 
 
 async def test_quiet_turn_with_pressure_injects_nudge(
