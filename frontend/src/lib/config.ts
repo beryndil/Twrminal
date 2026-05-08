@@ -1376,10 +1376,12 @@ export const OVERRIDE_RATE_WINDOW_DAYS = 14;
 export const EXECUTOR_MODEL_SONNET = "sonnet";
 export const EXECUTOR_MODEL_HAIKU = "haiku";
 export const EXECUTOR_MODEL_OPUS = "opus";
+export const EXECUTOR_MODEL_OPUSPLAN = "opusplan";
 export const KNOWN_EXECUTOR_MODELS = [
   EXECUTOR_MODEL_SONNET,
   EXECUTOR_MODEL_HAIKU,
   EXECUTOR_MODEL_OPUS,
+  EXECUTOR_MODEL_OPUSPLAN,
 ] as const;
 export type ExecutorModel = (typeof KNOWN_EXECUTOR_MODELS)[number];
 
@@ -1421,12 +1423,14 @@ export const DEFAULT_ADVISOR_MAX_USES_HAIKU = 3;
  * reflect Anthropic's published list prices as of v1.1; pin-bump if
  * pricing changes materially.
  *
- * Values: Sonnet 4.6 → $3.00/M, Haiku 4.5 → $0.80/M, Opus 4.7 → $15.00/M.
+ * Values: Sonnet 4.6 → $3.00/M, Haiku 4.5 → $0.80/M, Opus 4.7 → $15.00/M,
+ * opusplan → $15.00/M (opusplan is a routing alias for Opus; same list price).
  */
 export const MODEL_INPUT_RATES_USD_PER_MILLION: Record<ExecutorModel, number> = {
   [EXECUTOR_MODEL_SONNET]: 3.0,
   [EXECUTOR_MODEL_HAIKU]: 0.8,
   [EXECUTOR_MODEL_OPUS]: 15.0,
+  [EXECUTOR_MODEL_OPUSPLAN]: 15.0,
 };
 
 // ---- Inspector tab alphabet + string table -------------------------------
@@ -1819,6 +1823,7 @@ export const NEW_SESSION_STRINGS = {
     [EXECUTOR_MODEL_SONNET]: "Sonnet 4.6",
     [EXECUTOR_MODEL_HAIKU]: "Haiku 4.5",
     [EXECUTOR_MODEL_OPUS]: "Opus 4.7",
+    [EXECUTOR_MODEL_OPUSPLAN]: "Opus 4.7 (plan)",
   } as const satisfies Record<ExecutorModel, string>,
   advisorLabels: {
     [ADVISOR_MODEL_NONE]: "(none)",

@@ -86,7 +86,12 @@ describe("NewSessionForm — selector state", () => {
     const executor = getByTestId("new-session-executor") as HTMLSelectElement;
     const advisor = getByTestId("new-session-advisor") as HTMLSelectElement;
     const effort = getByTestId("new-session-effort") as HTMLSelectElement;
-    expect(Array.from(executor.options).map((o) => o.value)).toEqual(["sonnet", "haiku", "opus"]);
+    expect(Array.from(executor.options).map((o) => o.value)).toEqual([
+      "sonnet",
+      "haiku",
+      "opus",
+      "opusplan",
+    ]);
     expect(Array.from(advisor.options).map((o) => o.value)).toEqual(["", "opus"]);
     expect(Array.from(effort.options).map((o) => o.value)).toEqual([
       "auto",

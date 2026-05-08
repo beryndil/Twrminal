@@ -712,24 +712,27 @@ describe("ContextMenu", () => {
     //   0 = SESSION_OPEN_IN_NEW_TAB                (navigate)
     //   1 = SESSION_DUPLICATE                      (create)
     //   2 = SESSION_SAVE_AS_TEMPLATE               (create; FORK is advanced, hidden)
-    //   3 = SESSION_RENAME                         (edit)
-    //   4 = SESSION_EDIT_TAGS                      (edit)
-    //   5 = SESSION_CHANGE_MODEL   (edit, submenu:true)  ← target
-    //   6 = SESSION_COPY_TITLE                     (copy; advanced ones hidden)
-    //   7 = SESSION_PIN, 8 = SESSION_UNPIN, 9 = SESSION_ARCHIVE, 10 = SESSION_REOPEN
-    //   11 = SESSION_DELETE                        (destructive)
+    //   3 = SESSION_EDIT                           (edit)
+    //   4 = SESSION_RENAME                         (edit)
+    //   5 = SESSION_EDIT_TAGS                      (edit)
+    //   6 = SESSION_CHANGE_MODEL   (edit, submenu:true)  ← target
+    //   7 = SESSION_COPY_TITLE, 8 = SESSION_EXPORT_JSON (copy; advanced ones hidden)
+    //   9 = SESSION_MERGE_INTO, 10 = SESSION_PIN, 11 = SESSION_UNPIN,
+    //   12 = SESSION_ARCHIVE, 13 = SESSION_REOPEN (organize)
+    //   14 = SESSION_DELETE                        (destructive)
 
     it("ArrowRight on a submenu row activates the action (forward-compat: no submenu rendering host)", async () => {
       const changeModel = vi.fn();
       render(ContextMenu);
       openSessionMenu({ handlers: { [MENU_ACTION_SESSION_CHANGE_MODEL]: changeModel } });
 
-      // Navigate to flat index 5 — SESSION_CHANGE_MODEL (submenu: true).
+      // Navigate to flat index 6 — SESSION_CHANGE_MODEL (submenu: true).
       await fireEvent.keyDown(window, { key: "ArrowDown" }); // 0 → 1
       await fireEvent.keyDown(window, { key: "ArrowDown" }); // 1 → 2
       await fireEvent.keyDown(window, { key: "ArrowDown" }); // 2 → 3
       await fireEvent.keyDown(window, { key: "ArrowDown" }); // 3 → 4
       await fireEvent.keyDown(window, { key: "ArrowDown" }); // 4 → 5
+      await fireEvent.keyDown(window, { key: "ArrowDown" }); // 5 → 6
 
       await fireEvent.keyDown(window, { key: "ArrowRight" });
       expect(changeModel).toHaveBeenCalledOnce();
