@@ -1215,7 +1215,7 @@
           "checklists"
         ],
         "summary": "Check Item",
-        "description": "Mark item checked (green).",
+        "description": "Mark item checked; cascade-close paired chat + parent chain + checklist.\n\nPer docs/behavior/checklists.md \u00a7\"Item \u2194 chat-session linking\":\n(a) Closes the leaf's paired chat session and broadcasts the close.\n(b) Walks the parent chain: when every child of a parent is checked the\n    parent's ``checked_at`` is set (repeats to root).\n(c) When every root item of the checklist is checked, the checklist\n    session itself is closed and broadcast.\nAuto-close is one-directional \u2014 POST /uncheck does not reopen any\nclosed parent, chat, or checklist session.",
         "operationId": "check-checklist-item",
         "parameters": [
           {
