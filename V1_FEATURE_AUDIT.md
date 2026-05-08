@@ -48,7 +48,7 @@ behavior docs, and tests; findings were posted back to orchestrator session
 | 8  | Preferences & settings                   | INTERIM  | `49d639582f05465eaf1e3f84500b19a3` |
 | 9  | Themes, keybindings, context menus       | INTERIM  | `45c0a427aea04e6d91ef11b10eb971bb` |
 | 10 | Filesystem, uploads, shell, MCP          | INTERIM  | `e7525f366f864bdd83d49e888a29549e` |
-| 11 | Reliability & dogfood                    | INTERIM  | `cb4ae047ef7c4a9ea767b00afbb1e550` |
+| 11 | Reliability & dogfood                    | **CLOSED** (closer c8ec881d · 2026-05-08) | `cb4ae047ef7c4a9ea767b00afbb1e550` |
 | 12 | Quality gate stack                       | INTERIM  | `c649e6b658634b828a5dfdde555d1e3c` |
 | 13 | SemVer commitment (v1.0.0)               | **CLOSED** | `f4b0b90360b1437abbee9cc9f10c813c` |
 | 14 | Analytics v1 (PLANNED)                   | **CLOSED** | `47c9b0886bf24d3c8d87fb55d2fcf2e9` |
