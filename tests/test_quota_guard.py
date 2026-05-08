@@ -82,6 +82,19 @@ def test_below_threshold_does_not_downgrade() -> None:
     }
 
 
+def test_quota_state_dict_zero_pct_not_coerced() -> None:
+    """quota_state_dict must preserve 0.0 — not conflate it with None.
+
+    Regression for finding feature-3-007: the old ``x or 0.0`` form
+    treated both ``None`` and ``0.0`` as falsy, which happened to produce
+    the correct number but lost intent.  The explicit
+    ``x if x is not None else 0.0`` form is required.
+    """
+    snapshot = _snapshot(overall=0.0, sonnet=0.0)
+    result = snapshot.quota_state_dict()
+    assert result == {"overall_used_pct": 0.0, "sonnet_used_pct": 0.0}
+
+
 def test_no_op_when_already_at_floor() -> None:
     """Haiku executor + no advisor + tripped buckets → still haiku."""
     decision = _decision(executor_model="haiku", advisor_model=None)

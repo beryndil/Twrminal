@@ -427,8 +427,12 @@ PATCH  /api/routing/system/reorder             # body: { rule_ids: [id, id, ...]
                                                # → reordered system rule list
                                                # Mirrors PATCH /api/tags/{id}/routing/reorder.
                                                # Frontend uses this single call instead of N
-                                               # sequential PATCH /{id} calls. Implementation
-                                               # lands in feature 3 cleanup (doc-only here).
+                                               # sequential PATCH /{id} calls.
+                                               # DEFERRED to v1.1: feature 3 cleanup did not
+                                               # implement; frontend uses N-PATCH workaround
+                                               # (routingRules.ts reorderSystemRules) and is
+                                               # fully functional without this endpoint.
+                                               # Tracked as finding feature-3-001-extra.
 
 POST   /api/routing/preview                     # body: { tags: [ids], message: "..." }
                                                 # → { executor, advisor, advisor_max_uses,

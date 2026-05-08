@@ -110,8 +110,8 @@ class QuotaSnapshot:
         directly via :func:`load_latest`.
         """
         return {
-            "overall_used_pct": self.overall_used_pct or 0.0,
-            "sonnet_used_pct": self.sonnet_used_pct or 0.0,
+            "overall_used_pct": self.overall_used_pct if self.overall_used_pct is not None else 0.0,
+            "sonnet_used_pct": self.sonnet_used_pct if self.sonnet_used_pct is not None else 0.0,
         }
 
 

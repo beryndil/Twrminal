@@ -110,6 +110,26 @@ def test_create_tag_rule_422_on_bad_shape(app_client: TestClient) -> None:
     assert response.status_code == 422
 
 
+def test_create_tag_rule_404_on_missing_tag(app_client: TestClient) -> None:
+    """POST to non-existent tag_id → 404 'tag not found', not 409.
+
+    Regression for finding feature-3-005: the IntegrityError catch must
+    distinguish the FK violation (tag absent) from other constraint
+    violations and map only the FK case to 404.
+    """
+    response = app_client.post(
+        "/api/tags/9999/routing",
+        json={
+            "match_type": "always",
+            "match_value": None,
+            "executor_model": "sonnet",
+            "reason": "test missing tag",
+        },
+    )
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"]
+
+
 # ---------------------------------------------------------------------------
 # 3. PATCH /api/routing/{id}
 # ---------------------------------------------------------------------------

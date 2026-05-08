@@ -168,9 +168,16 @@ async def create_tag_rule(
             detail=str(exc),
         ) from exc
     except aiosqlite.IntegrityError as exc:
+        # Only FK violations on tag_id map to 404; UNIQUE/CHECK violations
+        # must not silently surface as "tag not found" (finding feature-3-005).
+        if "FOREIGN KEY" in str(exc):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"tag {tag_id} not found",
+            ) from exc
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"tag {tag_id} not found",
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"constraint violation: {exc}",
         ) from exc
     return _tag_rule_to_out(rule)
 
