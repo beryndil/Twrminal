@@ -140,4 +140,44 @@ async def resolve_claude_md_blocks(
     return tuple(blocks)
 
 
-__all__ = ["resolve_claude_md_blocks", "resolve_default_model", "resolve_working_dir"]
+async def resolve_tag_memory_blocks(
+    connection: aiosqlite.Connection,
+    session_id: str,
+) -> tuple[str, ...]:
+    """Load enabled tag-memory bodies for each tag attached to ``session_id``.
+
+    Returns memory ``body`` strings as a tuple ordered from
+    lowest-precedence tag to highest-precedence tag. Within each tag,
+    memories are in insertion order (``id ASC``). The system prompt
+    assembler appends these after the CLAUDE.md extras tuple so DB
+    memories win over per-tag CLAUDE.md content on any directive
+    conflicts.
+
+    Precedence follows
+    :func:`bearings.db.tags.list_for_session_ordered` (project >
+    general > severity, then per-class ``sort_order``); this helper
+    iterates that list in reverse so the highest-precedence tag's
+    memories land last.
+
+    Memories with ``enabled=False`` are excluded. If no tags exist or
+    none have enabled memories, returns an empty tuple.
+    """
+    from bearings.db import memories as memories_db
+    from bearings.db import tags as tags_db
+
+    ordered_tags = await tags_db.list_for_session_ordered(connection, session_id)
+
+    blocks: list[str] = []
+    for tag in reversed(ordered_tags):  # lowest-precedence first; highest appended last
+        tag_memories = await memories_db.list_for_tag(connection, tag.id, only_enabled=True)
+        for memory in tag_memories:
+            blocks.append(memory.body)
+    return tuple(blocks)
+
+
+__all__ = [
+    "resolve_claude_md_blocks",
+    "resolve_default_model",
+    "resolve_tag_memory_blocks",
+    "resolve_working_dir",
+]

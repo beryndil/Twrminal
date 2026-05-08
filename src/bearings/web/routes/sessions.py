@@ -879,8 +879,10 @@ async def get_session_system_prompt(
     3. ``project_claude_md`` — one row per CLAUDE.md found walking up
        from the session's ``working_dir``; omitted section when none
        found.
-    4. ``tag_memory`` — one row per tag-attached CLAUDE.md; omitted
-       section when none found.
+    4a. ``tag_claude_md`` — one row per tag-attached CLAUDE.md; omitted
+        section when none found.
+    4b. ``tag_memory`` — one row per enabled ``tag_memories`` DB row;
+        ``source_path`` is always ``null``; omitted when none found.
 
     Token counts are approximated as ``len(body) // 4``; the response
     documents this via ``token_count_approximate: true``.

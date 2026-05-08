@@ -18,13 +18,17 @@ Layer order
    up from the session's ``working_dir`` to the filesystem root.
    Each file yields its own row so the inspector can attribute the
    content to the exact path.
-4. **``tag_memory``** — one layer per tag whose ``working_dir`` yields a
-   readable ``CLAUDE.md``.  Tag order mirrors the precedence order in
-   :func:`bearings.db.tags.list_for_session_ordered` (project class
-   first, then general, then severity; ties break on ``sort_order``
-   then ``name``) then reversed so the highest-precedence block lands
-   last, consistent with how the SDK system prompt assembler reads the
-   extras tuple.
+4a. **``tag_claude_md``** — one layer per tag whose ``working_dir`` yields
+    a readable ``CLAUDE.md``.  Tag order mirrors the precedence order in
+    :func:`bearings.db.tags.list_for_session_ordered` (project class
+    first, then general, then severity; ties break on ``sort_order``
+    then ``name``) then reversed so the highest-precedence block lands
+    last.
+4b. **``tag_memory``** — one layer per enabled row in the
+    ``tag_memories`` table for the session's tags, in the same
+    reversed-precedence tag order. Memory bodies are DB-resident;
+    ``source_path`` is ``None``. Within each tag, memories are ordered
+    by insertion (``id ASC``).
 5. **``template_baseline``** — not emitted in v18.  Template
    ``system_prompt_baseline`` is copied into ``session_instructions``
    at session-creation time
@@ -52,6 +56,7 @@ from dataclasses import dataclass, field
 import aiosqlite
 
 from bearings.agent.bearings_mcp import CLOSE_SESSION_INSTRUCTION
+from bearings.db import memories as memories_db
 from bearings.db import sessions as sessions_db
 from bearings.db import tags as tags_db
 
@@ -61,6 +66,7 @@ from bearings.db import tags as tags_db
 
 LAYER_KIND_BASELINE: str = "baseline"
 LAYER_KIND_PROJECT_CLAUDE_MD: str = "project_claude_md"
+LAYER_KIND_TAG_CLAUDE_MD: str = "tag_claude_md"
 LAYER_KIND_TAG_MEMORY: str = "tag_memory"
 LAYER_KIND_SESSION_INSTRUCTIONS: str = "session_instructions"
 LAYER_KIND_TEMPLATE_BASELINE: str = "template_baseline"
@@ -69,6 +75,7 @@ KNOWN_LAYER_KINDS: frozenset[str] = frozenset(
     {
         LAYER_KIND_BASELINE,
         LAYER_KIND_PROJECT_CLAUDE_MD,
+        LAYER_KIND_TAG_CLAUDE_MD,
         LAYER_KIND_TAG_MEMORY,
         LAYER_KIND_SESSION_INSTRUCTIONS,
         LAYER_KIND_TEMPLATE_BASELINE,
@@ -96,8 +103,9 @@ class SystemPromptLayer:
         token_count: Approximate token count (``len(body) // 4``).
         source_path: Human-readable absolute path provenance for
             layers with a filesystem source (``project_claude_md``,
-            ``tag_memory``).  ``None`` for ``baseline``,
-            ``session_instructions``, and ``template_baseline``.
+            ``tag_claude_md``).  ``None`` for ``baseline``,
+            ``session_instructions``, ``tag_memory``, and
+            ``template_baseline``.
     """
 
     kind: str
@@ -174,8 +182,8 @@ def _walk_up_claude_md(working_dir: str) -> list[tuple[str, str]]:
     return results
 
 
-def _tag_memory_layer(working_dir: str) -> SystemPromptLayer | None:
-    """Return a ``tag_memory`` layer for ``working_dir``, or ``None``.
+def _tag_claude_md_layer(working_dir: str) -> SystemPromptLayer | None:
+    """Return a ``tag_claude_md`` layer for ``working_dir``, or ``None``.
 
     Pure sync so that the async assembler avoids ASYNC240 (no os.path
     calls inside an async function).  Returns ``None`` when the working
@@ -189,7 +197,7 @@ def _tag_memory_layer(working_dir: str) -> SystemPromptLayer | None:
     if body is None:
         return None
     return SystemPromptLayer(
-        kind=LAYER_KIND_TAG_MEMORY,
+        kind=LAYER_KIND_TAG_CLAUDE_MD,
         body=body,
         token_count=_approx_tokens(body),
         source_path=os.path.abspath(candidate),
@@ -258,7 +266,7 @@ async def assemble_system_prompt_layers(
                 )
             )
 
-    # --- Layer 4: tag memories -------------------------------------------
+    # --- Layer 4a: per-tag CLAUDE.md fragments ---------------------------
     ordered_tags = await tags_db.list_for_session_ordered(connection, session_id)
     # Iterate in reverse so lowest-precedence tag is first, matching the
     # splice order in :func:`bearings.agent.tags.resolve_claude_md_blocks`.
@@ -266,9 +274,24 @@ async def assemble_system_prompt_layers(
         if tag.working_dir is None:
             continue
         # Sync helper isolates all os.path calls to avoid ASYNC240.
-        layer = _tag_memory_layer(tag.working_dir)
+        layer = _tag_claude_md_layer(tag.working_dir)
         if layer is not None:
             layers.append(layer)
+
+    # --- Layer 4b: tag DB memories (tag_memories table) ------------------
+    # Re-read on every assemble call so edits to a memory body take effect
+    # on the next prompt without restarting the worker (per-turn re-read).
+    for tag in reversed(ordered_tags):
+        tag_memories = await memories_db.list_for_tag(connection, tag.id, only_enabled=True)
+        for memory in tag_memories:
+            layers.append(
+                SystemPromptLayer(
+                    kind=LAYER_KIND_TAG_MEMORY,
+                    body=memory.body,
+                    token_count=_approx_tokens(memory.body),
+                    source_path=None,  # DB-resident; no filesystem path
+                )
+            )
 
     # --- Layer 5: template_baseline (deferred) ---------------------------
     # Template baselines are baked into session_instructions at row
@@ -287,6 +310,7 @@ __all__ = [
     "LAYER_KIND_BASELINE",
     "LAYER_KIND_PROJECT_CLAUDE_MD",
     "LAYER_KIND_SESSION_INSTRUCTIONS",
+    "LAYER_KIND_TAG_CLAUDE_MD",
     "LAYER_KIND_TAG_MEMORY",
     "LAYER_KIND_TEMPLATE_BASELINE",
     "SystemPromptLayer",

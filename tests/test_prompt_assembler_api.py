@@ -25,10 +25,12 @@ from bearings.agent.prompt_assembler import (
     LAYER_KIND_BASELINE,
     LAYER_KIND_PROJECT_CLAUDE_MD,
     LAYER_KIND_SESSION_INSTRUCTIONS,
+    LAYER_KIND_TAG_CLAUDE_MD,
     LAYER_KIND_TAG_MEMORY,
     assemble_system_prompt_layers,
 )
 from bearings.config.constants import SESSION_KIND_CHAT
+from bearings.db import memories as memories_db
 from bearings.db import sessions as sessions_db
 from bearings.db import tags as tags_db
 from bearings.db.connection import load_schema
@@ -195,18 +197,17 @@ async def test_no_project_claude_md_when_none_found(
     assert md_layers == []
 
 
-async def test_tag_memory_rows_for_each_enabled_memory(
+async def test_tag_claude_md_rows_for_each_tag_with_working_dir(
     db: aiosqlite.Connection,
     tmp_path: Path,
 ) -> None:
-    """One ``tag_memory`` layer per tag with a working_dir that has a
-    readable CLAUDE.md."""
+    """One ``tag_claude_md`` layer per tag whose working_dir has a readable CLAUDE.md."""
     dir_a = tmp_path / "tag_a"
     dir_a.mkdir()
     dir_b = tmp_path / "tag_b"
     dir_b.mkdir()
-    (dir_a / "CLAUDE.md").write_text("Tag A memory", encoding="utf-8")
-    (dir_b / "CLAUDE.md").write_text("Tag B memory", encoding="utf-8")
+    (dir_a / "CLAUDE.md").write_text("Tag A context", encoding="utf-8")
+    (dir_b / "CLAUDE.md").write_text("Tag B context", encoding="utf-8")
 
     tag_a = await tags_db.create(db, name="tag-a", color=None, working_dir=str(dir_a))
     tag_b = await tags_db.create(db, name="tag-b", color=None, working_dir=str(dir_b))
@@ -224,19 +225,19 @@ async def test_tag_memory_rows_for_each_enabled_memory(
     result = await assemble_system_prompt_layers(db, session.id)
     assert result is not None
 
-    mem_layers = [layer for layer in result.layers if layer.kind == LAYER_KIND_TAG_MEMORY]
-    assert len(mem_layers) == 2
-    bodies = {layer.body for layer in mem_layers}
-    assert "Tag A memory" in bodies
-    assert "Tag B memory" in bodies
-    # source_path is set for each
-    for layer in mem_layers:
+    claude_md_layers = [layer for layer in result.layers if layer.kind == LAYER_KIND_TAG_CLAUDE_MD]
+    assert len(claude_md_layers) == 2
+    bodies = {layer.body for layer in claude_md_layers}
+    assert "Tag A context" in bodies
+    assert "Tag B context" in bodies
+    # source_path is set for filesystem-sourced layers
+    for layer in claude_md_layers:
         assert layer.source_path is not None
         assert layer.source_path.endswith("CLAUDE.md")
 
 
 async def test_tag_with_no_working_dir_skipped(db: aiosqlite.Connection) -> None:
-    """Tags without a working_dir contribute no tag_memory layer."""
+    """Tags without a working_dir contribute no tag_claude_md layer."""
     tag = await tags_db.create(db, name="bare-tag", color=None, working_dir=None)
     session = await sessions_db.create(
         db,
@@ -248,8 +249,8 @@ async def test_tag_with_no_working_dir_skipped(db: aiosqlite.Connection) -> None
     await tags_db.attach(db, session_id=session.id, tag_id=tag.id)
     result = await assemble_system_prompt_layers(db, session.id)
     assert result is not None
-    mem_layers = [layer for layer in result.layers if layer.kind == LAYER_KIND_TAG_MEMORY]
-    assert mem_layers == []
+    claude_md_layers = [layer for layer in result.layers if layer.kind == LAYER_KIND_TAG_CLAUDE_MD]
+    assert claude_md_layers == []
 
 
 async def test_total_tokens_sums_correctly(
@@ -375,3 +376,143 @@ async def test_get_system_prompt_total_tokens_matches_sum(
     data = resp.json()
     expected = sum(layer["token_count"] for layer in data["layers"])
     assert data["total_tokens"] == expected
+
+
+# ---------------------------------------------------------------------------
+# DB memory (tag_memory kind) tests — feature-7-002
+# ---------------------------------------------------------------------------
+
+
+async def test_db_memories_appear_as_tag_memory_layers(
+    db: aiosqlite.Connection,
+) -> None:
+    """Enabled tag_memories rows produce ``tag_memory`` layers with source_path=None."""
+    tag = await tags_db.create(db, name="mem-tag", color=None, working_dir=None)
+    await memories_db.create(db, tag_id=tag.id, title="Rule A", body="Always cite arch §1.1.3.")
+    await memories_db.create(db, tag_id=tag.id, title="Rule B", body="No inline literals.")
+
+    session = await sessions_db.create(
+        db,
+        kind=SESSION_KIND_CHAT,
+        title="t",
+        working_dir="/nope",
+        model="sonnet",
+    )
+    await tags_db.attach(db, session_id=session.id, tag_id=tag.id)
+
+    result = await assemble_system_prompt_layers(db, session.id)
+    assert result is not None
+
+    mem_layers = [layer for layer in result.layers if layer.kind == LAYER_KIND_TAG_MEMORY]
+    assert len(mem_layers) == 2
+    bodies = {layer.body for layer in mem_layers}
+    assert "Always cite arch §1.1.3." in bodies
+    assert "No inline literals." in bodies
+    # DB-resident: source_path must be None
+    for layer in mem_layers:
+        assert layer.source_path is None
+
+
+async def test_disabled_memory_excluded_from_layers(
+    db: aiosqlite.Connection,
+) -> None:
+    """Memories with ``enabled=False`` do not appear as ``tag_memory`` layers."""
+    tag = await tags_db.create(db, name="disable-tag", color=None, working_dir=None)
+    await memories_db.create(db, tag_id=tag.id, title="Active", body="Enabled body.", enabled=True)
+    await memories_db.create(
+        db, tag_id=tag.id, title="Inactive", body="Disabled body.", enabled=False
+    )
+
+    session = await sessions_db.create(
+        db,
+        kind=SESSION_KIND_CHAT,
+        title="t",
+        working_dir="/nope",
+        model="sonnet",
+    )
+    await tags_db.attach(db, session_id=session.id, tag_id=tag.id)
+
+    result = await assemble_system_prompt_layers(db, session.id)
+    assert result is not None
+
+    mem_layers = [layer for layer in result.layers if layer.kind == LAYER_KIND_TAG_MEMORY]
+    assert len(mem_layers) == 1
+    assert mem_layers[0].body == "Enabled body."
+
+
+async def test_tag_with_both_claude_md_and_db_memory_produces_both_layer_kinds(
+    db: aiosqlite.Connection,
+    tmp_path: Path,
+) -> None:
+    """A tag with a working-dir CLAUDE.md AND enabled DB memories produces
+    both a ``tag_claude_md`` layer and a ``tag_memory`` layer, distinguishable
+    by kind."""
+    tag_dir = tmp_path / "dual-tag"
+    tag_dir.mkdir()
+    (tag_dir / "CLAUDE.md").write_text("File-system context.", encoding="utf-8")
+
+    tag = await tags_db.create(db, name="dual-tag", color=None, working_dir=str(tag_dir))
+    await memories_db.create(db, tag_id=tag.id, title="DB rule", body="DB memory body.")
+
+    session = await sessions_db.create(
+        db,
+        kind=SESSION_KIND_CHAT,
+        title="t",
+        working_dir="/nope",
+        model="sonnet",
+    )
+    await tags_db.attach(db, session_id=session.id, tag_id=tag.id)
+
+    result = await assemble_system_prompt_layers(db, session.id)
+    assert result is not None
+
+    claude_md_layers = [layer for layer in result.layers if layer.kind == LAYER_KIND_TAG_CLAUDE_MD]
+    db_mem_layers = [layer for layer in result.layers if layer.kind == LAYER_KIND_TAG_MEMORY]
+
+    # CLAUDE.md layer present with filesystem source_path
+    assert len(claude_md_layers) == 1
+    assert claude_md_layers[0].body == "File-system context."
+    assert claude_md_layers[0].source_path is not None
+
+    # DB memory layer present with no source_path
+    assert len(db_mem_layers) == 1
+    assert db_mem_layers[0].body == "DB memory body."
+    assert db_mem_layers[0].source_path is None
+
+
+async def test_deleted_memory_absent_on_next_assemble_call(
+    db: aiosqlite.Connection,
+) -> None:
+    """Deleting a memory removes it from the layer breakdown on the next call
+    without requiring a runner respawn (per-turn re-read invariant)."""
+    tag = await tags_db.create(db, name="reread-tag", color=None, working_dir=None)
+    memory = await memories_db.create(db, tag_id=tag.id, title="Ephemeral", body="Will be deleted.")
+
+    session = await sessions_db.create(
+        db,
+        kind=SESSION_KIND_CHAT,
+        title="t",
+        working_dir="/nope",
+        model="sonnet",
+    )
+    await tags_db.attach(db, session_id=session.id, tag_id=tag.id)
+
+    # First call: memory is present.
+    result_before = await assemble_system_prompt_layers(db, session.id)
+    assert result_before is not None
+    mem_layers_before = [
+        layer for layer in result_before.layers if layer.kind == LAYER_KIND_TAG_MEMORY
+    ]
+    assert len(mem_layers_before) == 1
+
+    # Delete the memory.
+    deleted = await memories_db.delete(db, memory.id)
+    assert deleted
+
+    # Second call on the same connection: memory must be gone.
+    result_after = await assemble_system_prompt_layers(db, session.id)
+    assert result_after is not None
+    mem_layers_after = [
+        layer for layer in result_after.layers if layer.kind == LAYER_KIND_TAG_MEMORY
+    ]
+    assert mem_layers_after == []

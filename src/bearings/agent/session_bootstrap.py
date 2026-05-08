@@ -46,7 +46,7 @@ from bearings.agent.runner import SessionRunner, SessionSetup, SessionSetupFn
 from bearings.agent.sdk_session_id import bearings_to_sdk_uuid
 from bearings.agent.session import AgentSession, PermissionProfile, SessionConfig
 from bearings.agent.session_store import BearingsSessionStore
-from bearings.agent.tags import resolve_claude_md_blocks
+from bearings.agent.tags import resolve_claude_md_blocks, resolve_tag_memory_blocks
 from bearings.config.constants import (
     BASH_TOOL_DEFAULT_TIMEOUT_S,
     BASH_TOOL_OUTPUT_MAX_CHARS,
@@ -172,6 +172,10 @@ def build_session_setup(
         # silently skipped; the tuple is empty if no tags exist or none have
         # working_dir set.
         extra_claude_md_blocks = await resolve_claude_md_blocks(db_connection, session_id)
+        # Load enabled tag-memory bodies from the tag_memories table, in the
+        # same precedence order. Memories are re-read on every worker spawn so
+        # edits take effect on the next prompt without a runner respawn.
+        extra_memory_blocks = await resolve_tag_memory_blocks(db_connection, session_id)
         # SDK history-replay wiring (lands the model-swap context-loss fix
         # diagnosed 2026-05-05). The SessionStore mirrors the CLI's JSONL
         # transcript to ``sdk_session_entries``; on every spawn after the
@@ -203,7 +207,7 @@ def build_session_setup(
             max_budget_usd=row.max_budget_usd,
             bearings_mcp_server=bearings_mcp_server,
             can_use_tool=broker.callback() if broker is not None else None,
-            extra_system_prompt_parts=extra_claude_md_blocks,
+            extra_system_prompt_parts=(*extra_claude_md_blocks, *extra_memory_blocks),
             session_store=store,
             sdk_session_id=sdk_session_id_arg,
             resume=resume_arg,

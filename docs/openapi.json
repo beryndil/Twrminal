@@ -3180,7 +3180,7 @@
           "sessions"
         ],
         "summary": "Get Session System Prompt",
-        "description": "Return the assembled system-prompt layer breakdown for a session.\n\nPer ``docs/behavior/chat.md`` \u00a7\"System-prompt layers contract\"\n(gap-cycle-13-004).  The Inspector Instructions tab calls this to\nrender the full set of layers the agent sees \u2014 baseline, project\nCLAUDE.md walk-up, tag memories, and per-session instructions.\n\n* ``200`` \u2014 :class:`SystemPromptLayersOut` with the ordered layer\n  list and total approximate token count.\n* ``404`` \u2014 session not found.\n\nLayer kinds in response order:\n\n1. ``session_instructions`` \u2014 omitted when ``None`` or empty.\n2. ``baseline`` \u2014 always present.\n3. ``project_claude_md`` \u2014 one row per CLAUDE.md found walking up\n   from the session's ``working_dir``; omitted section when none\n   found.\n4. ``tag_memory`` \u2014 one row per tag-attached CLAUDE.md; omitted\n   section when none found.\n\nToken counts are approximated as ``len(body) // 4``; the response\ndocuments this via ``token_count_approximate: true``.",
+        "description": "Return the assembled system-prompt layer breakdown for a session.\n\nPer ``docs/behavior/chat.md`` \u00a7\"System-prompt layers contract\"\n(gap-cycle-13-004).  The Inspector Instructions tab calls this to\nrender the full set of layers the agent sees \u2014 baseline, project\nCLAUDE.md walk-up, tag memories, and per-session instructions.\n\n* ``200`` \u2014 :class:`SystemPromptLayersOut` with the ordered layer\n  list and total approximate token count.\n* ``404`` \u2014 session not found.\n\nLayer kinds in response order:\n\n1. ``session_instructions`` \u2014 omitted when ``None`` or empty.\n2. ``baseline`` \u2014 always present.\n3. ``project_claude_md`` \u2014 one row per CLAUDE.md found walking up\n   from the session's ``working_dir``; omitted section when none\n   found.\n4a. ``tag_claude_md`` \u2014 one row per tag-attached CLAUDE.md; omitted\n    section when none found.\n4b. ``tag_memory`` \u2014 one row per enabled ``tag_memories`` DB row;\n    ``source_path`` is always ``null``; omitted when none found.\n\nToken counts are approximated as ``len(body) // 4``; the response\ndocuments this via ``token_count_approximate: true``.",
         "operationId": "get_session_system_prompt_api_sessions__session_id__system_prompt_get",
         "parameters": [
           {
@@ -9221,7 +9221,7 @@
           "token_count"
         ],
         "title": "SystemPromptLayerOut",
-        "description": "One layer of the assembled system prompt.\n\nPer ``docs/behavior/chat.md`` \u00a7\"System-prompt layers contract\"\n(gap-cycle-13-004).  Each layer carries its ``kind``, the text\n``body``, an approximate ``token_count`` (``len(body) // 4``), and\nan optional ``source_path`` for filesystem-sourced layers\n(``project_claude_md``, ``tag_memory``)."
+        "description": "One layer of the assembled system prompt.\n\nPer ``docs/behavior/chat.md`` \u00a7\"System-prompt layers contract\"\n(gap-cycle-13-004).  Each layer carries its ``kind``, the text\n``body``, an approximate ``token_count`` (``len(body) // 4``), and\nan optional ``source_path`` for filesystem-sourced layers\n(``project_claude_md``, ``tag_claude_md``).  ``tag_memory`` layers\nare DB-resident and always have ``source_path: null``."
       },
       "SystemPromptLayersOut": {
         "properties": {
@@ -9249,7 +9249,7 @@
           "total_tokens"
         ],
         "title": "SystemPromptLayersOut",
-        "description": "Response shape for ``GET /api/sessions/{id}/system_prompt``.\n\nPer ``docs/behavior/chat.md`` \u00a7\"System-prompt layers contract\"\n(gap-cycle-13-004).\n\n``layers`` is ordered in the same splice order the SDK executor\nsees: ``session_instructions`` \u2192 ``baseline`` \u2192\n``project_claude_md`` (walk-up) \u2192 ``tag_memory``.  Layers with no\ncontent are omitted from the list; the frontend renders per-kind\nempty-state rows when a kind is absent.\n\n``token_count_approximate`` is always ``true`` \u2014 counts are\ncomputed as ``len(body) // 4`` with no tokenizer."
+        "description": "Response shape for ``GET /api/sessions/{id}/system_prompt``.\n\nPer ``docs/behavior/chat.md`` \u00a7\"System-prompt layers contract\"\n(gap-cycle-13-004).\n\n``layers`` is ordered in the same splice order the SDK executor\nsees: ``session_instructions`` \u2192 ``baseline`` \u2192\n``project_claude_md`` (walk-up) \u2192 ``tag_claude_md`` (per-tag\nCLAUDE.md) \u2192 ``tag_memory`` (DB memory rows).  Layers with no\ncontent are omitted from the list; the frontend renders per-kind\nempty-state rows when a kind is absent.\n\n``token_count_approximate`` is always ``true`` \u2014 counts are\ncomputed as ``len(body) // 4`` with no tokenizer."
       },
       "SystemRoutingRuleIn": {
         "properties": {

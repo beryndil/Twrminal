@@ -267,7 +267,8 @@ class SystemPromptLayerOut(BaseModel):
     (gap-cycle-13-004).  Each layer carries its ``kind``, the text
     ``body``, an approximate ``token_count`` (``len(body) // 4``), and
     an optional ``source_path`` for filesystem-sourced layers
-    (``project_claude_md``, ``tag_memory``).
+    (``project_claude_md``, ``tag_claude_md``).  ``tag_memory`` layers
+    are DB-resident and always have ``source_path: null``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -286,7 +287,8 @@ class SystemPromptLayersOut(BaseModel):
 
     ``layers`` is ordered in the same splice order the SDK executor
     sees: ``session_instructions`` → ``baseline`` →
-    ``project_claude_md`` (walk-up) → ``tag_memory``.  Layers with no
+    ``project_claude_md`` (walk-up) → ``tag_claude_md`` (per-tag
+    CLAUDE.md) → ``tag_memory`` (DB memory rows).  Layers with no
     content are omitted from the list; the frontend renders per-kind
     empty-state rows when a kind is absent.
 
