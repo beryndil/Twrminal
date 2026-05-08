@@ -717,6 +717,9 @@
             class:text-fg-strong={selectedTagIds.has(tag.id)}
             class:bg-surface-2={!selectedTagIds.has(tag.id)}
             class:text-fg-muted={!selectedTagIds.has(tag.id)}
+            style={tag.color && !selectedTagIds.has(tag.id)
+              ? `background-color: ${tag.color}`
+              : undefined}
             aria-pressed={selectedTagIds.has(tag.id)}
             data-testid="session-tag-chip"
             data-tag-id={tag.id}

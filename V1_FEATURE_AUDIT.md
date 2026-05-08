@@ -42,7 +42,7 @@ behavior docs, and tests; findings were posted back to orchestrator session
 | 2  | Conversation & streaming                 | **CLOSED** (closer `5081bf4b6b4a4a48826e229b2f33ed24` · 2026-05-08) | `000bacc2d1894485bb4daef730f759eb` |
 | 3  | Routing v1                               | INTERIM  | `6be4502a55cb43a4ad71eeaa92b8f79f` |
 | 4  | Inspector (5-tab + context meter)        | **CLOSED** (commit `bf1d7df`) · re-verified 2026-05-08 (verifier `0cbd67a3`, 0 regressions) | `c2c372f04df64cf090ab4f230cb8a324` |
-| 5  | Tags & sidebar                           | INTERIM  | `60ee46d9f2284bb88093f13fbaaa68cd` |
+| 5  | Tags & sidebar                           | **CLOSED** (closer `a84c54273c13416a893b24dec5e3e8b8` · 2026-05-08) | `60ee46d9f2284bb88093f13fbaaa68cd` |
 | 6  | Checklists, paired chats, auto-driver    | **CLOSED** (closer `7bd7658d1dd84456b6471628bf04b1e2` · 2026-05-08) | `b0f4e9f9ba554a09821f3f3183ccbb3c` |
 | 7  | Vault & memories                         | **CLOSED** (closer `196d05814b1b485b9c69e9e0ef55f39a` · 2026-05-08) | `9e6f171e143542ecb8f45fbdb4864d69` |
 | 8  | Preferences & settings                   | **CLOSED** (closer `1f64ed633805476b92210698bc092d9e` · 2026-05-08) | `49d639582f05465eaf1e3f84500b19a3` |
@@ -201,7 +201,7 @@ highlighted in success color.
 
 **Open:** none — feature is ship-clean.
 
-### 5. Tags & sidebar (INTERIM)
+### 5. Tags & sidebar (CLOSED)
 
 Fourteen findings split likely-bugs / silent-correctness / design / hardening
 / UX.

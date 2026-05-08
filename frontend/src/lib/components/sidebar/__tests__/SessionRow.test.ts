@@ -183,6 +183,38 @@ describe("SessionRow", () => {
     expect(second).toHaveAttribute("aria-pressed", "false");
   });
 
+  it("applies tag.color as inline background-color on unselected chips (5-014)", () => {
+    const coloredTag: TagOut = { ...tag(3, "coloured"), color: "#ff0080" };
+    const { getAllByTestId } = render(SessionRow, {
+      props: {
+        session: baseSession,
+        tags: [coloredTag],
+        selectedTagIds: new Set<number>(),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    const chip = getAllByTestId("session-tag-chip")[0];
+    expect(chip).toHaveStyle("background-color: #ff0080");
+  });
+
+  it("does not apply tag.color on selected chips so bg-accent takes precedence (5-014)", () => {
+    const coloredTag: TagOut = { ...tag(3, "coloured"), color: "#ff0080" };
+    const { getAllByTestId } = render(SessionRow, {
+      props: {
+        session: baseSession,
+        tags: [coloredTag],
+        selectedTagIds: new Set([3]),
+        isSelected: false,
+        onSelect: vi.fn(),
+        onToggleTag: vi.fn(),
+      },
+    });
+    const chip = getAllByTestId("session-tag-chip")[0];
+    expect(chip).not.toHaveStyle("background-color: #ff0080");
+  });
+
   it("clicking the row fires onSelect with the session id", async () => {
     const onSelect = vi.fn();
     const { getByTestId } = render(SessionRow, {
