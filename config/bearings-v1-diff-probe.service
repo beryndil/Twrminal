@@ -1,0 +1,56 @@
+# systemd user-unit: oneshot differential-probe runner for bearings-v1.
+#
+# Installed (manually, by Dave) at:
+#     ~/.config/systemd/user/bearings-v1-diff-probe.service
+# Paired timer:
+#     ~/.config/systemd/user/bearings-v1-diff-probe.timer
+#
+# Activation:
+#     systemctl --user daemon-reload
+#     systemctl --user enable --now bearings-v1-diff-probe.timer
+#
+# Inspect:
+#     systemctl --user list-timers bearings-v1-diff-probe.timer
+#     journalctl --user -u bearings-v1-diff-probe.service -n 50
+#     tail -n 50 ~/.local/share/bearings-v1/diff-probes/$(date -u +%F).log
+#
+# The probe script is stdlib-only (urllib + json + re), so it does NOT
+# need the project venv. We invoke /usr/bin/python3 directly to keep
+# the runner free of any uv / venv lifecycle surface — even an
+# in-progress `uv sync` on the worktree must not break the morning
+# diff probe.
+
+[Unit]
+Description=Bearings v1 — differential probe v0.17.x ↔ v1 (master item B.2)
+Documentation=file:///home/beryndil/Projects/Bearings-v1/scripts/diff_probe.py
+# Run after the daily probe service so the diff probe sees a freshly
+# confirmed-live v1 instance. The diff probe still handles a refused
+# connection gracefully (logs a reachability failure and exits 1), but
+# sequencing avoids a noisy simultaneous first-boot failure on both units.
+After=bearings-v1-probe.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/beryndil/Projects/Bearings-v1
+ExecStart=/usr/bin/python3 /home/beryndil/Projects/Bearings-v1/scripts/diff_probe.py
+
+# Hardening — the probe only reads from loopback and writes to one
+# directory under $HOME, so we can lock everything else down.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/bearings-v1/diff-probes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bearings-v1-diff-probe

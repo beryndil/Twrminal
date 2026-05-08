@@ -725,6 +725,17 @@ day-to-day. Coverage:
   && systemctl --user daemon-reload
   && systemctl --user enable --now bearings-v1-probe.timer`.
   Both pass `systemd-analyze --user verify`.
+* **Differential-probe systemd units** (master item B.2, finding
+  feature-11-003). `config/bearings-v1-diff-probe.service` (oneshot,
+  hardened identical to `bearings-v1-probe.service`,
+  `ReadWritePaths=%h/.local/share/bearings-v1/diff-probes`) and
+  `config/bearings-v1-diff-probe.timer` (daily 09:20 local — five
+  minutes after the B.1 daily probe — 5min jitter, `Persistent=true`,
+  `After=bearings-v1-probe.service`). Install:
+  `cp config/bearings-v1-diff-probe.{service,timer} ~/.config/systemd/user/
+  && systemctl --user daemon-reload
+  && systemctl --user enable --now bearings-v1-diff-probe.timer`.
+  Both pass `systemd-analyze --user verify`.
 
 ### Changed
 
