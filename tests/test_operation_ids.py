@@ -62,11 +62,17 @@ def test_operation_ids_are_unique(openapi_spec: dict) -> None:  # type: ignore[t
 
 
 def test_operation_id_count(openapi_spec: dict) -> None:  # type: ignore[type-arg]
-    """Sanity-check: the spec must contain exactly 135 HTTP operations.
+    """Sanity-check: the spec must contain exactly 148 HTTP operations.
 
     Count history:
       134 — baseline (feature-13-005, 133 routes + 1 added in feature-3)
       135 — Phase 3 analytics: ``GET /api/usage/turns`` (``get-usage-turns``)
+      148 — Phase 4 analytics: 13 new ``/api/analytics/`` routes
+             (turns, plug-blocks/batch, bucket/current, attribution,
+             redundancy, plug-blocks/{hash}, plug-blocks/{hash}/versions,
+             sessions/{id}/plug-summary, promote-to-tag-memory,
+             promote-to-on-open, draft-new-session, sessions/from-draft,
+             warnings/suppress)
     """
     operations = _iter_operations(openapi_spec)
-    assert len(operations) == 135, f"Expected 135 operations in OpenAPI spec, got {len(operations)}"
+    assert len(operations) == 148, f"Expected 148 operations in OpenAPI spec, got {len(operations)}"

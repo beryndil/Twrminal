@@ -35,6 +35,7 @@
   import {
     INSPECTOR_STRINGS,
     INSPECTOR_TAB_AGENT,
+    INSPECTOR_TAB_ANALYTICS,
     INSPECTOR_TAB_CHANGES,
     INSPECTOR_TAB_CONTEXT,
     INSPECTOR_TAB_FILES,
@@ -50,6 +51,12 @@
   import { getQuotaHistory } from "../../api/quota";
   import { getOverrideRates, getUsageByModel } from "../../api/usage";
   import {
+    getBucketCurrent,
+    getAttribution,
+    getRedundancy,
+    getSessionPlugSummary,
+  } from "../../api/analytics";
+  import {
     inspectorStore as inspectorStoreDefault,
     setInspectorTab as setInspectorTabDefault,
   } from "../../stores/inspector.svelte";
@@ -61,6 +68,7 @@
   import InspectorMetrics from "./InspectorMetrics.svelte";
   import InspectorRouting from "./InspectorRouting.svelte";
   import InspectorUsage from "./InspectorUsage.svelte";
+  import InspectorAnalytics from "../analytics/InspectorAnalytics.svelte";
 
   interface Props {
     /**
@@ -91,6 +99,14 @@
     fetchHistory?: typeof getQuotaHistory;
     fetchByModel?: typeof getUsageByModel;
     fetchOverrideRates?: typeof getOverrideRates;
+    /**
+     * Test seams — passed through to :class:`InspectorAnalytics`.
+     * Production callers omit.
+     */
+    fetchBucketCurrent?: typeof getBucketCurrent;
+    fetchAttribution?: typeof getAttribution;
+    fetchRedundancy?: typeof getRedundancy;
+    fetchPlugSummary?: typeof getSessionPlugSummary;
   }
 
   const {
@@ -101,6 +117,10 @@
     fetchHistory,
     fetchByModel,
     fetchOverrideRates,
+    fetchBucketCurrent,
+    fetchAttribution,
+    fetchRedundancy,
+    fetchPlugSummary,
   }: Props = $props();
 
   const activeTabId = $derived(inspectorStore.activeTabId);
@@ -178,6 +198,15 @@
       </div>
       <div hidden={activeTabId !== INSPECTOR_TAB_USAGE}>
         <InspectorUsage {session} {fetchHistory} {fetchByModel} {fetchOverrideRates} />
+      </div>
+      <div hidden={activeTabId !== INSPECTOR_TAB_ANALYTICS}>
+        <InspectorAnalytics
+          {session}
+          {fetchBucketCurrent}
+          {fetchAttribution}
+          {fetchRedundancy}
+          {fetchPlugSummary}
+        />
       </div>
     {/if}
   </div>

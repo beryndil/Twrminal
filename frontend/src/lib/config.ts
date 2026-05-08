@@ -328,6 +328,78 @@ export const API_USAGE_BY_MODEL_ENDPOINT = `${API_BASE}/usage/by_model`;
 export const API_USAGE_OVERRIDE_RATES_ENDPOINT = `${API_BASE}/usage/override_rates`;
 
 /**
+ * Analytics API base (``BEARINGS_ANALYTICS_v1.md`` §9). All
+ * ``/api/analytics/`` endpoints share this prefix; derived constants
+ * below follow the same ``API_<RESOURCE>_ENDPOINT`` naming convention.
+ */
+export const API_ANALYTICS_BASE = `${API_BASE}/analytics`;
+
+/**
+ * ``GET /api/analytics/bucket/current`` — latest ``/usage`` poll
+ * snapshot (spec §9.2). Returns :interface:`BucketCurrentOut`.
+ */
+export const API_ANALYTICS_BUCKET_CURRENT_ENDPOINT = `${API_ANALYTICS_BASE}/bucket/current`;
+
+/**
+ * ``GET /api/analytics/attribution?window=5h|weekly&group_by=tag`` —
+ * per-tag token attribution (spec §9.2). Returns
+ * :interface:`TagAttributionOut[]`.
+ */
+export const API_ANALYTICS_ATTRIBUTION_ENDPOINT = `${API_ANALYTICS_BASE}/attribution`;
+
+/**
+ * ``GET /api/analytics/redundancy?tag=&last_n=25&min_repeats=3`` —
+ * repeated plug blocks ranked by total token cost (spec §9.2).
+ * Returns :interface:`RedundancyBlockOut[]`.
+ */
+export const API_ANALYTICS_REDUNDANCY_ENDPOINT = `${API_ANALYTICS_BASE}/redundancy`;
+
+/**
+ * ``POST /api/analytics/warnings/suppress`` — record that the user
+ * dismissed a plug-length warning (spec §9.3). Body:
+ * ``{block_hash, warning_type}``. Returns ``{status: "ok"}``.
+ */
+export const API_ANALYTICS_WARNINGS_SUPPRESS_ENDPOINT = `${API_ANALYTICS_BASE}/warnings/suppress`;
+
+/**
+ * ``GET /api/analytics/sessions/{id}/plug-summary`` — plug composition
+ * for one session (spec §9.2). The ``{id}`` placeholder is replaced at
+ * call time by :func:`getSessionPlugSummary` in ``api/analytics.ts``.
+ */
+export const API_ANALYTICS_SESSION_PLUG_SUMMARY_ENDPOINT = `${API_ANALYTICS_BASE}/sessions`;
+
+/**
+ * Plug length yellow threshold (spec §8.1): sessions whose assembled
+ * plug token count crosses this value get a dismissible popup.
+ * Mirrors :const:`bearings.config.constants.PLUG_YELLOW_THRESHOLD_TOKENS`.
+ */
+export const PLUG_YELLOW_THRESHOLD_TOKENS = 500;
+
+/**
+ * Plug length red threshold (spec §8.1): sessions at or above this
+ * count get a persistent banner. Always greater than
+ * :data:`PLUG_YELLOW_THRESHOLD_TOKENS`.
+ * Mirrors :const:`bearings.config.constants.PLUG_RED_THRESHOLD_TOKENS`.
+ */
+export const PLUG_RED_THRESHOLD_TOKENS = 1500;
+
+/**
+ * Attribution window constants (spec §9.2 ``window`` parameter).
+ * Match the server-side ``KNOWN_ANALYTICS_ATTRIBUTION_WINDOWS`` set.
+ */
+export const ANALYTICS_ATTRIBUTION_WINDOW_5H = "5h";
+export const ANALYTICS_ATTRIBUTION_WINDOW_WEEKLY = "weekly";
+
+/**
+ * Redundancy view defaults (spec §7.2 "Scope filters").
+ * Mirror :const:`bearings.config.constants.ANALYTICS_REDUNDANCY_*`.
+ */
+export const ANALYTICS_REDUNDANCY_DEFAULT_LAST_N = 25;
+export const ANALYTICS_REDUNDANCY_DEFAULT_MIN_REPEATS = 3;
+export const ANALYTICS_REDUNDANCY_LAST_N_MIN = 5;
+export const ANALYTICS_REDUNDANCY_LAST_N_MAX = 200;
+
+/**
  * ``GET /api/diag/server`` — server diagnostics including the Bearings
  * version string. Fetched lazily by :func:`feedback.fetchVersion` on
  * the first feedback-button click (gap-cycle-01-008). Response shape:
@@ -1489,12 +1561,20 @@ export const INSPECTOR_TAB_ROUTING = "routing";
  * render :class:`InspectorUsage`.
  */
 export const INSPECTOR_TAB_USAGE = "usage";
+/**
+ * Analytics subsection (``BEARINGS_ANALYTICS_v1.md`` §10 "right-pane
+ * tab"). Phase 5 ships sections A (bucket attribution), B (redundancy),
+ * and C (active-session plug). The shell switches on this id to render
+ * :class:`InspectorAnalytics`.
+ */
+export const INSPECTOR_TAB_ANALYTICS = "analytics";
 
 /**
  * Tabs the inspector exposes. Item 2.6 appended ``"routing"`` and
  * ``"usage"`` (per spec §10 inspector decomposition) — the shell's
  * body switch grew two cases; the tab strip itself iterates this
  * tuple so the new tabs appear without further refactor.
+ * Analytics Phase 5 appended ``"analytics"``.
  */
 export const KNOWN_INSPECTOR_TABS = [
   INSPECTOR_TAB_AGENT,
@@ -1505,6 +1585,7 @@ export const KNOWN_INSPECTOR_TABS = [
   INSPECTOR_TAB_METRICS,
   INSPECTOR_TAB_ROUTING,
   INSPECTOR_TAB_USAGE,
+  INSPECTOR_TAB_ANALYTICS,
 ] as const;
 export type InspectorTabId = (typeof KNOWN_INSPECTOR_TABS)[number];
 
@@ -1569,6 +1650,7 @@ export const INSPECTOR_STRINGS = {
     [INSPECTOR_TAB_METRICS]: "Metrics",
     [INSPECTOR_TAB_ROUTING]: "Routing",
     [INSPECTOR_TAB_USAGE]: "Usage",
+    [INSPECTOR_TAB_ANALYTICS]: "Analytics",
   } as const satisfies Record<InspectorTabId, string>,
   // Agent subsection — exposes the active session's agent config.
   // Items 2.6 + 1.8 add advisor / effort / fallback fields by widening
@@ -1743,6 +1825,48 @@ export const INSPECTOR_STRINGS = {
   usageRulesToReviewColRate: "Override rate",
   usageRulesToReviewColFired: "Fired",
   usageRulesToReviewColOverridden: "Overridden",
+  // Analytics subsection (BEARINGS_ANALYTICS_v1.md §10 right-pane tab).
+  // Three sections: A = bucket attribution, B = redundancy, C = session plug.
+  analyticsHeading: "Analytics",
+  analyticsLoading: "Loading analytics…",
+  analyticsError: "Couldn't load analytics data.",
+  // Section A — Bucket attribution (spec §10.2 top)
+  analyticsBucketHeading: "Bucket attribution",
+  analyticsBucketNoData: "No bucket snapshot available yet.",
+  analyticsBucket5hLabel: "5-hour window",
+  analyticsBucketWeeklyLabel: "Weekly window",
+  analyticsBucketUsedLabel: "Used",
+  analyticsBucketLimitLabel: "Limit",
+  analyticsBucketToggle5h: "5h",
+  analyticsBucketToggleWeekly: "Weekly",
+  analyticsAttributionHeading: "Per-tag attribution",
+  analyticsAttributionEmpty: "No attribution data for the selected window.",
+  analyticsAttributionColTag: "Tag",
+  analyticsAttributionColTokens: "Tokens",
+  analyticsAttributionColShare: "Share",
+  analyticsAttributionColBurnRate: "Burn rate",
+  // Section B — Redundancy (spec §10.2 middle)
+  analyticsRedundancyHeading: "Redundant plug blocks",
+  analyticsRedundancyEmpty: "No repeated plug blocks found with current filters.",
+  analyticsRedundancyTagLabel: "Tag filter",
+  analyticsRedundancyTagAll: "All tags",
+  analyticsRedundancyLastNLabel: "Last N sessions",
+  analyticsRedundancyColType: "Type",
+  analyticsRedundancyColPreview: "Preview",
+  analyticsRedundancyColRepeats: "Repeats",
+  analyticsRedundancyColTokenCost: "Token cost",
+  analyticsRedundancyExpandSessions: "Sessions using this block",
+  analyticsRedundancyNoVersions: "No version history available.",
+  // Section C — Active session plug (spec §10.2 bottom)
+  analyticsPlugHeading: "Active session plug",
+  analyticsPlugNoSession: "Select a session to see its plug breakdown.",
+  analyticsPlugNoData: "No plug data recorded for this session.",
+  analyticsPlugTotalLabel: "Total tokens",
+  analyticsPlugStatusGreen: "green",
+  analyticsPlugStatusYellow: "yellow",
+  analyticsPlugStatusRed: "red",
+  analyticsPlugColType: "Type",
+  analyticsPlugColTokens: "Tokens",
 } as const;
 
 // ---- Session-edit modal string table -------------------------------------
