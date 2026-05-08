@@ -8,6 +8,22 @@ When a TODO is resolved, strike it from this file in the same commit
 that lands the fix and cite the resolving commit hash in the removal
 trailer.
 
+## knip gate failure — pre-existing unused frontend exports (2026-05-08)
+
+`uv run pre-commit run --all-files` exits 1 because the knip hook finds 1
+unused file (`frontend/src/lib/components/common/DataViewHarness.svelte`),
+4 unused exports (including `EXECUTOR_MODEL_OPUSPLAN`, `_resetForTests`,
+`BOOT_STORAGE_KEY`, `_resetBillingModeCacheForTests`), and 27 unused
+exported types (API interfaces in `src/lib/api/*.ts` and store/utility
+types). These findings predate feature-12 work and are not a feature-12
+regression. The feature-12-003 executor's verification was incomplete —
+it claimed knip passes when it does not. Surfaced by feature-12 closer
+session `d3a0fc02a9e64f359aeb7bc5cfb4e18f`. Resolve by: (a) removing
+or internalising `DataViewHarness.svelte`, (b) deciding per export
+whether to delete, narrow export scope, or add a `// knip:ignore`
+comment, and (c) for API types consumed only by tests, either move them
+to test helpers or add `@internal` annotations per the knip config.
+
 ## v1.1 closing-sweep (2026-05-02) — corrects v1.0's lying close
 
 The 2026-04-29 close of the v1 master checklist
