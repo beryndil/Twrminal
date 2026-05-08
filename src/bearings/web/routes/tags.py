@@ -32,7 +32,7 @@ from __future__ import annotations
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Request, status
 
-from bearings.config.constants import KNOWN_TAG_CLASSES
+from bearings.config.constants import KNOWN_TAG_CLASSES, TAG_CLASS_PROJECT, TAG_CLASS_SEVERITY
 from bearings.db import tags as tags_db
 from bearings.db.tags import Tag
 from bearings.web.models.tags import (
@@ -88,6 +88,59 @@ def _to_out(
         open_session_count=open_session_count,
         session_count=session_count,
     )
+
+
+async def _validate_tag_cardinality(
+    db: aiosqlite.Connection,
+    tag_ids: tuple[int, ...],
+) -> None:
+    """Reject tag-id sets that violate the ≤1 project / ≤1 severity rule.
+
+    Cardinality is enforced at the API boundary (not the schema) so a
+    half-built create transaction can roll back cleanly. Called by every
+    path that mutates a session's tag set:
+
+    * ``POST /api/sessions`` — initial tag assignment on create.
+    * ``PATCH /api/sessions/{id}`` — bulk tag replacement.
+    * ``PUT /api/sessions/{sid}/tags/{tid}`` — single-attach.
+
+    Raises :class:`HTTPException` 422 with a structured detail listing
+    the violating ids per class. Empty ``tag_ids`` is valid.
+    """
+    if not tag_ids:
+        return
+    # Resolve class for each id in one round-trip. Existing-id validation
+    # happens upstream; if any id is missing here the count below simply
+    # ignores it (the missing-id 404 fires before we reach this function).
+    placeholders = ",".join("?" * len(tag_ids))
+    cursor = await db.execute(
+        f"SELECT id, class FROM tags WHERE id IN ({placeholders})",
+        tag_ids,
+    )
+    try:
+        rows = await cursor.fetchall()
+    finally:
+        await cursor.close()
+    by_class: dict[str, list[int]] = {}
+    for row in rows:
+        by_class.setdefault(str(row[1]), []).append(int(str(row[0])))
+    project_ids = by_class.get(TAG_CLASS_PROJECT, [])
+    severity_ids = by_class.get(TAG_CLASS_SEVERITY, [])
+    violations: list[str] = []
+    if len(project_ids) > 1:
+        violations.append(f"≤1 project tag allowed (got {sorted(project_ids)})")
+    if len(severity_ids) > 1:
+        violations.append(f"≤1 severity tag allowed (got {sorted(severity_ids)})")
+    if violations:
+        # f-string keeps the detail value AST-detectable as string-typed
+        # for the consistency_lint error-shape rule (which rejects bare
+        # ``str.join`` calls — only ``str(...)``, literals, f-strings,
+        # and string-typed ternaries are accepted).
+        message = "; ".join(violations)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"{message}",
+        )
 
 
 @router.post("/api/tags", status_code=status.HTTP_201_CREATED, response_model=TagOut)
@@ -259,9 +312,23 @@ async def attach_tag(session_id: str, tag_id: int, request: Request) -> TagOut:
 
     Returns the tag row. 404 if either FK is absent (raised as
     ``IntegrityError`` from the DB layer when foreign-key enforcement
-    is on).
+    is on). 422 when attaching the tag would violate the ≤1 project /
+    ≤1 severity cardinality rule for the session.
+
+    Idempotency: re-attaching an already-attached tag skips the
+    cardinality check (the existing state is already valid) and returns
+    200 without touching the DB.
     """
     db = _db(request)
+    # Load the set already attached so we can (a) detect idempotent
+    # re-attach without a DB write and (b) validate cardinality against
+    # the would-be new set before persisting.
+    existing_tags = await tags_db.list_for_session(db, session_id)
+    existing_ids = {t.id for t in existing_tags}
+    if tag_id not in existing_ids:
+        # The attach is genuinely new — enforce cardinality on the union.
+        candidate_ids = tuple(existing_ids | {tag_id})
+        await _validate_tag_cardinality(db, candidate_ids)
     try:
         await tags_db.attach(db, session_id=session_id, tag_id=tag_id)
     except aiosqlite.IntegrityError as exc:

@@ -385,3 +385,56 @@ def test_single_tag_endpoint_returns_zero_counts(app_client: TestClient) -> None
     single = app_client.get(f"/api/tags/{created['id']}").json()
     assert single["open_session_count"] == 0
     assert single["session_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# feature-5-005 — single-attach cardinality: PUT /api/sessions/{sid}/tags/{tid}
+# ---------------------------------------------------------------------------
+
+
+def test_attach_second_project_tag_returns_422(app_client: TestClient) -> None:
+    """PUT with a second project-class tag must return 422.
+
+    Regression for feature-5-005: the single-attach path previously had
+    no cardinality check — a user could hold 2 project tags permanently
+    by racing two PUT calls.
+    """
+    proj1 = app_client.post(
+        "/api/tags", json={"name": "proj-alpha", "class_": "project", "working_dir": "/a"}
+    ).json()
+    proj2 = app_client.post(
+        "/api/tags", json={"name": "proj-beta", "class_": "project", "working_dir": "/b"}
+    ).json()
+    # First project tag attaches fine.
+    r1 = app_client.put(f"/api/sessions/sess1/tags/{proj1['id']}")
+    assert r1.status_code == 200
+    # Second project tag must be rejected with 422.
+    r2 = app_client.put(f"/api/sessions/sess1/tags/{proj2['id']}")
+    assert r2.status_code == 422
+    assert "project" in r2.json()["detail"]
+    # Only the first tag is attached.
+    attached = app_client.get("/api/sessions/sess1/tags").json()
+    assert [t["id"] for t in attached] == [proj1["id"]]
+
+
+def test_attach_second_severity_tag_returns_422(app_client: TestClient) -> None:
+    """PUT with a second severity-class tag must return 422."""
+    sev1 = app_client.post("/api/tags", json={"name": "sev-high", "class_": "severity"}).json()
+    sev2 = app_client.post("/api/tags", json={"name": "sev-crit", "class_": "severity"}).json()
+    r1 = app_client.put(f"/api/sessions/sess1/tags/{sev1['id']}")
+    assert r1.status_code == 200
+    r2 = app_client.put(f"/api/sessions/sess1/tags/{sev2['id']}")
+    assert r2.status_code == 422
+    assert "severity" in r2.json()["detail"]
+
+
+def test_idempotent_reattach_of_project_tag_returns_200(app_client: TestClient) -> None:
+    """Re-attaching an already-attached project tag must remain a 200 no-op."""
+    proj = app_client.post(
+        "/api/tags", json={"name": "proj-gamma", "class_": "project", "working_dir": "/c"}
+    ).json()
+    r1 = app_client.put(f"/api/sessions/sess1/tags/{proj['id']}")
+    assert r1.status_code == 200
+    # Second PUT with the same tag is idempotent.
+    r2 = app_client.put(f"/api/sessions/sess1/tags/{proj['id']}")
+    assert r2.status_code == 200

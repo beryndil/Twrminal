@@ -34,8 +34,6 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from bearings.config.constants import (
     KNOWN_SDK_PERMISSION_MODES,
     PERMISSION_PROFILE_TO_SDK_MODE,
-    TAG_CLASS_PROJECT,
-    TAG_CLASS_SEVERITY,
 )
 from bearings.db import sessions as sessions_db
 from bearings.db import tags as tags_db
@@ -49,6 +47,7 @@ from bearings.web.models.templates import (
     TemplateOut,
     TemplatePatch,
 )
+from bearings.web.routes.tags import _validate_tag_cardinality
 from bearings.web.routes.ws_sessions import SessionsBroadcaster
 
 router = APIRouter()
@@ -294,44 +293,6 @@ def _session_to_out(session: Session) -> SessionOut:
     )
 
 
-async def _validate_tag_cardinality_local(
-    db: aiosqlite.Connection,
-    tag_ids: tuple[int, ...],
-) -> None:
-    """Reject tag-id sets violating the ≤1 project / ≤1 severity rule.
-
-    Mirrors the same check in :mod:`bearings.web.routes.sessions` without
-    importing a private function from that module.
-    """
-    if not tag_ids:
-        return
-    placeholders = ",".join("?" * len(tag_ids))
-    cursor = await db.execute(
-        f"SELECT id, class FROM tags WHERE id IN ({placeholders})",
-        tag_ids,
-    )
-    try:
-        rows = await cursor.fetchall()
-    finally:
-        await cursor.close()
-    by_class: dict[str, list[int]] = {}
-    for row in rows:
-        by_class.setdefault(str(row[1]), []).append(int(str(row[0])))
-    project_ids = by_class.get(TAG_CLASS_PROJECT, [])
-    severity_ids = by_class.get(TAG_CLASS_SEVERITY, [])
-    violations: list[str] = []
-    if len(project_ids) > 1:
-        violations.append(f"≤1 project tag allowed (got {sorted(project_ids)})")
-    if len(severity_ids) > 1:
-        violations.append(f"≤1 severity tag allowed (got {sorted(severity_ids)})")
-    if violations:
-        message = "; ".join(violations)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"{message}",
-        )
-
-
 @router.post(
     "/api/templates/{template_id}/instantiate",
     response_model=SessionOut,
@@ -394,7 +355,7 @@ async def create_session_from_template(
             resolved_tag_ids.append(tag.id)
     tag_ids = tuple(resolved_tag_ids)
     if tag_ids:
-        await _validate_tag_cardinality_local(db, tag_ids)
+        await _validate_tag_cardinality(db, tag_ids)
 
     # -- Resolve working_dir: override > template > tag fallback > 422. ---
     resolved_working_dir: str | None = (

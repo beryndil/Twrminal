@@ -412,7 +412,7 @@
           "tags"
         ],
         "summary": "Attach Tag",
-        "description": "Attach a tag to a session; idempotent (200 either way).\n\nReturns the tag row. 404 if either FK is absent (raised as\n``IntegrityError`` from the DB layer when foreign-key enforcement\nis on).",
+        "description": "Attach a tag to a session; idempotent (200 either way).\n\nReturns the tag row. 404 if either FK is absent (raised as\n``IntegrityError`` from the DB layer when foreign-key enforcement\nis on). 422 when attaching the tag would violate the \u22641 project /\n\u22641 severity cardinality rule for the session.\n\nIdempotency: re-attaching an already-attached tag skips the\ncardinality check (the existing state is already valid) and returns\n200 without touching the DB.",
         "operationId": "attach_tag_api_sessions__session_id__tags__tag_id__put",
         "parameters": [
           {

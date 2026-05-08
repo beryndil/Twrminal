@@ -68,8 +68,6 @@ from bearings.config.constants import (
     KNOWN_SESSION_KINDS,
     PROMPT_ACK_QUEUED_KEY,
     PROMPT_ACK_SESSION_ID_KEY,
-    TAG_CLASS_PROJECT,
-    TAG_CLASS_SEVERITY,
 )
 from bearings.db import checkpoints as checkpoints_db
 from bearings.db import messages as messages_db
@@ -96,6 +94,7 @@ from bearings.web.models.sessions import (
     TokenTotalsOut,
     ToolCallOut,
 )
+from bearings.web.routes.tags import _validate_tag_cardinality
 from bearings.web.routes.ws_sessions import SessionsBroadcaster
 from bearings.web.runner_factory import InProcessRunnerRegistry
 
@@ -156,60 +155,6 @@ def _sessions_broadcaster(request: Request) -> SessionsBroadcaster | None:
         SessionsBroadcaster | None,
         getattr(request.app.state, "sessions_broadcaster", None),
     )
-
-
-async def _validate_tag_cardinality(
-    db: aiosqlite.Connection,
-    tag_ids: tuple[int, ...],
-) -> None:
-    """Reject tag-id sets that violate the ≤1 project / ≤1 severity rule.
-
-    Cardinality is enforced at the API boundary (not the schema) so a
-    half-built create transaction can roll back cleanly. The bulk-replace
-    path (``POST /api/sessions``, ``set_for_session``) calls this before
-    persisting; single-attach via ``PUT /api/sessions/{sid}/tags/{tid}``
-    intentionally does NOT validate, so the user can transiently land in
-    a 2-project state via incremental edits — the next bulk replace will
-    reject. (See plan §"Migration & risk notes".)
-
-    Raises :class:`HTTPException` 422 with a structured detail listing
-    the violating ids per class. Empty ``tag_ids`` is valid.
-    """
-    if not tag_ids:
-        return
-    # Resolve class for each id in one round-trip. Existing-id validation
-    # happens upstream in :func:`create_session`; if any id is missing
-    # here the count below simply ignores it (the missing-id 404 fires
-    # before we reach this function).
-    placeholders = ",".join("?" * len(tag_ids))
-    cursor = await db.execute(
-        f"SELECT id, class FROM tags WHERE id IN ({placeholders})",
-        tag_ids,
-    )
-    try:
-        rows = await cursor.fetchall()
-    finally:
-        await cursor.close()
-    by_class: dict[str, list[int]] = {}
-    for row in rows:
-        by_class.setdefault(str(row[1]), []).append(int(str(row[0])))
-    project_ids = by_class.get(TAG_CLASS_PROJECT, [])
-    severity_ids = by_class.get(TAG_CLASS_SEVERITY, [])
-    violations: list[str] = []
-    if len(project_ids) > 1:
-        violations.append(f"≤1 project tag allowed (got {sorted(project_ids)})")
-    if len(severity_ids) > 1:
-        violations.append(f"≤1 severity tag allowed (got {sorted(severity_ids)})")
-    if violations:
-        # f-string keeps the detail value AST-detectable as string-typed
-        # for the consistency_lint error-shape rule (which rejects bare
-        # ``str.join`` calls — only ``str(...)``, literals, f-strings,
-        # and string-typed ternaries are accepted).
-        message = "; ".join(violations)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"{message}",
-        )
 
 
 def _to_out(session: Session, paired_parent_title: str | None = None) -> SessionOut:
