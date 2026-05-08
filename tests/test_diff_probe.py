@@ -61,6 +61,7 @@ _M: Final[ModuleType] = _load_script_module()
 if TYPE_CHECKING:  # pragma: no cover — type-only branch
     sys.path.insert(0, str(_REPO_ROOT / "scripts"))
     from diff_probe import (
+        PROBE_LOG_RETENTION_DAYS_DEFAULT,
         PROBES,
         DiffProbe,
         DiffResult,
@@ -70,9 +71,11 @@ if TYPE_CHECKING:  # pragma: no cover — type-only branch
         diff_shapes,
         extract_metric_names,
         extract_shape,
+        prune_old_logs,
         run_probe,
     )
 else:
+    PROBE_LOG_RETENTION_DAYS_DEFAULT = _M.PROBE_LOG_RETENTION_DAYS_DEFAULT
     PROBES = _M.PROBES
     DiffProbe = _M.DiffProbe
     DiffResult = _M.DiffResult
@@ -82,6 +85,7 @@ else:
     diff_shapes = _M.diff_shapes
     extract_metric_names = _M.extract_metric_names
     extract_shape = _M.extract_shape
+    prune_old_logs = _M.prune_old_logs
     run_probe = _M.run_probe
 
 
@@ -505,3 +509,61 @@ def test_probes_table_excludes_v1_only_quota_endpoints() -> None:
     """Per module docstring: quota/* is v1-only and must not be probed."""
     paths = {p.path for p in PROBES}
     assert not any(p.startswith("/api/quota/") for p in paths)
+
+
+# ---------------------------------------------------------------------------
+# prune_old_logs
+# ---------------------------------------------------------------------------
+
+# Frozen "now" for all pruning tests — 2026-05-08 00:00 UTC.
+_PRUNE_NOW: Final[dt.datetime] = dt.datetime(2026, 5, 8, 0, 0, 0, tzinfo=dt.UTC)
+_MAX_AGE: Final[int] = PROBE_LOG_RETENTION_DAYS_DEFAULT  # 30
+
+
+def test_prune_old_logs_deletes_stale_retains_fresh(tmp_path: Path) -> None:
+    """File from day -31 is deleted; file from day -29 is retained."""
+    stale = tmp_path / "2026-04-07.log"  # 31 days before _PRUNE_NOW
+    fresh = tmp_path / "2026-04-09.log"  # 29 days before _PRUNE_NOW
+    stale.write_text("stale\n")
+    fresh.write_text("fresh\n")
+
+    prune_old_logs(tmp_path, _MAX_AGE, _PRUNE_NOW)
+
+    assert not stale.exists(), "stale log (day -31) should have been deleted"
+    assert fresh.exists(), "fresh log (day -29) should be retained"
+
+
+def test_prune_old_logs_zero_disables_pruning(tmp_path: Path) -> None:
+    """--max-age-days=0 skips pruning — even very old files are kept."""
+    ancient = tmp_path / "2020-01-01.log"
+    ancient.write_text("ancient\n")
+
+    prune_old_logs(tmp_path, 0, _PRUNE_NOW)
+
+    assert ancient.exists(), "max_age_days=0 must retain all logs"
+
+
+def test_prune_old_logs_ignores_non_matching_names(tmp_path: Path) -> None:
+    """Files that don't match YYYY-MM-DD.log are never deleted."""
+    readme = tmp_path / "README"
+    gzip_log = tmp_path / "2026-04-07.log.gz"
+    partial = tmp_path / "2026-04-07"
+    for f in (readme, gzip_log, partial):
+        f.write_text("do not delete\n")
+
+    prune_old_logs(tmp_path, _MAX_AGE, _PRUNE_NOW)
+
+    for f in (readme, gzip_log, partial):
+        assert f.exists(), f"{f.name} should not be deleted (non-matching name)"
+
+
+def test_prune_old_logs_missing_log_dir_is_noop(tmp_path: Path) -> None:
+    """A non-existent log_dir is silently tolerated — no exception raised."""
+    missing = tmp_path / "nonexistent"
+    # Must not raise:
+    prune_old_logs(missing, _MAX_AGE, _PRUNE_NOW)
+
+
+def test_prune_old_logs_default_constant_is_30() -> None:
+    """The default retention window is 30 days per the spec contract."""
+    assert PROBE_LOG_RETENTION_DAYS_DEFAULT == 30

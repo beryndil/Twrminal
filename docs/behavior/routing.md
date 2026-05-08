@@ -203,3 +203,34 @@ When all attempts are exhausted, the final `detail` reads
 The retry budget and backoff are overridable via `--retry-attempts` and
 `--retry-backoff` CLI flags, which default to the `PROBE_RETRY_ATTEMPTS`
 and `PROBE_RETRY_BACKOFF_S` constants in `scripts/daily_probe.py`.
+
+---
+
+## Probe log retention — `--max-age-days`
+
+Both `scripts/daily_probe.py` and `scripts/diff_probe.py` apply
+in-process log retention after writing the JSONL log for the current
+run.
+
+**Default retention window:** `PROBE_LOG_RETENTION_DAYS_DEFAULT = 30`
+days. Files in the probe log directory whose names match the
+`YYYY-MM-DD.log` pattern and whose date is strictly more than 30 days
+before the current run time are deleted.
+
+**Override:** `--max-age-days <N>` on either script overrides the
+default. Setting `--max-age-days 0` disables pruning entirely (useful
+during the dogfood window when full history is wanted).
+
+**Pruning rules:**
+
+- Only filenames matching `YYYY-MM-DD.log` are considered. Other files
+  (`README`, `*.log.gz`, partial names, etc.) are silently skipped.
+- A missing log directory is silently tolerated (first run, dry-run,
+  different mount).
+- `OSError` on individual unlinks is warning-logged and skipped; the
+  probe does not abort.
+- The prune call runs *after* `write_log()` succeeds, so today's log
+  is always written before any old logs are removed.
+
+The constant and the flag live in each script's own module; no shared
+library is involved (stdlib-only constraint per the module docstrings).

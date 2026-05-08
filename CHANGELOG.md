@@ -58,6 +58,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   no-op (graceful degradation).  OpenAPI spec regenerated;
   `docs/openapi.json` updated.
 
+- **Probe log retention `--max-age-days`** (finding feature-11-005):
+  Both `scripts/daily_probe.py` and `scripts/diff_probe.py` now
+  prune old probe logs after each successful write. Files in the
+  probe log directory matching `YYYY-MM-DD.log` whose date is more
+  than `--max-age-days` days old are deleted. Default retention
+  window: **30 days** (`PROBE_LOG_RETENTION_DAYS_DEFAULT = 30`).
+  Pass `--max-age-days 0` to disable pruning entirely (useful during
+  the dogfood window when full log history is wanted). Pruning errors
+  are non-fatal and warning-logged so a permission edge-case never
+  crashes the probe. Retention contract documented in
+  `docs/behavior/routing.md §"Probe log retention"`.
+
 ### Changed
 
 - **Status-bar decorative pills removed** (wiring-v1-daily-driver item 4.2):

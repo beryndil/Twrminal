@@ -112,6 +112,11 @@ PROBE_USER_AGENT: Final[str] = "bearings-diff-probe/1"
 
 LOG_DIR: Final[Path] = Path("~/.local/share/bearings-v1/diff-probes").expanduser()
 LOG_DATE_FORMAT: Final[str] = "%Y-%m-%d"
+PROBE_LOG_RETENTION_DAYS_DEFAULT: Final[int] = 30
+
+# Matches log filenames of the form ``YYYY-MM-DD.log`` — the only
+# filenames that prune_old_logs considers for deletion.
+_LOG_FILENAME_RE: Final[re.Pattern[str]] = re.compile(r"^(\d{4}-\d{2}-\d{2})\.log$")
 
 EXIT_SUCCESS: Final[int] = 0
 EXIT_FAILURE: Final[int] = 1
@@ -680,6 +685,43 @@ def write_log(
     return log_path
 
 
+def prune_old_logs(log_dir: Path, max_age_days: int, now: dt.datetime) -> None:
+    """Delete probe log files older than *max_age_days* in *log_dir*.
+
+    Scans *log_dir* for files whose names match the ``YYYY-MM-DD.log``
+    pattern and unlinks those whose date is strictly more than
+    *max_age_days* before *now*.
+
+    Special cases:
+
+    * *max_age_days* == 0 → pruning disabled; returns immediately.
+    * *log_dir* does not exist → returns without error (first run,
+      dry-run, or log dir on a different mount).
+    * Non-matching filenames → silently skipped (README, other logs).
+    * :class:`OSError` on :func:`Path.unlink` → warning-logged and
+      skipped (non-fatal; partial prune is better than a crashed probe).
+    """
+    if max_age_days == 0:
+        return
+    if not log_dir.exists():
+        return
+    cutoff = now.date() - dt.timedelta(days=max_age_days)
+    for entry in log_dir.iterdir():
+        match = _LOG_FILENAME_RE.match(entry.name)
+        if match is None:
+            continue
+        try:
+            file_date = dt.date.fromisoformat(match.group(1))
+        except ValueError:
+            continue
+        if file_date < cutoff:
+            try:
+                entry.unlink()
+                LOG.info("diff-probe log pruned: %s", entry)
+            except OSError as exc:
+                LOG.warning("failed to prune diff-probe log %s: %s", entry, exc)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -742,6 +784,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help=f"Per-side HTTP timeout in seconds (default: {PROBE_TIMEOUT_S}).",
     )
     parser.add_argument(
+        "--max-age-days",
+        type=int,
+        default=PROBE_LOG_RETENTION_DAYS_DEFAULT,
+        help=(
+            f"Delete diff-probe logs older than this many days (default: "
+            f"{PROBE_LOG_RETENTION_DAYS_DEFAULT}). "
+            "Set to 0 to disable pruning entirely."
+        ),
+    )
+    parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
@@ -763,6 +815,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         timeout_s=args.timeout,
     )
     log_path = write_log(results, now=now, log_dir=args.log_dir)
+    prune_old_logs(args.log_dir, args.max_age_days, now)
 
     if not args.quiet:
         print(f"bearings diff probe — {now.isoformat()}")
