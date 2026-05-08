@@ -1,10 +1,10 @@
 # Pre-commit configuration for Bearings v1 rebuild.
 #
-# Wires the full 12-tool stack from `~/.claude/plans/bearings-v1-rebuild.md`
+# Wires the full 11-tool stack from `~/.claude/plans/bearings-v1-rebuild.md`
 # §"Tooling matrix":
 #   Backend (8): ruff (lint+format), mypy, pytest, vulture, xenon,
 #                interrogate, codespell, pip-audit
-#   Frontend (6): eslint, prettier, svelte-check, knip, ts-prune, depcheck
+#   Frontend (5): eslint, prettier, svelte-check, knip, depcheck
 #   Repo-wide (1): lychee
 # Plus the branch-verifier hook (Done-when criterion #10) that rejects
 # commits to any branch other than `v1-rebuild`.
@@ -212,13 +212,6 @@ repos:
         entry: scripts/frontend-tools.sh knip
         language: system
         files: ^frontend/.*\.(ts|svelte|json)$
-        pass_filenames: false
-
-      - id: frontend-ts-prune
-        name: ts-prune (dead TS exports)
-        entry: scripts/frontend-tools.sh ts-prune
-        language: system
-        files: ^frontend/.*\.ts$
         pass_filenames: false
 
       - id: frontend-depcheck

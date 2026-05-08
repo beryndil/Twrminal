@@ -37,7 +37,6 @@ so it ships inside the Python wheel and the FastAPI app's
 | `npm run lint`                          | ESLint flat-config.                                       |
 | `npm run format:check` / `format:write` | Prettier.                                                 |
 | `npm run knip`                          | Dead-export + unused-dep check.                           |
-| `npm run ts-prune`                      | Backup dead-export check.                                 |
 | `npm run depcheck`                      | Unused npm dep check.                                     |
 
 The pre-commit hooks at the repo root run all of the above on

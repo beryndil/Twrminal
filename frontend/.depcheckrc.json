@@ -1,7 +1,6 @@
 {
   "ignores": [
     "depcheck",
-    "ts-prune",
     "knip",
     "svelte-check",
     "@types/node",

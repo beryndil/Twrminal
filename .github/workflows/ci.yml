@@ -149,11 +149,6 @@ jobs:
         working-directory: frontend
         run: npm run knip
 
-      - name: ts-prune
-        if: steps.detect.outputs.have_sources == 'true'
-        working-directory: frontend
-        run: npm run ts-prune
-
       - name: depcheck
         if: steps.detect.outputs.have_sources == 'true'
         working-directory: frontend

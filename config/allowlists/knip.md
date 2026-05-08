@@ -30,10 +30,13 @@ component-name resolution that knip's static analysis can't follow",
 ### 2026-04-28 · item 0.1 · Tooling-only devDependencies
 
 **Field touched:** `ignoreDependencies`
-**Entries added:** `depcheck`, `ts-prune`
-**Justification:** Both tools are invoked exclusively from the pre-commit
-configuration and from CI (`npm run depcheck`, `npm run ts-prune`). They
-are never imported from any `.ts` / `.svelte` source, so knip's reachability
-analysis would otherwise flag them as unused. Removing them would silently
-disable the dead-export and unused-dep gates and is forbidden by the tooling
-matrix in `~/.claude/plans/bearings-v1-rebuild.md` §"Tooling matrix".
+**Entries added:** `depcheck`
+**Justification:** `depcheck` is invoked exclusively from the pre-commit
+configuration and from CI (`npm run depcheck`). It is never imported from
+any `.ts` / `.svelte` source, so knip's reachability analysis would
+otherwise flag it as unused.
+
+*Note: `ts-prune` was removed from this allowlist entry by finding
+feature-12-003 (2026-05-08) — ts-prune was EOL (last published 2021-12-12,
+TS 4.x-only) and has been dropped from the gate set entirely. Knip covers
+dead-export detection.*

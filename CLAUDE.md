@@ -98,14 +98,15 @@ uv run pre-commit run --all-files
 CI runs the same gates plus `systemd-analyze verify` on the unit and
 `lychee` on every markdown file. See `.github/workflows/ci.yml`.
 
-The 12-tool stack is wired through `.pre-commit-config.yaml`:
+The 11-tool stack is wired through `.pre-commit-config.yaml`:
 
 * **Backend (8):** ruff (lint + format), mypy `--strict`, pytest,
   vulture, radon (cyclomatic complexity ≤ 10), interrogate (docstring
   coverage ≥ 80 %), codespell, pip-audit `--strict`.
-* **Frontend (6):** eslint, prettier `--check`, svelte-check, knip,
-  ts-prune, depcheck. Gated on frontend file changes + the presence of
-  `frontend/node_modules/`.
+* **Frontend (5):** eslint, prettier `--check`, svelte-check, knip,
+  depcheck. Gated on frontend file changes + the presence of
+  `frontend/node_modules/`. (ts-prune dropped — EOL, TS 5.x-incompatible;
+  knip covers dead-export detection.)
 * **Repo-wide (1):** lychee on every Markdown file.
 
 ## Common dev commands
@@ -128,11 +129,10 @@ uv run ruff format src/bearings/agent/routing.py   # writes; use --check to dry-
 # at src/bearings/web/dist/ is what the backend actually serves).
 cd frontend && npm run dev
 
-# Frontend gates — mirror the 6 frontend pre-commit hooks
+# Frontend gates — mirror the 5 frontend pre-commit hooks
 cd frontend && npm run lint
 cd frontend && npm run check          # svelte-check + tsc
 cd frontend && npm run knip
-cd frontend && npm run ts-prune
 cd frontend && npm run depcheck
 cd frontend && npm run format:check
 cd frontend && npm test               # vitest unit
