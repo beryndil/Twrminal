@@ -3176,6 +3176,22 @@ export const STATUS_BAR_STRINGS = {
 export const API_UPLOADS_ENDPOINT = `${API_BASE}/uploads`;
 
 /**
+ * UI strings for the System Routing Rules section of the Settings page
+ * (feature-8-006 — extracted from inline literals in RoutingRulesSection.svelte).
+ *
+ * Matches the naming convention of ``HELP_SECTION_STRINGS`` /
+ * ``PREFERENCES_STRINGS`` / ``ABOUT_SECTION_STRINGS``.
+ */
+export const ROUTING_RULES_SECTION_STRINGS = {
+  /** Section heading rendered as ``<h2>`` and used as ``aria-label``. */
+  heading: "System routing rules",
+  /** ``aria-label`` on the ``<section>`` wrapper (matches heading). */
+  ariaLabel: "System routing rules",
+  /** One-line lede below the heading. */
+  lede: "The system-wide rule set evaluated when no per-tag rule matches the routing-preview input. Per spec §3 priorities are sparse — drag rows to reorder, or duplicate-and-edit a row to slot a new rule between the seeded ones.",
+} as const;
+
+/**
  * String table for the composer's in-flight attachment chip row
  * (gap-cycle-03-001).
  *

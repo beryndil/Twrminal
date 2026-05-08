@@ -45,7 +45,7 @@ behavior docs, and tests; findings were posted back to orchestrator session
 | 5  | Tags & sidebar                           | INTERIM  | `60ee46d9f2284bb88093f13fbaaa68cd` |
 | 6  | Checklists, paired chats, auto-driver    | **CLOSED** (closer `7bd7658d1dd84456b6471628bf04b1e2` · 2026-05-08) | `b0f4e9f9ba554a09821f3f3183ccbb3c` |
 | 7  | Vault & memories                         | **CLOSED** (closer `196d05814b1b485b9c69e9e0ef55f39a` · 2026-05-08) | `9e6f171e143542ecb8f45fbdb4864d69` |
-| 8  | Preferences & settings                   | INTERIM  | `49d639582f05465eaf1e3f84500b19a3` |
+| 8  | Preferences & settings                   | **CLOSED** (closer `1f64ed633805476b92210698bc092d9e` · 2026-05-08) | `49d639582f05465eaf1e3f84500b19a3` |
 | 9  | Themes, keybindings, context menus       | **CLOSED** (closer `1d50c972b48849749b3021ef92210b8a` · 2026-05-08) | `45c0a427aea04e6d91ef11b10eb971bb` |
 | 10 | Filesystem, uploads, shell, MCP          | **CLOSED** (closer `deae2e1e526c443da0b098e9d2771332` · 2026-05-08) | `e7525f366f864bdd83d49e888a29549e` |
 | 11 | Reliability & dogfood                    | **CLOSED** (closer c8ec881d · 2026-05-08) | `cb4ae047ef7c4a9ea767b00afbb1e550` |
