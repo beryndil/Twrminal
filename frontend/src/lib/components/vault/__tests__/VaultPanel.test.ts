@@ -346,6 +346,43 @@ describe("VaultPanel — redaction toggles", () => {
   });
 });
 
+describe("VaultPanel — drag-paste-into-composer", () => {
+  it("dragstart on a vault row calls dataTransfer.setData with the entry markdown_link", async () => {
+    /**
+     * Guards ``handleDragStartVaultRow`` per vault.md §"Paste-into-message
+     * behavior": dragging a vault row sets ``text/plain`` on the
+     * DataTransfer to the entry's ``markdown_link`` string so that dropping
+     * into the composer inserts the markdown reference.
+     *
+     * Regression guard for finding feature-7-004 (remaining drag-paste gap).
+     */
+    const stubStore = makeStubStore();
+    const { getAllByTestId } = render(VaultPanel, {
+      props: {
+        vaultStore: stubStore,
+        refreshVault: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+    const rows = getAllByTestId("vault-panel-row");
+    // rows[0] is the plan entry from fakeList() — markdown_link comes from
+    // fakeEntry's base value (title override does not change the link).
+    const expectedLink = fakeEntry({ id: 1, title: "Plan A" }).markdown_link;
+
+    const setData = vi.fn();
+    const mockDataTransfer = { setData, effectAllowed: "" } as unknown as DataTransfer;
+    // jsdom does not implement DragEvent; use a plain bubbling Event with
+    // dataTransfer injected via Object.defineProperty.  Svelte's ondragstart
+    // attribute listens for the "dragstart" event name regardless of the
+    // event's constructor, so the handler receives the patched event object.
+    const dragEvent = new Event("dragstart", { bubbles: true, cancelable: true });
+    Object.defineProperty(dragEvent, "dataTransfer", { value: mockDataTransfer });
+
+    await fireEvent(rows[0], dragEvent);
+
+    expect(setData).toHaveBeenCalledWith("text/plain", expectedLink);
+  });
+});
+
 describe("VaultPanel — selection", () => {
   it("clicking a row calls selectVaultDoc with the entry id", async () => {
     const selectVaultDoc = vi.fn().mockResolvedValue(undefined);

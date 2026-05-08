@@ -52,7 +52,10 @@ describe("MemoriesIndex — loading / empty / error states", () => {
   });
 
   it("renders the flat list after the response resolves", async () => {
-    const rows = [fakeRow({ memory_id: 1, memory_title: "First" }), fakeRow({ memory_id: 2, memory_title: "Second" })];
+    const rows = [
+      fakeRow({ memory_id: 1, memory_title: "First" }),
+      fakeRow({ memory_id: 2, memory_title: "Second" }),
+    ];
     const listAllMemoriesFn = vi.fn().mockResolvedValue(rows);
     const { getAllByTestId } = render(MemoriesIndex, {
       props: { listAllMemoriesFn },
@@ -144,6 +147,64 @@ describe("MemoriesIndex — chip filter", () => {
     // Deactivate filter.
     await fireEvent.click(getAllByTestId("memories-index-chip")[0]);
     await waitFor(() => expect(getAllByTestId("memories-index-row")).toHaveLength(2));
+  });
+});
+
+describe("MemoriesIndex — chip-filter zero-rows spec guard (finding-7-001 regression)", () => {
+  /**
+   * Guards the spec invariant from docs/behavior/memories.md §Index view
+   * layout: the empty-state node renders ONLY when the API response itself
+   * is [] (rows.length === 0), never when a chip filter merely reduces the
+   * visible count to zero (filteredRows.length === 0 while rows.length > 0).
+   *
+   * The component uses \`rows.length === 0\` as the guard (MemoriesIndex.svelte
+   * line 119).  A future regression that accidentally changed this to
+   * \`filteredRows.length === 0\` would fail this test.
+   */
+  it("empty state stays hidden when chip filter leaves zero matching rows for the unselected tag", async () => {
+    const rows = [
+      fakeRow({ tag_id: 7, tag_name: "alpha", memory_id: 1 }),
+      fakeRow({ tag_id: 9, tag_name: "beta", memory_id: 2 }),
+    ];
+    const listAllMemoriesFn = vi.fn().mockResolvedValue(rows);
+    const { getAllByTestId, queryByTestId, queryAllByTestId } = render(MemoriesIndex, {
+      props: { listAllMemoriesFn },
+    });
+
+    // Wait for chips to appear (two distinct tags → chip row is shown).
+    await waitFor(() => {
+      expect(getAllByTestId("memories-index-chip")).toHaveLength(2);
+    });
+
+    // Activate the alpha chip (tag_id:7) — narrows the visible list to 1 row.
+    await fireEvent.click(getAllByTestId("memories-index-chip")[0]);
+    await waitFor(() => {
+      const visible = getAllByTestId("memories-index-row");
+      expect(visible).toHaveLength(1);
+      expect(visible[0]).toHaveAttribute("data-tag-id", "7");
+    });
+
+    // The beta rows (tag_id:9) now have zero visible count — they are filtered
+    // out by the chip.  Because rows.length = 2 > 0 the spec guard must keep
+    // the empty-state node absent from the DOM.
+    const betaVisible = (queryAllByTestId("memories-index-row") ?? []).filter(
+      (el) => el.getAttribute("data-tag-id") === "9",
+    );
+    expect(betaVisible).toHaveLength(0); // zero visible rows for the unselected tag
+    expect(queryByTestId("memories-index-empty")).toBeNull(); // spec guard: empty state hidden
+
+    // Switch to the beta chip — same invariant from the other direction.
+    await fireEvent.click(getAllByTestId("memories-index-chip")[1]);
+    await waitFor(() => {
+      const visible = getAllByTestId("memories-index-row");
+      expect(visible).toHaveLength(1);
+      expect(visible[0]).toHaveAttribute("data-tag-id", "9");
+    });
+    const alphaVisible = (queryAllByTestId("memories-index-row") ?? []).filter(
+      (el) => el.getAttribute("data-tag-id") === "7",
+    );
+    expect(alphaVisible).toHaveLength(0); // zero visible rows for the unselected tag
+    expect(queryByTestId("memories-index-empty")).toBeNull(); // spec guard upheld
   });
 });
 
