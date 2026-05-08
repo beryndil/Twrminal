@@ -185,7 +185,8 @@ export const KEYBINDINGS: readonly KeybindingSpec[] = [
     id: KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH,
     chord: { code: "KeyK", ctrl: true, display: ["⌘/Ctrl", "K"] },
     section: KEYBINDING_SECTION_COMMAND_PALETTE,
-    global: true,
+    global: false,
+    displayOnly: true,
   },
 ];
 

@@ -45,6 +45,8 @@ export const NON_REGISTRY_SECTIONS: readonly NonRegistrySection[] = [
     heading: "Context menu",
     bindings: [
       { keys: ["↑", "↓"], label: "Navigate items" },
+      { keys: ["Home"], label: "Jump to first enabled action" },
+      { keys: ["End"], label: "Jump to last enabled action" },
       { keys: ["Enter"], label: "Activate highlighted item" },
       { keys: ["→"], label: "Open submenu" },
       { keys: ["Esc"], label: "Close menu" },
