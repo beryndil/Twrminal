@@ -180,3 +180,39 @@ def test_get_vault_503_when_db_not_wired(vault_root: Path) -> None:
     with TestClient(app) as client:
         response = client.get("/api/vault")
         assert response.status_code == 503
+
+
+def test_get_vault_503_when_vault_cfg_not_wired(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """_cfg() raises 503 when vault_cfg is missing from app.state.
+
+    Regression guard for feature-7-003: the silent ``return VaultCfg()``
+    fallback has been replaced with a fail-fast 503 that mirrors ``_db()``.
+    ``create_app`` always sets ``app.state.vault_cfg``; this test simulates
+    an external clearing of the slot after startup to confirm the guard fires.
+    """
+    db_path = tmp_path_factory.mktemp("cfg503") / "test.db"
+
+    async def _open() -> aiosqlite.Connection:
+        factory = get_connection_factory(db_path)
+        conn = await factory()
+        await load_schema(conn)
+        return conn
+
+    loop = asyncio.new_event_loop()
+    try:
+        conn = loop.run_until_complete(_open())
+        app = create_app(heartbeat_interval_s=_HEARTBEAT_S, db_connection=conn)
+        # Forcibly clear vault_cfg to trigger the _cfg() 503 guard.
+        # create_app always sets this slot; clearing it simulates
+        # the inconsistent-state the finding describes.
+        app.state.vault_cfg = None
+        with TestClient(app) as client:
+            for path in ["/api/vault", "/api/vault/search?q=hello"]:
+                resp = client.get(path)
+                assert resp.status_code == 503, f"{path} should 503 when vault_cfg is None"
+                assert resp.json()["detail"] == "vault_cfg not configured on app.state"
+    finally:
+        loop.run_until_complete(conn.close())
+        loop.close()

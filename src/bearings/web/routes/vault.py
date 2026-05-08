@@ -71,14 +71,23 @@ def _db(request: Request) -> aiosqlite.Connection:
 
 
 def _cfg(request: Request) -> VaultCfg:
-    """Pull the :class:`VaultCfg` off ``app.state``; falls back to defaults."""
+    """Pull the :class:`VaultCfg` off ``app.state``.
+
+    Mirrors :func:`bearings.web.routes.vault._db`; raises 503 when
+    ``vault_cfg`` is absent or ``None`` on ``app.state``.
+
+    In production :func:`bearings.web.app.create_app` always sets the
+    slot (defaulting to a fresh ``VaultCfg()`` when the caller passes
+    ``None``), so this branch only fires if something external clears
+    the state after startup — treated as a misconfiguration, not a
+    silent default.
+    """
     cfg = getattr(request.app.state, "vault_cfg", None)
     if cfg is None:
-        # No explicit cfg → construct the default-roots VaultCfg. The
-        # default points at ``~/.claude/plans`` + ``~/Projects/**/TODO.md``;
-        # tests always inject an explicit cfg so this branch is the
-        # production fallback.
-        return VaultCfg()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="vault_cfg not configured on app.state",
+        )
     if not isinstance(cfg, VaultCfg):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
