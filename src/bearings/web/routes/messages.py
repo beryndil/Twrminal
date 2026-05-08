@@ -86,6 +86,7 @@ def _to_out(message: Message) -> MessageOut:
         seq=message.seq,
         pinned=message.pinned,
         hidden_from_context=message.hidden_from_context,
+        stopped=message.stopped,
     )
 
 

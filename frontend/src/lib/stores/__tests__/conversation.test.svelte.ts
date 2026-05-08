@@ -50,6 +50,7 @@ const userMsg: MessageTurnView = {
   resumed: false,
   seq: 0,
   attachments: [],
+  stopped: false,
 };
 
 describe("applyEvent — user/assistant lifecycle", () => {
@@ -361,6 +362,7 @@ describe("hydrateTurns", () => {
           pinned: false,
           hidden_from_context: false,
           evaluated_rules: [],
+          stopped: false,
         },
         {
           id: "a1",
@@ -386,6 +388,7 @@ describe("hydrateTurns", () => {
           pinned: false,
           hidden_from_context: false,
           evaluated_rules: [],
+          stopped: false,
         },
       ],
       has_more: false,
@@ -423,6 +426,7 @@ describe("hydrateTurns", () => {
           pinned: false,
           hidden_from_context: false,
           evaluated_rules: [],
+          stopped: false,
         },
       ],
       has_more: true,
@@ -462,6 +466,7 @@ function makeMsg(id: string, role: "user" | "assistant") {
     pinned: false,
     hidden_from_context: false,
     evaluated_rules: [],
+    stopped: false,
   };
 }
 

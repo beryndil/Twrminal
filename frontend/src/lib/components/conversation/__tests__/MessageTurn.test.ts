@@ -31,6 +31,7 @@ function turn(overrides: Partial<MessageTurnView> = {}): MessageTurnView {
     resumed: false,
     seq: 0,
     attachments: [],
+    stopped: false,
     ...overrides,
   };
 }
@@ -533,5 +534,67 @@ describe("MessageTurn — stale-target detection (gap-cycle-15-004)", () => {
     });
     await fireEvent.contextMenu(getByTestId("message-turn"));
     expect(contextMenuStore.open?.stale).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// feature-2-004 — [stopped] annotation on interrupted assistant turns
+// ---------------------------------------------------------------------------
+
+describe("MessageTurn — [stopped] annotation (feature-2-004)", () => {
+  it("renders the [stopped] chip when stopped=true", () => {
+    const { getByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({ id: "a1", role: "assistant", body: "partial", stopped: true, complete: true }),
+      },
+    });
+    const chip = getByTestId("message-turn-stopped");
+    expect(chip).toBeTruthy();
+    expect(chip.textContent?.trim()).toBe(CONVERSATION_STRINGS.stoppedAnnotationLabel);
+  });
+
+  it("does NOT render the [stopped] chip when stopped=false", () => {
+    const { queryByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({
+          id: "a1",
+          role: "assistant",
+          body: "complete reply",
+          stopped: false,
+          complete: true,
+        }),
+      },
+    });
+    expect(queryByTestId("message-turn-stopped")).toBeNull();
+  });
+
+  it("does NOT render the [stopped] chip on user turns even when stopped=true", () => {
+    const { queryByTestId } = render(MessageTurn, {
+      props: { turn: turn({ id: "u1", role: "user", body: "hi", stopped: true, complete: true }) },
+    });
+    // User bubble branch does not render the assistant block at all.
+    expect(queryByTestId("message-turn-stopped")).toBeNull();
+  });
+
+  it("stoppedAnnotationLabel string matches the spec copy", () => {
+    // Pins the configured string so a rename surfaces here as a test failure.
+    expect(CONVERSATION_STRINGS.stoppedAnnotationLabel).toBe("[stopped]");
+  });
+
+  it("stopped chip is co-present with the error block when both are set", () => {
+    const { getByTestId } = render(MessageTurn, {
+      props: {
+        turn: turn({
+          id: "a1",
+          role: "assistant",
+          body: "",
+          stopped: true,
+          error: "oops",
+          complete: true,
+        }),
+      },
+    });
+    expect(getByTestId("message-turn-stopped")).toBeTruthy();
+    expect(getByTestId("message-turn-error")).toBeTruthy();
   });
 });

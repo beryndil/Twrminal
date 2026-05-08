@@ -225,6 +225,7 @@ describe("Inspector shell — tab state persistence (gap-cycle-09-001)", () => {
       pinned: false,
       hidden_from_context: false,
       evaluated_rules: [],
+      stopped: false,
       ...overrides,
     };
   }

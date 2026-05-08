@@ -546,6 +546,9 @@ export const CONVERSATION_STRINGS = {
   loadingOlder: "Loading…",
   // Item 1.4 turn_replayed annotation — user row inline badge.
   turnResumedLabel: "↻ resumed",
+  // feature-2-004: [stopped] annotation on interrupted assistant turns.
+  // Per docs/behavior/chat.md §"Stopping or interrupting a turn".
+  stoppedAnnotationLabel: "[stopped]",
   // Phase 1 conversation UX
   reopenSessionLabel: "Reopen session",
   errorHintLabel: "Try sending a new message to continue.",

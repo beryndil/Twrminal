@@ -210,6 +210,7 @@ async def test_single_turn_runs_end_to_end(conn: aiosqlite.Connection) -> None:
         decision: RoutingDecision,
         model_usage: Any,
         total_cost_usd: float | None = None,
+        stopped: bool = False,
     ) -> DbMessage:
         persisted.append({"session_id": session_id, "content": content, "model_usage": model_usage})
         return await sessions_db.get(connection, session_id)  # type: ignore[return-value]
@@ -434,6 +435,7 @@ async def test_multi_prompt_fifo_runs_in_arrival_order(
         decision: RoutingDecision,
         model_usage: Any,
         total_cost_usd: float | None = None,
+        stopped: bool = False,
     ) -> DbMessage:
         persisted.append(content)
         return await sessions_db.get(connection, session_id)  # type: ignore[return-value]

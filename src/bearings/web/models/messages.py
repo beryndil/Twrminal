@@ -83,6 +83,10 @@ class MessageOut(BaseModel):
     # G3 context-menu state columns.
     pinned: bool = False
     hidden_from_context: bool = False
+    # feature-2-004: [stopped] annotation — True when the turn was
+    # interrupted via the Stop control; False for normally-completed turns
+    # and all pre-feature rows (which default to False per schema migration).
+    stopped: bool = False
 
 
 class MessagePinnedUpdate(BaseModel):

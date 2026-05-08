@@ -515,6 +515,17 @@
           {CONVERSATION_STRINGS.errorBubbleLabel}: {turn.error}
         </p>
       {/if}
+      {#if turn.stopped}
+        <!-- feature-2-004: [stopped] annotation on interrupted turns.
+             Per docs/behavior/chat.md §"Stopping or interrupting a turn". -->
+        <span
+          class="mt-2 inline-block rounded border border-amber-500/60 px-1.5 py-0.5 text-xs text-amber-400"
+          data-testid="message-turn-stopped"
+          title="This turn was interrupted by the user"
+        >
+          {CONVERSATION_STRINGS.stoppedAnnotationLabel}
+        </span>
+      {/if}
     </div>
   {/if}
 </article>

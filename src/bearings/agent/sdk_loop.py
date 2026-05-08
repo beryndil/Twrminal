@@ -66,6 +66,7 @@ from bearings.agent.events import (
     TodoWriteUpdate,
     ToolCallEnd,
     ToolCallStart,
+    TurnStopped,
     UserMessage,
 )
 from bearings.agent.options import OptionsKwargs
@@ -284,6 +285,66 @@ def _build_tool_records(
     ]
 
 
+async def _finish_turn(
+    runner: SessionRunner,
+    session: AgentSession,
+    translator: SDKEventTranslator,
+    persist_fn: MessagePersistence,
+    *,
+    last_result: ResultMessage | None,
+    pending_starts: list[ToolCallStart],
+    pending_ends: dict[str, ToolCallEnd],
+    was_stopped: bool,
+) -> None:
+    """Emit ``TurnStopped`` (feature-2-004) and persist the assistant row.
+
+    Extracted from :func:`_do_run_one_turn` to keep that function's
+    cyclomatic complexity below the xenon gate (≤ B rank).
+
+    ``was_stopped`` is ``runner.stop_event.is_set()`` captured *after*
+    :func:`_collect_turn_events` returns — the stop_event is cleared at
+    the start of each turn by :func:`_run_one_turn`, so it reflects only
+    the current turn's interrupt state.
+    """
+    # Emit TurnStopped so live WS subscribers can render the [stopped]
+    # annotation immediately. Emitted after MessageComplete (or in place
+    # of it when the SDK produced no ResultMessage before the interrupt),
+    # so the frontend turn is already open when this arrives.
+    if was_stopped and translator.message_id is not None:
+        await runner.emit(
+            TurnStopped(
+                session_id=session.config.session_id,
+                message_id=translator.message_id,
+            )
+        )
+    # Persist the assistant row. Skipped when the turn produced no
+    # body (rare: would mean a tool-only turn that the SDK terminated
+    # without an assistant message — already surfaced as ErrorEvent
+    # by the translator).
+    db = session.config.db
+    body = translator.final_body()
+    if db is not None and translator.message_id is not None and body:
+        msg = await persist_fn(
+            db,
+            session_id=session.config.session_id,
+            content=body,
+            decision=session.config.decision,
+            model_usage=last_result.model_usage if last_result is not None else None,
+            total_cost_usd=last_result.total_cost_usd if last_result is not None else None,
+            stopped=was_stopped,
+        )
+        # Persist tool calls with the Bearings message id so the REST
+        # hydration path (GET /api/sessions/{id}/tool_calls) can join
+        # against the messages table by Bearings id rather than SDK id.
+        if pending_starts:
+            await tool_calls_db.insert_batch(
+                db,
+                session_id=session.config.session_id,
+                message_id=msg.id,
+                records=_build_tool_records(pending_starts, pending_ends),
+            )
+
+
 async def _do_run_one_turn(
     runner: SessionRunner,
     session: AgentSession,
@@ -335,31 +396,19 @@ async def _do_run_one_turn(
     last_result, pending_starts, pending_ends = await _collect_turn_events(
         runner, client, translator
     )
-    # Persist the assistant row. Skipped when the turn produced no
-    # body (rare: would mean a tool-only turn that the SDK terminated
-    # without an assistant message — already surfaced as ErrorEvent
-    # by the translator).
-    db = session.config.db
-    body = translator.final_body()
-    if db is not None and translator.message_id is not None and body:
-        msg = await persist_fn(
-            db,
-            session_id=session.config.session_id,
-            content=body,
-            decision=session.config.decision,
-            model_usage=last_result.model_usage if last_result is not None else None,
-            total_cost_usd=last_result.total_cost_usd if last_result is not None else None,
-        )
-        # Persist tool calls with the Bearings message id so the REST
-        # hydration path (GET /api/sessions/{id}/tool_calls) can join
-        # against the messages table by Bearings id rather than SDK id.
-        if pending_starts:
-            await tool_calls_db.insert_batch(
-                db,
-                session_id=session.config.session_id,
-                message_id=msg.id,
-                records=_build_tool_records(pending_starts, pending_ends),
-            )
+    # feature-2-004: detect stop + emit + persist in a dedicated helper
+    # so this function's cyclomatic complexity stays under the xenon gate.
+    was_stopped = runner.stop_event.is_set()
+    await _finish_turn(
+        runner,
+        session,
+        translator,
+        persist_fn,
+        last_result=last_result,
+        pending_starts=pending_starts,
+        pending_ends=pending_ends,
+        was_stopped=was_stopped,
+    )
 
 
 def _make_todo_update(event: ToolCallStart) -> TodoWriteUpdate:

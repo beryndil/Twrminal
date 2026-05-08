@@ -225,6 +225,22 @@ class TurnReplayed(_BaseEvent):
     message_id: str
 
 
+class TurnStopped(_BaseEvent):
+    """Turn-interrupted marker — emitted after :class:`MessageComplete`
+    (or instead of it, when the SDK produced no body) when the turn
+    ended because the user pressed Stop.
+
+    Per ``docs/behavior/chat.md`` §"Stopping or interrupting a turn":
+    "the partially-streamed assistant bubble is preserved with a
+    ``[stopped]`` annotation." The frontend reducer marks the matching
+    turn ``stopped=true``; the persistence layer persists ``stopped=1``
+    on the ``messages`` row so the annotation survives page reload.
+    """
+
+    type: Literal["turn_stopped"] = "turn_stopped"
+    message_id: str
+
+
 class ApprovalRequest(_BaseEvent):
     """``can_use_tool`` callback open — opens the approval modal."""
 
@@ -287,6 +303,7 @@ type AgentEvent = Annotated[
     | ContextUsage
     | ErrorEvent
     | TurnReplayed
+    | TurnStopped
     | ApprovalRequest
     | ApprovalResolved
     | TodoWriteUpdate
@@ -314,5 +331,6 @@ __all__ = [
     "ToolOutputDelta",
     "ToolProgress",
     "TurnReplayed",
+    "TurnStopped",
     "UserMessage",
 ]

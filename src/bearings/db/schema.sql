@@ -156,6 +156,10 @@ CREATE TABLE IF NOT EXISTS messages (
     -- header; hidden_from_context drops it from the next prompt window.
     pinned                   INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
     hidden_from_context      INTEGER NOT NULL DEFAULT 0 CHECK (hidden_from_context IN (0, 1)),
+    -- feature-2-004: [stopped] annotation — set to 1 when the turn was
+    -- interrupted via the Stop control. The frontend renders a [stopped]
+    -- chip on the assistant bubble so the annotation survives page reload.
+    stopped                  INTEGER NOT NULL DEFAULT 0 CHECK (stopped IN (0, 1)),
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 

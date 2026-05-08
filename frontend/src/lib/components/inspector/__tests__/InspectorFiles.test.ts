@@ -56,6 +56,7 @@ function fakeTurn(overrides: Partial<MessageTurnView> = {}): MessageTurnView {
     resumed: false,
     seq: 1,
     attachments: [],
+    stopped: false,
     ...overrides,
   };
 }

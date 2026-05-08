@@ -305,6 +305,7 @@ async def persist_assistant_turn(
     decision: RoutingDecision,
     model_usage: Mapping[str, object] | None,
     total_cost_usd: float | None = None,
+    stopped: bool = False,
 ) -> Message:
     """Insert one assistant-role message row for the turn just completed.
 
@@ -361,6 +362,7 @@ async def persist_assistant_turn(
         advisor_output_tokens=breakdown.advisor_output_tokens,
         advisor_calls_count=breakdown.advisor_calls_count,
         cache_read_tokens=breakdown.cache_read_tokens,
+        stopped=stopped,
     )
     if total_cost_usd is not None:
         await sessions_db.add_to_total_cost(connection, session_id, total_cost_usd)
@@ -387,6 +389,7 @@ class MessagePersistence(Protocol):
         decision: RoutingDecision,
         model_usage: Mapping[str, object] | None,
         total_cost_usd: float | None = None,
+        stopped: bool = False,
     ) -> Message: ...
 
 

@@ -50,6 +50,7 @@ function fakeMessage(overrides: Partial<MessageOut> = {}): MessageOut {
     pinned: false,
     hidden_from_context: false,
     evaluated_rules: [],
+    stopped: false,
     ...overrides,
   };
 }

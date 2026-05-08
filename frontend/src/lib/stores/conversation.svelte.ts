@@ -121,6 +121,14 @@ export interface MessageTurnView {
    * the backend exposes that field; defaults to ``[]`` in the interim.
    */
   attachments: readonly SentAttachment[];
+  /**
+   * ``true`` when the turn was interrupted via the Stop control.
+   * Per ``docs/behavior/chat.md`` §"Stopping or interrupting a turn":
+   * the assistant bubble gains a ``[stopped]`` annotation chip.
+   * Populated from ``MessageOut.stopped`` on hydration and set by the
+   * ``turn_stopped`` WS event for live turns.
+   */
+  stopped: boolean;
 }
 
 export interface TurnRouting {
@@ -702,6 +710,7 @@ export function applyEvent(
           resumed: false,
           seq: 0,
           attachments: [],
+          stopped: false,
         },
       ];
     case "message_start":
@@ -721,6 +730,7 @@ export function applyEvent(
           resumed: false,
           seq: 0,
           attachments: [],
+          stopped: false,
         },
       ];
     case "token":
@@ -825,6 +835,18 @@ export function applyEvent(
         }
         return turn;
       });
+    case "turn_stopped":
+      // Mark the matching assistant turn as stopped + complete so the
+      // [stopped] annotation chip renders.  Arrives after message_complete
+      // for turns that produced a body; also arrives without a prior
+      // message_complete when the SDK was interrupted before emitting a
+      // ResultMessage (in which case complete defaults to false and this
+      // event closes the turn).
+      return mapAssistantTurn(turns, event.message_id, (turn) => ({
+        ...turn,
+        stopped: true,
+        complete: true,
+      }));
     case "context_usage":
     case "approval_request":
     case "approval_resolved":
@@ -900,6 +922,7 @@ function attachError(turns: readonly MessageTurnView[], message: string): Messag
       resumed: false,
       seq: 0,
       attachments: [],
+      stopped: false,
     },
   ];
 }
@@ -930,6 +953,7 @@ function rowToTurn(row: MessageOut): MessageTurnView {
     // ``MessageOut`` does not yet carry attachment metadata; default to
     // empty array until the backend wiring lands (gap-cycle-01-015).
     attachments: [],
+    stopped: row.stopped,
   };
 }
 

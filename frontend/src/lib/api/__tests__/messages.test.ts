@@ -37,6 +37,7 @@ const sampleRow: MessageOut = {
   pinned: false,
   hidden_from_context: false,
   evaluated_rules: [],
+  stopped: false,
 };
 
 const samplePage: MessagePage = {

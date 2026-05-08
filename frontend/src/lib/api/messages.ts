@@ -59,6 +59,14 @@ export interface MessageOut {
   // G3 context-menu state columns.
   pinned: boolean;
   hidden_from_context: boolean;
+  /**
+   * ``true`` when the turn was interrupted via the Stop control.
+   * Per ``docs/behavior/chat.md`` §"Stopping or interrupting a turn":
+   * the assistant bubble gains a ``[stopped]`` annotation.
+   * Defaults to ``false`` for normally-completed turns and all pre-feature
+   * rows (schema migration sets ``DEFAULT 0``).
+   */
+  stopped: boolean;
 }
 
 /**

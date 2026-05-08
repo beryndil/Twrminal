@@ -125,6 +125,20 @@ export interface TurnReplayedEvent extends BaseEvent {
   message_id: string;
 }
 
+/**
+ * Turn-interrupted marker — emitted by the backend when the turn ended
+ * because the user pressed Stop.  Arrives after ``message_complete``
+ * (or in its absence when the SDK produced no body before interrupt).
+ *
+ * Per ``docs/behavior/chat.md`` §"Stopping or interrupting a turn":
+ * the partially-streamed assistant bubble gains a ``[stopped]``
+ * annotation.
+ */
+export interface TurnStoppedEvent extends BaseEvent {
+  type: "turn_stopped";
+  message_id: string;
+}
+
 export interface ApprovalRequestEvent extends BaseEvent {
   type: "approval_request";
   request_id: string;
@@ -169,6 +183,7 @@ export type AgentEvent =
   | ContextUsageEvent
   | ErrorEvent
   | TurnReplayedEvent
+  | TurnStoppedEvent
   | ApprovalRequestEvent
   | ApprovalResolvedEvent
   | TodoWriteUpdateEvent

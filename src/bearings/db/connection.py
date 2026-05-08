@@ -136,6 +136,13 @@ _ADDED_COLUMNS: Final[tuple[tuple[str, str, str], ...]] = (
         "notify_on_complete",
         "INTEGER NOT NULL DEFAULT 0 CHECK (notify_on_complete IN (0, 1))",
     ),
+    # feature-2-004: [stopped] annotation on interrupted assistant turns.
+    # Existing rows default to 0 (not stopped — pre-dates the column).
+    (
+        "messages",
+        "stopped",
+        "INTEGER NOT NULL DEFAULT 0 CHECK (stopped IN (0, 1))",
+    ),
 )
 
 

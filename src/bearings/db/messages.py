@@ -105,6 +105,10 @@ class Message:
     # routing engine (``RoutingDecision.evaluated_rules``). Empty list
     # for rows that predate this column or used a manual/legacy source.
     evaluated_rules: list[int] = field(default_factory=list)
+    # feature-2-004: [stopped] annotation on interrupted assistant turns.
+    # True when the turn ended via the Stop control; False (default) for
+    # turns that completed normally and for all pre-feature rows.
+    stopped: bool = False
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -233,6 +237,7 @@ async def insert_assistant(
     advisor_output_tokens: int | None,
     advisor_calls_count: int,
     cache_read_tokens: int | None,
+    stopped: bool = False,
 ) -> Message:
     """Insert an assistant-role row carrying the spec §5 routing + usage fields.
 
@@ -286,6 +291,7 @@ async def insert_assistant(
         output_tokens=None,
         seq=0,
         evaluated_rules=evaluated_rules,
+        stopped=stopped,
     )
     await connection.execute(
         "INSERT INTO messages ("
@@ -294,8 +300,8 @@ async def insert_assistant(
         "routing_source, routing_reason, matched_rule_id, evaluated_rules, "
         "executor_input_tokens, executor_output_tokens, "
         "advisor_input_tokens, advisor_output_tokens, "
-        "advisor_calls_count, cache_read_tokens"
-        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "advisor_calls_count, cache_read_tokens, stopped"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             message_id,
             session_id,
@@ -315,6 +321,7 @@ async def insert_assistant(
             advisor_output_tokens,
             advisor_calls_count,
             cache_read_tokens,
+            1 if stopped else 0,
         ),
     )
     await connection.execute(
@@ -632,7 +639,8 @@ _SELECT_MESSAGE_COLUMNS = (
     "input_tokens, output_tokens, rowid AS seq, "
     "COALESCE(pinned, 0) AS pinned, "
     "COALESCE(hidden_from_context, 0) AS hidden_from_context, "
-    "COALESCE(evaluated_rules, '[]') AS evaluated_rules "
+    "COALESCE(evaluated_rules, '[]') AS evaluated_rules, "
+    "COALESCE(stopped, 0) AS stopped "
     "FROM messages"
 )
 
@@ -689,6 +697,7 @@ async def import_messages(
             m.get("output_tokens"),
             int(bool(m.get("pinned", False))),
             int(bool(m.get("hidden_from_context", False))),
+            int(bool(m.get("stopped", False))),
         )
         for m in messages
     ]
@@ -698,8 +707,8 @@ async def import_messages(
         "executor_model, advisor_model, effort_level, routing_source, routing_reason, "
         "matched_rule_id, evaluated_rules, executor_input_tokens, executor_output_tokens, "
         "advisor_input_tokens, advisor_output_tokens, advisor_calls_count, "
-        "cache_read_tokens, input_tokens, output_tokens, pinned, hidden_from_context) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "cache_read_tokens, input_tokens, output_tokens, pinned, hidden_from_context, stopped) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rows,
     )
     await connection.commit()
@@ -749,6 +758,7 @@ def _row_to_message(row: aiosqlite.Row | tuple[object, ...]) -> Message:
         pinned=bool(int(str(row[20]))) if row[20] is not None else False,
         hidden_from_context=bool(int(str(row[21]))) if row[21] is not None else False,
         evaluated_rules=_parse_evaluated_rules(row[22]),
+        stopped=bool(int(str(row[23]))) if row[23] is not None else False,
     )
 
 

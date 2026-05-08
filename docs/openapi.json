@@ -7423,6 +7423,11 @@
             "type": "boolean",
             "title": "Hidden From Context",
             "default": false
+          },
+          "stopped": {
+            "type": "boolean",
+            "title": "Stopped",
+            "default": false
           }
         },
         "additionalProperties": false,
