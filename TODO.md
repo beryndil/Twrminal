@@ -33,7 +33,7 @@ What v1.1 ships:
 
 What v1.1 defers (logged below):
 
-* PairedChatIndicator wiring.
+* ~~PairedChatIndicator wiring.~~ (resolved: component mounted in 33b3a55c)
 * The 12 spec'd route modules from arch §1.1.5 — all absent in v1.0
   AND with zero v1 frontend consumers; deferred per the plan's
   "KEEP only modules with a v1 frontend consumer" rule.
@@ -199,23 +199,11 @@ closing-sweep plan (`~/.claude/plans/belated-closing-sweep.md`) is
 the source of truth for the work; the entries below are deferrals
 that arose during execution.
 
-#### PairedChatIndicator wiring (deferred)
+#### ~~PairedChatIndicator wiring (deferred)~~
 
-`paired-chats.md` §"From the chat side" point 2 mandates a breadcrumb
-chip on the conversation header (`<parent checklist title> › <item
-label>`). The `PairedChatIndicator.svelte` component is built
-(`frontend/src/lib/components/conversation/PairedChatIndicator.svelte`)
-but unmounted because no backend endpoint exposes the
-`(parent_title, item_label)` lookup for a chat session id.
-
-**Action when the lookup endpoint lands**: add
-`GET /api/sessions/{id}/paired-chat-info` (or extend `SessionOut` with
-a `paired_chat` block) returning the parent checklist title + item
-label or `null`. Mount `PairedChatIndicator` in
-`frontend/src/routes/+layout.svelte`'s conversation header guarded on
-the lookup result. Same data also unblocks the sidebar annotation
-(`↳ <parent checklist title>` per paired-chats.md §"From the
-sidebar").
+~~Stale entry — `PairedChatIndicator.svelte` is imported and mounted in
+`ConversationHeader.svelte`. Entry removed per feature-6-009 closeout;
+resolving commit `33b3a55c`.~~
 
 #### Missing arch §1.1.5 route modules (deferred — no v1 UI consumer)
 
@@ -255,15 +243,12 @@ frontend caller. The arch doc is the source of truth for the route
 shape; the per-module test patterns in
 ``tests/test_*_api.py`` are the reference for the integration tests.
 
-#### ChecklistChat — deleted (no documented role)
+#### ~~ChecklistChat — deleted (no documented role)~~
 
-The `ChecklistChat.svelte` component shipped as an orphan (only its
-own test imported it). No `docs/behavior/*.md` describes the embedded
-conversation pane it offered; the v1 paired-chat flow uses
-`goto(/sessions/<id>)` for full pane swap. Removed in commit (this
-sweep) along with its test and its `CHECKLIST_STRINGS.checklistChat*`
-entries. Re-add only when a behavior doc justifies an inline pane
-alternative to pane-swap.
+~~Stale entry — `ChecklistChat.svelte` exists and is mounted in
+`ChecklistView.svelte`. Re-added with behavior doc in commit `404c1818`
+(gap-cycle-01-014). Entry removed per feature-6-009 closeout;
+resolving commit `404c1818`.~~
 
 ## Push backlog — SSH proxy config permissions (2026-05-04)
 
