@@ -171,3 +171,35 @@ Inspector **Routing** tab surfaces:
   tested, rendered as the evaluation chain for "Why this model?"
   debugging.
 - The `quota_state_at_decision` percentages at the time routing ran.
+
+---
+
+## Daily probe — retry contract
+
+`scripts/daily_probe.py` uses a blackbox-probe pattern: each endpoint is
+attempted up to `PROBE_RETRY_ATTEMPTS` times (default: **3**) before a
+FAIL result is recorded. A `PROBE_RETRY_BACKOFF_S` sleep (default:
+**1.0 s**) separates consecutive attempts.
+
+**Retriable conditions** (trigger a retry and continue to the next
+attempt):
+
+- Network-level failures: `URLError`, `TimeoutError`, `OSError` —
+  e.g. connection refused during a `bearings-v1.service` restart.
+- `HTTPError` whose status code is **outside** the probe's
+  `accepted_status_codes` — e.g. HTTP 503 during a graceful restart.
+
+**Non-retriable results** (returned immediately, no further attempts):
+
+- A successful 2xx/3xx response from `urlopen`.
+- An `HTTPError` whose status code is **inside** `accepted_status_codes`
+  (e.g. 404 for `/api/quota/current` before the first quota snapshot).
+
+When a probe passes on attempt *N* > 1, the `detail` field in the JSONL
+log records the attempt count, e.g. `"ok status=200 (attempt 2/3)"`.
+When all attempts are exhausted, the final `detail` reads
+`"... (exhausted 3/3 attempts)"`.
+
+The retry budget and backoff are overridable via `--retry-attempts` and
+`--retry-backoff` CLI flags, which default to the `PROBE_RETRY_ATTEMPTS`
+and `PROBE_RETRY_BACKOFF_S` constants in `scripts/daily_probe.py`.

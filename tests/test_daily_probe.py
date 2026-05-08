@@ -31,11 +31,13 @@ filesystem tests.
 from __future__ import annotations
 
 import datetime as dt
+import http.client
 import importlib.util
 import json
 import os
 import stat
 import sys
+import urllib.error
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Final
@@ -64,18 +66,24 @@ _M: Final[ModuleType] = _load_script_module()
 if TYPE_CHECKING:  # pragma: no cover — type-only branch
     sys.path.insert(0, str(_REPO_ROOT / "scripts"))
     from daily_probe import (
+        PROBE_RETRY_ATTEMPTS,
+        PROBE_RETRY_BACKOFF_S,
         PROBES,
         Probe,
         ProbeResult,
+        _execute_probe,
         _result_to_jsonl,
         render_human,
         run_probes,
         write_log,
     )
 else:
+    PROBE_RETRY_ATTEMPTS = _M.PROBE_RETRY_ATTEMPTS
+    PROBE_RETRY_BACKOFF_S = _M.PROBE_RETRY_BACKOFF_S
     PROBES = _M.PROBES
     Probe = _M.Probe
     ProbeResult = _M.ProbeResult
+    _execute_probe = _M._execute_probe
     _result_to_jsonl = _M._result_to_jsonl
     render_human = _M.render_human
     run_probes = _M.run_probes
@@ -117,7 +125,9 @@ def test_run_probes_all_pass(monkeypatch: pytest.MonkeyPatch) -> None:
     """Every probe returns an accepted status code → every result passes."""
     probe_iter = iter(PROBES)
 
-    def fake_execute(probe: object, *, base_url: str, timeout_s: float) -> object:
+    def fake_execute(
+        probe: object, *, base_url: str, timeout_s: float, **_kwargs: object
+    ) -> object:
         del probe, base_url, timeout_s
         current = next(probe_iter)
         return ProbeResult(
@@ -137,7 +147,9 @@ def test_run_probes_partial_fail(monkeypatch: pytest.MonkeyPatch) -> None:
     """Probes returning an unaccepted status code are marked FAIL."""
     probe_iter = iter(PROBES)
 
-    def fake_execute(probe: object, *, base_url: str, timeout_s: float) -> object:
+    def fake_execute(
+        probe: object, *, base_url: str, timeout_s: float, **_kwargs: object
+    ) -> object:
         del probe, base_url, timeout_s
         current = next(probe_iter)
         # 503 is not in any probe's accepted set.
@@ -158,7 +170,9 @@ def test_run_probes_url_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Connection error → status_code=None and every probe fails."""
     probe_iter = iter(PROBES)
 
-    def fake_execute(probe: object, *, base_url: str, timeout_s: float) -> object:
+    def fake_execute(
+        probe: object, *, base_url: str, timeout_s: float, **_kwargs: object
+    ) -> object:
         del probe, base_url, timeout_s
         current = next(probe_iter)
         return ProbeResult(
@@ -183,7 +197,9 @@ def test_run_probes_quota_current_404_is_pass(monkeypatch: pytest.MonkeyPatch) -
     """
     probe_iter = iter(PROBES)
 
-    def fake_execute(probe: object, *, base_url: str, timeout_s: float) -> object:
+    def fake_execute(
+        probe: object, *, base_url: str, timeout_s: float, **_kwargs: object
+    ) -> object:
         del probe, base_url, timeout_s
         current = next(probe_iter)
         if current.name == "quota_current":
@@ -211,7 +227,9 @@ def test_run_probes_result_order_matches_probes(monkeypatch: pytest.MonkeyPatch)
     """Results are returned in the same order as the PROBES table."""
     probe_iter = iter(PROBES)
 
-    def fake_execute(probe: object, *, base_url: str, timeout_s: float) -> object:
+    def fake_execute(
+        probe: object, *, base_url: str, timeout_s: float, **_kwargs: object
+    ) -> object:
         del probe, base_url, timeout_s
         current = next(probe_iter)
         return ProbeResult(probe=current, status_code=200, elapsed_ms=1, detail="ok")
@@ -475,3 +493,125 @@ def test_probes_table_quota_current_path() -> None:
     """quota_current targets /api/quota/current (the headroom semantic swap)."""
     quota = next(p for p in PROBES if p.name == "quota_current")
     assert quota.path == "/api/quota/current"
+
+
+# ---------------------------------------------------------------------------
+# _execute_probe — retry semantics
+#
+# These tests exercise _execute_probe directly, monkeypatching
+# urllib.request.urlopen (the transport layer) rather than _execute_probe
+# itself, so the retry loop is exercised end-to-end.  retry_backoff_s=0.0
+# avoids real sleeps without needing to monkeypatch time.sleep.
+# ---------------------------------------------------------------------------
+
+
+class _FakeResponse:
+    """Minimal urlopen response stub: context manager + .status + .read()."""
+
+    def __init__(self, status: int) -> None:
+        self.status = status
+
+    def read(self) -> bytes:
+        return b""
+
+    def __enter__(self) -> _FakeResponse:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        pass
+
+
+def test_execute_probe_retry_success_on_second_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Connection-refused on first attempt, succeeds on second → passed=True.
+
+    The detail field includes the attempt counter when attempt > 1
+    (e.g. "ok status=200 (attempt 2/3)").
+    """
+    probe = Probe(name="health", path="/api/health", accepted_status_codes=frozenset({200}))
+    call_count = 0
+
+    def fake_urlopen(req: object, **_kw: object) -> _FakeResponse:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise urllib.error.URLError("Connection refused")
+        return _FakeResponse(200)
+
+    monkeypatch.setattr(_M.urllib.request, "urlopen", fake_urlopen)
+    result = _execute_probe(
+        probe,
+        base_url="http://127.0.0.1:8788",
+        timeout_s=1.0,
+        retry_attempts=3,
+        retry_backoff_s=0.0,
+    )
+    assert result.passed is True
+    assert result.status_code == 200
+    assert "attempt 2/3" in result.detail
+    assert call_count == 2
+
+
+def test_execute_probe_retry_all_attempts_exhausted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """All 3 attempts fail → passed=False; detail notes exhausted retry budget."""
+    probe = Probe(name="health", path="/api/health", accepted_status_codes=frozenset({200}))
+    call_count = 0
+
+    def fake_urlopen(req: object, **_kw: object) -> _FakeResponse:
+        nonlocal call_count
+        call_count += 1
+        raise urllib.error.URLError("Connection refused")
+
+    monkeypatch.setattr(_M.urllib.request, "urlopen", fake_urlopen)
+    result = _execute_probe(
+        probe,
+        base_url="http://127.0.0.1:8788",
+        timeout_s=1.0,
+        retry_attempts=3,
+        retry_backoff_s=0.0,
+    )
+    assert result.passed is False
+    assert result.status_code is None
+    assert "exhausted 3/3" in result.detail
+    assert call_count == 3
+
+
+def test_execute_probe_retry_http_503_then_200(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HTTPError 503 on first attempt (retriable), 200 on second → passed=True.
+
+    HTTP 503 is the canonical case for a graceful bearings-v1.service
+    restart overlapping the probe window.
+    """
+    probe = Probe(name="health", path="/api/health", accepted_status_codes=frozenset({200}))
+    call_count = 0
+
+    def fake_urlopen(req: object, **_kw: object) -> _FakeResponse:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise urllib.error.HTTPError(
+                "http://127.0.0.1:8788/api/health",
+                503,
+                "Service Unavailable",
+                http.client.HTTPMessage(),
+                None,
+            )
+        return _FakeResponse(200)
+
+    monkeypatch.setattr(_M.urllib.request, "urlopen", fake_urlopen)
+    result = _execute_probe(
+        probe,
+        base_url="http://127.0.0.1:8788",
+        timeout_s=1.0,
+        retry_attempts=3,
+        retry_backoff_s=0.0,
+    )
+    assert result.passed is True
+    assert result.status_code == 200
+    assert "attempt 2/3" in result.detail
+    assert call_count == 2

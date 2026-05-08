@@ -61,6 +61,7 @@ import datetime as dt
 import json
 import logging
 import sys
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Sequence
@@ -75,6 +76,8 @@ PROBE_HOST: Final[str] = "127.0.0.1"
 PROBE_PORT: Final[int] = 8788
 PROBE_BASE_URL: Final[str] = f"http://{PROBE_HOST}:{PROBE_PORT}"
 PROBE_TIMEOUT_S: Final[float] = 10.0
+PROBE_RETRY_ATTEMPTS: Final[int] = 3
+PROBE_RETRY_BACKOFF_S: Final[float] = 1.0
 PROBE_USER_AGENT: Final[str] = "bearings-v1-daily-probe/1"
 
 LOG_DIR: Final[Path] = Path("~/.local/share/bearings-v1/probes").expanduser()
@@ -147,46 +150,51 @@ def _now_utc() -> dt.datetime:
 
 def _monotonic_ms() -> int:
     """Return a monotonically-increasing millisecond counter."""
-    # ``time.monotonic_ns`` avoids the float precision loss of
-    # ``time.monotonic``; we round to ms for log compactness.
-    import time
-
+    # time.monotonic_ns avoids float precision loss; we round to ms.
     return time.monotonic_ns() // 1_000_000
 
 
-def _execute_probe(probe: Probe, *, base_url: str, timeout_s: float) -> ProbeResult:
-    """Run one probe via ``urllib.request``.
+def _attempt_probe(
+    probe: Probe,
+    request: urllib.request.Request,
+    *,
+    timeout_s: float,
+    attempt: int,
+    max_attempts: int,
+) -> tuple[ProbeResult, bool]:
+    """Execute one HTTP request for *probe*; return ``(result, retriable)``.
 
-    Catches every exception class ``urllib`` and the underlying socket
-    layer can raise so the orchestrator can aggregate the report
-    without an unhandled exception escaping. ``status_code=None`` is
-    the sentinel for "the request never produced an HTTP response".
+    ``retriable`` is ``True`` when the failure should trigger a retry:
+    URLError, TimeoutError, OSError, or HTTPError whose status code is
+    **outside** ``probe.accepted_status_codes`` (e.g. HTTP 503 during a
+    graceful service restart). An accepted HTTPError (e.g. 404 for the
+    never-polled ``/api/quota/current``) is a PASS and sets
+    ``retriable=False``.
     """
-    url = base_url + probe.path
-    request = urllib.request.Request(
-        url=url,
-        headers={"User-Agent": PROBE_USER_AGENT, "Accept": "*/*"},
-        method="GET",
-    )
+    sfx = f" (attempt {attempt}/{max_attempts})" if attempt > 1 else ""
     started_ms = _monotonic_ms()
     try:
         with urllib.request.urlopen(request, timeout=timeout_s) as response:
-            status_code = int(response.status)
-            # Read+discard the body so the connection can be released
-            # cleanly. We don't care about the payload — only the
-            # status code matters for liveness probing.
+            status_code: int = int(response.status)
+            # Read+discard body so the connection is released cleanly.
             response.read()
     except urllib.error.HTTPError as exc:
-        # HTTPError is raised for >=400; it still carries a status
-        # code, so a 404 from /api/quota/current arrives here, not in
-        # the URLError branch. Treat it as a real response.
         elapsed_ms = _monotonic_ms() - started_ms
+        code = int(exc.code)
+        base_detail = f"http_error reason={exc.reason!r}"
+        if code in probe.accepted_status_codes:
+            return ProbeResult(
+                probe=probe,
+                status_code=code,
+                elapsed_ms=elapsed_ms,
+                detail=f"{base_detail}{sfx}",
+            ), False
         return ProbeResult(
             probe=probe,
-            status_code=int(exc.code),
+            status_code=code,
             elapsed_ms=elapsed_ms,
-            detail=f"http_error reason={exc.reason!r}",
-        )
+            detail=base_detail,
+        ), True
     except urllib.error.URLError as exc:
         elapsed_ms = _monotonic_ms() - started_ms
         return ProbeResult(
@@ -194,7 +202,7 @@ def _execute_probe(probe: Probe, *, base_url: str, timeout_s: float) -> ProbeRes
             status_code=None,
             elapsed_ms=elapsed_ms,
             detail=f"url_error reason={exc.reason!r}",
-        )
+        ), True
     except TimeoutError as exc:
         elapsed_ms = _monotonic_ms() - started_ms
         return ProbeResult(
@@ -202,7 +210,7 @@ def _execute_probe(probe: Probe, *, base_url: str, timeout_s: float) -> ProbeRes
             status_code=None,
             elapsed_ms=elapsed_ms,
             detail=f"timeout after {timeout_s}s ({exc!r})",
-        )
+        ), True
     except OSError as exc:
         elapsed_ms = _monotonic_ms() - started_ms
         return ProbeResult(
@@ -210,25 +218,82 @@ def _execute_probe(probe: Probe, *, base_url: str, timeout_s: float) -> ProbeRes
             status_code=None,
             elapsed_ms=elapsed_ms,
             detail=f"os_error {exc!r}",
-        )
-
+        ), True
     elapsed_ms = _monotonic_ms() - started_ms
     detail = (
-        f"ok status={status_code}"
+        f"ok status={status_code}{sfx}"
         if status_code in probe.accepted_status_codes
-        else f"unexpected status={status_code}"
+        else f"unexpected status={status_code}{sfx}"
     )
     return ProbeResult(
         probe=probe,
         status_code=status_code,
         elapsed_ms=elapsed_ms,
         detail=detail,
+    ), False
+
+
+def _execute_probe(
+    probe: Probe,
+    *,
+    base_url: str,
+    timeout_s: float,
+    retry_attempts: int = PROBE_RETRY_ATTEMPTS,
+    retry_backoff_s: float = PROBE_RETRY_BACKOFF_S,
+) -> ProbeResult:
+    """Run one probe via ``urllib.request`` with retry-before-FAIL semantics.
+
+    Attempts the probe up to *retry_attempts* times, sleeping
+    *retry_backoff_s* seconds between each attempt. Retriable conditions:
+    URLError, TimeoutError, OSError, and HTTPError outside
+    ``probe.accepted_status_codes``. ``status_code=None`` is the sentinel
+    for "the request never produced an HTTP response".
+    """
+    url = base_url + probe.path
+    request = urllib.request.Request(
+        url=url,
+        headers={"User-Agent": PROBE_USER_AGENT, "Accept": "*/*"},
+        method="GET",
+    )
+    last_failure: ProbeResult | None = None
+    for attempt in range(1, retry_attempts + 1):
+        result, retriable = _attempt_probe(
+            probe,
+            request,
+            timeout_s=timeout_s,
+            attempt=attempt,
+            max_attempts=retry_attempts,
+        )
+        if not retriable:
+            return result
+        last_failure = result
+        if attempt < retry_attempts:
+            time.sleep(retry_backoff_s)
+    assert last_failure is not None
+    return dataclasses.replace(
+        last_failure,
+        detail=f"{last_failure.detail} (exhausted {retry_attempts}/{retry_attempts} attempts)",
     )
 
 
-def run_probes(*, base_url: str, timeout_s: float) -> tuple[ProbeResult, ...]:
+def run_probes(
+    *,
+    base_url: str,
+    timeout_s: float,
+    retry_attempts: int = PROBE_RETRY_ATTEMPTS,
+    retry_backoff_s: float = PROBE_RETRY_BACKOFF_S,
+) -> tuple[ProbeResult, ...]:
     """Run every probe in :data:`PROBES` and return the results."""
-    return tuple(_execute_probe(p, base_url=base_url, timeout_s=timeout_s) for p in PROBES)
+    return tuple(
+        _execute_probe(
+            p,
+            base_url=base_url,
+            timeout_s=timeout_s,
+            retry_attempts=retry_attempts,
+            retry_backoff_s=retry_backoff_s,
+        )
+        for p in PROBES
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +402,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help=f"Per-probe HTTP timeout in seconds (default: {PROBE_TIMEOUT_S}).",
     )
     parser.add_argument(
+        "--retry-attempts",
+        type=int,
+        default=PROBE_RETRY_ATTEMPTS,
+        help=(f"Number of probe attempts before recording FAIL (default: {PROBE_RETRY_ATTEMPTS})."),
+    )
+    parser.add_argument(
+        "--retry-backoff",
+        type=float,
+        default=PROBE_RETRY_BACKOFF_S,
+        help=(f"Seconds to sleep between retry attempts (default: {PROBE_RETRY_BACKOFF_S})."),
+    )
+    parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
@@ -352,7 +429,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     now = _now_utc()
-    results = run_probes(base_url=args.base_url, timeout_s=args.timeout)
+    results = run_probes(
+        base_url=args.base_url,
+        timeout_s=args.timeout,
+        retry_attempts=args.retry_attempts,
+        retry_backoff_s=args.retry_backoff,
+    )
     log_path = write_log(results, now=now, log_dir=args.log_dir)
 
     if not args.quiet:
