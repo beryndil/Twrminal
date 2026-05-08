@@ -29,6 +29,7 @@ from pathlib import Path
 
 import aiosqlite
 
+from bearings.agent.analytics_capture import assemble_plug_blocks, capture_session_plug
 from bearings.agent.approval import ApprovalBroker
 from bearings.agent.bearings_mcp import (
     BashToolDeps,
@@ -212,6 +213,18 @@ def build_session_setup(
             sdk_session_id=sdk_session_id_arg,
             resume=resume_arg,
         )
+        # Analytics Phase 2 — capture plug blocks for this session
+        # (spec §5.1). capture_session_plug uses INSERT OR IGNORE so
+        # supervisor respawns that call setup() again are no-ops.
+        # DB failures are caught and logged inside capture_session_plug
+        # so analytics never blocks the agent loop start.
+        _plug_blocks = assemble_plug_blocks(
+            sdk_cwd,
+            extra_claude_md_blocks,
+            extra_memory_blocks,
+            row.session_instructions,
+        )
+        await capture_session_plug(db_connection, session_id, row.model, _plug_blocks)
         return SessionSetup(
             session=agent_session,
             options=options,

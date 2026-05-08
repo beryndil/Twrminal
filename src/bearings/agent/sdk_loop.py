@@ -61,6 +61,7 @@ from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, ResultMessage
 
+from bearings.agent.analytics_capture import capture_turn
 from bearings.agent.events import (
     ErrorEvent,
     TodoWriteUpdate,
@@ -72,6 +73,7 @@ from bearings.agent.events import (
 from bearings.agent.options import OptionsKwargs
 from bearings.agent.persistence import (
     MessagePersistence,
+    extract_model_usage,
     persist_assistant_turn,
 )
 from bearings.agent.runner import (
@@ -343,6 +345,24 @@ async def _finish_turn(
                 message_id=msg.id,
                 records=_build_tool_records(pending_starts, pending_ends),
             )
+    # Analytics Phase 2 — per-turn token capture (spec §4.1).
+    # Runs even when there is no assistant body (tool-only turns still
+    # consume tokens). capture_turn catches and logs all DB failures
+    # so analytics never crashes the agent loop.
+    if db is not None:
+        _usage = extract_model_usage(
+            last_result.model_usage if last_result is not None else None,
+            session.config.decision,
+        )
+        await capture_turn(
+            db,
+            session_id=session.config.session_id,
+            model=session.config.decision.executor_model,
+            input_tokens=_usage.executor_input_tokens + _usage.advisor_input_tokens,
+            output_tokens=_usage.executor_output_tokens + _usage.advisor_output_tokens,
+            cache_read_tokens=_usage.cache_read_tokens,
+            cache_creation_tokens=_usage.cache_creation_tokens,
+        )
 
 
 async def _do_run_one_turn(
