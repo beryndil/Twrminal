@@ -48,6 +48,7 @@ from bearings.config.constants import (
     TEMPLATE_NAME_MAX_LENGTH,
 )
 from bearings.db._id import now_iso
+from bearings.db._validators import _is_known_model
 
 
 @dataclass(frozen=True)
@@ -114,19 +115,6 @@ class Template:
                 f"Template.permission_profile {self.permission_profile!r} is not in "
                 f"{sorted(PERMISSION_PROFILE_NAMES)}"
             )
-
-
-def _is_known_model(name: str) -> bool:
-    """Mirror :func:`bearings.agent.routing._is_known_model` to keep the
-    template alphabet aligned with ``RoutingDecision``.
-
-    Duplicated rather than imported because the ``db`` layer must not
-    import from ``agent`` (arch §3.1 layer rule). The helper is two
-    lines; a future divergence between template and decision alphabets
-    would be a behavioural bug anyway, so the duplication is the
-    cheapest enforcement mechanism.
-    """
-    return name in KNOWN_EXECUTOR_MODELS or name.startswith(EXECUTOR_MODEL_FULL_ID_PREFIX)
 
 
 def _tag_names_to_json(tag_names: tuple[str, ...]) -> str:

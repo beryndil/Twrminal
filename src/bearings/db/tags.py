@@ -81,6 +81,7 @@ from bearings.config.constants import (
     TAG_NAME_MAX_LENGTH,
 )
 from bearings.db._id import now_iso
+from bearings.db._validators import _is_known_model
 
 
 @dataclass(frozen=True)
@@ -178,19 +179,6 @@ class Tag:
         if sep_index <= 0:
             return None
         return self.name[:sep_index]
-
-
-def _is_known_model(name: str) -> bool:
-    """Mirror :func:`bearings.db.templates._is_known_model`.
-
-    Duplicated rather than imported because ``db.tags`` and
-    ``db.templates`` are sibling concern modules; cross-import would
-    couple two independent tables on the validator alphabet, and arch
-    §3.1 forbids sibling cycles within a layer. Any drift between the
-    two helpers would be a behavioural bug catchable by either
-    module's unit-test suite.
-    """
-    return name in KNOWN_EXECUTOR_MODELS or name.startswith(EXECUTOR_MODEL_FULL_ID_PREFIX)
 
 
 async def create(
