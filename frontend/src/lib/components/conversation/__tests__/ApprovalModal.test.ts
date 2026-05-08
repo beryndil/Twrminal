@@ -146,6 +146,67 @@ describe("ApprovalModal — Esc is blocked while the gate is up (gap-cycle-10-01
   });
 });
 
+// ---------------------------------------------------------------------------
+// gap-cycle-20-002 — per-button pending label flip
+
+describe("ApprovalModal — pending label flip (gap-cycle-20-002)", () => {
+  it("clicking Allow flips its label to 'Approving…' while POST is in flight", async () => {
+    // Keep the POST unresolved for the duration of the assertion.
+    let resolvePost!: () => void;
+    postApprovalMock.mockReturnValue(new Promise<void>((res) => { resolvePost = res; }));
+
+    const { getByTestId } = render(ApprovalModal, {
+      props: { sessionId: "ses_x", approval: makeApproval() },
+    });
+
+    await fireEvent.click(getByTestId("approval-allow"));
+    await Promise.resolve(); // flush
+
+    expect(getByTestId("approval-allow").textContent?.trim()).toBe("Approving…");
+    expect(getByTestId("approval-deny").textContent?.trim()).toBe("Deny");
+
+    resolvePost();
+  });
+
+  it("clicking Deny flips its label to 'Denying…' while POST is in flight", async () => {
+    let resolvePost!: () => void;
+    postApprovalMock.mockReturnValue(new Promise<void>((res) => { resolvePost = res; }));
+
+    const { getByTestId } = render(ApprovalModal, {
+      props: { sessionId: "ses_x", approval: makeApproval() },
+    });
+
+    await fireEvent.click(getByTestId("approval-deny"));
+    await Promise.resolve();
+
+    expect(getByTestId("approval-deny").textContent?.trim()).toBe("Denying…");
+    expect(getByTestId("approval-allow").textContent?.trim()).toBe("Allow");
+
+    resolvePost();
+  });
+
+  it("POST rejection resets pending so both labels return and error surfaces", async () => {
+    postApprovalMock.mockRejectedValue(new Error("network failure"));
+
+    const { getByTestId, queryByTestId } = render(ApprovalModal, {
+      props: { sessionId: "ses_x", approval: makeApproval() },
+    });
+
+    await fireEvent.click(getByTestId("approval-allow"));
+    await waitFor(() => {
+      // Error should have surfaced and labels should have been restored.
+      expect(queryByTestId("approval-error")).not.toBeNull();
+    });
+
+    expect(getByTestId("approval-allow").textContent?.trim()).toBe("Allow");
+    expect(getByTestId("approval-deny").textContent?.trim()).toBe("Deny");
+    expect((getByTestId("approval-allow") as HTMLButtonElement).disabled).toBe(false);
+    expect((getByTestId("approval-deny") as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
 describe("ApprovalModal — submit while disconnected blocked", () => {
   it("clicking Allow while disconnected does not call postApproval", async () => {
     _setWsStatusForTests({ state: "closed", lastCloseCode: null });

@@ -30,7 +30,7 @@
 
   const { sessionId, approval }: Props = $props();
 
-  let submitting = $state(false);
+  let pending = $state<"allow" | "deny" | null>(null);
   let error = $state<string | null>(null);
 
   /**
@@ -63,17 +63,17 @@
     }
   }
 
-  async function resolve(approved: boolean): Promise<void> {
-    if (submitting || !wsConnected) return;
-    submitting = true;
+  async function resolve(decision: "allow" | "deny"): Promise<void> {
+    if (pending !== null || !wsConnected) return;
+    pending = decision;
     error = null;
     try {
-      await postApproval(sessionId, approval.requestId, approved);
+      await postApproval(sessionId, approval.requestId, decision === "allow");
       // Modal stays visible until the approval_resolved event arrives
       // via the WebSocket and clears pendingApproval in the store.
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
-      submitting = false;
+      pending = null;
     }
   }
 </script>
@@ -131,20 +131,20 @@
       <button
         type="button"
         class="rounded bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-        disabled={submitting || !wsConnected}
+        disabled={pending !== null || !wsConnected}
         data-testid="approval-deny"
-        onclick={() => resolve(false)}
+        onclick={() => resolve("deny")}
       >
-        {APPROVAL_STRINGS.denyLabel}
+        {pending === "deny" ? APPROVAL_STRINGS.denyingLabel : APPROVAL_STRINGS.denyLabel}
       </button>
       <button
         type="button"
         class="rounded bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-        disabled={submitting || !wsConnected}
+        disabled={pending !== null || !wsConnected}
         data-testid="approval-allow"
-        onclick={() => resolve(true)}
+        onclick={() => resolve("allow")}
       >
-        {APPROVAL_STRINGS.allowLabel}
+        {pending === "allow" ? APPROVAL_STRINGS.allowingLabel : APPROVAL_STRINGS.allowLabel}
       </button>
     </div>
   </div>

@@ -2970,6 +2970,10 @@ export const APPROVAL_STRINGS = {
   toolInputLabel: "Input",
   allowLabel: "Allow",
   denyLabel: "Deny",
+  /** In-flight label while the Allow POST is pending (gap-cycle-20-002). */
+  allowingLabel: "Approving…",
+  /** In-flight label while the Deny POST is pending (gap-cycle-20-002). */
+  denyingLabel: "Denying…",
   /** AskUserQuestion variant. */
   askDialogAriaLabel: "Agent question",
   askDialogTitle: "Agent is asking:",
