@@ -72,6 +72,21 @@ def _db(request: Request) -> aiosqlite.Connection:
     return cast(aiosqlite.Connection, db)
 
 
+def _escape_like(q: str) -> str:
+    """Escape LIKE metacharacters in *q* so user input is always treated literally.
+
+    SQLite LIKE with ``ESCAPE '\\\\'`` recognises three special characters:
+    ``\\`` (the escape prefix), ``%`` (any sequence), and ``_`` (any single
+    character).  We must escape the backslash first so that the replacements
+    for ``%`` and ``_`` do not double-escape a backslash that was already
+    introduced by an earlier substitution.
+    """
+    q = q.replace("\\", "\\\\")
+    q = q.replace("%", "\\%")
+    q = q.replace("_", "\\_")
+    return q
+
+
 def _extract_snippet(text: str, query: str, max_chars: int) -> str:
     """Return a snippet of *text* centred around the first match of *query*.
 
@@ -99,7 +114,7 @@ def _extract_snippet(text: str, query: str, max_chars: int) -> str:
 
 async def _search(q: str, db: aiosqlite.Connection) -> list[HistorySearchResult]:
     """Run the two-surface LIKE search and merge results."""
-    pattern = f"%{q}%"
+    pattern = f"%{_escape_like(q)}%"
     results: list[HistorySearchResult] = []
 
     # --- Session hits -------------------------------------------------------
