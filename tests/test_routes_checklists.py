@@ -71,6 +71,10 @@ def app_client(tmp_path: Path) -> Iterator[TestClient]:
     try:
         conn = loop.run_until_complete(_open())
         app = create_app(heartbeat_interval_s=_HEARTBEAT_S, db_connection=conn)
+        # Stash the loop so sync test helpers can run async DB ops on the
+        # same loop the connection was opened on (avoids get_event_loop() issues
+        # when pytest-asyncio has torn down its own loop for earlier tests).
+        app.state._test_loop = loop
         with TestClient(app) as client:
             yield client
         loop.run_until_complete(conn.close())
@@ -352,3 +356,103 @@ def test_outdent_at_root_is_noop(app_client: TestClient) -> None:
 def test_outdent_404(app_client: TestClient) -> None:
     response = app_client.post("/api/checklist-items/99999/outdent")
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# feature-6-002: check cascade — paired chat close + parent + checklist close
+# ---------------------------------------------------------------------------
+
+
+def _insert_chat_session(client: TestClient, session_id: str, *, closed: bool = False) -> None:
+    """Directly insert a sessions row via SQL through the app's DB connection.
+
+    Uses the test app's underlying aiosqlite connection stored on app.state.
+    The loop stored at ``app.state._test_loop`` is used so the async write
+    runs on the same event loop that opened the connection (avoids the
+    'no current event loop' error when pytest-asyncio has torn down its loop).
+    """
+    db = client.app.state.db_connection  # type: ignore[attr-defined]
+    loop = client.app.state._test_loop  # type: ignore[attr-defined]
+    closed_at = "2026-01-01T00:00:00" if closed else None
+
+    async def _run() -> None:
+        await db.execute(
+            "INSERT OR IGNORE INTO sessions (id, kind, title, working_dir, model, "
+            "created_at, updated_at, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (session_id, "chat", "C", "/tmp", "sonnet", "2026-01-01", "2026-01-01", closed_at),
+        )
+        await db.commit()
+
+    loop.run_until_complete(_run())
+
+
+def _link_chat(client: TestClient, item_id: int, session_id: str) -> None:
+    resp = client.post(
+        f"/api/checklist-items/{item_id}/link",
+        json={"chat_session_id": session_id, "spawned_by": "user"},
+    )
+    assert resp.status_code == 200, resp.text
+
+
+def test_check_item_closes_paired_chat(app_client: TestClient) -> None:
+    """POST /check on a paired leaf closes the paired chat session."""
+    leaf = _create_item(app_client, "Leaf")
+    _insert_chat_session(app_client, "chat_for_leaf")
+    _link_chat(app_client, leaf, "chat_for_leaf")
+
+    resp = app_client.post(f"/api/checklist-items/{leaf}/check")
+    assert resp.status_code == 200
+
+    # Verify the paired chat is now closed via the sessions endpoint.
+    sess_resp = app_client.get("/api/sessions/chat_for_leaf")
+    assert sess_resp.status_code == 200
+    assert sess_resp.json()["closed_at"] is not None, "paired chat must be closed after check"
+
+
+def test_check_item_cascade_auto_checks_parent(app_client: TestClient) -> None:
+    """When the last child is checked the parent item is auto-checked."""
+    parent = _create_item(app_client, "Parent")
+    child_a = _create_item(app_client, "A", parent_item_id=parent)
+    child_b = _create_item(app_client, "B", parent_item_id=parent)
+
+    # Check child_a first — parent should NOT be checked yet.
+    app_client.post(f"/api/checklist-items/{child_a}/check")
+    parent_resp = app_client.get(f"/api/checklist-items/{parent}")
+    assert parent_resp.json()["checked_at"] is None
+
+    # Check child_b — now parent should be auto-checked.
+    app_client.post(f"/api/checklist-items/{child_b}/check")
+    parent_resp = app_client.get(f"/api/checklist-items/{parent}")
+    assert parent_resp.json()["checked_at"] is not None, "parent must be auto-checked"
+
+
+def test_check_last_root_item_closes_checklist_session(app_client: TestClient) -> None:
+    """When every root item is checked the checklist session is closed."""
+    leaf_a = _create_item(app_client, "A")
+    leaf_b = _create_item(app_client, "B")
+
+    app_client.post(f"/api/checklist-items/{leaf_a}/check")
+    # Checklist must still be open after only one root checked.
+    cl_resp = app_client.get(f"/api/sessions/{_CHECKLIST_ID}")
+    assert cl_resp.json()["closed_at"] is None
+
+    app_client.post(f"/api/checklist-items/{leaf_b}/check")
+    # All roots checked — checklist session must now be closed.
+    cl_resp = app_client.get(f"/api/sessions/{_CHECKLIST_ID}")
+    assert cl_resp.json()["closed_at"] is not None, "checklist must be closed when all roots done"
+
+
+def test_uncheck_does_not_reopen_closed_parent(app_client: TestClient) -> None:
+    """POST /uncheck on a previously-checked item must not reopen closed parent."""
+    parent = _create_item(app_client, "Parent")
+    child = _create_item(app_client, "C", parent_item_id=parent)
+
+    # Check child → triggers cascade → parent gets auto-checked.
+    app_client.post(f"/api/checklist-items/{child}/check")
+    parent_before = app_client.get(f"/api/checklist-items/{parent}").json()
+    assert parent_before["checked_at"] is not None
+
+    # Uncheck child — parent must remain checked (one-directional rule).
+    app_client.post(f"/api/checklist-items/{child}/uncheck")
+    parent_after = app_client.get(f"/api/checklist-items/{parent}").json()
+    assert parent_after["checked_at"] is not None, "parent must remain checked after uncheck"

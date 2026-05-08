@@ -65,8 +65,10 @@ from bearings.config.constants import (
 )
 from bearings.db import auto_driver_runs as runs_db
 from bearings.db import checklists as checklists_db
+from bearings.db import sessions as sessions_db
 from bearings.db.auto_driver_runs import AutoDriverRun
 from bearings.db.checklists import ChecklistItem, PairedChatLeg
+from bearings.db.sessions import Session
 from bearings.web.models.checklists import (
     AutoDriverRunOut,
     ChecklistItemIn,
@@ -79,10 +81,60 @@ from bearings.web.models.checklists import (
     PairedChatLegOut,
     StartRunIn,
 )
+from bearings.web.models.sessions import SessionOut
+from bearings.web.routes.ws_sessions import SessionsBroadcaster
 
 router = APIRouter()
 
 _LOG = logging.getLogger(__name__)
+
+
+def _sessions_broadcaster(request: Request) -> SessionsBroadcaster | None:
+    """Pull the optional sessions broadcaster off ``app.state``.
+
+    Returns ``None`` when no broadcaster is wired (test-only paths that
+    construct a minimal app without a full runtime); callers guard on
+    ``if broadcaster is not None`` before publishing.
+    """
+    return cast(
+        SessionsBroadcaster | None,
+        getattr(request.app.state, "sessions_broadcaster", None),
+    )
+
+
+def _session_to_out(session: Session) -> SessionOut:
+    """Wire a :class:`~bearings.db.sessions.Session` to :class:`SessionOut`.
+
+    Mirrors ``sessions.py`` route-layer ``_to_out``; duplicated here so
+    the checklists route does not import from a sibling route module.
+    """
+    return SessionOut(
+        id=session.id,
+        kind=session.kind,
+        title=session.title,
+        description=session.description,
+        session_instructions=session.session_instructions,
+        working_dir=session.working_dir,
+        model=session.model,
+        permission_mode=session.permission_mode,
+        max_budget_usd=session.max_budget_usd,
+        total_cost_usd=session.total_cost_usd,
+        message_count=session.message_count,
+        last_context_pct=session.last_context_pct,
+        last_context_tokens=session.last_context_tokens,
+        last_context_max=session.last_context_max,
+        pinned=session.pinned,
+        error_pending=session.error_pending,
+        checklist_item_id=session.checklist_item_id,
+        created_at=session.created_at,
+        updated_at=session.updated_at,
+        last_viewed_at=session.last_viewed_at,
+        last_completed_at=session.last_completed_at,
+        closed_at=session.closed_at,
+        closing_summary=session.closing_summary,
+        pivot_message_id=session.pivot_message_id,
+        parent_session_id=session.parent_session_id,
+    )
 
 
 def _db(request: Request) -> aiosqlite.Connection:
@@ -299,13 +351,37 @@ async def delete_item(item_id: int, request: Request) -> None:
     operation_id="check-checklist-item",
 )
 async def check_item(item_id: int, request: Request) -> ChecklistItemOut:
-    """Mark item checked (green)."""
+    """Mark item checked; cascade-close paired chat + parent chain + checklist.
+
+    Per docs/behavior/checklists.md §"Item ↔ chat-session linking":
+    (a) Closes the leaf's paired chat session and broadcasts the close.
+    (b) Walks the parent chain: when every child of a parent is checked the
+        parent's ``checked_at`` is set (repeats to root).
+    (c) When every root item of the checklist is checked, the checklist
+        session itself is closed and broadcast.
+    Auto-close is one-directional — POST /uncheck does not reopen any
+    closed parent, chat, or checklist session.
+    """
     db = _db(request)
     item = await checklists_db.mark_checked(db, item_id)
     if item is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"item {item_id} not found"
         )
+    broadcaster = _sessions_broadcaster(request)
+    # (a) Close paired chat and broadcast.
+    if item.chat_session_id is not None:
+        closed_chat = await sessions_db.close(db, item.chat_session_id)
+        if closed_chat is not None and broadcaster is not None:
+            broadcaster.publish_upsert(_session_to_out(closed_chat))
+    # (b) Walk parent chain: auto-check parents whose children are all checked.
+    #     Returns True when every root item of the checklist is now checked.
+    should_close_checklist = await checklists_db.cascade_parent_checks(db, item_id)
+    # (c) Close the checklist session when all root items are complete.
+    if should_close_checklist:
+        closed_cl = await sessions_db.close(db, item.checklist_id)
+        if closed_cl is not None and broadcaster is not None:
+            broadcaster.publish_upsert(_session_to_out(closed_cl))
     return _to_item_out(item)
 
 

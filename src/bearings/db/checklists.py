@@ -505,6 +505,51 @@ async def clear_outcome(
     return await get(connection, item_id)
 
 
+async def cascade_parent_checks(
+    connection: aiosqlite.Connection,
+    item_id: int,
+) -> bool:
+    """Walk the parent chain upward; auto-check each parent whose children are
+    all checked; repeat until the root.
+
+    Returns ``True`` when every root item (``parent_item_id IS NULL``) of the
+    checklist now has ``checked_at IS NOT NULL`` — the caller should close the
+    checklist session.
+
+    One-directional per docs/behavior/checklists.md §"Item nesting semantics":
+    "when the last unchecked child of a parent item gets checked, the parent's
+    checkbox visually fills ... when the last unchecked root-level item gets
+    checked, the parent checklist session auto-closes". Never called on
+    uncheck, so parents are never re-opened here.
+    """
+    item = await get(connection, item_id)
+    if item is None:
+        return False
+    checklist_id = item.checklist_id
+    current_parent_id = item.parent_item_id
+    while current_parent_id is not None:
+        siblings = await list_children(
+            connection,
+            checklist_id=checklist_id,
+            parent_item_id=current_parent_id,
+        )
+        if not siblings or not all(s.checked_at is not None for s in siblings):
+            break
+        parent = await get(connection, current_parent_id)
+        if parent is None:
+            break
+        if parent.checked_at is None:
+            await mark_checked(connection, current_parent_id)
+        current_parent_id = parent.parent_item_id
+    # Re-fetch root items to reflect any cascade changes made above.
+    root_items = await list_children(
+        connection,
+        checklist_id=checklist_id,
+        parent_item_id=None,
+    )
+    return bool(root_items) and all(r.checked_at is not None for r in root_items)
+
+
 async def set_paired_chat(
     connection: aiosqlite.Connection,
     item_id: int,
@@ -851,6 +896,7 @@ def _row_to_leg(row: aiosqlite.Row | tuple[object, ...]) -> PairedChatLeg:
 __all__ = [
     "ChecklistItem",
     "PairedChatLeg",
+    "cascade_parent_checks",
     "clear_outcome",
     "clear_paired_chat",
     "close_leg",

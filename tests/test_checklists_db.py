@@ -26,6 +26,7 @@ from bearings.db import get_connection_factory, load_schema
 from bearings.db.checklists import (
     ChecklistItem,
     PairedChatLeg,
+    cascade_parent_checks,
     clear_outcome,
     clear_paired_chat,
     close_leg,
@@ -398,3 +399,90 @@ async def test_close_leg_returns_false_on_missing(
     connection: aiosqlite.Connection,
 ) -> None:
     assert await close_leg(connection, 99_999) is False
+
+
+# ---------------------------------------------------------------------------
+# feature-6-002: cascade_parent_checks
+# ---------------------------------------------------------------------------
+
+
+async def test_cascade_parent_checks_returns_false_when_sibling_unchecked(
+    connection: aiosqlite.Connection,
+) -> None:
+    """Parent stays unchecked when at least one sibling is not checked."""
+    parent = await create(connection, checklist_id="chk_1", label="P")
+    child_a = await create(connection, checklist_id="chk_1", label="A", parent_item_id=parent.id)
+    await create(connection, checklist_id="chk_1", label="B", parent_item_id=parent.id)
+    await mark_checked(connection, child_a.id)
+    # second child is still unchecked — cascade should not mark parent.
+    result = await cascade_parent_checks(connection, child_a.id)
+    assert result is False
+    refreshed_parent = await get(connection, parent.id)
+    assert refreshed_parent is not None
+    assert refreshed_parent.checked_at is None
+
+
+async def test_cascade_parent_checks_marks_parent_when_last_sibling_checked(
+    connection: aiosqlite.Connection,
+) -> None:
+    """Parent is auto-checked when the last unchecked sibling is checked."""
+    parent = await create(connection, checklist_id="chk_1", label="P")
+    child_a = await create(connection, checklist_id="chk_1", label="A", parent_item_id=parent.id)
+    child_b = await create(connection, checklist_id="chk_1", label="B", parent_item_id=parent.id)
+    await mark_checked(connection, child_a.id)
+    await mark_checked(connection, child_b.id)
+    # Both children checked; cascading from child_b should mark parent.
+    await cascade_parent_checks(connection, child_b.id)
+    refreshed_parent = await get(connection, parent.id)
+    assert refreshed_parent is not None
+    assert refreshed_parent.checked_at is not None
+
+
+async def test_cascade_parent_checks_walks_multiple_levels(
+    connection: aiosqlite.Connection,
+) -> None:
+    """Cascade walks all the way to the root when each level becomes fully checked."""
+    grandparent = await create(connection, checklist_id="chk_1", label="GP")
+    parent = await create(
+        connection, checklist_id="chk_1", label="P", parent_item_id=grandparent.id
+    )
+    child = await create(connection, checklist_id="chk_1", label="C", parent_item_id=parent.id)
+    await mark_checked(connection, child.id)
+    await cascade_parent_checks(connection, child.id)
+    # Both parent and grandparent should be checked (each has only one child).
+    refreshed_parent = await get(connection, parent.id)
+    refreshed_gp = await get(connection, grandparent.id)
+    assert refreshed_parent is not None and refreshed_parent.checked_at is not None
+    assert refreshed_gp is not None and refreshed_gp.checked_at is not None
+
+
+async def test_cascade_parent_checks_returns_true_when_all_roots_checked(
+    connection: aiosqlite.Connection,
+) -> None:
+    """Returns True when all root items of the checklist are now checked."""
+    # Two root leaves — check both, then cascade from the second.
+    leaf_a = await create(connection, checklist_id="chk_1", label="A")
+    leaf_b = await create(connection, checklist_id="chk_1", label="B")
+    await mark_checked(connection, leaf_a.id)
+    await mark_checked(connection, leaf_b.id)
+    result = await cascade_parent_checks(connection, leaf_b.id)
+    assert result is True, "all roots checked → should return True to trigger checklist close"
+
+
+async def test_cascade_parent_checks_returns_false_when_root_sibling_unchecked(
+    connection: aiosqlite.Connection,
+) -> None:
+    """Returns False when a root sibling is still unchecked."""
+    leaf_a = await create(connection, checklist_id="chk_1", label="A")
+    _leaf_b = await create(connection, checklist_id="chk_1", label="B")
+    await mark_checked(connection, leaf_a.id)
+    result = await cascade_parent_checks(connection, leaf_a.id)
+    assert result is False
+
+
+async def test_cascade_parent_checks_noop_on_missing_item(
+    connection: aiosqlite.Connection,
+) -> None:
+    """cascade_parent_checks returns False gracefully for a missing item_id."""
+    result = await cascade_parent_checks(connection, 99_999)
+    assert result is False
