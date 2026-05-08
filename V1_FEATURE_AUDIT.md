@@ -38,7 +38,7 @@ behavior docs, and tests; findings were posted back to orchestrator session
 
 | #  | Feature                                  | Status   | Session id                         |
 |----|------------------------------------------|----------|------------------------------------|
-| 1  | Session lifecycle                        | INTERIM  | `48f51dbdc7614587b1ad0ffea1aa8f7d` |
+| 1  | Session lifecycle                        | **CLOSED** (closer `8faed0b36c6b4f40a804735813056d28` · 2026-05-08) | `48f51dbdc7614587b1ad0ffea1aa8f7d` |
 | 2  | Conversation & streaming                 | INTERIM  | `000bacc2d1894485bb4daef730f759eb` |
 | 3  | Routing v1                               | INTERIM  | `6be4502a55cb43a4ad71eeaa92b8f79f` |
 | 4  | Inspector (5-tab + context meter)        | **CLOSED** (commit `bf1d7df`) · re-verified 2026-05-08 (verifier `0cbd67a3`, 0 regressions) | `c2c372f04df64cf090ab4f230cb8a324` |
