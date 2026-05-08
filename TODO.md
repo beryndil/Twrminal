@@ -306,6 +306,26 @@ into `SessionMetadataUpdate` accepting both fields. Surfaced while
 authoring `~/.claude/plans/resolute-restructuring-projects.md` from
 session `ses_3794490d13075208149c2903fed6b8c0`.
 
+## feature-12-001: pre-existing cyclomatic complexity violations (2026-05-07)
+
+Xenon now enforces the CC ≤ 10 coding standard (replaces cosmetic radon gate).
+The enforcing gate immediately surfaces pre-existing violations the old gate
+never caught. Running `uv run xenon --max-absolute B --max-modules A
+--max-average A src` exits 1 with ~40 C/D-ranked blocks across:
+
+- `src/bearings/web/routes/sessions.py` (7 blocks, incl. rank D)
+- `src/bearings/db/sessions.py` (3 blocks, 2 rank D)
+- `src/bearings/agent/session_assembly.py` (1 block, rank D)
+- `src/bearings/web/routes/templates.py` (2 blocks, 1 rank D)
+- `src/bearings/db/` (several C-rank blocks in messages, routing, tags, etc.)
+- `src/bearings/agent/` (sdk_loop, routing, sentinel, paired_chats, quota)
+- `src/bearings/cli/` (todo, gc)
+
+**Action**: schedule a complexity-reduction sprint to refactor these blocks
+below CC 10. Until then, `pre-commit run --all-files` and the CI `xenon`
+step will fail on unchanged code. The gate configuration is correct; the
+codebase is the non-compliant party.
+
 ## gap-cycle-13-004: template_baseline layer deferred
 
 `GET /api/sessions/{id}/system_prompt` defines `template_baseline` as a layer kind

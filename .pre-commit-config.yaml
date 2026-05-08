@@ -2,7 +2,7 @@
 #
 # Wires the full 12-tool stack from `~/.claude/plans/bearings-v1-rebuild.md`
 # §"Tooling matrix":
-#   Backend (8): ruff (lint+format), mypy, pytest, vulture, radon,
+#   Backend (8): ruff (lint+format), mypy, pytest, vulture, xenon,
 #                interrogate, codespell, pip-audit
 #   Frontend (6): eslint, prettier, svelte-check, knip, ts-prune, depcheck
 #   Repo-wide (1): lychee
@@ -93,15 +93,17 @@ repos:
         always_run: true
 
   # ---------------------------------------------------------------------------
-  # Backend — Radon (cyclomatic complexity ≤ 10 per function)
+  # Backend — Xenon (cyclomatic complexity ≤ 10 per function, enforcing)
   # ---------------------------------------------------------------------------
   - repo: local
     hooks:
-      - id: radon
-        name: radon cc -n B (warn on complexity ≥ 11)
-        # `-n B` => fail on any block rated below B (i.e. C or worse, which
-        # corresponds to cyclomatic complexity ≥ 11 per coding-standards.md).
-        entry: uv run radon cc -s -n B src
+      - id: xenon
+        name: xenon (cyclomatic complexity gate)
+        # --max-absolute B  => no single block may be rated B or worse (CC ≥ 6)
+        # --max-modules A   => per-module average must stay at A
+        # --max-average A   => project-wide average must stay at A
+        # xenon exits non-zero when any threshold is exceeded (unlike radon cc).
+        entry: uv run xenon --max-absolute B --max-modules A --max-average A src
         language: system
         pass_filenames: false
         types: [python]

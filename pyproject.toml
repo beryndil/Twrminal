@@ -46,8 +46,9 @@ dev = [
     "pytest-cov~=5.0",
     # Dead-code finder; allowlist at config/allowlists/vulture.txt suppresses dynamic-dispatch false positives.
     "vulture~=2.13",
-    # Cyclomatic complexity gate (functions ≤ 10 per coding-standards).
-    "radon~=6.0",
+    # Cyclomatic complexity gate — xenon is the enforcement wrapper radon docs
+    # recommend; `radon cc` 6.x has no --fail-on flag and always exits 0.
+    "xenon~=0.9",
     # Docstring coverage on public API.
     "interrogate~=1.7",
     # Typo finder.
