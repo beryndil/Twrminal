@@ -280,6 +280,19 @@ class Driver:
             plug=plug,
         )
 
+    async def _handle_item_blocked_outcome(
+        self, item: ChecklistItem, outcome: SentinelFinding
+    ) -> None:
+        """Record a blocked outcome and bump the counter."""
+        await checklists_db.mark_outcome(
+            self._connection,
+            item.id,
+            category=outcome.category or ITEM_OUTCOME_BLOCKED,
+            reason=outcome.reason,
+        )
+        self._items_blocked += 1
+        await self._save_counters(clear_current_item=True)
+
     async def _handle_item_failed_outcome(
         self, item: ChecklistItem, outcome: SentinelFinding
     ) -> DriverResult | None:
@@ -324,6 +337,18 @@ class Driver:
             )
         return None
 
+    async def _is_closed_chat_skip(self, item: ChecklistItem, leg_number: int) -> bool:
+        """Return True when item should be skipped under visit_existing closed-chat guard.
+
+        Per behavior/checklists.md §"Run-control surface": items whose paired
+        chat is closed (or missing) under visit_existing are skipped.  Only
+        applies on the first leg of the item (leg_number == 1).
+        """
+        if not (self._config.visit_existing and leg_number == 1 and item.chat_session_id):
+            return False
+        closed = await sessions_db.is_closed(self._connection, item.chat_session_id)
+        return closed is not False  # True (closed) or None (row absent) → skip
+
     async def _drive_item(
         self, item: ChecklistItem, *, followup_depth: int = 0
     ) -> DriverResult | None:
@@ -343,14 +368,10 @@ class Driver:
         leg_number = await checklists_db.count_legs(self._connection, item.id) + 1
         plug: str | None = None  # populated on handoff
         last_failed_reason: str | None = None
-        # feature-6-005: visit_existing + closed-chat guard.
-        # Per behavior/checklists.md §"Run-control surface": items whose paired
-        # chat is closed (or missing) under visit_existing are skipped.
-        if self._config.visit_existing and leg_number == 1 and item.chat_session_id:
-            closed = await sessions_db.is_closed(self._connection, item.chat_session_id)
-            if closed is not False:  # True (closed) or None (row absent) → skip
-                await self._record_skip(item, reason="visit_existing: paired chat is closed")
-                return None
+        # feature-6-005: visit_existing + closed-chat guard (see _is_closed_chat_skip).
+        if await self._is_closed_chat_skip(item, leg_number):
+            await self._record_skip(item, reason="visit_existing: paired chat is closed")
+            return None
         for _ in range(self._config.max_legs_per_item):
             self._raise_if_stopped()
             if self._skip_current.is_set():
@@ -395,14 +416,7 @@ class Driver:
                 leg_number += 1
                 continue
             if outcome.kind == SENTINEL_KIND_ITEM_BLOCKED:
-                await checklists_db.mark_outcome(
-                    self._connection,
-                    item.id,
-                    category=outcome.category or ITEM_OUTCOME_BLOCKED,
-                    reason=outcome.reason,
-                )
-                self._items_blocked += 1
-                await self._save_counters(clear_current_item=True)
+                await self._handle_item_blocked_outcome(item, outcome)
                 return None
             if outcome.kind == SENTINEL_KIND_ITEM_FAILED:
                 last_failed_reason = outcome.reason
