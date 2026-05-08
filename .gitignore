@@ -70,3 +70,6 @@ output/playwright/
 # JSONL, and per-cycle audit prose. Loop driver lives in
 # ~/.claude/plans/melodic-toasting-axolotl.md.
 .audit-loop/
+
+# Orchestrator scratch space (v1 ship-readiness loop)
+.v1-ship/
