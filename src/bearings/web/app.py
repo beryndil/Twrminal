@@ -46,6 +46,7 @@ from bearings.config.constants import (
     DEFAULT_BILLING_MODE,
     OPENAPI_DESCRIPTION,
     OPENAPI_TITLE,
+    ROUTE_TAG_ANALYTICS,
     ROUTE_TAG_APPROVALS,
     ROUTE_TAG_CHECKLISTS,
     ROUTE_TAG_CHECKPOINTS,
@@ -81,6 +82,7 @@ from bearings.db import checklists as checklists_db
 from bearings.db import sessions as sessions_db
 from bearings.db import tags as tags_db
 from bearings.metrics import BearingsMetrics
+from bearings.web.routes.analytics import router as analytics_router
 from bearings.web.routes.approvals import router as approvals_router
 from bearings.web.routes.checklists import router as checklists_router
 from bearings.web.routes.checkpoints import router as checkpoints_router
@@ -445,6 +447,8 @@ def create_app(
     app.include_router(health_router, tags=[ROUTE_TAG_HEALTH])
     app.include_router(metrics_router, tags=[ROUTE_TAG_METRICS])
     app.include_router(import_db_router, tags=[ROUTE_TAG_IMPORT])
+    # Analytics Phase 4 — /api/analytics/ surface.
+    app.include_router(analytics_router, tags=[ROUTE_TAG_ANALYTICS])
     # E2E harness extension seam (item 3.1) — extra routers mount
     # *between* the production routers and the static bundle so debug
     # endpoints take precedence over the SPA fallback. Production

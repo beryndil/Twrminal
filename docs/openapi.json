@@ -6030,6 +6030,652 @@
           }
         }
       }
+    },
+    "/api/analytics/turns": {
+      "post": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Post Turn",
+        "description": "Record one Claude API turn's token consumption (spec \u00a79.1).\n\nUses ``INSERT OR IGNORE`` on ``(session_id, turn_index)`` so duplicate\ndeliveries of the same turn are safe no-ops.  Returns\n``{\"status\": \"ok\"}`` on success.",
+        "operationId": "analytics-log-turn",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TurnIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Analytics-Log-Turn"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/plug-blocks/batch": {
+      "post": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Post Plug Blocks Batch",
+        "description": "Record the plug blocks injected into a session at creation time (spec \u00a79.1).\n\nEach block is upserted via ``INSERT OR IGNORE`` on ``hash`` (spec \u00a75.1).\nThen the ``session_plug_blocks`` join rows are written.\n\nReturns ``{\"inserted\": N}`` where N is the number of block descriptors\nprocessed (not necessarily the number of new rows \u2014 duplicates are\nsilently skipped).",
+        "operationId": "analytics-log-plug-blocks-batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlugBlocksBatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "type": "object",
+                  "title": "Response Analytics-Log-Plug-Blocks-Batch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/bucket/current": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Get Bucket Current",
+        "description": "Return the most recent ``/usage`` poll snapshot (spec \u00a79.2).\n\nWhen no snapshot exists yet (the poller hasn't run), ``five_hour``\nand ``weekly`` are ``None`` and ``as_of`` is the current server time.",
+        "operationId": "analytics-get-bucket-current",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BucketCurrentOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/attribution": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Get Attribution",
+        "description": "Per-tag token attribution for the selected time window (spec \u00a79.2).\n\n``window`` is ``5h`` (rolling 5-hour) or ``weekly`` (rolling 7-day).\n``group_by`` must be ``tag``; other values return 422.\n\nPer spec \u00a73.2 the ``tokens_by_model`` dict must not be summed across\nmodels without normalisation.  ``share_total`` is computed after\ngrouping by model so the fraction is meaningful.",
+        "operationId": "analytics-get-attribution",
+        "parameters": [
+          {
+            "name": "window",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "One of: ['5h', 'weekly']",
+              "default": "weekly",
+              "title": "Window"
+            },
+            "description": "One of: ['5h', 'weekly']"
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Grouping dimension \u2014 currently only 'tag' is supported",
+              "default": "tag",
+              "title": "Group By"
+            },
+            "description": "Grouping dimension \u2014 currently only 'tag' is supported"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TagAttributionOut"
+                  },
+                  "title": "Response Analytics-Get-Attribution"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/redundancy": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Get Redundancy",
+        "description": "Plug blocks repeated across sessions \u2014 ranked by total token cost (spec \u00a79.2).\n\nBlocks returned have appeared in at least ``min_repeats`` of the\n``last_n`` most-recent sessions (optionally scoped to a tag).\n\n``block_types`` is a comma-separated filter; absent means all types.",
+        "operationId": "analytics-get-redundancy",
+        "parameters": [
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to sessions with this tag name",
+              "title": "Tag"
+            },
+            "description": "Filter to sessions with this tag name"
+          },
+          {
+            "name": "last_n",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 5,
+              "description": "Sample the last N sessions (5-200)",
+              "default": 25,
+              "title": "Last N"
+            },
+            "description": "Sample the last N sessions (5-200)"
+          },
+          {
+            "name": "min_repeats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 2,
+              "description": "Minimum number of sessions a block must appear in",
+              "default": 3,
+              "title": "Min Repeats"
+            },
+            "description": "Minimum number of sessions a block must appear in"
+          },
+          {
+            "name": "block_types",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Comma-separated block_type filter (e.g. 'claude_md,tag_memory')",
+              "title": "Block Types"
+            },
+            "description": "Comma-separated block_type filter (e.g. 'claude_md,tag_memory')"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RedundancyBlockOut"
+                  },
+                  "title": "Response Analytics-Get-Redundancy"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/plug-blocks/{hash}": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Get Plug Block Detail",
+        "description": "Return full detail for one plug block by sha256 hash (spec \u00a79.2).",
+        "operationId": "analytics-get-plug-block",
+        "parameters": [
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Hash"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlugBlockOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/plug-blocks/{hash}/versions": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Get Plug Block Versions",
+        "description": "Version history for a plug block, identified by its sha256 hash (spec \u00a79.2).\n\nReturns all blocks sharing the same ``source_path`` and ``block_type``\nas ``hash``, ordered oldest-first.  Each entry carries a ``unified_diff``\nfrom the prior version (``None`` for the first entry).\n\n404 when ``hash`` does not exist.  Single-element list when the block\nhas no ``source_path`` (no versioning information available).",
+        "operationId": "analytics-get-plug-block-versions",
+        "parameters": [
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Hash"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PlugBlockVersionOut"
+                  },
+                  "title": "Response Analytics-Get-Plug-Block-Versions"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/sessions/{session_id}/plug-summary": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Get Session Plug Summary",
+        "description": "Plug composition summary for one session (spec \u00a79.2).\n\nReturns total tokens, status (green / yellow / red), and the\nper-block breakdown.  404 when the session does not exist.",
+        "operationId": "analytics-get-session-plug-summary",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionPlugSummaryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/plug-blocks/{hash}/promote-to-tag-memory": {
+      "post": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Create Tag Memory From Plug Block",
+        "description": "Create a tag memory from a plug block's content (spec \u00a79.3).\n\nLooks up ``hash`` (404 if missing), then looks up the tag by name\n(404 if missing).  Creates a ``tag_memories`` row with\n``body.memory_content`` as the body.\n\n``auto_apply_to_next_session`` is recorded in the response for\nthe UI to act on \u2014 the backend does not yet implement the\nautomatic-tag-apply hook (that is a session-creation hook, Phase 5+).",
+        "operationId": "analytics-promote-plug-block-to-tag-memory",
+        "parameters": [
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Hash"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteToTagMemoryIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromoteToTagMemoryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/plug-blocks/{hash}/promote-to-on-open": {
+      "post": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Create On Open From Plug Block",
+        "description": "Write a shell snippet into ``<working_directory>/.bearings/on_open.sh`` (spec \u00a79.3).\n\nCreates ``.bearings/`` if it doesn't exist.  Appends the snippet to\nany existing ``on_open.sh`` (newline-separated) so multiple promotes\naccumulate rather than overwrite each other.\n\n404 when ``hash`` is unknown.\n422 when ``working_directory`` is not an existing directory on disk.",
+        "operationId": "analytics-promote-plug-block-to-on-open",
+        "parameters": [
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Hash"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteToOnOpenIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromoteToOnOpenOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/draft-new-session": {
+      "post": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Preview Session Draft",
+        "description": "Generate a draft plug for a new session continuing from a source session (spec \u00a79.3).\n\nPulls the source session's title, description, and tag set to build a\ncompact plug template.  Full LLM-generated drafts require agent\ninfrastructure wired in a later phase; this implementation returns a\ndeterministic template so the route surface is complete.\n\n404 when ``source_session_id`` does not exist.",
+        "operationId": "analytics-draft-new-session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftNewSessionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftNewSessionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/sessions/from-draft": {
+      "post": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Create Session From Draft",
+        "description": "Create a new chat session from a user-reviewed plug draft (spec \u00a79.3).\n\n``draft_plug`` becomes the ``session_instructions`` on the new session.\n``tags`` must reference existing tag names \u2014 404 if any are absent.\n``working_directory`` must be a non-empty path (it is stored as-is; no\nfilesystem check here, matching ``POST /api/sessions`` behaviour).",
+        "operationId": "analytics-create-session-from-draft",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionFromDraftIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionFromDraftOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/warnings/suppress": {
+      "post": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Create Warning Suppression",
+        "description": "Record that the user dismissed a plug-length warning (spec \u00a79.3).\n\nIdempotent \u2014 double-clicking \"don't show again\" is a safe no-op.\nReturns ``{\"status\": \"ok\"}`` on success.\n\n422 when ``warning_type`` is not a known analytics warning type.",
+        "operationId": "analytics-suppress-warning",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuppressWarningIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Analytics-Suppress-Warning"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6269,6 +6915,69 @@
           "file"
         ],
         "title": "Body_create-upload"
+      },
+      "BucketCurrentOut": {
+        "properties": {
+          "five_hour": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BucketWindowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "weekly": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BucketWindowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "as_of": {
+            "type": "integer",
+            "title": "As Of",
+            "description": "unix ms timestamp of the snapshot"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "as_of"
+        ],
+        "title": "BucketCurrentOut",
+        "description": "Response for ``GET /api/analytics/bucket/current`` (\u00a79.2)."
+      },
+      "BucketWindowOut": {
+        "properties": {
+          "used": {
+            "type": "integer",
+            "title": "Used"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "percent": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Percent"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "used",
+          "limit",
+          "percent"
+        ],
+        "title": "BucketWindowOut",
+        "description": "One usage window (5-hour or weekly) inside :class:`BucketCurrentOut`."
       },
       "BulkSessionsIn": {
         "properties": {
@@ -6725,6 +7434,57 @@
         ],
         "title": "DirectoryHistoryEntry",
         "description": "One event entry from ``<directory>/.bearings/history.jsonl``.\n\nFields match what :func:`bearings.bearings_dir.lifecycle.note_directory_context_start`\nwrites.  Unknown fields from future event types are silently ignored so\nolder clients remain forward-compatible when new event kinds land."
+      },
+      "DraftNewSessionIn": {
+        "properties": {
+          "source_session_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Source Session Id"
+          },
+          "carry_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Carry Tags"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_session_id"
+        ],
+        "title": "DraftNewSessionIn",
+        "description": "Request body for ``POST /api/analytics/draft-new-session`` (\u00a79.3)."
+      },
+      "DraftNewSessionOut": {
+        "properties": {
+          "draft_plug": {
+            "type": "string",
+            "title": "Draft Plug"
+          },
+          "estimated_tokens": {
+            "type": "integer",
+            "title": "Estimated Tokens"
+          },
+          "draft_cost_tokens": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Draft Cost Tokens"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "draft_plug",
+          "estimated_tokens",
+          "draft_cost_tokens"
+        ],
+        "title": "DraftNewSessionOut",
+        "description": "Response for ``POST /api/analytics/draft-new-session`` (\u00a79.3)."
       },
       "DriverDiagListOut": {
         "properties": {
@@ -7848,6 +8608,206 @@
         "title": "PairedChatLegOut",
         "description": "Response shape for one leg row."
       },
+      "PlugBlockIn": {
+        "properties": {
+          "hash": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Hash",
+            "description": "sha256 hex digest"
+          },
+          "block_type": {
+            "type": "string",
+            "title": "Block Type",
+            "description": "One of: ['claude_md', 'mcp_tools', 'other', 'skill_desc', 'system_addition', 'tag_memory']"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Content"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "hash",
+          "block_type",
+          "content"
+        ],
+        "title": "PlugBlockIn",
+        "description": "One plug block descriptor inside a ``POST /api/analytics/plug-blocks/batch`` body."
+      },
+      "PlugBlockOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "hash": {
+            "type": "string",
+            "title": "Hash"
+          },
+          "block_type": {
+            "type": "string",
+            "title": "Block Type"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "token_count": {
+            "type": "integer",
+            "title": "Token Count"
+          },
+          "token_count_model": {
+            "type": "string",
+            "title": "Token Count Model"
+          },
+          "first_seen": {
+            "type": "integer",
+            "title": "First Seen"
+          },
+          "last_seen": {
+            "type": "integer",
+            "title": "Last Seen"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "hash",
+          "block_type",
+          "content",
+          "token_count",
+          "token_count_model",
+          "first_seen",
+          "last_seen"
+        ],
+        "title": "PlugBlockOut",
+        "description": "Response for ``GET /api/analytics/plug-blocks/{hash}`` (\u00a79.2).\n\n``content`` is the raw block text.  ``versions`` is populated only\nby the ``/versions`` sub-endpoint (\u00a79.2); on the base endpoint it\nis omitted (``None``)."
+      },
+      "PlugBlockVersionOut": {
+        "properties": {
+          "hash": {
+            "type": "string",
+            "title": "Hash"
+          },
+          "first_seen": {
+            "type": "integer",
+            "title": "First Seen"
+          },
+          "last_seen": {
+            "type": "integer",
+            "title": "Last Seen"
+          },
+          "token_count": {
+            "type": "integer",
+            "title": "Token Count"
+          },
+          "unified_diff": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unified Diff",
+            "description": "Unified diff from the prior version; None for the first version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "hash",
+          "first_seen",
+          "last_seen",
+          "token_count"
+        ],
+        "title": "PlugBlockVersionOut",
+        "description": "One entry in the ``GET /api/analytics/plug-blocks/{hash}/versions`` response (\u00a79.2).\n\nRepresents one historical version of a block from the same\n``source_path`` / ``block_type`` lineage.  ``unified_diff`` is the\ndiff FROM the previous version TO this one (``None`` for the first\nversion in the sequence)."
+      },
+      "PlugBlocksBatchIn": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Session Id"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Model"
+          },
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/PlugBlockIn"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Blocks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session_id",
+          "model",
+          "blocks"
+        ],
+        "title": "PlugBlocksBatchIn",
+        "description": "Request body for ``POST /api/analytics/plug-blocks/batch`` (\u00a79.1).\n\nRecords the full set of plug blocks injected into a session at\ncreation time.  ``model`` is the session's configured executor model,\nused to token-count each block on first insert (spec \u00a75.3)."
+      },
+      "PlugSummaryBlockOut": {
+        "properties": {
+          "hash": {
+            "type": "string",
+            "title": "Hash"
+          },
+          "block_type": {
+            "type": "string",
+            "title": "Block Type"
+          },
+          "tokens": {
+            "type": "integer",
+            "title": "Tokens"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "hash",
+          "block_type",
+          "tokens"
+        ],
+        "title": "PlugSummaryBlockOut",
+        "description": "One block entry inside :class:`SessionPlugSummaryOut`."
+      },
       "PreferencesOut": {
         "properties": {
           "theme": {
@@ -8001,6 +8961,96 @@
         "type": "object",
         "title": "PreferencesPatch",
         "description": "Request shape for PATCH ``/api/preferences``.\n\nAll fields are optional; omitted fields are not modified.  To clear\na nullable field to NULL supply ``null`` explicitly in the JSON\nbody."
+      },
+      "PromoteToOnOpenIn": {
+        "properties": {
+          "working_directory": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Working Directory"
+          },
+          "snippet": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Snippet",
+            "description": "Shell snippet to write into on_open.sh"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "working_directory",
+          "snippet"
+        ],
+        "title": "PromoteToOnOpenIn",
+        "description": "Request body for ``POST /api/analytics/plug-blocks/{hash}/promote-to-on-open`` (\u00a79.3)."
+      },
+      "PromoteToOnOpenOut": {
+        "properties": {
+          "on_open_sh_path": {
+            "type": "string",
+            "title": "On Open Sh Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "on_open_sh_path"
+        ],
+        "title": "PromoteToOnOpenOut",
+        "description": "Response for ``POST /api/analytics/plug-blocks/{hash}/promote-to-on-open`` (\u00a79.3).\n\n``on_open_sh_path`` is the absolute path of the written\n``.bearings/on_open.sh`` file."
+      },
+      "PromoteToTagMemoryIn": {
+        "properties": {
+          "tag": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tag",
+            "description": "Tag name to attach the memory to"
+          },
+          "memory_content": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Memory Content",
+            "description": "Body of the tag memory"
+          },
+          "auto_apply_to_next_session": {
+            "type": "boolean",
+            "title": "Auto Apply To Next Session",
+            "description": "Hint to apply this tag to the next created session",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tag",
+          "memory_content"
+        ],
+        "title": "PromoteToTagMemoryIn",
+        "description": "Request body for ``POST /api/analytics/plug-blocks/{hash}/promote-to-tag-memory`` (\u00a79.3)."
+      },
+      "PromoteToTagMemoryOut": {
+        "properties": {
+          "memory_id": {
+            "type": "integer",
+            "title": "Memory Id",
+            "description": "Row id of the new tag_memory record"
+          },
+          "tag": {
+            "type": "string",
+            "title": "Tag",
+            "description": "Tag the memory was attached to"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "memory_id",
+          "tag"
+        ],
+        "title": "PromoteToTagMemoryOut",
+        "description": "Response for ``POST /api/analytics/plug-blocks/{hash}/promote-to-tag-memory`` (\u00a79.3)."
       },
       "PromptIn": {
         "properties": {
@@ -8171,6 +9221,98 @@
         ],
         "title": "RedactionOut",
         "description": "One redaction range. Mirrors :class:`bearings.agent.vault.Redaction`."
+      },
+      "RedundancyBlockOut": {
+        "properties": {
+          "hash": {
+            "type": "string",
+            "title": "Hash"
+          },
+          "block_type": {
+            "type": "string",
+            "title": "Block Type"
+          },
+          "token_count": {
+            "type": "integer",
+            "title": "Token Count"
+          },
+          "token_count_model": {
+            "type": "string",
+            "title": "Token Count Model"
+          },
+          "repeat_count": {
+            "type": "integer",
+            "title": "Repeat Count"
+          },
+          "total_cost_tokens": {
+            "type": "integer",
+            "title": "Total Cost Tokens"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/RedundancySessionRef"
+            },
+            "type": "array",
+            "title": "Sessions"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "hash",
+          "block_type",
+          "token_count",
+          "token_count_model",
+          "repeat_count",
+          "total_cost_tokens",
+          "sessions"
+        ],
+        "title": "RedundancyBlockOut",
+        "description": "One row of ``GET /api/analytics/redundancy`` (\u00a79.2)."
+      },
+      "RedundancySessionRef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "timestamp": {
+            "type": "integer",
+            "title": "Timestamp"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "timestamp",
+          "tags"
+        ],
+        "title": "RedundancySessionRef",
+        "description": "Session reference inside a :class:`RedundancyBlockOut` row."
       },
       "ReorgAuditListOut": {
         "properties": {
@@ -8879,6 +10021,50 @@
         "title": "SessionExport",
         "description": "Response shape for ``GET /api/sessions/{id}/export``.\n\nContains a full snapshot of the session's DB state at the time the\nrequest is made. Per ``docs/behavior/sessions.md`` \u00a7\"Export schema\":\n\n* ``session`` \u2014 the session row (same shape as ``GET /api/sessions/{id}``).\n* ``messages`` \u2014 every message in chronological order (all roles:\n  ``user``, ``assistant``, ``system``, ``tool``).\n* ``tool_calls`` \u2014 raw SDK transcript entries (opaque JSON blobs\n  stored by :mod:`bearings.db.sdk_entries`) in write order. These\n  are the structured tool-input / tool-output records produced by\n  the Claude Code CLI during execution.\n* ``checkpoints`` \u2014 every checkpoint attached to the session,\n  chronological order.\n* ``attachments`` \u2014 always ``[]`` in v0.18.x: uploads are content-\n  addressed and shared globally; there is no per-session attachment\n  linking table yet.\n\nClosed sessions are exportable \u2014 this endpoint returns 200 for any\nsession that exists, regardless of ``closed_at``."
       },
+      "SessionFromDraftIn": {
+        "properties": {
+          "draft_plug": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Draft Plug"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "working_directory": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Working Directory"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "draft_plug",
+          "working_directory"
+        ],
+        "title": "SessionFromDraftIn",
+        "description": "Request body for ``POST /api/analytics/sessions/from-draft`` (\u00a79.3)."
+      },
+      "SessionFromDraftOut": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session_id"
+        ],
+        "title": "SessionFromDraftOut",
+        "description": "Response for ``POST /api/analytics/sessions/from-draft`` (\u00a79.3)."
+      },
       "SessionModelUpdate": {
         "properties": {
           "model": {
@@ -9171,6 +10357,35 @@
         "title": "SessionPinnedUpdate",
         "description": "Request shape for ``PATCH /api/sessions/{id}/pinned``.\n\n``pinned=true`` pins the session row; ``pinned=false`` unpins it."
       },
+      "SessionPlugSummaryOut": {
+        "properties": {
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "'green' | 'yellow' | 'red' \u2014 derived from token count vs thresholds"
+          },
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/PlugSummaryBlockOut"
+            },
+            "type": "array",
+            "title": "Blocks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total_tokens",
+          "status",
+          "blocks"
+        ],
+        "title": "SessionPlugSummaryOut",
+        "description": "Response for ``GET /api/analytics/sessions/{id}/plug-summary`` (\u00a79.2).\n\n``status`` is derived from ``total_tokens`` vs the configured\nthresholds (``PLUG_YELLOW_THRESHOLD_TOKENS`` /\n``PLUG_RED_THRESHOLD_TOKENS``)."
+      },
       "SessionTodosOut": {
         "properties": {
           "todos_json": {
@@ -9369,6 +10584,29 @@
         "type": "object",
         "title": "StartRunIn",
         "description": "Request shape for ``POST /api/checklists/{id}/run/start``.\n\nPer behavior/checklists.md \u00a7\"Run-control surface\" the user picks\nfailure_policy \u2208 {halt, skip} (default halt) and the\nvisit_existing toggle before pressing Start."
+      },
+      "SuppressWarningIn": {
+        "properties": {
+          "block_hash": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Block Hash"
+          },
+          "warning_type": {
+            "type": "string",
+            "title": "Warning Type",
+            "description": "One of: ['red_length', 'yellow_length']"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "block_hash",
+          "warning_type"
+        ],
+        "title": "SuppressWarningIn",
+        "description": "Request body for ``POST /api/analytics/warnings/suppress`` (\u00a79.3)."
       },
       "SystemPromptLayerOut": {
         "properties": {
@@ -9592,6 +10830,42 @@
         ],
         "title": "SystemRoutingRuleOut",
         "description": "Response body for system rule endpoints."
+      },
+      "TagAttributionOut": {
+        "properties": {
+          "tag": {
+            "type": "string",
+            "title": "Tag"
+          },
+          "tokens_by_model": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Tokens By Model"
+          },
+          "share_total": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Share Total"
+          },
+          "burn_rate_per_min": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Burn Rate Per Min"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tag",
+          "tokens_by_model",
+          "share_total",
+          "burn_rate_per_min"
+        ],
+        "title": "TagAttributionOut",
+        "description": "One row of ``GET /api/analytics/attribution`` (\u00a79.2).\n\n``tokens_by_model`` is a dict mapping model name \u2192 total tokens for\nthat model within the requested window.  Callers must NOT sum across\nmodel keys without normalisation \u2014 the spec's \u00a73.2 constraint\n(different tokenizers) means cross-model sums are misleading.\n``share_total`` is the fraction of all tokens in the window consumed\nby this tag's sessions, computed after grouping by model."
       },
       "TagIn": {
         "properties": {
@@ -10430,6 +11704,58 @@
         ],
         "title": "ToolCallOut",
         "description": "Response shape for ``GET /api/sessions/{id}/tool_calls`` (gap-cycle-03-012).\n\nOne row per tool invocation attached to an assistant message. The\n``message_id`` field lets the frontend group tool calls by their\nowning assistant turn without a separate join request."
+      },
+      "TurnIn": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Session Id"
+          },
+          "turn_index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Turn Index"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Model"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Input Tokens",
+            "default": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Output Tokens",
+            "default": 0
+          },
+          "cache_read_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Cache Read Tokens",
+            "default": 0
+          },
+          "cache_creation_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Cache Creation Tokens",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session_id",
+          "turn_index",
+          "model"
+        ],
+        "title": "TurnIn",
+        "description": "Request body for ``POST /api/analytics/turns`` (\u00a79.1).\n\nRecords one Claude API turn's token consumption.  All token fields\ndefault to 0 so callers can omit fields absent from the SDK response\n(e.g. cache tokens on non-caching models).\n\n``model`` is mandatory and must be non-empty \u2014 every token count row\ncarries the model so aggregation queries can group by model before\nsumming (spec \u00a73.2 tokenizer constraint)."
       },
       "TurnOut": {
         "properties": {

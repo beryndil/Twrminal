@@ -1,3 +1,4 @@
+# mypy: disable-error-code=explicit-any
 """Analytics DB layer — query module for the Phase 1 analytics tables.
 
 Per ``BEARINGS_ANALYTICS_v1.md`` §4, the analytics schema consists of
@@ -24,6 +25,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import aiosqlite
 
@@ -590,20 +592,255 @@ async def is_warning_suppressed(
     return row is not None
 
 
+# ---------------------------------------------------------------------------
+# Attribution queries (spec §6)
+# ---------------------------------------------------------------------------
+
+
+async def compute_tag_attribution(
+    connection: aiosqlite.Connection,
+    *,
+    cutoff_ms: int,
+) -> list[dict[str, Any]]:
+    """Return per-tag, per-model token totals for turns at or after ``cutoff_ms``.
+
+    Per spec §6.2 and §3.2: never aggregate across models without
+    grouping by model first.  Each row carries a ``model`` key so the
+    caller can split by model or normalise as appropriate.
+
+    Also returns the ``grand_total`` of all tokens in the window so
+    callers can compute each tag's ``share_total`` fraction.
+
+    Shape of each row::
+
+        {
+            "tag": str,
+            "model": str,
+            "tokens": int,  # input + output for this (tag, model)
+            "grand_total": int,  # total across all tags/models in window
+        }
+    """
+    rows = await connection.execute_fetchall(
+        "SELECT t.name, tr.model, "
+        "       COALESCE(SUM(tr.input_tokens + tr.output_tokens), 0) "
+        "FROM tags t "
+        "JOIN session_tags st ON st.tag_id = t.id "
+        "JOIN turns tr ON tr.session_id = st.session_id "
+        "WHERE tr.timestamp >= ? "
+        "GROUP BY t.name, tr.model "
+        "ORDER BY t.name ASC, tr.model ASC",
+        (cutoff_ms,),
+    )
+    async with connection.execute(
+        "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM turns WHERE timestamp >= ?",
+        (cutoff_ms,),
+    ) as _cur:
+        _grand_row = await _cur.fetchone()
+    grand_total = int(_grand_row[0]) if _grand_row is not None else 0
+    return [
+        {
+            "tag": str(r[0]),
+            "model": str(r[1]),
+            "tokens": int(r[2]),
+            "grand_total": grand_total,
+        }
+        for r in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Redundancy queries (spec §7)
+# ---------------------------------------------------------------------------
+
+
+async def list_redundant_plug_blocks(
+    connection: aiosqlite.Connection,
+    *,
+    last_n: int = 25,
+    min_repeats: int = 3,
+    tag_id: int | None = None,
+    block_types: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Return plug blocks that appear in ``min_repeats`` or more of the last ``last_n`` sessions.
+
+    When ``tag_id`` is set, only sessions with that tag are included in
+    the ``last_n`` sample.  When ``block_types`` is set, only blocks of
+    those types are returned.
+
+    Results are sorted by ``repeat_count DESC``, then by
+    ``total_cost_tokens DESC`` (repeat_count * token_count) as the
+    tiebreaker — spec §7.3.
+
+    Shape of each row::
+
+        {
+            "hash": str,
+            "block_type": str,
+            "token_count": int,
+            "token_count_model": str,
+            "repeat_count": int,
+            "total_cost_tokens": int,
+            "source_path": str | None,
+            "sessions": [{"id": str, "title": str, "timestamp": int, "tags": [str, ...]}, ...],
+        }
+    """
+    # Step 1: gather the last N session IDs (optionally filtered by tag).
+    if tag_id is not None:
+        session_rows = await connection.execute_fetchall(
+            "SELECT s.id FROM sessions s "
+            "JOIN session_tags st ON st.session_id = s.id AND st.tag_id = ? "
+            "ORDER BY s.created_at DESC LIMIT ?",
+            (tag_id, last_n),
+        )
+    else:
+        session_rows = await connection.execute_fetchall(
+            "SELECT id FROM sessions ORDER BY created_at DESC LIMIT ?",
+            (last_n,),
+        )
+    session_ids = [str(r[0]) for r in session_rows]
+    if not session_ids:
+        return []
+
+    # Step 2: count per-block repeat frequency within the session sample.
+    placeholders = ",".join("?" * len(session_ids))
+    if block_types:
+        type_placeholders = ",".join("?" * len(block_types))
+        block_rows = await connection.execute_fetchall(
+            f"SELECT pb.hash, pb.block_type, pb.token_count, pb.token_count_model, "
+            f"pb.source_path, COUNT(DISTINCT spb.session_id) AS repeat_count "
+            f"FROM session_plug_blocks spb "
+            f"JOIN plug_blocks pb ON pb.hash = spb.block_hash "
+            f"WHERE spb.session_id IN ({placeholders}) "
+            f"AND pb.block_type IN ({type_placeholders}) "
+            f"GROUP BY pb.hash "
+            f"HAVING repeat_count >= ? "
+            f"ORDER BY repeat_count DESC, repeat_count * pb.token_count DESC",
+            (*session_ids, *block_types, min_repeats),
+        )
+    else:
+        block_rows = await connection.execute_fetchall(
+            f"SELECT pb.hash, pb.block_type, pb.token_count, pb.token_count_model, "
+            f"pb.source_path, COUNT(DISTINCT spb.session_id) AS repeat_count "
+            f"FROM session_plug_blocks spb "
+            f"JOIN plug_blocks pb ON pb.hash = spb.block_hash "
+            f"WHERE spb.session_id IN ({placeholders}) "
+            f"GROUP BY pb.hash "
+            f"HAVING repeat_count >= ? "
+            f"ORDER BY repeat_count DESC, repeat_count * pb.token_count DESC",
+            (*session_ids, min_repeats),
+        )
+
+    # Step 3: for each block, fetch the session references.
+    results: list[dict[str, Any]] = []
+    for r in block_rows:
+        block_hash = str(r[0])
+        repeat_count = int(r[5])
+        token_count = int(r[2])
+
+        sess_rows = await connection.execute_fetchall(
+            f"SELECT s.id, s.title, "
+            f"CAST(strftime('%s', s.created_at) AS INTEGER) * 1000 AS ts, "
+            f"GROUP_CONCAT(t.name) AS tag_names "
+            f"FROM session_plug_blocks spb "
+            f"JOIN sessions s ON s.id = spb.session_id "
+            f"LEFT JOIN session_tags st ON st.session_id = s.id "
+            f"LEFT JOIN tags t ON t.id = st.tag_id "
+            f"WHERE spb.block_hash = ? AND spb.session_id IN ({placeholders}) "
+            f"GROUP BY s.id "
+            f"ORDER BY s.created_at DESC",
+            (block_hash, *session_ids),
+        )
+        sessions: list[dict[str, Any]] = []
+        for sr in sess_rows:
+            raw_tags = str(sr[3]) if sr[3] is not None else ""
+            tag_names = [t for t in raw_tags.split(",") if t] if raw_tags else []
+            sessions.append(
+                {
+                    "id": str(sr[0]),
+                    "title": str(sr[1]),
+                    "timestamp": int(sr[2]),
+                    "tags": tag_names,
+                }
+            )
+
+        results.append(
+            {
+                "hash": block_hash,
+                "block_type": str(r[1]),
+                "token_count": token_count,
+                "token_count_model": str(r[3]),
+                "repeat_count": repeat_count,
+                "total_cost_tokens": repeat_count * token_count,
+                "source_path": str(r[4]) if r[4] is not None else None,
+                "sessions": sessions,
+            }
+        )
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Versioning queries (spec §7.4)
+# ---------------------------------------------------------------------------
+
+
+async def list_versions_for_block(
+    connection: aiosqlite.Connection,
+    hash: str,
+) -> list[PlugBlock]:
+    """Return all historical versions of the block identified by ``hash``.
+
+    A "version" is any ``plug_blocks`` row that shares the same
+    ``source_path`` and ``block_type`` as the requested block, ordered
+    by ``first_seen ASC`` — i.e. oldest-first chronological history.
+
+    Returns the single-element list ``[block]`` when the block has no
+    ``source_path`` (hash-only deduplication; no lineage to compute).
+    Returns ``[]`` when ``hash`` does not exist.
+    """
+    block = await get_plug_block(connection, hash)
+    if block is None:
+        return []
+    if block.source_path is None:
+        return [block]
+    rows = await connection.execute_fetchall(
+        "SELECT id, hash, block_type, content, token_count, token_count_model, "
+        "first_seen, last_seen, source_path FROM plug_blocks "
+        "WHERE source_path = ? AND block_type = ? ORDER BY first_seen ASC",
+        (block.source_path, block.block_type),
+    )
+    return [
+        PlugBlock(
+            id=int(r[0]),
+            hash=str(r[1]),
+            block_type=str(r[2]),
+            content=str(r[3]),
+            token_count=int(r[4]),
+            token_count_model=str(r[5]),
+            first_seen=int(r[6]),
+            last_seen=int(r[7]),
+            source_path=str(r[8]) if r[8] is not None else None,
+        )
+        for r in rows
+    ]
+
+
 __all__ = [
     "BucketSnapshot",
     "PlugBlock",
     "SessionPlugBlock",
     "SuppressedWarning",
     "Turn",
+    "compute_tag_attribution",
     "get_latest_bucket_snapshot",
     "get_plug_block",
     "insert_bucket_snapshot",
     "insert_turn",
     "is_warning_suppressed",
+    "list_redundant_plug_blocks",
     "list_session_plug_blocks",
     "list_turns",
     "list_turns_for_session",
+    "list_versions_for_block",
     "record_session_plug_blocks",
     "search_plug_blocks_fts",
     "suppress_warning",

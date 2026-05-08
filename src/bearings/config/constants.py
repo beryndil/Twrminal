@@ -1371,6 +1371,7 @@ ROUTE_TAG_TEMPLATES: Final[str] = "templates"
 ROUTE_TAG_REORG: Final[str] = "reorg"
 ROUTE_TAG_PENDING: Final[str] = "pending"
 ROUTE_TAG_SESSIONS_BULK: Final[str] = "sessions-bulk"
+ROUTE_TAG_ANALYTICS: Final[str] = "analytics"
 
 # Bulk-session operation alphabet (gap-cycle-13-001).
 # These string constants feed the ``op`` field of ``POST /api/sessions/bulk``
@@ -1533,6 +1534,24 @@ KNOWN_ANALYTICS_PLUG_STATUSES: Final[frozenset[str]] = frozenset(
     }
 )
 
+# Attribution window literals (spec §9.2 — "window=5h|weekly").
+ANALYTICS_ATTRIBUTION_WINDOW_5H: Final[str] = "5h"
+ANALYTICS_ATTRIBUTION_WINDOW_WEEKLY: Final[str] = "weekly"
+KNOWN_ANALYTICS_ATTRIBUTION_WINDOWS: Final[frozenset[str]] = frozenset(
+    {ANALYTICS_ATTRIBUTION_WINDOW_5H, ANALYTICS_ATTRIBUTION_WINDOW_WEEKLY}
+)
+
+# Redundancy-view filter defaults (spec §7.1 "Default N = 3" and §7.2
+# "default 25, range 5-200").
+ANALYTICS_REDUNDANCY_DEFAULT_LAST_N: Final[int] = 25
+ANALYTICS_REDUNDANCY_DEFAULT_MIN_REPEATS: Final[int] = 3
+ANALYTICS_REDUNDANCY_LAST_N_MIN: Final[int] = 5
+ANALYTICS_REDUNDANCY_LAST_N_MAX: Final[int] = 200
+
+# FTS search default result cap (spec §4.2 — no explicit default; 20 chosen
+# as a practical page size that fits the redundancy-view panel).
+ANALYTICS_FTS_SEARCH_DEFAULT_LIMIT: Final[int] = 20
+
 # Self-consistency: alphabets must be non-empty and thresholds ordered.
 assert len(KNOWN_ANALYTICS_BLOCK_TYPES) == 6
 assert len(KNOWN_ANALYTICS_WARNING_TYPES) == 2
@@ -1542,15 +1561,22 @@ assert PLUG_YELLOW_THRESHOLD_TOKENS < PLUG_RED_THRESHOLD_TOKENS
 
 __all__ = [
     "ADVISOR_TOOL_BETA_HEADER",
+    "ANALYTICS_ATTRIBUTION_WINDOW_5H",
+    "ANALYTICS_ATTRIBUTION_WINDOW_WEEKLY",
     "ANALYTICS_BLOCK_TYPE_CLAUDE_MD",
     "ANALYTICS_BLOCK_TYPE_MCP_TOOLS",
     "ANALYTICS_BLOCK_TYPE_OTHER",
     "ANALYTICS_BLOCK_TYPE_SKILL_DESC",
     "ANALYTICS_BLOCK_TYPE_SYSTEM_ADDITION",
     "ANALYTICS_BLOCK_TYPE_TAG_MEMORY",
+    "ANALYTICS_FTS_SEARCH_DEFAULT_LIMIT",
     "ANALYTICS_PLUG_STATUS_GREEN",
     "ANALYTICS_PLUG_STATUS_RED",
     "ANALYTICS_PLUG_STATUS_YELLOW",
+    "ANALYTICS_REDUNDANCY_DEFAULT_LAST_N",
+    "ANALYTICS_REDUNDANCY_DEFAULT_MIN_REPEATS",
+    "ANALYTICS_REDUNDANCY_LAST_N_MAX",
+    "ANALYTICS_REDUNDANCY_LAST_N_MIN",
     "ANALYTICS_WARNING_TYPE_RED",
     "ANALYTICS_WARNING_TYPE_YELLOW",
     "AUTO_DRIVER_FAILURE_POLICY_HALT",
@@ -1653,6 +1679,7 @@ __all__ = [
     "ITEM_OUTCOME_BLOCKED",
     "ITEM_OUTCOME_FAILED",
     "ITEM_OUTCOME_SKIPPED",
+    "KNOWN_ANALYTICS_ATTRIBUTION_WINDOWS",
     "KNOWN_ANALYTICS_BLOCK_TYPES",
     "KNOWN_ANALYTICS_PLUG_STATUSES",
     "KNOWN_ANALYTICS_WARNING_TYPES",
@@ -1720,6 +1747,7 @@ __all__ = [
     "QUOTA_BAR_YELLOW_PCT",
     "QUOTA_THRESHOLD_PCT",
     "RING_BUFFER_MAX",
+    "ROUTE_TAG_ANALYTICS",
     "ROUTE_TAG_APPROVALS",
     "ROUTE_TAG_CHECKLISTS",
     "ROUTE_TAG_CHECKPOINTS",

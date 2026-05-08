@@ -222,6 +222,70 @@ class SessionPlugSummaryOut(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class PromoteToTagMemoryIn(BaseModel):
+    """Request body for ``POST /api/analytics/plug-blocks/{hash}/promote-to-tag-memory`` (§9.3)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tag: str = Field(min_length=1, description="Tag name to attach the memory to")
+    memory_content: str = Field(min_length=1, description="Body of the tag memory")
+    auto_apply_to_next_session: bool = Field(
+        default=True,
+        description="Hint to apply this tag to the next created session",
+    )
+
+
+class PromoteToTagMemoryOut(BaseModel):
+    """Response for ``POST /api/analytics/plug-blocks/{hash}/promote-to-tag-memory`` (§9.3)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    memory_id: int = Field(description="Row id of the new tag_memory record")
+    tag: str = Field(description="Tag the memory was attached to")
+
+
+class PromoteToOnOpenIn(BaseModel):
+    """Request body for ``POST /api/analytics/plug-blocks/{hash}/promote-to-on-open`` (§9.3)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    working_directory: str = Field(min_length=1)
+    snippet: str = Field(min_length=1, description="Shell snippet to write into on_open.sh")
+
+
+class PromoteToOnOpenOut(BaseModel):
+    """Response for ``POST /api/analytics/plug-blocks/{hash}/promote-to-on-open`` (§9.3).
+
+    ``on_open_sh_path`` is the absolute path of the written
+    ``.bearings/on_open.sh`` file.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    on_open_sh_path: str
+
+
+class PlugBlockVersionOut(BaseModel):
+    """One entry in the ``GET /api/analytics/plug-blocks/{hash}/versions`` response (§9.2).
+
+    Represents one historical version of a block from the same
+    ``source_path`` / ``block_type`` lineage.  ``unified_diff`` is the
+    diff FROM the previous version TO this one (``None`` for the first
+    version in the sequence).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    hash: str
+    first_seen: int
+    last_seen: int
+    token_count: int
+    unified_diff: str | None = Field(
+        default=None,
+        description="Unified diff from the prior version; None for the first version",
+    )
+
+
 class SuppressWarningIn(BaseModel):
     """Request body for ``POST /api/analytics/warnings/suppress`` (§9.3)."""
 
@@ -275,8 +339,13 @@ __all__ = [
     "DraftNewSessionOut",
     "PlugBlockIn",
     "PlugBlockOut",
+    "PlugBlockVersionOut",
     "PlugBlocksBatchIn",
     "PlugSummaryBlockOut",
+    "PromoteToOnOpenIn",
+    "PromoteToOnOpenOut",
+    "PromoteToTagMemoryIn",
+    "PromoteToTagMemoryOut",
     "RedundancyBlockOut",
     "RedundancySessionRef",
     "SessionFromDraftIn",
