@@ -5324,7 +5324,7 @@
     "/api/history/search": {
       "get": {
         "tags": [
-          "history"
+          "search"
         ],
         "summary": "Search History",
         "description": "Search sessions and messages for ``q``.\n\nReturns up to :data:`~bearings.config.constants.HISTORY_SEARCH_RESULT_CAP`\nresults, sessions first. An empty or whitespace-only ``q`` returns ``[]``\nimmediately.",
@@ -5353,6 +5353,69 @@
                     "$ref": "#/components/schemas/HistorySearchResult"
                   },
                   "title": "Response Search-History"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/jsonl": {
+      "get": {
+        "tags": [
+          "history"
+        ],
+        "summary": "Get .bearings/history.jsonl entries for a directory",
+        "description": "Return ``history.jsonl`` entries for *directory*.\n\nDelegates to :func:`bearings.bearings_dir.io.read_jsonl`.  Returns an\nempty list when the file does not exist \u2014 directory not yet onboarded.\nMalformed individual entries are skipped rather than raising so a single\ncorrupted line never breaks the whole read.",
+        "operationId": "get-directory-history",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Absolute path to the project directory whose history to read.",
+              "title": "Directory"
+            },
+            "description": "Absolute path to the project directory whose history to read."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of entries to return (most-recent first within the cap). Defaults to 100.",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Maximum number of entries to return (most-recent first within the cap). Defaults to 100."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DirectoryHistoryEntry"
+                  },
+                  "title": "Response Get-Directory-History"
                 }
               }
             }
@@ -6566,6 +6629,36 @@
         ],
         "title": "CommandOut",
         "description": "One slash-command entry returned by ``GET /api/commands``."
+      },
+      "DirectoryHistoryEntry": {
+        "properties": {
+          "event": {
+            "type": "string",
+            "title": "Event"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event",
+          "timestamp"
+        ],
+        "title": "DirectoryHistoryEntry",
+        "description": "One event entry from ``<directory>/.bearings/history.jsonl``.\n\nFields match what :func:`bearings.bearings_dir.lifecycle.note_directory_context_start`\nwrites.  Unknown fields from future event types are silently ignored so\nolder clients remain forward-compatible when new event kinds land."
       },
       "DriverDiagListOut": {
         "properties": {

@@ -1,27 +1,28 @@
 # mypy: disable-error-code=explicit-any
-"""Pydantic wire shapes for ``routes/history.py`` (item 2.4)."""
+"""Pydantic wire shapes for ``routes/history.py`` (history.jsonl reader, arch §1.1.5)."""
 
 from __future__ import annotations
-
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
 
-class HistorySearchResult(BaseModel):
-    """One search hit returned by ``GET /api/history/search``."""
+class DirectoryHistoryEntry(BaseModel):
+    """One event entry from ``<directory>/.bearings/history.jsonl``.
 
-    model_config = ConfigDict(extra="forbid")
+    Fields match what :func:`bearings.bearings_dir.lifecycle.note_directory_context_start`
+    writes.  Unknown fields from future event types are silently ignored so
+    older clients remain forward-compatible when new event kinds land.
+    """
 
-    #: ``"session"`` when the match is in the session title/description;
-    #: ``"message"`` when the match is in message content.
-    kind: Literal["session", "message"]
-    session_id: str
-    session_title: str
-    #: ``None`` for session-level hits; the message row id for message hits.
-    message_id: str | None
-    #: Context snippet extracted around the first match occurrence.
-    snippet: str
+    model_config = ConfigDict(extra="ignore")
+
+    #: Event kind — e.g. ``"context_start"``.
+    event: str
+    #: Session that triggered the event.  ``None`` for events that are not
+    #: session-scoped (reserved for future event types).
+    session_id: str | None = None
+    #: ISO-8601 timestamp of the event.
+    timestamp: str
 
 
-__all__ = ["HistorySearchResult"]
+__all__ = ["DirectoryHistoryEntry"]

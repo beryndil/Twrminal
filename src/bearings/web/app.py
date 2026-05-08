@@ -64,6 +64,7 @@ from bearings.config.constants import (
     ROUTE_TAG_QUOTA,
     ROUTE_TAG_REORG,
     ROUTE_TAG_ROUTING,
+    ROUTE_TAG_SEARCH,
     ROUTE_TAG_SESSIONS,
     ROUTE_TAG_SESSIONS_BULK,
     ROUTE_TAG_SHELL,
@@ -98,6 +99,7 @@ from bearings.web.routes.preferences import router as preferences_router
 from bearings.web.routes.quota import router as quota_router
 from bearings.web.routes.reorg import router as reorg_router
 from bearings.web.routes.routing import router as routing_router
+from bearings.web.routes.search import router as search_router
 from bearings.web.routes.sessions import router as sessions_router
 from bearings.web.routes.sessions_bulk import router as sessions_bulk_router
 from bearings.web.routes.shell import router as shell_router
@@ -429,7 +431,9 @@ def create_app(
     app.include_router(preferences_router, tags=[ROUTE_TAG_PREFERENCES])
     # Item 2.3 — slash-command scanner.
     app.include_router(commands_router, tags=[ROUTE_TAG_COMMANDS])
-    # Item 2.4 — history search.
+    # Item 2.4 — DB full-text search (moved from history.py → search.py, feature-10-004).
+    app.include_router(search_router, tags=[ROUTE_TAG_SEARCH])
+    # Item 2.4 — directory-context history.jsonl reader (feature-10-004).
     app.include_router(history_router, tags=[ROUTE_TAG_HISTORY])
     # Item 2.6 — sessions-broadcast WS channel.
     app.include_router(ws_sessions_router, tags=[ROUTE_TAG_WS_SESSIONS])

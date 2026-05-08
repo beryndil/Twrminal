@@ -1,206 +1,95 @@
-"""History search route (item 2.4).
+"""Directory-context history.jsonl reader (arch §1.1.5).
 
-``GET /api/history/search?q=<term>`` performs a case-insensitive substring
-search over two data surfaces and returns a merged result list:
-
-1. **Session hits** — sessions whose ``title`` or ``description`` contains
-   the query term. Non-closed sessions are ranked ahead of closed ones;
-   within each group, most-recently-updated first.
-2. **Message hits** — messages whose ``content`` contains the query term,
-   joined to their parent session for the ``session_title`` field.
-   Most-recently-created first.
+``GET /api/history/jsonl?directory=<path>`` reads the ``history.jsonl``
+file from the ``.bearings/`` sub-directory of *directory* and returns
+its entries as a JSON array.
 
 Result shape
 ------------
-Each hit is a :class:`~bearings.web.models.history.HistorySearchResult`:
+Each entry is a :class:`~bearings.web.models.history.DirectoryHistoryEntry`:
 
-* ``kind`` — ``"session"`` or ``"message"``.
-* ``session_id`` / ``session_title`` — parent session identifiers.
-* ``message_id`` — ``None`` for session hits; the message row id for
-  message hits (the frontend uses this to scroll-to-message via
-  ``#msg-{id}`` hash navigation).
-* ``snippet`` — up to
-  :data:`~bearings.config.constants.HISTORY_SEARCH_SNIPPET_CHARS`
-  characters of context around the first match occurrence.
+* ``event`` — event kind string (e.g. ``"context_start"``).
+* ``session_id`` — the session that triggered the event, or ``None``.
+* ``timestamp`` — ISO-8601 timestamp.
 
-Hard cap
---------
-The total result count is bounded by
-:data:`~bearings.config.constants.HISTORY_SEARCH_RESULT_CAP`. Session
-hits are filled first; the remaining slots go to message hits.
+Unknown fields from future event types are silently dropped so older
+clients remain forward-compatible.
 
-Empty / blank queries return an empty list immediately without touching
-the database.
+Graceful degradation
+--------------------
+Returns an empty list when the file does not exist (directory not yet
+onboarded) rather than raising 404, so callers can treat the response
+uniformly without special-casing the first-time case.
 
-Errors
-------
-The endpoint returns HTTP 503 when no ``db_connection`` is wired on
-``app.state`` (same contract as the sessions / messages routes). It
-never 500s on a search error — a logged warning and an empty list are
-returned instead so the sidebar degrades gracefully.
+The optional ``limit`` parameter (default:
+:data:`~bearings.config.constants.BEARINGS_DIR_HISTORY_CAP`) controls
+how many of the most-recent entries are returned.  Entries are ordered
+oldest-first in the file; the *limit* newest are selected before
+returning.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Annotated, cast
+from pathlib import Path
+from typing import Annotated
 
-import aiosqlite
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Query
 
-from bearings.config.constants import HISTORY_SEARCH_RESULT_CAP, HISTORY_SEARCH_SNIPPET_CHARS
-from bearings.web.models.history import HistorySearchResult
+from bearings.bearings_dir import io as bdir_io
+from bearings.config.constants import (
+    BEARINGS_DIR_HISTORY_CAP,
+    BEARINGS_DIR_HISTORY_FILENAME,
+    BEARINGS_DIR_SUBDIR,
+)
+from bearings.web.models.history import DirectoryHistoryEntry
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Session-hit share of the total cap. Allocating a fixed slot count for
-# sessions first ensures session-title matches (the most navigable hits)
-# always appear when the total cap is reached.
-_SESSION_CAP = 20
-
-
-def _db(request: Request) -> aiosqlite.Connection:
-    """Pull the long-lived DB connection off ``app.state``."""
-    db = getattr(request.app.state, "db_connection", None)
-    if db is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="db_connection not configured on app.state",
-        )
-    return cast(aiosqlite.Connection, db)
-
-
-def _escape_like(q: str) -> str:
-    """Escape LIKE metacharacters in *q* so user input is always treated literally.
-
-    SQLite LIKE with ``ESCAPE '\\\\'`` recognises three special characters:
-    ``\\`` (the escape prefix), ``%`` (any sequence), and ``_`` (any single
-    character).  We must escape the backslash first so that the replacements
-    for ``%`` and ``_`` do not double-escape a backslash that was already
-    introduced by an earlier substitution.
-    """
-    q = q.replace("\\", "\\\\")
-    q = q.replace("%", "\\%")
-    q = q.replace("_", "\\_")
-    return q
-
-
-def _extract_snippet(text: str, query: str, max_chars: int) -> str:
-    """Return a snippet of *text* centred around the first match of *query*.
-
-    If the query is not found (case-insensitive search may not match the
-    same offset), the leading *max_chars* of the text are returned.
-    Ellipsis characters are prepended / appended to signal truncation.
-    """
-    lower_text = text.lower()
-    lower_query = query.lower()
-    pos = lower_text.find(lower_query)
-    if pos == -1:
-        raw = text[:max_chars]
-        return raw + ("…" if len(text) > max_chars else "")
-    # Centre the snippet on the match with a quarter-window lead-in.
-    lead = max_chars // 4
-    start = max(0, pos - lead)
-    end = min(len(text), start + max_chars)
-    snippet = text[start:end]
-    if start > 0:
-        snippet = "…" + snippet
-    if end < len(text):
-        snippet = snippet + "…"
-    return snippet
-
-
-async def _search(q: str, db: aiosqlite.Connection) -> list[HistorySearchResult]:
-    """Run the two-surface LIKE search and merge results."""
-    pattern = f"%{_escape_like(q)}%"
-    results: list[HistorySearchResult] = []
-
-    # --- Session hits -------------------------------------------------------
-    try:
-        async with db.execute(
-            """
-            SELECT id, title, COALESCE(description, '')
-            FROM   sessions
-            WHERE  title       LIKE :pat ESCAPE '\\'
-               OR  description LIKE :pat ESCAPE '\\'
-            ORDER BY (closed_at IS NULL) DESC,
-                     updated_at          DESC
-            LIMIT  :cap
-            """,
-            {"pat": pattern, "cap": _SESSION_CAP},
-        ) as cursor:
-            session_rows = await cursor.fetchall()
-    except Exception:
-        logger.warning("history search: session query failed", exc_info=True)
-        session_rows = []
-
-    for sid, title, description in session_rows:
-        text = title if q.lower() in title.lower() else description
-        results.append(
-            HistorySearchResult(
-                kind="session",
-                session_id=sid,
-                session_title=title,
-                message_id=None,
-                snippet=_extract_snippet(text, q, HISTORY_SEARCH_SNIPPET_CHARS),
-            )
-        )
-
-    # --- Message hits -------------------------------------------------------
-    remaining = HISTORY_SEARCH_RESULT_CAP - len(results)
-    if remaining > 0:
-        try:
-            async with db.execute(
-                """
-                SELECT m.id, m.session_id, m.content, s.title
-                FROM   messages m
-                JOIN   sessions s ON s.id = m.session_id
-                WHERE  m.content LIKE :pat ESCAPE '\\'
-                ORDER BY m.created_at DESC
-                LIMIT  :cap
-                """,
-                {"pat": pattern, "cap": remaining},
-            ) as cursor:
-                message_rows = await cursor.fetchall()
-        except Exception:
-            logger.warning("history search: message query failed", exc_info=True)
-            message_rows = []
-
-        for mid, session_id, content, session_title in message_rows:
-            results.append(
-                HistorySearchResult(
-                    kind="message",
-                    session_id=session_id,
-                    session_title=session_title,
-                    message_id=mid,
-                    snippet=_extract_snippet(content, q, HISTORY_SEARCH_SNIPPET_CHARS),
-                )
-            )
-
-    return results
-
 
 @router.get(
-    "/api/history/search",
-    response_model=list[HistorySearchResult],
-    operation_id="search-history",
+    "/api/history/jsonl",
+    response_model=list[DirectoryHistoryEntry],
+    operation_id="get-directory-history",
+    summary="Get .bearings/history.jsonl entries for a directory",
 )
-async def search_history(
-    request: Request,
-    q: Annotated[str, Query(description="Search term (case-insensitive substring match).")],
-) -> list[HistorySearchResult]:
-    """Search sessions and messages for ``q``.
+async def get_directory_history(
+    directory: Annotated[
+        str,
+        Query(description="Absolute path to the project directory whose history to read."),
+    ],
+    limit: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=BEARINGS_DIR_HISTORY_CAP,
+            description=(
+                "Maximum number of entries to return (most-recent first within the cap). "
+                f"Defaults to {BEARINGS_DIR_HISTORY_CAP}."
+            ),
+        ),
+    ] = BEARINGS_DIR_HISTORY_CAP,
+) -> list[DirectoryHistoryEntry]:
+    """Return ``history.jsonl`` entries for *directory*.
 
-    Returns up to :data:`~bearings.config.constants.HISTORY_SEARCH_RESULT_CAP`
-    results, sessions first. An empty or whitespace-only ``q`` returns ``[]``
-    immediately.
+    Delegates to :func:`bearings.bearings_dir.io.read_jsonl`.  Returns an
+    empty list when the file does not exist — directory not yet onboarded.
+    Malformed individual entries are skipped rather than raising so a single
+    corrupted line never breaks the whole read.
     """
-    if not q.strip():
-        return []
-    db = _db(request)
-    return await _search(q.strip(), db)
+    history_path = Path(directory) / BEARINGS_DIR_SUBDIR / BEARINGS_DIR_HISTORY_FILENAME
+    raw_entries = bdir_io.read_jsonl(history_path)
+    # Apply limit against the tail (most-recent entries).
+    sliced = raw_entries[-limit:]
+    results: list[DirectoryHistoryEntry] = []
+    for entry in sliced:
+        try:
+            results.append(DirectoryHistoryEntry.model_validate(entry))
+        except Exception:
+            logger.debug("read_directory_history: skipping malformed entry %r", entry)
+    return results
 
 
 __all__ = ["router"]

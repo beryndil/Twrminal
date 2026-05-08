@@ -1361,6 +1361,7 @@ ROUTE_TAG_HEALTH: Final[str] = "health"
 ROUTE_TAG_METRICS: Final[str] = "metrics"
 ROUTE_TAG_COMMANDS: Final[str] = "commands"
 ROUTE_TAG_HISTORY: Final[str] = "history"
+ROUTE_TAG_SEARCH: Final[str] = "search"
 ROUTE_TAG_WS_SESSIONS: Final[str] = "ws-sessions"
 ROUTE_TAG_PREFERENCES: Final[str] = "preferences"
 ROUTE_TAG_IMPORT: Final[str] = "import"
@@ -1656,6 +1657,7 @@ __all__ = [
     "ROUTE_TAG_QUOTA",
     "ROUTE_TAG_REORG",
     "ROUTE_TAG_ROUTING",
+    "ROUTE_TAG_SEARCH",
     "ROUTE_TAG_SESSIONS",
     "ROUTE_TAG_SESSIONS_BULK",
     "ROUTE_TAG_SHELL",

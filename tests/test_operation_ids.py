@@ -62,6 +62,6 @@ def test_operation_ids_are_unique(openapi_spec: dict) -> None:  # type: ignore[t
 
 
 def test_operation_id_count(openapi_spec: dict) -> None:  # type: ignore[type-arg]
-    """Sanity-check: the spec must contain exactly 133 HTTP operations."""
+    """Sanity-check: the spec must contain exactly 134 HTTP operations."""
     operations = _iter_operations(openapi_spec)
-    assert len(operations) == 133, f"Expected 133 operations in OpenAPI spec, got {len(operations)}"
+    assert len(operations) == 134, f"Expected 134 operations in OpenAPI spec, got {len(operations)}"
