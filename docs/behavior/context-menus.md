@@ -37,9 +37,11 @@ Action IDs (e.g. `session.copy_id`) are public — `~/.config/bearings/menus.tom
 | organize | Unpin session | `session.unpin` | |
 | organize | Archive session | `session.archive` | Closes the row into the sidebar's collapsed Closed group. |
 | organize | Reopen session | `session.reopen` | Only renders for closed sessions. |
+| organize | Merge into… | `session.merge_into` | Opens `SessionPickerModal` to pick a destination; moves all messages from this session into the target, writes a `reorg_audit` row, then deletes this session. See [chat](chat.md) §Session merge. |
 | copy | Copy session ID | `session.copy_id` | Advanced. |
 | copy | Copy session title | `session.copy_title` | |
 | copy | Copy share link | `session.copy_share_link` | Advanced. |
+| copy | Export session JSON | `session.export_json` | Downloads the session as a JSON file. Filename is the session title lowercased with non-alphanumeric runs collapsed to `-`; falls back to `session.json`. See [sessions](sessions.md) §Export contract. |
 | destructive | Delete session | `session.delete` | Confirm dialog. Cascades to the conversation history and (per [paired-chats](paired-chats.md)) clears the back-pointer on any item paired with this chat. |
 | navigate | Open in terminal | `session.open_in_terminal` | Advanced. Calls `POST /api/shell/exec` with `working_dir`. Greyed when `working_dir` is empty. |
 
