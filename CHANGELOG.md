@@ -528,6 +528,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **`PATCH /api/sessions/{id}` with `tag_ids` skipped the cardinality
+  guard** (`web/routes/sessions.py:patch_session`). `POST /api/sessions`
+  calls `_validate_tag_cardinality` before persisting; the PATCH bulk-replace
+  path called `tags_db.set_for_session` directly without that check, allowing
+  a client to permanently land a session with two project-class or two
+  severity-class tags via PATCH. Fix: call `_validate_tag_cardinality(db,
+  new_tag_ids)` inside `patch_session` immediately after the existence check
+  and before any data is written. Collaterally fixed a latent `TypeError`
+  (`row["id"]` on a plain-tuple aiosqlite row in the PATCH existence-check
+  query; production was unaffected because `serve.py` sets `row_factory`,
+  but the bug would have surfaced as soon as a test exercised the path).
+  Regression tests added: two 422 paths (double-project, double-severity)
+  and one 200 happy path (one of each class plus general).
+
 - **conversation transcript hit `each_key_duplicate` on every page load**
   (`stores/conversation.svelte.ts:applyEvent`). `resetConversation`
   zeroes `lastSeq`, hydrate seeds turns from the REST `/messages`

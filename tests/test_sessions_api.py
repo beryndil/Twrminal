@@ -491,6 +491,59 @@ async def test_patch_session_empty_title_422(
     assert response.status_code == 422
 
 
+async def test_patch_session_two_project_tags_422(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """PATCH with 2 project-class tags returns 422 (cardinality guard)."""
+    from bearings.db import tags as tags_db
+
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    a = await tags_db.create(conn, name="proj-a", class_="project")
+    b = await tags_db.create(conn, name="proj-b", class_="project")
+    with TestClient(app) as client:
+        response = client.patch(f"/api/sessions/{sid}", json={"tag_ids": [a.id, b.id]})
+    assert response.status_code == 422
+    assert "project" in response.json()["detail"]
+
+
+async def test_patch_session_two_severity_tags_422(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """PATCH with 2 severity-class tags returns 422 (cardinality guard)."""
+    from bearings.db import tags as tags_db
+
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    low = await tags_db.create(conn, name="low", class_="severity")
+    high = await tags_db.create(conn, name="high", class_="severity")
+    with TestClient(app) as client:
+        response = client.patch(f"/api/sessions/{sid}", json={"tag_ids": [low.id, high.id]})
+    assert response.status_code == 422
+    assert "severity" in response.json()["detail"]
+
+
+async def test_patch_session_valid_mixed_tags_200(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """PATCH with ≤1 project + ≤1 severity + general tags returns 200 and persists."""
+    from bearings.db import tags as tags_db
+
+    app, conn = app_and_db
+    sid = await _new_chat(conn)
+    proj = await tags_db.create(conn, name="bearings", class_="project")
+    sev = await tags_db.create(conn, name="urgent", class_="severity")
+    gen = await tags_db.create(conn, name="freeform")
+    with TestClient(app) as client:
+        response = client.patch(
+            f"/api/sessions/{sid}",
+            json={"tag_ids": [proj.id, sev.id, gen.id]},
+        )
+    assert response.status_code == 200
+    attached = await tags_db.list_for_session(conn, sid)
+    assert {t.id for t in attached} == {proj.id, sev.id, gen.id}
+
+
 async def test_close_session(
     app_and_db: tuple[FastAPI, aiosqlite.Connection],
 ) -> None:

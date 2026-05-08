@@ -457,7 +457,7 @@ async def patch_session(
         tag_ids_list = payload.tag_ids
         if tag_ids_list:
             existing_ids = {
-                row["id"]
+                int(row[0])
                 async for row in await db.execute(
                     "SELECT id FROM tags WHERE id IN ({})".format(
                         ",".join("?" * len(tag_ids_list))
@@ -472,6 +472,7 @@ async def patch_session(
                     detail=f"unknown tag_ids: {missing}",
                 )
         new_tag_ids = tuple(tag_ids_list)
+        await _validate_tag_cardinality(db, new_tag_ids)
 
     # Build kwargs for update_fields from the present fields.
     kwargs: dict[str, object] = {}
