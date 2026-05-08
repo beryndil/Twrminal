@@ -71,3 +71,23 @@ The ``initialTagId`` prop preselects a tag on mount (existing).
 The ``initialMemoryId`` prop (added gap-cycle-13-007) auto-opens a
 specific memory for editing once the memories list has loaded; consumed
 once, then cleared.
+
+---
+
+## System-prompt injection status (v1.0)
+
+Tag memories are stored in the ``tag_memories`` table and fully
+manageable through the UI described above. However, **memories are not
+currently injected into the agent's system prompt** in v1.0.
+
+The system-prompt assembler (``bearings.agent.system_prompt.
+build_system_prompt``) accepts an ``extras`` tuple for future
+per-tag memory blocks, but no caller passes memories to it yet.
+Practically: the CRUD surface is complete and memories persist
+correctly to the database, but the agent does not see them on
+any turn.
+
+**What the user observes as a consequence:** creating or editing
+memories has no effect on agent behaviour in v1.0. The memories
+remain available in the UI and will be injectable once the wiring
+lands in a future release.
