@@ -147,6 +147,41 @@ repos:
         always_run: true
 
   # ---------------------------------------------------------------------------
+  # Drift checks — feature-13-001/002/003.
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: regen-openapi
+        name: openapi spec drift (feature-13-001)
+        # Regenerates docs/openapi.json from the live app and exits 1 if
+        # the committed file is stale.  The script overwrites the file in
+        # place so the dev can `git add docs/openapi.json` and recommit.
+        entry: uv run python scripts/regen_openapi.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: schema-drift
+        name: schema.sql drift (feature-13-002)
+        # Applies src/bearings/db/schema.sql to an in-memory SQLite DB,
+        # dumps sqlite_schema, and compares object names + normalised DDL
+        # to the source file.  Fails if any mismatch is detected.
+        entry: uv run python scripts/check_schema_drift.py
+        language: system
+        pass_filenames: false
+        files: ^src/bearings/db/schema\.sql$
+        always_run: true
+
+      - id: version-alignment
+        name: version alignment pyproject.toml == openapi.json (feature-13-003)
+        # Asserts [project].version in pyproject.toml equals info.version
+        # in docs/openapi.json.  Cheap file-read; always runs.
+        entry: uv run python scripts/check_version_alignment.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  # ---------------------------------------------------------------------------
   # Frontend — gated on frontend/node_modules existing (item 2.1 lights them up).
   # ---------------------------------------------------------------------------
   - repo: local

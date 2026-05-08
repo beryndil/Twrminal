@@ -68,6 +68,24 @@ jobs:
       - name: codespell
         run: uv run codespell --toml pyproject.toml
 
+      - name: version alignment (pyproject.toml == openapi.json)
+        # feature-13-003: asserts [project].version in pyproject.toml equals
+        # info.version in docs/openapi.json.  Catches a release bump that
+        # rolls one file but not the other.
+        run: uv run python scripts/check_version_alignment.py
+
+      - name: openapi spec drift
+        # feature-13-001: regenerates docs/openapi.json from the live app and
+        # fails if the committed file is stale.  Instructs contributors to
+        # run the script and commit the result.
+        run: uv run python scripts/regen_openapi.py
+
+      - name: schema.sql drift
+        # feature-13-002: applies src/bearings/db/schema.sql to a fresh
+        # in-memory SQLite DB, dumps sqlite_schema, and asserts the object
+        # set + normalised DDL match the source file.
+        run: uv run python scripts/check_schema_drift.py
+
       - name: pytest with coverage
         run: uv run pytest -q --cov=bearings --cov-report=term-missing
 
