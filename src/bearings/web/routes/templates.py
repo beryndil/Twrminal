@@ -87,6 +87,7 @@ def _to_out(template: Template) -> TemplateOut:
     "/api/templates",
     status_code=status.HTTP_201_CREATED,
     response_model=TemplateOut,
+    operation_id="create-template",
 )
 async def create_template(payload: TemplateIn, request: Request) -> TemplateOut:
     """Create a new template.
@@ -123,7 +124,7 @@ async def create_template(payload: TemplateIn, request: Request) -> TemplateOut:
     return _to_out(template)
 
 
-@router.get("/api/templates", response_model=list[TemplateOut])
+@router.get("/api/templates", response_model=list[TemplateOut], operation_id="list-templates")
 async def list_templates(request: Request) -> list[TemplateOut]:
     """Every template, alphabetically by name.
 
@@ -136,7 +137,7 @@ async def list_templates(request: Request) -> list[TemplateOut]:
     return [_to_out(row) for row in rows]
 
 
-@router.get("/api/templates/{template_id}", response_model=TemplateOut)
+@router.get("/api/templates/{template_id}", response_model=TemplateOut, operation_id="get-template")
 async def get_template(template_id: int, request: Request) -> TemplateOut:
     """Fetch one template by integer id. 404 when absent."""
     db = _db(request)
@@ -207,7 +208,11 @@ def _merge_template_patch(payload: TemplatePatch, existing: Template) -> _Templa
     }
 
 
-@router.patch("/api/templates/{template_id}", response_model=TemplateOut)
+@router.patch(
+    "/api/templates/{template_id}",
+    response_model=TemplateOut,
+    operation_id="patch-template",
+)
 async def patch_template(template_id: int, payload: TemplatePatch, request: Request) -> TemplateOut:
     """Partial-update a template; missing fields are preserved from the existing row.
 
@@ -266,6 +271,7 @@ async def patch_template(template_id: int, payload: TemplatePatch, request: Requ
 @router.delete(
     "/api/templates/{template_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="delete-template",
 )
 async def delete_template(template_id: int, request: Request) -> None:
     """Delete one template; 204 on success, 404 when absent."""
@@ -411,6 +417,7 @@ def _resolve_template_permission_mode(
     "/api/templates/{template_id}/instantiate",
     response_model=SessionOut,
     status_code=status.HTTP_201_CREATED,
+    operation_id="instantiate-template",
 )
 async def create_session_from_template(
     template_id: int,

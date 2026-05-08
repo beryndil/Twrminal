@@ -48,7 +48,7 @@ def _cfg(request: Request) -> FsCfg:
     return cfg
 
 
-@router.get("/api/fs/list", response_model=FsListOut)
+@router.get("/api/fs/list", response_model=FsListOut, operation_id="fs-list")
 async def get_list(
     request: Request,
     path: str = Query(..., description="Absolute path to list."),
@@ -76,7 +76,7 @@ async def get_list(
     )
 
 
-@router.get("/api/fs/read", response_model=FsReadOut)
+@router.get("/api/fs/read", response_model=FsReadOut, operation_id="fs-read")
 async def get_read(
     request: Request,
     path: str = Query(..., description="Absolute path to read as utf-8 text."),
@@ -116,7 +116,12 @@ def _pick_roots(cfg: FsCfg) -> tuple[Path, ...]:
     return (Path("/"),)
 
 
-@router.post("/api/fs/pick", response_model=FsPickOut, status_code=status.HTTP_200_OK)
+@router.post(
+    "/api/fs/pick",
+    response_model=FsPickOut,
+    status_code=status.HTTP_200_OK,
+    operation_id="fs-pick",
+)
 async def post_pick(
     request: Request,
     body: FsPickIn,

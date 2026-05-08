@@ -92,6 +92,7 @@ def _to_out(message: Message) -> MessageOut:
 @router.get(
     "/api/sessions/{session_id}/messages",
     response_model=MessagePage,
+    operation_id="list-messages",
 )
 async def list_messages(
     session_id: str,
@@ -156,7 +157,7 @@ async def list_messages(
     return MessagePage(items=[_to_out(row) for row in rows], has_more=has_more)
 
 
-@router.get("/api/messages/{message_id}", response_model=MessageOut)
+@router.get("/api/messages/{message_id}", response_model=MessageOut, operation_id="get-message")
 async def get_message(message_id: str, request: Request) -> MessageOut:
     """Fetch a single message by id; 404 if absent."""
     db = _db(request)
@@ -169,7 +170,11 @@ async def get_message(message_id: str, request: Request) -> MessageOut:
     return _to_out(row)
 
 
-@router.patch("/api/messages/{message_id}/pinned", response_model=MessageOut)
+@router.patch(
+    "/api/messages/{message_id}/pinned",
+    response_model=MessageOut,
+    operation_id="patch-message-pinned",
+)
 async def patch_message_pinned(
     message_id: str,
     payload: MessagePinnedUpdate,
@@ -190,7 +195,11 @@ async def patch_message_pinned(
     return _to_out(row)
 
 
-@router.patch("/api/messages/{message_id}/hidden", response_model=MessageOut)
+@router.patch(
+    "/api/messages/{message_id}/hidden",
+    response_model=MessageOut,
+    operation_id="patch-message-hidden",
+)
 async def patch_message_hidden(
     message_id: str,
     payload: MessageHiddenUpdate,
@@ -211,7 +220,11 @@ async def patch_message_hidden(
     return _to_out(row)
 
 
-@router.delete("/api/messages/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/api/messages/{message_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="delete-message",
+)
 async def delete_message(message_id: str, request: Request) -> None:
     """Delete a message by id (G3). 204 on success; 404 when absent."""
     db = _db(request)
@@ -223,7 +236,11 @@ async def delete_message(message_id: str, request: Request) -> None:
         )
 
 
-@router.post("/api/messages/{message_id}/move", response_model=MessageOut)
+@router.post(
+    "/api/messages/{message_id}/move",
+    response_model=MessageOut,
+    operation_id="move-message",
+)
 async def move_message(
     message_id: str,
     payload: MessageMoveRequest,

@@ -101,14 +101,14 @@ def _to_out(prefs: Preferences) -> PreferencesOut:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/api/preferences", response_model=PreferencesOut)
+@router.get("/api/preferences", response_model=PreferencesOut, operation_id="get-preferences")
 async def get_preferences(request: Request) -> PreferencesOut:
     """Return the singleton user-preferences row."""
     prefs = await prefs_db.get_preferences(_db(request))
     return _to_out(prefs)
 
 
-@router.patch("/api/preferences", response_model=PreferencesOut)
+@router.patch("/api/preferences", response_model=PreferencesOut, operation_id="patch-preferences")
 async def patch_preferences(
     body: PreferencesPatch,
     request: Request,
@@ -141,7 +141,7 @@ async def patch_preferences(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/api/preferences/avatar")
+@router.get("/api/preferences/avatar", operation_id="get-avatar")
 async def get_avatar(request: Request) -> Response:
     """Serve the current avatar image bytes.
 
@@ -167,7 +167,7 @@ async def get_avatar(request: Request) -> Response:
     )
 
 
-@router.post("/api/preferences/avatar", response_model=PreferencesOut)
+@router.post("/api/preferences/avatar", response_model=PreferencesOut, operation_id="create-avatar")
 async def create_avatar(
     request: Request,
     file: Annotated[UploadFile, File(description="Avatar image file.")],
@@ -224,7 +224,11 @@ async def create_avatar(
     return _to_out(prefs)
 
 
-@router.delete("/api/preferences/avatar", response_model=PreferencesOut)
+@router.delete(
+    "/api/preferences/avatar",
+    response_model=PreferencesOut,
+    operation_id="delete-avatar",
+)
 async def delete_avatar(request: Request) -> PreferencesOut:
     """Remove the current avatar and clear the DB fields.
 
@@ -253,7 +257,11 @@ async def delete_avatar(request: Request) -> PreferencesOut:
 # ---------------------------------------------------------------------------
 
 
-@router.post("/api/preferences/sync_from_system", response_model=PreferencesOut)
+@router.post(
+    "/api/preferences/sync_from_system",
+    response_model=PreferencesOut,
+    operation_id="sync-preferences-from-system",
+)
 async def refresh_from_system(request: Request) -> PreferencesOut:
     """Populate display_name and avatar from the running user environment.
 

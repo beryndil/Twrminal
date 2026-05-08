@@ -50,7 +50,11 @@ def _source_db_path() -> Path:
 router = APIRouter()
 
 
-@router.post("/api/import/bearings", response_model=ImportResultOut)
+@router.post(
+    "/api/import/bearings",
+    response_model=ImportResultOut,
+    operation_id="import-bearings-db",
+)
 async def post_import_bearings(request: Request) -> ImportResultOut:
     """Import all data from the original Bearings database.
 

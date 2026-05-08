@@ -56,6 +56,7 @@ def _remove(directory: str, name: str) -> None:
         "the given project directory and persists the file. Returns 204 "
         "on success; 404 when the name is absent."
     ),
+    operation_id="resolve-pending-op",
 )
 async def resolve_pending_op(
     name: str,
@@ -75,6 +76,7 @@ async def resolve_pending_op(
         "identical to the resolve endpoint. Returns 204 on success; 404 "
         "when the name is absent."
     ),
+    operation_id="delete-pending-op",
 )
 async def delete_pending_op(
     name: str,

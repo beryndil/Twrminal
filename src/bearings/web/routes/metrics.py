@@ -89,7 +89,7 @@ def _refresh_live_gauges(metrics: BearingsMetrics, request: Request) -> None:
                 metrics.quota_sonnet_used_pct.set(snap.sonnet_used_pct)
 
 
-@router.get("/metrics")
+@router.get("/metrics", operation_id="get-metrics")
 async def get_metrics(request: Request) -> Response:
     """Render Prometheus 0.0.4 text exposition for the active app."""
     bundle = _metrics(request)

@@ -42,6 +42,7 @@ def _to_out(snapshot: QuotaSnapshot) -> QuotaSnapshotOut:
 @router.get(
     "/api/quota/current",
     response_model=QuotaSnapshotOut,
+    operation_id="get-quota-current",
 )
 async def get_current(request: Request) -> QuotaSnapshotOut:
     """Most recent quota snapshot; 404 if the poller has never succeeded.
@@ -67,6 +68,7 @@ async def get_current(request: Request) -> QuotaSnapshotOut:
 @router.post(
     "/api/quota/refresh",
     response_model=QuotaSnapshotOut,
+    operation_id="refresh-quota",
 )
 async def refresh(request: Request) -> QuotaSnapshotOut:
     """Force one immediate poll; 502 if the upstream is unreachable.
@@ -94,6 +96,7 @@ async def refresh(request: Request) -> QuotaSnapshotOut:
 @router.get(
     "/api/quota/history",
     response_model=list[QuotaSnapshotOut],
+    operation_id="get-quota-history",
 )
 async def get_history(
     request: Request,

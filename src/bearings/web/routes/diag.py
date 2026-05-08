@@ -96,7 +96,7 @@ def _build_mtime() -> float | None:
         return None
 
 
-@router.get("/api/diag/server", response_model=ServerDiagOut)
+@router.get("/api/diag/server", response_model=ServerDiagOut, operation_id="get-server-diag")
 async def get_server(request: Request) -> ServerDiagOut:
     """Process-level diagnostics."""
     uptime_s = max(0.0, time.monotonic() - _start_time_monotonic(request))
@@ -119,7 +119,7 @@ async def get_server(request: Request) -> ServerDiagOut:
     )
 
 
-@router.get("/api/diag/sessions", response_model=RunnerDiagListOut)
+@router.get("/api/diag/sessions", response_model=RunnerDiagListOut, operation_id="get-runner-diag")
 async def get_sessions(request: Request) -> RunnerDiagListOut:
     """Per-runner snapshot."""
     runners = _runners_map(request)
@@ -139,7 +139,7 @@ async def get_sessions(request: Request) -> RunnerDiagListOut:
     )
 
 
-@router.get("/api/diag/drivers", response_model=DriverDiagListOut)
+@router.get("/api/diag/drivers", response_model=DriverDiagListOut, operation_id="get-driver-diag")
 async def get_drivers(request: Request) -> DriverDiagListOut:
     """Per-auto-driver-run snapshot.
 
@@ -171,7 +171,7 @@ async def get_drivers(request: Request) -> DriverDiagListOut:
     )
 
 
-@router.get("/api/diag/quota", response_model=QuotaDiagOut)
+@router.get("/api/diag/quota", response_model=QuotaDiagOut, operation_id="get-quota-diag")
 async def get_quota_diag(request: Request) -> QuotaDiagOut:
     """Quota-poller status."""
     poller = getattr(request.app.state, "quota_poller", None)

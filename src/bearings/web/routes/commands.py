@@ -180,7 +180,7 @@ def _scan_all(working_dir: Path | None = None) -> list[CommandOut]:
     return results
 
 
-@router.get("/api/commands", response_model=list[CommandOut])
+@router.get("/api/commands", response_model=list[CommandOut], operation_id="list-commands")
 async def list_commands(
     cwd: str | None = Query(
         default=None,

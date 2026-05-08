@@ -53,6 +53,7 @@ def _period_to_seconds(period: str) -> int:
 @router.get(
     "/api/usage/by_model",
     response_model=list[UsageByModelRow],
+    operation_id="get-usage-by-model",
 )
 async def by_model(
     request: Request,
@@ -140,6 +141,7 @@ async def by_model(
 @router.get(
     "/api/usage/by_tag",
     response_model=list[UsageByTagRow],
+    operation_id="get-usage-by-tag",
 )
 async def by_tag(
     request: Request,
@@ -198,6 +200,7 @@ async def by_tag(
 @router.get(
     "/api/usage/override_rates",
     response_model=list[OverrideRateOut],
+    operation_id="get-usage-override-rates",
 )
 async def override_rates(
     request: Request,

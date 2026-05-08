@@ -375,7 +375,7 @@ def _build_patch_kwargs(
 # ---- list / fetch -----------------------------------------------------------
 
 
-@router.get("/api/sessions", response_model=list[SessionOut])
+@router.get("/api/sessions", response_model=list[SessionOut], operation_id="list-sessions")
 async def list_sessions(
     request: Request,
     kind: str | None = None,
@@ -443,6 +443,7 @@ async def list_sessions(
     "/api/sessions",
     response_model=SessionOut,
     status_code=status.HTTP_201_CREATED,
+    operation_id="create-session",
 )
 async def create_session(
     payload: SessionCreate,
@@ -521,7 +522,7 @@ async def create_session(
     return out
 
 
-@router.get("/api/sessions/{session_id}", response_model=SessionOut)
+@router.get("/api/sessions/{session_id}", response_model=SessionOut, operation_id="get-session")
 async def get_session(session_id: str, request: Request) -> SessionOut:
     """Fetch one session by id; 404 if absent."""
     db = _db(request)
@@ -539,7 +540,7 @@ async def get_session(session_id: str, request: Request) -> SessionOut:
     return _to_out(row, paired_parent_title=paired_parent_title)
 
 
-@router.patch("/api/sessions/{session_id}", response_model=SessionOut)
+@router.patch("/api/sessions/{session_id}", response_model=SessionOut, operation_id="patch-session")
 async def patch_session(
     session_id: str,
     payload: SessionUpdate,
@@ -586,6 +587,7 @@ async def patch_session(
 @router.delete(
     "/api/sessions/{session_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="delete-session",
 )
 async def delete_session(session_id: str, request: Request) -> None:
     """Cascade-delete a session row + messages + checkpoints."""
@@ -601,7 +603,11 @@ async def delete_session(session_id: str, request: Request) -> None:
         broadcaster.publish_delete(session_id)
 
 
-@router.post("/api/sessions/{session_id}/close", response_model=SessionOut)
+@router.post(
+    "/api/sessions/{session_id}/close",
+    response_model=SessionOut,
+    operation_id="close-session",
+)
 async def close_session(session_id: str, request: Request) -> SessionOut:
     """Stamp ``closed_at`` so the prompt-endpoint returns 409 on next POST.
 
@@ -639,7 +645,11 @@ async def close_session(session_id: str, request: Request) -> SessionOut:
     return out
 
 
-@router.patch("/api/sessions/{session_id}/model", response_model=SessionOut)
+@router.patch(
+    "/api/sessions/{session_id}/model",
+    response_model=SessionOut,
+    operation_id="patch-session-model",
+)
 async def patch_session_model(
     session_id: str,
     payload: SessionModelUpdate,
@@ -692,7 +702,11 @@ async def patch_session_model(
     return out
 
 
-@router.patch("/api/sessions/{session_id}/permission_mode", response_model=SessionOut)
+@router.patch(
+    "/api/sessions/{session_id}/permission_mode",
+    response_model=SessionOut,
+    operation_id="patch-session-permission-mode",
+)
 async def patch_session_permission_mode(
     session_id: str,
     payload: SessionPermissionModeUpdate,
@@ -728,7 +742,11 @@ async def patch_session_permission_mode(
     return out
 
 
-@router.patch("/api/sessions/{session_id}/pinned", response_model=SessionOut)
+@router.patch(
+    "/api/sessions/{session_id}/pinned",
+    response_model=SessionOut,
+    operation_id="patch-session-pinned",
+)
 async def patch_session_pinned(
     session_id: str,
     payload: SessionPinnedUpdate,
@@ -754,7 +772,11 @@ async def patch_session_pinned(
     return out
 
 
-@router.post("/api/sessions/{session_id}/reopen", response_model=SessionOut)
+@router.post(
+    "/api/sessions/{session_id}/reopen",
+    response_model=SessionOut,
+    operation_id="reopen-session",
+)
 async def reopen_session(session_id: str, request: Request) -> SessionOut:
     """Clear ``closed_at`` per behavior doc §"Reopen semantics"."""
     db = _db(request)
@@ -771,7 +793,11 @@ async def reopen_session(session_id: str, request: Request) -> SessionOut:
     return out
 
 
-@router.post("/api/sessions/{session_id}/viewed", response_model=SessionOut)
+@router.post(
+    "/api/sessions/{session_id}/viewed",
+    response_model=SessionOut,
+    operation_id="mark-session-viewed",
+)
 async def update_session_viewed(session_id: str, request: Request) -> SessionOut:
     """Stamp ``last_viewed_at`` to now; broadcast the upsert.
 
@@ -797,7 +823,11 @@ async def update_session_viewed(session_id: str, request: Request) -> SessionOut
     return out
 
 
-@router.post("/api/sessions/{session_id}/recover", response_model=SessionOut)
+@router.post(
+    "/api/sessions/{session_id}/recover",
+    response_model=SessionOut,
+    operation_id="recover-session",
+)
 async def resume_session(session_id: str, request: Request) -> SessionOut:
     """User-driven recovery from ERROR state.
 
@@ -830,7 +860,10 @@ async def resume_session(session_id: str, request: Request) -> SessionOut:
     return out
 
 
-@router.get("/api/sessions/{session_id}/paired-chat-info")
+@router.get(
+    "/api/sessions/{session_id}/paired-chat-info",
+    operation_id="get-session-paired-chat-info",
+)
 async def get_paired_chat_info_route(session_id: str, request: Request) -> PairedChatInfo | None:
     """Fetch paired-chat metadata for a chat session.
 
@@ -860,6 +893,7 @@ async def get_paired_chat_info_route(session_id: str, request: Request) -> Paire
 @router.get(
     "/api/sessions/{session_id}/tool_calls",
     response_model=list[ToolCallOut],
+    operation_id="list-session-tool-calls",
 )
 async def list_session_tool_calls(
     session_id: str,
@@ -944,6 +978,7 @@ async def list_session_tool_calls(
 @router.get(
     "/api/sessions/{session_id}/todos",
     response_model=SessionTodosOut | None,
+    operation_id="get-session-todos",
 )
 async def get_session_todos(
     session_id: str,
@@ -998,6 +1033,7 @@ async def get_session_todos(
 @router.get(
     "/api/sessions/{session_id}/system_prompt",
     response_model=SystemPromptLayersOut,
+    operation_id="get-session-system-prompt",
 )
 async def get_session_system_prompt(
     session_id: str,
@@ -1057,6 +1093,7 @@ async def get_session_system_prompt(
 @router.get(
     "/api/sessions/{session_id}/tokens",
     response_model=TokenTotalsOut,
+    operation_id="get-session-tokens",
 )
 async def get_session_tokens(
     session_id: str,
@@ -1112,7 +1149,7 @@ def _slugify(title: str) -> str:
     return slug or "session"
 
 
-@router.get("/api/sessions/{session_id}/export")
+@router.get("/api/sessions/{session_id}/export", operation_id="export-session")
 async def export_session(session_id: str, request: Request) -> Response:
     """Snapshot-export a session to a self-contained JSON blob.
 
@@ -1208,6 +1245,7 @@ async def export_session(session_id: str, request: Request) -> Response:
     "/api/sessions/import",
     response_model=SessionOut,
     status_code=status.HTTP_201_CREATED,
+    operation_id="import-session",
 )
 async def import_session(
     body: SessionExport,
@@ -1291,6 +1329,7 @@ async def import_session(
 @router.post(
     "/api/sessions/{session_id}/regenerate",
     status_code=status.HTTP_202_ACCEPTED,
+    operation_id="regenerate-session",
 )
 async def regenerate_session(session_id: str, request: Request) -> Response:
     """Re-enqueue the latest user prompt for ``session_id``.
@@ -1337,6 +1376,7 @@ async def regenerate_session(session_id: str, request: Request) -> Response:
 @router.post(
     "/api/sessions/{session_id}/regenerate_from/{message_id}",
     status_code=status.HTTP_202_ACCEPTED,
+    operation_id="regenerate-session-from-message",
 )
 async def regenerate_from_message(
     session_id: str,
@@ -1408,6 +1448,7 @@ async def regenerate_from_message(
 @router.post(
     "/api/sessions/{session_id}/stop",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="stop-session-turn",
 )
 async def stop_session_turn(session_id: str, request: Request) -> None:
     """Ask the runner to interrupt the current in-flight turn.
@@ -1452,6 +1493,7 @@ async def stop_session_turn(session_id: str, request: Request) -> None:
 @router.post(
     "/api/sessions/{session_id}/prompt",
     status_code=status.HTTP_202_ACCEPTED,
+    operation_id="prompt-session",
 )
 async def prompt_session(
     session_id: str,

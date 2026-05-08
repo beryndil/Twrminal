@@ -82,6 +82,7 @@ def _to_out(checkpoint: Checkpoint) -> CheckpointOut:
     "/api/checkpoints",
     status_code=status.HTTP_201_CREATED,
     response_model=CheckpointOut,
+    operation_id="create-checkpoint",
 )
 async def create_checkpoint(payload: CheckpointIn, request: Request) -> CheckpointOut:
     """Create a checkpoint anchored at ``payload.message_id``.
@@ -133,7 +134,7 @@ async def create_checkpoint(payload: CheckpointIn, request: Request) -> Checkpoi
     return _to_out(checkpoint)
 
 
-@router.get("/api/checkpoints", response_model=list[CheckpointOut])
+@router.get("/api/checkpoints", response_model=list[CheckpointOut], operation_id="list-checkpoints")
 async def list_checkpoints(
     request: Request,
     session_id: str = Query(
@@ -156,6 +157,7 @@ async def list_checkpoints(
 @router.delete(
     "/api/checkpoints/{checkpoint_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="delete-checkpoint",
 )
 async def delete_checkpoint(checkpoint_id: str, request: Request) -> None:
     """Delete one checkpoint; 204 on success, 404 when absent."""
@@ -172,6 +174,7 @@ async def delete_checkpoint(checkpoint_id: str, request: Request) -> None:
     "/api/checkpoints/{checkpoint_id}/fork",
     status_code=status.HTTP_201_CREATED,
     response_model=CheckpointForkResult,
+    operation_id="fork-checkpoint",
 )
 async def fork_checkpoint(checkpoint_id: str, request: Request) -> CheckpointForkResult:
     """Fork the source session at ``checkpoint_id``.

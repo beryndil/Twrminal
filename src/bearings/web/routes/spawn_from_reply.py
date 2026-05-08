@@ -58,7 +58,10 @@ def _quote_body(body: str) -> str:
     return "\n".join(f"{SPAWN_FROM_REPLY_QUOTE_PREFIX}{line}" for line in lines)
 
 
-@router.post("/api/sessions/{parent_id}/spawn_from_reply/{message_id}")
+@router.post(
+    "/api/sessions/{parent_id}/spawn_from_reply/{message_id}",
+    operation_id="spawn-session-from-reply",
+)
 async def spawn_from_reply(
     parent_id: str,
     message_id: str,

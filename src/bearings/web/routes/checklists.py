@@ -178,6 +178,7 @@ def _to_run_out(run: AutoDriverRun) -> AutoDriverRunOut:
     "/api/checklists/{checklist_id}/items",
     status_code=status.HTTP_201_CREATED,
     response_model=ChecklistItemOut,
+    operation_id="create-checklist-item",
 )
 async def create_item(
     checklist_id: str,
@@ -201,7 +202,11 @@ async def create_item(
     return _to_item_out(item)
 
 
-@router.get("/api/checklists/{checklist_id}/items", response_model=list[ChecklistItemOut])
+@router.get(
+    "/api/checklists/{checklist_id}/items",
+    response_model=list[ChecklistItemOut],
+    operation_id="list-checklist-items",
+)
 async def list_items(checklist_id: str, request: Request) -> list[ChecklistItemOut]:
     """Every item under ``checklist_id``."""
     db = _db(request)
@@ -209,7 +214,11 @@ async def list_items(checklist_id: str, request: Request) -> list[ChecklistItemO
     return [_to_item_out(item) for item in items]
 
 
-@router.get("/api/checklists/{checklist_id}", response_model=ChecklistOverviewOut)
+@router.get(
+    "/api/checklists/{checklist_id}",
+    response_model=ChecklistOverviewOut,
+    operation_id="get-checklist-overview",
+)
 async def get_overview(checklist_id: str, request: Request) -> ChecklistOverviewOut:
     """Bundled items + active run for one paint."""
     db = _db(request)
@@ -222,7 +231,11 @@ async def get_overview(checklist_id: str, request: Request) -> ChecklistOverview
     )
 
 
-@router.get("/api/checklist-items/{item_id}", response_model=ChecklistItemOut)
+@router.get(
+    "/api/checklist-items/{item_id}",
+    response_model=ChecklistItemOut,
+    operation_id="get-checklist-item",
+)
 async def get_item(item_id: int, request: Request) -> ChecklistItemOut:
     """Fetch one item; 404 if absent."""
     db = _db(request)
@@ -234,7 +247,11 @@ async def get_item(item_id: int, request: Request) -> ChecklistItemOut:
     return _to_item_out(item)
 
 
-@router.patch("/api/checklist-items/{item_id}", response_model=ChecklistItemOut)
+@router.patch(
+    "/api/checklist-items/{item_id}",
+    response_model=ChecklistItemOut,
+    operation_id="update-checklist-item",
+)
 async def update_item(
     item_id: int,
     payload: ChecklistItemUpdate,
@@ -264,6 +281,7 @@ async def update_item(
 @router.delete(
     "/api/checklist-items/{item_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="delete-checklist-item",
 )
 async def delete_item(item_id: int, request: Request) -> None:
     """Cascade-delete an item + subtree + paired_chats per FK."""
@@ -275,7 +293,11 @@ async def delete_item(item_id: int, request: Request) -> None:
         )
 
 
-@router.post("/api/checklist-items/{item_id}/check", response_model=ChecklistItemOut)
+@router.post(
+    "/api/checklist-items/{item_id}/check",
+    response_model=ChecklistItemOut,
+    operation_id="check-checklist-item",
+)
 async def check_item(item_id: int, request: Request) -> ChecklistItemOut:
     """Mark item checked (green)."""
     db = _db(request)
@@ -287,7 +309,11 @@ async def check_item(item_id: int, request: Request) -> ChecklistItemOut:
     return _to_item_out(item)
 
 
-@router.post("/api/checklist-items/{item_id}/uncheck", response_model=ChecklistItemOut)
+@router.post(
+    "/api/checklist-items/{item_id}/uncheck",
+    response_model=ChecklistItemOut,
+    operation_id="uncheck-checklist-item",
+)
 async def uncheck_item(item_id: int, request: Request) -> ChecklistItemOut:
     """Clear ``checked_at``."""
     db = _db(request)
@@ -299,7 +325,11 @@ async def uncheck_item(item_id: int, request: Request) -> ChecklistItemOut:
     return _to_item_out(item)
 
 
-@router.post("/api/checklist-items/{item_id}/block", response_model=ChecklistItemOut)
+@router.post(
+    "/api/checklist-items/{item_id}/block",
+    response_model=ChecklistItemOut,
+    operation_id="block-checklist-item",
+)
 async def block_item(
     item_id: int,
     payload: OutcomeIn,
@@ -327,7 +357,11 @@ async def block_item(
     return _to_item_out(item)
 
 
-@router.post("/api/checklist-items/{item_id}/unblock", response_model=ChecklistItemOut)
+@router.post(
+    "/api/checklist-items/{item_id}/unblock",
+    response_model=ChecklistItemOut,
+    operation_id="unblock-checklist-item",
+)
 async def unblock_item(item_id: int, request: Request) -> ChecklistItemOut:
     """Clear any non-completion outcome (back to not-yet-attempted)."""
     db = _db(request)
@@ -342,7 +376,11 @@ async def unblock_item(item_id: int, request: Request) -> ChecklistItemOut:
 # ---- linking ---------------------------------------------------------------
 
 
-@router.post("/api/checklist-items/{item_id}/link", response_model=ChecklistItemOut)
+@router.post(
+    "/api/checklist-items/{item_id}/link",
+    response_model=ChecklistItemOut,
+    operation_id="link-checklist-item-chat",
+)
 async def link_chat(
     item_id: int,
     payload: LinkChatIn,
@@ -378,7 +416,11 @@ async def link_chat(
     return _to_item_out(item)
 
 
-@router.post("/api/checklist-items/{item_id}/unlink", response_model=ChecklistItemOut)
+@router.post(
+    "/api/checklist-items/{item_id}/unlink",
+    response_model=ChecklistItemOut,
+    operation_id="unlink-checklist-item-chat",
+)
 async def unlink_chat(item_id: int, request: Request) -> ChecklistItemOut:
     """Clear the pair pointer (chat keeps its history)."""
     db = _db(request)
@@ -390,7 +432,11 @@ async def unlink_chat(item_id: int, request: Request) -> ChecklistItemOut:
     return _to_item_out(item)
 
 
-@router.get("/api/checklist-items/{item_id}/legs", response_model=list[PairedChatLegOut])
+@router.get(
+    "/api/checklist-items/{item_id}/legs",
+    response_model=list[PairedChatLegOut],
+    operation_id="list-checklist-item-legs",
+)
 async def list_item_legs(item_id: int, request: Request) -> list[PairedChatLegOut]:
     """Every leg recorded for ``item_id`` (oldest-first)."""
     db = _db(request)
@@ -406,7 +452,11 @@ async def list_item_legs(item_id: int, request: Request) -> list[PairedChatLegOu
 # ---- reordering / nesting -------------------------------------------------
 
 
-@router.post("/api/checklist-items/{item_id}/move", response_model=ChecklistItemOut)
+@router.post(
+    "/api/checklist-items/{item_id}/move",
+    response_model=ChecklistItemOut,
+    operation_id="move-checklist-item",
+)
 async def move_item(
     item_id: int,
     payload: MoveItemIn,
@@ -432,7 +482,11 @@ async def move_item(
     return _to_item_out(item)
 
 
-@router.post("/api/checklist-items/{item_id}/indent", response_model=ChecklistItemOut)
+@router.post(
+    "/api/checklist-items/{item_id}/indent",
+    response_model=ChecklistItemOut,
+    operation_id="indent-checklist-item",
+)
 async def indent_item(item_id: int, request: Request) -> ChecklistItemOut:
     """Tab — nest under previous sibling."""
     db = _db(request)
@@ -449,7 +503,11 @@ async def indent_item(item_id: int, request: Request) -> ChecklistItemOut:
     return _to_item_out(item)
 
 
-@router.post("/api/checklist-items/{item_id}/outdent", response_model=ChecklistItemOut)
+@router.post(
+    "/api/checklist-items/{item_id}/outdent",
+    response_model=ChecklistItemOut,
+    operation_id="outdent-checklist-item",
+)
 async def outdent_item(item_id: int, request: Request) -> ChecklistItemOut:
     """Shift+Tab — pop one level out."""
     db = _db(request)
@@ -473,6 +531,7 @@ async def outdent_item(item_id: int, request: Request) -> ChecklistItemOut:
     "/api/checklists/{checklist_id}/run/start",
     status_code=status.HTTP_201_CREATED,
     response_model=AutoDriverRunOut,
+    operation_id="start-checklist-run",
 )
 async def start_run(
     checklist_id: str,
@@ -554,7 +613,11 @@ async def start_run(
     return _to_run_out(run)
 
 
-@router.post("/api/checklists/{checklist_id}/run/stop", response_model=AutoDriverRunOut)
+@router.post(
+    "/api/checklists/{checklist_id}/run/stop",
+    response_model=AutoDriverRunOut,
+    operation_id="stop-checklist-run",
+)
 async def stop_run(checklist_id: str, request: Request) -> AutoDriverRunOut:
     """Cooperative stop on the active run; transitions to ``paused``."""
     db = _db(request)
@@ -577,13 +640,21 @@ async def stop_run(checklist_id: str, request: Request) -> AutoDriverRunOut:
     return _to_run_out(active)
 
 
-@router.post("/api/checklists/{checklist_id}/run/pause", response_model=AutoDriverRunOut)
+@router.post(
+    "/api/checklists/{checklist_id}/run/pause",
+    response_model=AutoDriverRunOut,
+    operation_id="pause-checklist-run",
+)
 async def pause_run(checklist_id: str, request: Request) -> AutoDriverRunOut:
     """Alias of stop — checklists.md notes pause and stop share wiring in v1."""
     return await stop_run(checklist_id, request)
 
 
-@router.post("/api/checklists/{checklist_id}/run/resume", response_model=AutoDriverRunOut)
+@router.post(
+    "/api/checklists/{checklist_id}/run/resume",
+    response_model=AutoDriverRunOut,
+    operation_id="resume-checklist-run",
+)
 async def resume_run(checklist_id: str, request: Request) -> AutoDriverRunOut:
     """Resume a ``paused`` run by transitioning it back to ``running``.
 
@@ -616,6 +687,7 @@ async def resume_run(checklist_id: str, request: Request) -> AutoDriverRunOut:
 @router.post(
     "/api/checklists/{checklist_id}/run/skip-current",
     response_model=AutoDriverRunOut,
+    operation_id="skip-current-checklist-item",
 )
 async def skip_current(checklist_id: str, request: Request) -> AutoDriverRunOut:
     """Skip the item currently being driven, if any."""
@@ -632,7 +704,11 @@ async def skip_current(checklist_id: str, request: Request) -> AutoDriverRunOut:
     return _to_run_out(active)
 
 
-@router.get("/api/checklists/{checklist_id}/run/status", response_model=AutoDriverRunOut)
+@router.get(
+    "/api/checklists/{checklist_id}/run/status",
+    response_model=AutoDriverRunOut,
+    operation_id="get-checklist-run-status",
+)
 async def run_status(checklist_id: str, request: Request) -> AutoDriverRunOut:
     """Return the active-run row (or 404 when no run is active)."""
     db = _db(request)

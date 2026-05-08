@@ -107,7 +107,7 @@ def _bucket(entries: list[VaultEntry], kind: str) -> list[VaultEntryOut]:
     return [_to_entry_out(e) for e in entries if e.kind == kind]
 
 
-@router.get("/api/vault", response_model=VaultListOut)
+@router.get("/api/vault", response_model=VaultListOut, operation_id="list-vault")
 async def list_vault(request: Request) -> VaultListOut:
     """Re-scan the filesystem and return bucketed plans + todos.
 
@@ -126,7 +126,7 @@ async def list_vault(request: Request) -> VaultListOut:
     )
 
 
-@router.get("/api/vault/search", response_model=SearchResultOut)
+@router.get("/api/vault/search", response_model=SearchResultOut, operation_id="search-vault")
 async def search_vault(
     request: Request,
     q: str = Query(..., description="Case-insensitive substring query."),
@@ -158,7 +158,7 @@ async def search_vault(
     )
 
 
-@router.get("/api/vault/by-path", response_model=VaultDocOut)
+@router.get("/api/vault/by-path", response_model=VaultDocOut, operation_id="get-vault-doc-by-path")
 async def get_vault_doc_by_path(
     request: Request,
     path: str = Query(..., description="Absolute path of a vault doc."),
@@ -202,7 +202,7 @@ async def get_vault_doc_by_path(
     return _build_doc_out(entry)
 
 
-@router.get("/api/vault/{vault_id}", response_model=VaultDocOut)
+@router.get("/api/vault/{vault_id}", response_model=VaultDocOut, operation_id="get-vault-doc")
 async def get_vault_doc(vault_id: int, request: Request) -> VaultDocOut:
     """Open one vault doc by cache id; 404 if absent.
 

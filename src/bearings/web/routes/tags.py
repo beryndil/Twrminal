@@ -163,7 +163,12 @@ async def _validate_tag_cardinality(
         )
 
 
-@router.post("/api/tags", status_code=status.HTTP_201_CREATED, response_model=TagOut)
+@router.post(
+    "/api/tags",
+    status_code=status.HTTP_201_CREATED,
+    response_model=TagOut,
+    operation_id="create-tag",
+)
 async def create_tag(payload: TagIn, request: Request) -> TagOut:
     """Create a tag; 409 if ``name`` is taken, 422 if the shape is bad."""
     db = _db(request)
@@ -193,7 +198,7 @@ async def create_tag(payload: TagIn, request: Request) -> TagOut:
     return out
 
 
-@router.get("/api/tags", response_model=list[TagOut])
+@router.get("/api/tags", response_model=list[TagOut], operation_id="list-tags")
 async def list_tags(
     request: Request,
     class_: str | None = None,
@@ -222,7 +227,11 @@ async def list_tags(
     ]
 
 
-@router.put("/api/tags/sort-order", status_code=status.HTTP_204_NO_CONTENT)
+@router.put(
+    "/api/tags/sort-order",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="update-tags-sort-order",
+)
 async def update_tags_sort_order(payload: TagSortOrderUpdate, request: Request) -> None:
     """Re-sequence ``sort_order`` within ``payload.class_`` to match the id list.
 
@@ -254,7 +263,12 @@ async def update_tags_sort_order(payload: TagSortOrderUpdate, request: Request) 
             )
 
 
-@router.get("/api/tag-groups", response_model=list[str], deprecated=True)
+@router.get(
+    "/api/tag-groups",
+    response_model=list[str],
+    deprecated=True,
+    operation_id="list-tag-groups",
+)
 async def list_tag_groups(request: Request) -> list[str]:
     """Distinct slash-prefix groups across the tag set.
 
@@ -267,7 +281,7 @@ async def list_tag_groups(request: Request) -> list[str]:
     return await tags_db.list_groups(db)
 
 
-@router.get("/api/tags/{tag_id}", response_model=TagOut)
+@router.get("/api/tags/{tag_id}", response_model=TagOut, operation_id="get-tag")
 async def get_tag(tag_id: int, request: Request) -> TagOut:
     """Fetch one tag; 404 if absent."""
     db = _db(request)
@@ -277,7 +291,7 @@ async def get_tag(tag_id: int, request: Request) -> TagOut:
     return _to_out(tag)
 
 
-@router.patch("/api/tags/{tag_id}", response_model=TagOut)
+@router.patch("/api/tags/{tag_id}", response_model=TagOut, operation_id="update-tag")
 async def update_tag(tag_id: int, payload: TagIn, request: Request) -> TagOut:
     """Replace a tag's mutable fields; 404 if absent, 409 on rename collision."""
     db = _db(request)
@@ -310,7 +324,7 @@ async def update_tag(tag_id: int, payload: TagIn, request: Request) -> TagOut:
     return out
 
 
-@router.patch("/api/tags/{tag_id}/pinned", response_model=TagOut)
+@router.patch("/api/tags/{tag_id}/pinned", response_model=TagOut, operation_id="patch-tag-pinned")
 async def patch_tag_pinned(tag_id: int, payload: TagPinnedUpdate, request: Request) -> TagOut:
     """Pin or unpin a tag via ``PATCH /api/tags/{id}/pinned``.
 
@@ -328,7 +342,11 @@ async def patch_tag_pinned(tag_id: int, payload: TagPinnedUpdate, request: Reque
     return out
 
 
-@router.delete("/api/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/api/tags/{tag_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="delete-tag",
+)
 async def delete_tag(tag_id: int, request: Request) -> None:
     """Delete one tag; cascades through ``session_tags`` + ``tag_memories``."""
     db = _db(request)
@@ -340,7 +358,11 @@ async def delete_tag(tag_id: int, request: Request) -> None:
         broadcaster.publish_tag_delete(tag_id)
 
 
-@router.get("/api/sessions/{session_id}/tags", response_model=list[TagOut])
+@router.get(
+    "/api/sessions/{session_id}/tags",
+    response_model=list[TagOut],
+    operation_id="list-session-tags",
+)
 async def list_session_tags(session_id: str, request: Request) -> list[TagOut]:
     """Every tag attached to ``session_id``, alphabetical."""
     db = _db(request)
@@ -351,6 +373,7 @@ async def list_session_tags(session_id: str, request: Request) -> list[TagOut]:
 @router.put(
     "/api/sessions/{session_id}/tags/{tag_id}",
     response_model=TagOut,
+    operation_id="attach-tag-to-session",
 )
 async def attach_tag(session_id: str, tag_id: int, request: Request) -> TagOut:
     """Attach a tag to a session; idempotent (200 either way).
@@ -402,6 +425,7 @@ async def attach_tag(session_id: str, tag_id: int, request: Request) -> TagOut:
 @router.delete(
     "/api/sessions/{session_id}/tags/{tag_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="detach-tag-from-session",
 )
 async def detach_tag(session_id: str, tag_id: int, request: Request) -> None:
     """Detach a tag from a session; 404 if no such attachment existed."""

@@ -93,6 +93,7 @@ def _to_out(row: UploadRow) -> UploadOut:
     "/api/uploads",
     response_model=UploadOut,
     status_code=status.HTTP_201_CREATED,
+    operation_id="create-upload",
 )
 async def post_upload(
     request: Request,
@@ -131,7 +132,7 @@ async def post_upload(
     return _to_out(row)
 
 
-@router.get("/api/uploads", response_model=UploadListOut)
+@router.get("/api/uploads", response_model=UploadListOut, operation_id="list-uploads")
 async def list_uploads(
     request: Request,
     limit: int = Query(
@@ -147,7 +148,7 @@ async def list_uploads(
     return UploadListOut(uploads=[_to_out(r) for r in rows])
 
 
-@router.get("/api/uploads/{upload_id}", response_model=UploadOut)
+@router.get("/api/uploads/{upload_id}", response_model=UploadOut, operation_id="get-upload")
 async def get_upload(upload_id: int, request: Request) -> UploadOut:
     """Fetch one upload by id; 404 if absent."""
     db = _db(request)
@@ -160,7 +161,7 @@ async def get_upload(upload_id: int, request: Request) -> UploadOut:
     return _to_out(row)
 
 
-@router.get("/api/uploads/{upload_id}/content")
+@router.get("/api/uploads/{upload_id}/content", operation_id="get-upload-content")
 async def get_upload_content(upload_id: int, request: Request) -> StreamingResponse:
     """Stream the on-disk body for ``upload_id``; 404 if absent."""
     db = _db(request)
@@ -181,6 +182,7 @@ async def get_upload_content(upload_id: int, request: Request) -> StreamingRespo
 @router.delete(
     "/api/uploads/{upload_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="delete-upload",
 )
 async def delete_upload(upload_id: int, request: Request) -> None:
     """Remove the row + on-disk body; 404 if absent."""

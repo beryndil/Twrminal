@@ -126,6 +126,7 @@ def _decision_to_preview(
 @router.get(
     "/api/tags/{tag_id}/routing",
     response_model=list[RoutingRuleOut],
+    operation_id="list-tag-routing-rules",
 )
 async def list_tag_rules(tag_id: int, request: Request) -> list[RoutingRuleOut]:
     """Every routing rule attached to ``tag_id``, ordered by priority."""
@@ -138,6 +139,7 @@ async def list_tag_rules(tag_id: int, request: Request) -> list[RoutingRuleOut]:
     "/api/tags/{tag_id}/routing",
     status_code=status.HTTP_201_CREATED,
     response_model=RoutingRuleOut,
+    operation_id="create-tag-routing-rule",
 )
 async def create_tag_rule(
     tag_id: int,
@@ -176,6 +178,7 @@ async def create_tag_rule(
 @router.patch(
     "/api/routing/{rule_id}",
     response_model=RoutingRuleOut,
+    operation_id="update-routing-rule",
 )
 async def update_tag_rule(
     rule_id: int,
@@ -214,6 +217,7 @@ async def update_tag_rule(
 @router.delete(
     "/api/routing/{rule_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="delete-routing-rule",
 )
 async def delete_tag_rule(rule_id: int, request: Request) -> None:
     """Delete a tag rule; 404 if it didn't exist."""
@@ -229,6 +233,7 @@ async def delete_tag_rule(rule_id: int, request: Request) -> None:
 @router.patch(
     "/api/tags/{tag_id}/routing/reorder",
     response_model=list[RoutingRuleOut],
+    operation_id="reorder-tag-routing-rules",
 )
 async def reorder_tag_rules(
     tag_id: int,
@@ -259,6 +264,7 @@ async def reorder_tag_rules(
 @router.get(
     "/api/routing/system",
     response_model=list[SystemRoutingRuleOut],
+    operation_id="list-system-routing-rules",
 )
 async def list_system_rules(request: Request) -> list[SystemRoutingRuleOut]:
     """Every system rule, ordered by priority."""
@@ -271,6 +277,7 @@ async def list_system_rules(request: Request) -> list[SystemRoutingRuleOut]:
     "/api/routing/system",
     status_code=status.HTTP_201_CREATED,
     response_model=SystemRoutingRuleOut,
+    operation_id="create-system-routing-rule",
 )
 async def create_system_rule(
     payload: SystemRoutingRuleIn,
@@ -302,6 +309,7 @@ async def create_system_rule(
 @router.patch(
     "/api/routing/system/{rule_id}",
     response_model=SystemRoutingRuleOut,
+    operation_id="update-system-routing-rule",
 )
 async def update_system_rule(
     rule_id: int,
@@ -340,6 +348,7 @@ async def update_system_rule(
 @router.delete(
     "/api/routing/system/{rule_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="delete-system-routing-rule",
 )
 async def delete_system_rule(rule_id: int, request: Request) -> None:
     """Delete a system rule; 404 if it didn't exist."""
@@ -360,6 +369,7 @@ async def delete_system_rule(rule_id: int, request: Request) -> None:
 @router.post(
     "/api/routing/preview",
     response_model=RoutingPreviewOut,
+    operation_id="preview-routing",
 )
 async def preview_routing(
     payload: RoutingPreviewIn,

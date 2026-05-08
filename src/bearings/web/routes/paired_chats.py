@@ -63,7 +63,7 @@ def _db(request: Request) -> aiosqlite.Connection:
     return cast(aiosqlite.Connection, db)
 
 
-@router.post("/api/checklist-items/{item_id}/spawn-chat")
+@router.post("/api/checklist-items/{item_id}/spawn-chat", operation_id="spawn-paired-chat")
 async def spawn_chat(
     item_id: int,
     payload: SpawnPairedChatIn,

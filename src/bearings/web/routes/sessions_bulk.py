@@ -343,7 +343,7 @@ async def _handle_bulk_close_delete(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/api/sessions/bulk")
+@router.post("/api/sessions/bulk", operation_id="bulk-sessions")
 async def run_sessions_bulk(payload: BulkSessionsIn, request: Request) -> Response:
     """Atomic batch operation across multiple sessions.
 

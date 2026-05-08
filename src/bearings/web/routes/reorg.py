@@ -70,6 +70,7 @@ def _to_out(audit: reorg_db.ReorgAudit) -> ReorgAuditOut:
     "/api/sessions/{src_id}/reorg/merge",
     response_model=ReorgAuditOut,
     status_code=status.HTTP_200_OK,
+    operation_id="reorg-merge-sessions",
 )
 async def merge_session(
     src_id: str,
@@ -107,6 +108,7 @@ async def merge_session(
     "/api/sessions/{src_id}/reorg/split",
     response_model=ReorgSplitOut,
     status_code=status.HTTP_200_OK,
+    operation_id="reorg-split-session",
 )
 async def fork_session(
     src_id: str,
@@ -147,6 +149,7 @@ async def fork_session(
     "/api/sessions/{src_id}/reorg/move",
     response_model=ReorgAuditOut,
     status_code=status.HTTP_200_OK,
+    operation_id="reorg-move-message",
 )
 async def move_message(
     src_id: str,
@@ -185,6 +188,7 @@ async def move_message(
     "/api/sessions/{dst_id}/reorg/audits",
     response_model=ReorgAuditListOut,
     status_code=status.HTTP_200_OK,
+    operation_id="list-reorg-audits",
 )
 async def list_reorg_audits(
     dst_id: str,
@@ -206,6 +210,7 @@ async def list_reorg_audits(
     "/api/sessions/{dst_id}/reorg/audits/{audit_id}",
     response_model=UndoReorgOut,
     status_code=status.HTTP_200_OK,
+    operation_id="undo-reorg",
 )
 async def delete_reorg_audit(
     dst_id: str,

@@ -41,7 +41,7 @@ def _cfg(request: Request) -> ShellCfg:
     return cfg
 
 
-@router.post("/api/shell/exec", response_model=ShellExecOut)
+@router.post("/api/shell/exec", response_model=ShellExecOut, operation_id="shell-exec")
 async def post_exec(payload: ShellExecIn, request: Request) -> ShellExecOut:
     """Validate + dispatch ``payload.argv`` against the configured allowlist."""
     cfg = _cfg(request)

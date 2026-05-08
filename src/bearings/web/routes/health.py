@@ -51,7 +51,7 @@ def _data_dir(request: Request) -> str:
     return str(getattr(request.app.state, "data_dir", "") or "")
 
 
-@router.get("/api/health", response_model=HealthOut)
+@router.get("/api/health", response_model=HealthOut, operation_id="get-health")
 async def get_health(request: Request) -> HealthOut:
     """Return the health snapshot — 200 always; readiness in body."""
     db = _db(request)

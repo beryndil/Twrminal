@@ -13,7 +13,7 @@
         ],
         "summary": "Create Tag",
         "description": "Create a tag; 409 if ``name`` is taken, 422 if the shape is bad.",
-        "operationId": "create_tag_api_tags_post",
+        "operationId": "create-tag",
         "requestBody": {
           "required": true,
           "content": {
@@ -53,7 +53,7 @@
         ],
         "summary": "List Tags",
         "description": "Every tag, ordered ``(class, sort_order, name)``; optional filters.\n\n``?class_=`` filters to ``project`` / ``severity`` / ``general``;\n422 on an unknown value. ``?group=`` is the deprecated slash-prefix\nfilter, retained for one release. Both compose via AND when set.\n\nEach tag carries ``open_session_count`` (sessions with\n``closed_at IS NULL``) and ``session_count`` (all sessions) via a\nsingle LEFT JOIN aggregation \u2014 one round-trip, no per-tag fetch.",
-        "operationId": "list_tags_api_tags_get",
+        "operationId": "list-tags",
         "parameters": [
           {
             "name": "class_",
@@ -98,7 +98,7 @@
                   "items": {
                     "$ref": "#/components/schemas/TagOut"
                   },
-                  "title": "Response List Tags Api Tags Get"
+                  "title": "Response List-Tags"
                 }
               }
             }
@@ -123,7 +123,7 @@
         ],
         "summary": "Update Tags Sort Order",
         "description": "Re-sequence ``sort_order`` within ``payload.class_`` to match the id list.\n\nDrag-to-reorder path on the ``/tags`` page. Each id at index ``i``\nin ``ordered_ids`` gets ``sort_order = i``. Empty ``ordered_ids``\nis a no-op (validates the class only). 422 if any id is missing\nor belongs to a different class.",
-        "operationId": "update_tags_sort_order_api_tags_sort_order_put",
+        "operationId": "update-tags-sort-order",
         "requestBody": {
           "content": {
             "application/json": {
@@ -158,7 +158,7 @@
         ],
         "summary": "List Tag Groups",
         "description": "Distinct slash-prefix groups across the tag set.\n\n**Deprecated** \u2014 the slash-namespace concept is superseded by the\n:class:`Tag.class_` column. Retained for one release so v0.18.x\nfrontend builds keep rendering. Frontend should migrate to\n``GET /api/tags?class_=...``.",
-        "operationId": "list_tag_groups_api_tag_groups_get",
+        "operationId": "list-tag-groups",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -169,7 +169,7 @@
                     "type": "string"
                   },
                   "type": "array",
-                  "title": "Response List Tag Groups Api Tag Groups Get"
+                  "title": "Response List-Tag-Groups"
                 }
               }
             }
@@ -185,7 +185,7 @@
         ],
         "summary": "Get Tag",
         "description": "Fetch one tag; 404 if absent.",
-        "operationId": "get_tag_api_tags__tag_id__get",
+        "operationId": "get-tag",
         "parameters": [
           {
             "name": "tag_id",
@@ -226,7 +226,7 @@
         ],
         "summary": "Update Tag",
         "description": "Replace a tag's mutable fields; 404 if absent, 409 on rename collision.",
-        "operationId": "update_tag_api_tags__tag_id__patch",
+        "operationId": "update-tag",
         "parameters": [
           {
             "name": "tag_id",
@@ -277,7 +277,7 @@
         ],
         "summary": "Delete Tag",
         "description": "Delete one tag; cascades through ``session_tags`` + ``tag_memories``.",
-        "operationId": "delete_tag_api_tags__tag_id__delete",
+        "operationId": "delete-tag",
         "parameters": [
           {
             "name": "tag_id",
@@ -313,7 +313,7 @@
         ],
         "summary": "Patch Tag Pinned",
         "description": "Pin or unpin a tag via ``PATCH /api/tags/{id}/pinned``.\n\n``{pinned: true}`` pins the tag in the sidebar filter panel;\n``{pinned: false}`` unpins it. 404 if absent.",
-        "operationId": "patch_tag_pinned_api_tags__tag_id__pinned_patch",
+        "operationId": "patch-tag-pinned",
         "parameters": [
           {
             "name": "tag_id",
@@ -366,7 +366,7 @@
         ],
         "summary": "List Session Tags",
         "description": "Every tag attached to ``session_id``, alphabetical.",
-        "operationId": "list_session_tags_api_sessions__session_id__tags_get",
+        "operationId": "list-session-tags",
         "parameters": [
           {
             "name": "session_id",
@@ -388,7 +388,7 @@
                   "items": {
                     "$ref": "#/components/schemas/TagOut"
                   },
-                  "title": "Response List Session Tags Api Sessions  Session Id  Tags Get"
+                  "title": "Response List-Session-Tags"
                 }
               }
             }
@@ -413,7 +413,7 @@
         ],
         "summary": "Attach Tag",
         "description": "Attach a tag to a session; idempotent (200 either way).\n\nReturns the tag row. 404 if either FK is absent (raised as\n``IntegrityError`` from the DB layer when foreign-key enforcement\nis on). 422 when attaching the tag would violate the \u22641 project /\n\u22641 severity cardinality rule for the session.\n\nIdempotency: re-attaching an already-attached tag skips the\ncardinality check (the existing state is already valid) and returns\n200 without touching the DB.",
-        "operationId": "attach_tag_api_sessions__session_id__tags__tag_id__put",
+        "operationId": "attach-tag-to-session",
         "parameters": [
           {
             "name": "session_id",
@@ -463,7 +463,7 @@
         ],
         "summary": "Detach Tag",
         "description": "Detach a tag from a session; 404 if no such attachment existed.",
-        "operationId": "detach_tag_api_sessions__session_id__tags__tag_id__delete",
+        "operationId": "detach-tag-from-session",
         "parameters": [
           {
             "name": "session_id",
@@ -508,7 +508,7 @@
         ],
         "summary": "Create Memory",
         "description": "Create a memory under ``tag_id``; 404 if the tag is absent.",
-        "operationId": "create_memory_api_tags__tag_id__memories_post",
+        "operationId": "create-tag-memory",
         "parameters": [
           {
             "name": "tag_id",
@@ -559,7 +559,7 @@
         ],
         "summary": "List Memories For Tag",
         "description": "Every memory attached to ``tag_id``; ``only_enabled`` filters disabled.",
-        "operationId": "list_memories_for_tag_api_tags__tag_id__memories_get",
+        "operationId": "list-tag-memories",
         "parameters": [
           {
             "name": "tag_id",
@@ -591,7 +591,7 @@
                   "items": {
                     "$ref": "#/components/schemas/TagMemoryOut"
                   },
-                  "title": "Response List Memories For Tag Api Tags  Tag Id  Memories Get"
+                  "title": "Response List-Tag-Memories"
                 }
               }
             }
@@ -616,7 +616,7 @@
         ],
         "summary": "List All Memories",
         "description": "Every memory across every tag, sorted by tag name then memory title.\n\nReturns a flat list of :class:`AllMemoriesOut` rows \u2014 each row\ncarries enough tag context for the global-index view to render\nwithout a second round-trip. ``memory_body_preview`` is the body\ntruncated to\n:data:`bearings.config.constants.MEMORY_BODY_PREVIEW_MAX_LENGTH`\nchars; the full body is still available via ``GET /api/memories/{id}``.\n\n``?only_enabled=true`` restricts to enabled memories \u2014 mirrors the\nsame query param supported by the per-tag list endpoint.",
-        "operationId": "list_all_memories_api_memories_get",
+        "operationId": "list-all-memories",
         "parameters": [
           {
             "name": "only_enabled",
@@ -639,7 +639,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AllMemoriesOut"
                   },
-                  "title": "Response List All Memories Api Memories Get"
+                  "title": "Response List-All-Memories"
                 }
               }
             }
@@ -664,7 +664,7 @@
         ],
         "summary": "Get Memory",
         "description": "Fetch one memory; 404 if absent.",
-        "operationId": "get_memory_api_memories__memory_id__get",
+        "operationId": "get-memory",
         "parameters": [
           {
             "name": "memory_id",
@@ -705,7 +705,7 @@
         ],
         "summary": "Update Memory",
         "description": "Replace a memory's mutable fields; 404 if absent.",
-        "operationId": "update_memory_api_memories__memory_id__patch",
+        "operationId": "update-memory",
         "parameters": [
           {
             "name": "memory_id",
@@ -756,7 +756,7 @@
         ],
         "summary": "Delete Memory",
         "description": "Delete one memory; 404 if absent.",
-        "operationId": "delete_memory_api_memories__memory_id__delete",
+        "operationId": "delete-memory",
         "parameters": [
           {
             "name": "memory_id",
@@ -792,7 +792,7 @@
         ],
         "summary": "List Vault",
         "description": "Re-scan the filesystem and return bucketed plans + todos.\n\nPer vault.md \u00a7\"Failure modes\" the index re-scans on every list\nrequest. Plans / todos sections come back already sorted\nnewest-mtime first by :func:`bearings.db.vault.list_all`.",
-        "operationId": "list_vault_api_vault_get",
+        "operationId": "list-vault",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -814,7 +814,7 @@
         ],
         "summary": "Search Vault",
         "description": "Run a substring search across every vault doc.\n\nPer vault.md \u00a7\"Search semantics\" the query is treated as a\nliteral string (no regex), case-insensitive, line-grained.\nRe-scans the filesystem first so the search reads fresh content.\nA blank query (whitespace only) returns an empty result.",
-        "operationId": "search_vault_api_vault_search_get",
+        "operationId": "search-vault",
         "parameters": [
           {
             "name": "q",
@@ -859,7 +859,7 @@
         ],
         "summary": "Get Vault Doc By Path",
         "description": "Open a doc by absolute path; refuses paths outside the vault.\n\nPer vault.md \u00a7\"Failure modes\" \u2014 \"Path outside the vault.\nAttempts (e.g. via a hand-crafted URL) to open a path that is\nnot in the current index are refused \u2014 the user sees 'this path\nis outside the vault.' Symlinks are resolved before the\nallowlist check, so a symlink trick into the vault still\nresolves to the real path and is gated correctly\".\n\nThe handler rescans first so a brand-new doc on disk is\nreachable without a separate ``GET /api/vault`` call.",
-        "operationId": "get_vault_doc_by_path_api_vault_by_path_get",
+        "operationId": "get-vault-doc-by-path",
         "parameters": [
           {
             "name": "path",
@@ -904,7 +904,7 @@
         ],
         "summary": "Get Vault Doc",
         "description": "Open one vault doc by cache id; 404 if absent.\n\nReads the raw body off disk, runs server-side redaction\ndetection, and returns the entry + body + redaction ranges +\ntruncated flag. Per vault.md \u00a7\"Redaction rendering\" the body is\nraw \u2014 the client masks visually and exposes a \"Show\" toggle per\nredaction.\n\nDoes NOT rescan first: callers that want freshness are expected\nto pull ``GET /api/vault`` (which always rescans) for the\ndiscovery handle, then call this endpoint for the specific id.\nRescanning here would invalidate the id mid-request when paths\nmove under the user's editor.",
-        "operationId": "get_vault_doc_api_vault__vault_id__get",
+        "operationId": "get-vault-doc",
         "parameters": [
           {
             "name": "vault_id",
@@ -947,7 +947,7 @@
         ],
         "summary": "Create Item",
         "description": "Create a checklist item; ``parent_item_id`` is optional.",
-        "operationId": "create_item_api_checklists__checklist_id__items_post",
+        "operationId": "create-checklist-item",
         "parameters": [
           {
             "name": "checklist_id",
@@ -998,7 +998,7 @@
         ],
         "summary": "List Items",
         "description": "Every item under ``checklist_id``.",
-        "operationId": "list_items_api_checklists__checklist_id__items_get",
+        "operationId": "list-checklist-items",
         "parameters": [
           {
             "name": "checklist_id",
@@ -1020,7 +1020,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ChecklistItemOut"
                   },
-                  "title": "Response List Items Api Checklists  Checklist Id  Items Get"
+                  "title": "Response List-Checklist-Items"
                 }
               }
             }
@@ -1045,7 +1045,7 @@
         ],
         "summary": "Get Overview",
         "description": "Bundled items + active run for one paint.",
-        "operationId": "get_overview_api_checklists__checklist_id__get",
+        "operationId": "get-checklist-overview",
         "parameters": [
           {
             "name": "checklist_id",
@@ -1088,7 +1088,7 @@
         ],
         "summary": "Get Item",
         "description": "Fetch one item; 404 if absent.",
-        "operationId": "get_item_api_checklist_items__item_id__get",
+        "operationId": "get-checklist-item",
         "parameters": [
           {
             "name": "item_id",
@@ -1129,7 +1129,7 @@
         ],
         "summary": "Update Item",
         "description": "Patch label / notes (either or both).",
-        "operationId": "update_item_api_checklist_items__item_id__patch",
+        "operationId": "update-checklist-item",
         "parameters": [
           {
             "name": "item_id",
@@ -1180,7 +1180,7 @@
         ],
         "summary": "Delete Item",
         "description": "Cascade-delete an item + subtree + paired_chats per FK.",
-        "operationId": "delete_item_api_checklist_items__item_id__delete",
+        "operationId": "delete-checklist-item",
         "parameters": [
           {
             "name": "item_id",
@@ -1216,7 +1216,7 @@
         ],
         "summary": "Check Item",
         "description": "Mark item checked (green).",
-        "operationId": "check_item_api_checklist_items__item_id__check_post",
+        "operationId": "check-checklist-item",
         "parameters": [
           {
             "name": "item_id",
@@ -1259,7 +1259,7 @@
         ],
         "summary": "Uncheck Item",
         "description": "Clear ``checked_at``.",
-        "operationId": "uncheck_item_api_checklist_items__item_id__uncheck_post",
+        "operationId": "uncheck-checklist-item",
         "parameters": [
           {
             "name": "item_id",
@@ -1302,7 +1302,7 @@
         ],
         "summary": "Block Item",
         "description": "Mark a non-completion outcome (blocked / failed / skipped).",
-        "operationId": "block_item_api_checklist_items__item_id__block_post",
+        "operationId": "block-checklist-item",
         "parameters": [
           {
             "name": "item_id",
@@ -1355,7 +1355,7 @@
         ],
         "summary": "Unblock Item",
         "description": "Clear any non-completion outcome (back to not-yet-attempted).",
-        "operationId": "unblock_item_api_checklist_items__item_id__unblock_post",
+        "operationId": "unblock-checklist-item",
         "parameters": [
           {
             "name": "item_id",
@@ -1398,7 +1398,7 @@
         ],
         "summary": "Link Chat",
         "description": "Link a chat session as the leaf's paired chat + record a leg.",
-        "operationId": "link_chat_api_checklist_items__item_id__link_post",
+        "operationId": "link-checklist-item-chat",
         "parameters": [
           {
             "name": "item_id",
@@ -1451,7 +1451,7 @@
         ],
         "summary": "Unlink Chat",
         "description": "Clear the pair pointer (chat keeps its history).",
-        "operationId": "unlink_chat_api_checklist_items__item_id__unlink_post",
+        "operationId": "unlink-checklist-item-chat",
         "parameters": [
           {
             "name": "item_id",
@@ -1494,7 +1494,7 @@
         ],
         "summary": "List Item Legs",
         "description": "Every leg recorded for ``item_id`` (oldest-first).",
-        "operationId": "list_item_legs_api_checklist_items__item_id__legs_get",
+        "operationId": "list-checklist-item-legs",
         "parameters": [
           {
             "name": "item_id",
@@ -1516,7 +1516,7 @@
                   "items": {
                     "$ref": "#/components/schemas/PairedChatLegOut"
                   },
-                  "title": "Response List Item Legs Api Checklist Items  Item Id  Legs Get"
+                  "title": "Response List-Checklist-Item-Legs"
                 }
               }
             }
@@ -1541,7 +1541,7 @@
         ],
         "summary": "Move Item",
         "description": "Reparent + optionally pin sort_order.",
-        "operationId": "move_item_api_checklist_items__item_id__move_post",
+        "operationId": "move-checklist-item",
         "parameters": [
           {
             "name": "item_id",
@@ -1594,7 +1594,7 @@
         ],
         "summary": "Indent Item",
         "description": "Tab \u2014 nest under previous sibling.",
-        "operationId": "indent_item_api_checklist_items__item_id__indent_post",
+        "operationId": "indent-checklist-item",
         "parameters": [
           {
             "name": "item_id",
@@ -1637,7 +1637,7 @@
         ],
         "summary": "Outdent Item",
         "description": "Shift+Tab \u2014 pop one level out.",
-        "operationId": "outdent_item_api_checklist_items__item_id__outdent_post",
+        "operationId": "outdent-checklist-item",
         "parameters": [
           {
             "name": "item_id",
@@ -1680,7 +1680,7 @@
         ],
         "summary": "Start Run",
         "description": "Persist a ``running`` ``auto_driver_runs`` row.\n\nPer behavior/checklists.md the dispatch (live driver task spawn)\nis wired by the runtime registry; this route owns the durable\nstate. If a live registry is on app.state and a previous run is\nactive, we reject the start with 409 \u2014 one active run per\nchecklist at a time.",
-        "operationId": "start_run_api_checklists__checklist_id__run_start_post",
+        "operationId": "start-checklist-run",
         "parameters": [
           {
             "name": "checklist_id",
@@ -1733,7 +1733,7 @@
         ],
         "summary": "Stop Run",
         "description": "Cooperative stop on the active run; transitions to ``paused``.",
-        "operationId": "stop_run_api_checklists__checklist_id__run_stop_post",
+        "operationId": "stop-checklist-run",
         "parameters": [
           {
             "name": "checklist_id",
@@ -1776,7 +1776,7 @@
         ],
         "summary": "Pause Run",
         "description": "Alias of stop \u2014 checklists.md notes pause and stop share wiring in v1.",
-        "operationId": "pause_run_api_checklists__checklist_id__run_pause_post",
+        "operationId": "pause-checklist-run",
         "parameters": [
           {
             "name": "checklist_id",
@@ -1819,7 +1819,7 @@
         ],
         "summary": "Resume Run",
         "description": "Resume a ``paused`` run by transitioning it back to ``running``.\n\nPer behavior/checklists.md \"the user can re-Start later; the next\nrun resumes from the first unchecked item\" \u2014 the resume API is\nadditive on top of Start: if there's no paused run, 404; if the\nstate is already running, 409.",
-        "operationId": "resume_run_api_checklists__checklist_id__run_resume_post",
+        "operationId": "resume-checklist-run",
         "parameters": [
           {
             "name": "checklist_id",
@@ -1862,7 +1862,7 @@
         ],
         "summary": "Skip Current",
         "description": "Skip the item currently being driven, if any.",
-        "operationId": "skip_current_api_checklists__checklist_id__run_skip_current_post",
+        "operationId": "skip-current-checklist-item",
         "parameters": [
           {
             "name": "checklist_id",
@@ -1905,7 +1905,7 @@
         ],
         "summary": "Run Status",
         "description": "Return the active-run row (or 404 when no run is active).",
-        "operationId": "run_status_api_checklists__checklist_id__run_status_get",
+        "operationId": "get-checklist-run-status",
         "parameters": [
           {
             "name": "checklist_id",
@@ -1948,7 +1948,7 @@
         ],
         "summary": "Create Checkpoint",
         "description": "Create a checkpoint anchored at ``payload.message_id``.\n\nWhen ``payload.label`` is omitted the route synthesises one from\n:data:`DEFAULT_CHECKPOINT_LABEL_TEMPLATE` using the next ordinal for\nthe session (\"Checkpoint 1\", \"Checkpoint 2\", \u2026).\n\n404 when the session or message is absent (FK violation in the DB\nlayer surfaces as ``IntegrityError``).\n409 when the per-session cap from\n:data:`MAX_CHECKPOINTS_PER_SESSION` is exceeded.",
-        "operationId": "create_checkpoint_api_checkpoints_post",
+        "operationId": "create-checkpoint",
         "requestBody": {
           "required": true,
           "content": {
@@ -1988,7 +1988,7 @@
         ],
         "summary": "List Checkpoints",
         "description": "Every checkpoint for ``session_id``, newest-first.\n\nReturns ``[]`` for an unknown session (matches the zero-row case for\na session that exists but has no checkpoints \u2014 the gutter renders\nempty either way).",
-        "operationId": "list_checkpoints_api_checkpoints_get",
+        "operationId": "list-checkpoints",
         "parameters": [
           {
             "name": "session_id",
@@ -2013,7 +2013,7 @@
                   "items": {
                     "$ref": "#/components/schemas/CheckpointOut"
                   },
-                  "title": "Response List Checkpoints Api Checkpoints Get"
+                  "title": "Response List-Checkpoints"
                 }
               }
             }
@@ -2038,7 +2038,7 @@
         ],
         "summary": "Delete Checkpoint",
         "description": "Delete one checkpoint; 204 on success, 404 when absent.",
-        "operationId": "delete_checkpoint_api_checkpoints__checkpoint_id__delete",
+        "operationId": "delete-checkpoint",
         "parameters": [
           {
             "name": "checkpoint_id",
@@ -2074,7 +2074,7 @@
         ],
         "summary": "Fork Checkpoint",
         "description": "Fork the source session at ``checkpoint_id``.\n\nClones the source session row + copies every message up to & including\nthe checkpoint anchor into a new session. The new session inherits\nthe source's ``working_dir`` / ``model`` / routing fields and gets\na derivative title (``\"<source.title> (fork)\"``).\n\nPer the SDK-primitives memory: Bearings owns this branching primitive\nrather than the SDK's ``fork_session`` because Bearings stores its own\ntranscript and needs DB-level cloning to keep replay deterministic.\n\n404 when the checkpoint or its source session has gone away.",
-        "operationId": "fork_checkpoint_api_checkpoints__checkpoint_id__fork_post",
+        "operationId": "fork-checkpoint",
         "parameters": [
           {
             "name": "checkpoint_id",
@@ -2117,7 +2117,7 @@
         ],
         "summary": "List Templates",
         "description": "Every template, alphabetically by name.\n\nReturns ``[]`` when no templates have been created yet. The frontend\ntemplate picker renders this list in a dropdown; an empty response\nmeans the picker shows only the \"-- no template --\" placeholder.",
-        "operationId": "list_templates_api_templates_get",
+        "operationId": "list-templates",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2128,7 +2128,7 @@
                     "$ref": "#/components/schemas/TemplateOut"
                   },
                   "type": "array",
-                  "title": "Response List Templates Api Templates Get"
+                  "title": "Response List-Templates"
                 }
               }
             }
@@ -2141,7 +2141,7 @@
         ],
         "summary": "Create Template",
         "description": "Create a new template.\n\n409 when a template with ``payload.name`` already exists (the\n``templates.name`` column carries a ``UNIQUE`` constraint). 422\nwhen the routing-alphabet fields are invalid (executor / advisor /\neffort / permission_profile).",
-        "operationId": "create_template_api_templates_post",
+        "operationId": "create-template",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2183,7 +2183,7 @@
         ],
         "summary": "Get Template",
         "description": "Fetch one template by integer id. 404 when absent.",
-        "operationId": "get_template_api_templates__template_id__get",
+        "operationId": "get-template",
         "parameters": [
           {
             "name": "template_id",
@@ -2224,7 +2224,7 @@
         ],
         "summary": "Patch Template",
         "description": "Partial-update a template; missing fields are preserved from the existing row.\n\nThe route fetches the existing row, merges the delta, then calls\n:func:`bearings.db.templates.update` with the full field set.\n\n404 when no template with ``template_id`` exists.\n409 when the requested ``name`` is already taken by another template.\n422 when the updated routing fields fall outside their allowed alphabets.",
-        "operationId": "patch_template_api_templates__template_id__patch",
+        "operationId": "patch-template",
         "parameters": [
           {
             "name": "template_id",
@@ -2275,7 +2275,7 @@
         ],
         "summary": "Delete Template",
         "description": "Delete one template; 204 on success, 404 when absent.",
-        "operationId": "delete_template_api_templates__template_id__delete",
+        "operationId": "delete-template",
         "parameters": [
           {
             "name": "template_id",
@@ -2311,7 +2311,7 @@
         ],
         "summary": "Create Session From Template",
         "description": "Create a new session from a template (gap-cycle-13-006).\n\nCopies all template fields into a new session row in one sequence of\nDB calls.  The caller may supply an optional override body to replace\nany inherited field; omitted fields use the template's stored values.\n\nField mapping (template field \u2192 session field):\n\n* ``name`` \u2192 ``title`` (override: ``payload.title``).\n* ``model`` \u2192 ``model`` (override: ``payload.model``).\n* ``description`` \u2192 ``description`` (override: ``payload.description``).\n* ``working_dir_default`` \u2192 ``working_dir`` (override: ``payload.working_dir``).\n* ``system_prompt_baseline`` \u2192 ``session_instructions``\n  (override: ``payload.session_instructions``).\n* ``permission_profile`` \u2192 ``permission_mode`` \u2014 empty string maps to\n  ``None`` (override: ``payload.permission_mode``).\n* ``advisor_model`` \u2192 ``routing_advisor_model``\n  (override: ``payload.advisor_model``).\n* ``advisor_max_uses`` \u2192 ``routing_advisor_max_uses``\n  (override: ``payload.advisor_max_uses``).\n* ``effort_level`` \u2192 ``routing_effort_level``\n  (override: ``payload.effort_level``).\n* ``tag_names`` \u2192 resolved to tag ids and attached after session creation.\n  Names that do not match an existing tag are silently skipped.\n\n``working_dir`` resolution order: payload override \u2192 template\n``working_dir_default`` \u2192 first resolved tag whose ``working_dir`` is\nset \u2192 422 if none provide a directory.\n\nResponses:\n\n* ``201`` \u2014 new session row; ``Location: /api/sessions/<id>``.\n* ``404`` \u2014 template not found.\n* ``422`` \u2014 no working_dir resolvable, or routing fields out of range.",
-        "operationId": "create_session_from_template_api_templates__template_id__instantiate_post",
+        "operationId": "instantiate-template",
         "parameters": [
           {
             "name": "template_id",
@@ -2364,7 +2364,7 @@
         ],
         "summary": "List Sessions",
         "description": "List sessions filtered by ``kind`` + ``include_closed`` + tag filters.\n\nTwo filter shapes coexist:\n\n* ``tag_ids`` \u2014 legacy flat OR (back-compat). Returns sessions\n  attached to **at least one** of the listed tags regardless of\n  class. Repeat the parameter for multi-select.\n* ``tag_ids_project`` / ``tag_ids_severity`` / ``tag_ids_other`` \u2014\n  three-section faceted filter from the tag-class feature. OR\n  within each class; AND across classes. An omitted (or empty)\n  section means \"no constraint from this class,\" NOT \"exclude\n  everything\" \u2014 the empty-section state lets the filter panel\n  render an empty section without blanking out results.\n\nAll four can be combined; each is an additional AND constraint at\nthe SQL layer (legacy ``tag_ids`` joins; per-class params use\ncorrelated EXISTS subqueries). A frontend that only uses the new\nsurface should leave ``tag_ids`` empty.\n\n``severity_none=true`` activates the \"No severity\" synthetic filter\n(gap-cycle-18-003): returns sessions that have no severity-class tag\nattached. When combined with ``tag_ids_severity``, the two compose\nOR within the severity section (sessions with no severity OR sessions\nmatching the listed severity ids).",
-        "operationId": "list_sessions_api_sessions_get",
+        "operationId": "list-sessions",
         "parameters": [
           {
             "name": "kind",
@@ -2489,7 +2489,7 @@
                   "items": {
                     "$ref": "#/components/schemas/SessionOut"
                   },
-                  "title": "Response List Sessions Api Sessions Get"
+                  "title": "Response List-Sessions"
                 }
               }
             }
@@ -2512,7 +2512,7 @@
         ],
         "summary": "Create Session",
         "description": "Create a session row + attach tags atomically.\n\nPer arch \u00a71.1.5 the v1 session-create surface \u2014 the closing-sweep\naudit (2026-05-02) found this endpoint missing despite the master\nchecklist marking the item DONE.\n\nValidation precedence:\n\n* ``kind`` must be in :data:`KNOWN_SESSION_KINDS` \u2192 422 otherwise.\n* Every id in ``tag_ids`` must reference an existing tag row \u2192 404\n  with the missing list otherwise. Tag existence is checked BEFORE\n  :func:`sessions_db.create` so a bad tag id never leaves an\n  orphaned session.\n* ``working_dir`` is required. If omitted, the first tag (in order)\n  with a non-null ``working_dir`` is used. Returns 422 if both the\n  payload field is None/omitted and no tag provides a directory.\n* Deeper field invariants (model name format, permission-mode enum,\n  title bounds beyond Pydantic's) raise ``ValueError`` from\n  :class:`Session.__post_init__` and surface as 422.\n\nReturns 201 with ``Location: /api/sessions/<id>``.",
-        "operationId": "create_session_api_sessions_post",
+        "operationId": "create-session",
         "requestBody": {
           "required": true,
           "content": {
@@ -2554,7 +2554,7 @@
         ],
         "summary": "Get Session",
         "description": "Fetch one session by id; 404 if absent.",
-        "operationId": "get_session_api_sessions__session_id__get",
+        "operationId": "get-session",
         "parameters": [
           {
             "name": "session_id",
@@ -2595,7 +2595,7 @@
         ],
         "summary": "Patch Session",
         "description": "Full-field PATCH for a session.\n\nAccepts any subset of ``title``, ``description``, ``max_budget_usd``,\n``session_instructions``, and ``tag_ids`` \u2014 only supplied fields are\nwritten (true PATCH semantics via ``model_fields_set``).  When\n``tag_ids`` is present the session's tag set is replaced wholesale.\n\nGap: gap-cycle-10-001 (SessionEdit modal).",
-        "operationId": "patch_session_api_sessions__session_id__patch",
+        "operationId": "patch-session",
         "parameters": [
           {
             "name": "session_id",
@@ -2646,7 +2646,7 @@
         ],
         "summary": "Delete Session",
         "description": "Cascade-delete a session row + messages + checkpoints.",
-        "operationId": "delete_session_api_sessions__session_id__delete",
+        "operationId": "delete-session",
         "parameters": [
           {
             "name": "session_id",
@@ -2682,7 +2682,7 @@
         ],
         "summary": "Close Session",
         "description": "Stamp ``closed_at`` so the prompt-endpoint returns 409 on next POST.\n\nOnly session kinds in :data:`~bearings.config.constants.CLOSEABLE_SESSION_KINDS`\nsupport the close/reopen lifecycle.  Checklist sessions are long-lived and\nnot subject to this lifecycle (per ``docs/behavior/checklists.md``); a\n``POST /close`` on one returns 422 to prevent the inconsistent\n``(kind='checklist', closed_at IS NOT NULL)`` row state.",
-        "operationId": "close_session_api_sessions__session_id__close_post",
+        "operationId": "close-session",
         "parameters": [
           {
             "name": "session_id",
@@ -2725,7 +2725,7 @@
         ],
         "summary": "Patch Session Model",
         "description": "Swap the session's executor model (spec \u00a77; arch \u00a71.1.5).\n\nPersists the new model name on the session row, then recycles the\nlive SDK supervisor for that session via\n:meth:`InProcessRunnerRegistry.recycle`. The Claude CLI bakes\n``--model`` in at process spawn \u2014 there is no in-band control\nmessage to swap models on a running subprocess \u2014 so the live\nforward reduces to \"tear the subprocess down and let the next\nprompt respawn it.\" The ring buffer survives the recycle (the\nrunner stays in ``_runners``), so the prior turn's deltas remain\navailable for replay; only the SDK worker bound to the old model\nis torn down. The next prompt arriving at this session triggers\nthe registry's reap-recovery branch, which re-spawns\n``run_session_loop`` with a freshly-bootstrapped\n:class:`AgentSession` reading the just-updated ``model`` column.\n\n422 on unknown model names; the validator delegates to\n:func:`sessions_db._is_known_model_name` so the alphabet stays in\none place.",
-        "operationId": "patch_session_model_api_sessions__session_id__model_patch",
+        "operationId": "patch-session-model",
         "parameters": [
           {
             "name": "session_id",
@@ -2778,7 +2778,7 @@
         ],
         "summary": "Patch Session Permission Mode",
         "description": "Swap the session's permission mode mid-session (item 3.3).\n\nDB-only today: persists the new mode on the session row so the\nrunner picks it up on the next turn. ``None`` clears the column,\nletting the runner fall back to the profile default.\n\n422 on unknown mode strings (validated against\n:data:`KNOWN_SDK_PERMISSION_MODES`); 404 when the session is absent.",
-        "operationId": "patch_session_permission_mode_api_sessions__session_id__permission_mode_patch",
+        "operationId": "patch-session-permission-mode",
         "parameters": [
           {
             "name": "session_id",
@@ -2831,7 +2831,7 @@
         ],
         "summary": "Patch Session Pinned",
         "description": "Pin or unpin a session row via ``PATCH /api/sessions/{id}/pinned``.\n\n``{pinned: true}`` pins the row; ``{pinned: false}`` unpins it.\nIdempotent \u2014 setting the same value twice is a no-op. Returns the\nupdated session row. 404 when the session is absent.",
-        "operationId": "patch_session_pinned_api_sessions__session_id__pinned_patch",
+        "operationId": "patch-session-pinned",
         "parameters": [
           {
             "name": "session_id",
@@ -2884,7 +2884,7 @@
         ],
         "summary": "Reopen Session",
         "description": "Clear ``closed_at`` per behavior doc \u00a7\"Reopen semantics\".",
-        "operationId": "reopen_session_api_sessions__session_id__reopen_post",
+        "operationId": "reopen-session",
         "parameters": [
           {
             "name": "session_id",
@@ -2927,7 +2927,7 @@
         ],
         "summary": "Update Session Viewed",
         "description": "Stamp ``last_viewed_at`` to now; broadcast the upsert.\n\nCalled by the frontend whenever the user selects a sidebar row or\nrefocuses the browser tab while a row is already selected. The\nbroadcast clears the unviewed amber dot on every other open tab /\nwindow within a single WebSocket tick.\n\n- ``404`` \u2014 session not found.\n- ``200`` \u2014 updated session row with a fresh ``last_viewed_at``.",
-        "operationId": "update_session_viewed_api_sessions__session_id__viewed_post",
+        "operationId": "mark-session-viewed",
         "parameters": [
           {
             "name": "session_id",
@@ -2970,7 +2970,7 @@
         ],
         "summary": "Resume Session",
         "description": "User-driven recovery from ERROR state.\n\nClears the ``error_pending`` flag in the DB and triggers a runner\nrespawn so the next user prompt can proceed. Per\n``docs/behavior/chat.md`` \u00a7\"Error states\" and ``TODO.md`` \u00a7\"POST\n/api/sessions/{id}/recover HTTP route\".\n\n- ``404`` \u2014 session not found.\n- ``200`` \u2014 session row returned with ``error_pending=False``; the\n  runner respawn is a side-effect (transparent to the caller).",
-        "operationId": "resume_session_api_sessions__session_id__recover_post",
+        "operationId": "recover-session",
         "parameters": [
           {
             "name": "session_id",
@@ -3013,7 +3013,7 @@
         ],
         "summary": "Get Paired Chat Info Route",
         "description": "Fetch paired-chat metadata for a chat session.\n\nPer ``docs/behavior/paired-chats.md`` \u00a7\"From the chat side\" \u2014 when a\nchat session is paired to a checklist item, the breadcrumb shows\n``<parent checklist title> > <item label>``. This endpoint returns\nthose two fields when a pairing exists, or ``None`` when the chat is\nunpaired.\n\nReturns 200 with ``{parent_title, item_label}`` when paired, or\n200 with ``null`` when unpaired or the session is absent. (Returning\n200 for both cases avoids the cognitive overhead of decoding a 404\nas \"not paired\" vs \"session missing\" \u2014 the UI reads the None value\nand hides the breadcrumb.)",
-        "operationId": "get_paired_chat_info_route_api_sessions__session_id__paired_chat_info_get",
+        "operationId": "get-session-paired-chat-info",
         "parameters": [
           {
             "name": "session_id",
@@ -3039,7 +3039,7 @@
                       "type": "null"
                     }
                   ],
-                  "title": "Response Get Paired Chat Info Route Api Sessions  Session Id  Paired Chat Info Get"
+                  "title": "Response Get-Session-Paired-Chat-Info"
                 }
               }
             }
@@ -3064,7 +3064,7 @@
         ],
         "summary": "List Session Tool Calls",
         "description": "Return persisted tool-call rows for the listed message ids.\n\nPer ``docs/behavior/chat.md`` \u00a7\"Tool-call hydration contract\" the\nconversation pane calls this endpoint once per fetched message page,\nalongside :func:`list_messages`, to populate tool-work drawer rows\non assistant turns whose events are no longer in the ring buffer.\n\n* ``200`` \u2014 list of :class:`ToolCallOut` (possibly empty).\n* ``404`` \u2014 session not found.\n\n``?message_ids=ID1&message_ids=ID2`` narrows the result to tool calls\nattached to the listed assistant message ids. Omitting the parameter\nreturns all tool calls for the session (useful for export / admin).\nTool calls are returned in insertion order (the order they executed\nwithin each turn).",
-        "operationId": "list_session_tool_calls_api_sessions__session_id__tool_calls_get",
+        "operationId": "list-session-tool-calls",
         "parameters": [
           {
             "name": "session_id",
@@ -3105,7 +3105,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ToolCallOut"
                   },
-                  "title": "Response List Session Tool Calls Api Sessions  Session Id  Tool Calls Get"
+                  "title": "Response List-Session-Tool-Calls"
                 }
               }
             }
@@ -3130,7 +3130,7 @@
         ],
         "summary": "Get Session Todos",
         "description": "Return the most-recent persisted ``TodoWrite`` payload for a session.\n\nPer ``docs/behavior/chat.md`` \u00a7\"LiveTodos hydration contract\" the\nconversation pane calls this once on session open to seed the\n``LiveTodos`` panel before any WebSocket event arrives.\n\n* ``200`` with :class:`SessionTodosOut` \u2014 ``todos_json`` is the\n  serialised ``todos`` array from the most-recent ``TodoWrite``\n  call's input, identical in shape to the ``todo_write_update``\n  WebSocket event's ``todos_json`` field.\n* ``200`` with ``null`` \u2014 session exists but has never emitted a\n  ``TodoWrite`` call.\n* ``404`` \u2014 session not found.\n\nReturning ``null`` (rather than ``404``) for a session with no\ntodos avoids the client having to distinguish \"session missing\"\nfrom \"no todos yet\" \u2014 the UI reads ``null`` and leaves the panel\nhidden.",
-        "operationId": "get_session_todos_api_sessions__session_id__todos_get",
+        "operationId": "get-session-todos",
         "parameters": [
           {
             "name": "session_id",
@@ -3156,7 +3156,7 @@
                       "type": "null"
                     }
                   ],
-                  "title": "Response Get Session Todos Api Sessions  Session Id  Todos Get"
+                  "title": "Response Get-Session-Todos"
                 }
               }
             }
@@ -3181,7 +3181,7 @@
         ],
         "summary": "Get Session System Prompt",
         "description": "Return the assembled system-prompt layer breakdown for a session.\n\nPer ``docs/behavior/chat.md`` \u00a7\"System-prompt layers contract\"\n(gap-cycle-13-004).  The Inspector Instructions tab calls this to\nrender the full set of layers the agent sees \u2014 baseline, project\nCLAUDE.md walk-up, tag memories, and per-session instructions.\n\n* ``200`` \u2014 :class:`SystemPromptLayersOut` with the ordered layer\n  list and total approximate token count.\n* ``404`` \u2014 session not found.\n\nLayer kinds in response order:\n\n1. ``session_instructions`` \u2014 omitted when ``None`` or empty.\n2. ``baseline`` \u2014 always present.\n3. ``project_claude_md`` \u2014 one row per CLAUDE.md found walking up\n   from the session's ``working_dir``; omitted section when none\n   found.\n4a. ``tag_claude_md`` \u2014 one row per tag-attached CLAUDE.md; omitted\n    section when none found.\n4b. ``tag_memory`` \u2014 one row per enabled ``tag_memories`` DB row;\n    ``source_path`` is always ``null``; omitted when none found.\n\nToken counts are approximated as ``len(body) // 4``; the response\ndocuments this via ``token_count_approximate: true``.",
-        "operationId": "get_session_system_prompt_api_sessions__session_id__system_prompt_get",
+        "operationId": "get-session-system-prompt",
         "parameters": [
           {
             "name": "session_id",
@@ -3224,7 +3224,7 @@
         ],
         "summary": "Get Session Tokens",
         "description": "Return aggregated lifetime token totals for a session.\n\nPer ``docs/behavior/chat.md`` \u00a7\"Token totals hydration contract\"\n(gap-cycle-13-003), the conversation pane calls this once on\nsession open alongside ``listMessagesPage`` / ``hydrateToolCalls`` /\n``hydrateTodos`` so the Inspector Metrics tab and the header\ndollar/token meter paint non-zero totals on first render instead of\nstarting from zero and waiting for WebSocket replay.\n\n* ``200`` \u2014 :class:`TokenTotalsOut` with ``input``, ``output``,\n  ``cache_read``, and ``cache_creation`` summed across all\n  assistant-role message rows for the session.  ``cache_creation``\n  is always ``0`` in v18 (no ``cache_creation_tokens`` column).\n* ``404`` \u2014 session not found.\n\nReturns ``0`` for all fields when the session exists but has no\nassistant turns yet (newly created session, first prompt not yet\ncompleted).",
-        "operationId": "get_session_tokens_api_sessions__session_id__tokens_get",
+        "operationId": "get-session-tokens",
         "parameters": [
           {
             "name": "session_id",
@@ -3267,7 +3267,7 @@
         ],
         "summary": "Export Session",
         "description": "Snapshot-export a session to a self-contained JSON blob.\n\nPer ``docs/behavior/sessions.md`` \u00a7\"Export contract\":\n\n* ``200`` \u2014 JSON body conforming to :class:`SessionExport`; the\n  ``Content-Disposition`` header carries a suggested download\n  filename ``<slug>.json`` derived from the session title.\n* ``404`` \u2014 session not found.\n\nClosed sessions are exportable \u2014 ``closed_at`` being set does not\nblock this endpoint (contrast with the prompt endpoint which returns\n409 on closed sessions).\n\nThe export body contains:\n\n* ``session`` \u2014 session row (``SessionOut`` shape).\n* ``messages`` \u2014 every message in chronological order.\n* ``tool_calls`` \u2014 raw SDK transcript entries (opaque blobs).\n* ``checkpoints`` \u2014 every checkpoint chronologically.\n* ``attachments`` \u2014 always ``[]`` in v0.18.x (no per-session upload\n  linking table yet).",
-        "operationId": "export_session_api_sessions__session_id__export_get",
+        "operationId": "export-session",
         "parameters": [
           {
             "name": "session_id",
@@ -3308,7 +3308,7 @@
         ],
         "summary": "Import Session",
         "description": "Restore a session from an export blob.\n\nPer ``docs/behavior/sessions.md`` \u00a7\"Import contract\":\n\n* ``201`` \u2014 session row (plus messages, tool_calls, checkpoints)\n  inserted; ``Location`` header points at the new row.\n* ``409`` \u2014 ``session_id`` already exists AND ``force=false``.\n  Pass ``?force=true`` to delete the existing row first and\n  reimport.\n* ``422`` \u2014 body does not parse as ``SessionExport`` or a field\n  fails DB-layer validation (e.g. unknown model name, bad kind).\n\n``checklist_item_id`` is cleared on import \u2014 the FK target\n(``checklist_items``) does not exist in the destination instance.\nRouting-decision columns default to ``auto/5/null`` because\n``SessionOut`` does not carry them.",
-        "operationId": "import_session_api_sessions_import_post",
+        "operationId": "import-session",
         "parameters": [
           {
             "name": "force",
@@ -3362,7 +3362,7 @@
         ],
         "summary": "Regenerate Session",
         "description": "Re-enqueue the latest user prompt for ``session_id``.\n\nPer arch \u00a71.1.5 the v1 regenerate surface \u2014 landed in the v1.1\nclosing-sweep. Semantics: the latest user-role message is replayed\nthrough :func:`dispatch_prompt`, which queues it behind any\nin-flight turn. The previous assistant turn is left in the\ntranscript; \"regenerate\" produces a new assistant turn alongside\nrather than replacing the old one.\n\nFailure modes mirror the prompt endpoint:\n\n* 404 \u2014 session missing OR session has no user messages yet to\n  regenerate from.\n* 409 \u2014 session closed (the prompt queue rejects).\n* 429 \u2014 rate limit (per-session window enforced by the same\n  limiter the prompt endpoint uses).\n\nReturns 202 with a JSON envelope echoing the queued state, mirror\nof the prompt endpoint's ack shape.",
-        "operationId": "regenerate_session_api_sessions__session_id__regenerate_post",
+        "operationId": "regenerate-session",
         "parameters": [
           {
             "name": "session_id",
@@ -3403,7 +3403,7 @@
         ],
         "summary": "Regenerate From Message",
         "description": "Truncate the transcript to the pivot user message and re-queue it.\n\nPer ``docs/behavior/chat.md`` \u00a7\"Regenerate from here\" (gap-cycle-03-006).\n\n``message_id`` must name an **assistant**-role turn in ``session_id``.\nThe endpoint:\n\n1. Validates ``message_id`` belongs to ``session_id`` with\n   ``role='assistant'``.\n2. Finds the user message immediately preceding it (the pivot).\n3. Deletes all messages with ``rowid > pivot.seq`` (the clicked\n   assistant turn plus any later messages).\n4. Re-dispatches the pivot user message content through\n   :func:`dispatch_prompt`.\n\nFailure modes:\n\n* ``404`` \u2014 session missing, message not found in session, or no\n  user message precedes the named assistant turn.\n* ``409`` \u2014 session closed (the prompt queue rejects).\n* ``422`` \u2014 ``message_id`` exists but is not an assistant turn.\n* ``429`` \u2014 rate limit (per-session window).\n\nReturns ``202`` with the same JSON envelope as the prompt endpoint.",
-        "operationId": "regenerate_from_message_api_sessions__session_id__regenerate_from__message_id__post",
+        "operationId": "regenerate-session-from-message",
         "parameters": [
           {
             "name": "session_id",
@@ -3453,7 +3453,7 @@
         ],
         "summary": "Stop Session Turn",
         "description": "Ask the runner to interrupt the current in-flight turn.\n\nCalls :meth:`SessionRunner.request_stop`, which sets the runner's\nstop event. The SDK loop's watcher coroutine detects the edge and\nforwards an interrupt to :meth:`AgentSession.interrupt` \u2192\n:meth:`ClaudeSDKClient.interrupt`.\n\nIdempotent: returns 204 even when no turn is running (the stop\nsignal will be picked up at the start of the next turn and cleared\nimmediately, or ignored if the queue is empty).\n\nFailure modes:\n\n* ``404`` \u2014 no session row found (prevents spurious stop on a\n  typo'd session id that has never existed).\n* ``503`` \u2014 the runner registry is not wired (misconfigured app).",
-        "operationId": "stop_session_turn_api_sessions__session_id__stop_post",
+        "operationId": "stop-session-turn",
         "parameters": [
           {
             "name": "session_id",
@@ -3489,7 +3489,7 @@
         ],
         "summary": "Prompt Session",
         "description": "Inject a user-role prompt into a session's queue.\n\nPer ``docs/behavior/prompt-endpoint.md`` \u00a7\"202 semantics\" the\nsuccess response is 202 Accepted with ``Location:\n/api/sessions/<id>``, body ``{queued: true, session_id: <id>}``.\nFailure modes per \u00a7\"Failure responses\": 400 (empty content / bad\nkind), 404 (session missing), 409 (closed), 422 (Pydantic\nvalidation), 429 (rate limit).\n\nThe 422 path is handled by FastAPI / Pydantic *before* this body\nruns (a non-string ``content`` or missing key surfaces as 422\nautomatically). The 400 + 404 + 409 + 429 paths are mapped from\n:class:`PromptDispatchOutcome` below.",
-        "operationId": "prompt_session_api_sessions__session_id__prompt_post",
+        "operationId": "prompt-session",
         "parameters": [
           {
             "name": "session_id",
@@ -3540,7 +3540,7 @@
         ],
         "summary": "Run Sessions Bulk",
         "description": "Atomic batch operation across multiple sessions.\n\nPer ``docs/behavior/sessions.md`` \u00a7\"Bulk operations contract\"\n(gap-cycle-13-001):\n\n* **close / delete / tag / untag** \u2014 executes in a single DB\n  transaction with per-ID savepoints; returns\n  ``{\"op\": ..., \"results\": [{session_id, ok, detail?}, \u2026]}`` with\n  HTTP 200. Inspect each ``ok`` field for partial failures.\n* **export** \u2014 read-only; returns\n  ``{\"sessions\": [SessionExport|null, \u2026]}`` as\n  ``application/json``.  A ``null`` entry means the session was not\n  found; callers filter those out before triggering the download.\n\n``tag_id`` is required for ``tag`` and ``untag`` ops. Missing\n``tag_id`` for those ops \u2192 422.\n\nUnknown ``op`` values \u2192 422. Empty ``session_ids`` \u2192 422 (Pydantic\nenforces ``min_length=1`` on the list field).",
-        "operationId": "run_sessions_bulk_api_sessions_bulk_post",
+        "operationId": "bulk-sessions",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3580,7 +3580,7 @@
         ],
         "summary": "Resolve Approval",
         "description": "Resolve a pending approval-modal request.\n\nThe SDK callback waiting on the broker future receives\n``payload.approved`` and translates it into a\n:class:`PermissionResultAllow` / :class:`PermissionResultDeny`\nSDK return value.",
-        "operationId": "resolve_approval_api_sessions__session_id__approvals__request_id__post",
+        "operationId": "resolve-approval",
         "parameters": [
           {
             "name": "session_id",
@@ -3635,7 +3635,7 @@
         ],
         "summary": "List Messages",
         "description": "List messages for ``session_id``, oldest first, with pagination.\n\nReturns a :class:`MessagePage` envelope: ``items`` in chronological\norder + ``has_more: bool`` indicating whether an older page exists.\n\nPagination contract (item 1.3):\n\n* Session-open: call with ``limit=N`` (no ``before``). Response\n  carries the *tail* N messages + ``has_more`` flag.\n* Load-older: call with ``limit=N`` + ``before=<seq>`` where\n  ``seq`` is the lowest ``seq`` value in the current view.\n  Each call walks one page further into the past.\n* Full-transcript (e.g. Inspector panel): omit both params.\n  ``has_more`` is always ``False`` in this case.\n\n404s if no session matches ``session_id``, distinguishing \"session\ndoes not exist\" from \"session has no messages\" (empty ``items`` is\na valid response for a freshly-created session).",
-        "operationId": "list_messages_api_sessions__session_id__messages_get",
+        "operationId": "list-messages",
         "parameters": [
           {
             "name": "session_id",
@@ -3717,7 +3717,7 @@
         ],
         "summary": "Get Message",
         "description": "Fetch a single message by id; 404 if absent.",
-        "operationId": "get_message_api_messages__message_id__get",
+        "operationId": "get-message",
         "parameters": [
           {
             "name": "message_id",
@@ -3758,7 +3758,7 @@
         ],
         "summary": "Delete Message",
         "description": "Delete a message by id (G3). 204 on success; 404 when absent.",
-        "operationId": "delete_message_api_messages__message_id__delete",
+        "operationId": "delete-message",
         "parameters": [
           {
             "name": "message_id",
@@ -3794,7 +3794,7 @@
         ],
         "summary": "Patch Message Pinned",
         "description": "Pin or unpin a message via ``PATCH /api/messages/{id}/pinned`` (G3).\n\n``{pinned: true}`` pins the bubble; ``{pinned: false}`` unpins it.\nIdempotent. Returns the updated message row. 404 when absent.",
-        "operationId": "patch_message_pinned_api_messages__message_id__pinned_patch",
+        "operationId": "patch-message-pinned",
         "parameters": [
           {
             "name": "message_id",
@@ -3847,7 +3847,7 @@
         ],
         "summary": "Patch Message Hidden",
         "description": "Show or hide a message from the context window (G3).\n\n``{hidden: true}`` drops the message from the next prompt context;\n``{hidden: false}`` restores it. Returns the updated row. 404 when absent.",
-        "operationId": "patch_message_hidden_api_messages__message_id__hidden_patch",
+        "operationId": "patch-message-hidden",
         "parameters": [
           {
             "name": "message_id",
@@ -3900,7 +3900,7 @@
         ],
         "summary": "Move Message",
         "description": "Re-parent a message to another session (G3).\n\nBody: ``{target_session_id: str}``. Returns the updated message row.\n404 when the message or target session is absent.",
-        "operationId": "move_message_api_messages__message_id__move_post",
+        "operationId": "move-message",
         "parameters": [
           {
             "name": "message_id",
@@ -3953,7 +3953,7 @@
         ],
         "summary": "Spawn Chat",
         "description": "Materialise a fresh paired chat for the leaf, or return existing pair.\n\nPer ``docs/behavior/paired-chats.md`` \u00a7\"Spawning a new pair\":\n\n1. First click \u2014 201 Created with the new session id, title, etc.\n2. Subsequent clicks on an already-paired item \u2014 200 OK with the\n   existing pair (idempotency clause).\n3. Parent items / unknown items \u2014 422 / 404 respectively.\n4. Working directory unresolvable from parent + tags \u2014 422.",
-        "operationId": "spawn_chat_api_checklist_items__item_id__spawn_chat_post",
+        "operationId": "spawn-paired-chat",
         "parameters": [
           {
             "name": "item_id",
@@ -4004,7 +4004,7 @@
         ],
         "summary": "Spawn From Reply",
         "description": "Create a paired chat seeded with a quote of the pivot assistant message.\n\nPer ``docs/behavior/paired-chats.md`` \u00a7\"Spawn from reply\":\n\n1. First click \u2014 201 Created with the new session id.\n2. Subsequent clicks on the same ``message_id`` while the spawned\n   chat is still open \u2014 200 OK with the existing session (idempotent).\n3. ``parent_id`` not found \u2014 404.\n4. ``message_id`` not found or does not belong to ``parent_id`` \u2014 404.\n5. ``message_id`` is not an assistant-role message \u2014 422 (only\n   assistant messages can be the pivot).",
-        "operationId": "spawn_from_reply_api_sessions__parent_id__spawn_from_reply__message_id__post",
+        "operationId": "spawn-session-from-reply",
         "parameters": [
           {
             "name": "parent_id",
@@ -4054,7 +4054,7 @@
         ],
         "summary": "List Tag Rules",
         "description": "Every routing rule attached to ``tag_id``, ordered by priority.",
-        "operationId": "list_tag_rules_api_tags__tag_id__routing_get",
+        "operationId": "list-tag-routing-rules",
         "parameters": [
           {
             "name": "tag_id",
@@ -4076,7 +4076,7 @@
                   "items": {
                     "$ref": "#/components/schemas/RoutingRuleOut"
                   },
-                  "title": "Response List Tag Rules Api Tags  Tag Id  Routing Get"
+                  "title": "Response List-Tag-Routing-Rules"
                 }
               }
             }
@@ -4099,7 +4099,7 @@
         ],
         "summary": "Create Tag Rule",
         "description": "Create a tag rule; 422 on bad shape, 404 if the tag does not exist.",
-        "operationId": "create_tag_rule_api_tags__tag_id__routing_post",
+        "operationId": "create-tag-routing-rule",
         "parameters": [
           {
             "name": "tag_id",
@@ -4152,7 +4152,7 @@
         ],
         "summary": "Update Tag Rule",
         "description": "Replace a tag rule's mutable fields; 404 if absent, 422 on bad shape.",
-        "operationId": "update_tag_rule_api_routing__rule_id__patch",
+        "operationId": "update-routing-rule",
         "parameters": [
           {
             "name": "rule_id",
@@ -4203,7 +4203,7 @@
         ],
         "summary": "Delete Tag Rule",
         "description": "Delete a tag rule; 404 if it didn't exist.",
-        "operationId": "delete_tag_rule_api_routing__rule_id__delete",
+        "operationId": "delete-routing-rule",
         "parameters": [
           {
             "name": "rule_id",
@@ -4239,7 +4239,7 @@
         ],
         "summary": "Reorder Tag Rules",
         "description": "Re-stamp priorities to match the supplied id order.",
-        "operationId": "reorder_tag_rules_api_tags__tag_id__routing_reorder_patch",
+        "operationId": "reorder-tag-routing-rules",
         "parameters": [
           {
             "name": "tag_id",
@@ -4271,7 +4271,7 @@
                   "items": {
                     "$ref": "#/components/schemas/RoutingRuleOut"
                   },
-                  "title": "Response Reorder Tag Rules Api Tags  Tag Id  Routing Reorder Patch"
+                  "title": "Response Reorder-Tag-Routing-Rules"
                 }
               }
             }
@@ -4296,7 +4296,7 @@
         ],
         "summary": "List System Rules",
         "description": "Every system rule, ordered by priority.",
-        "operationId": "list_system_rules_api_routing_system_get",
+        "operationId": "list-system-routing-rules",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -4307,7 +4307,7 @@
                     "$ref": "#/components/schemas/SystemRoutingRuleOut"
                   },
                   "type": "array",
-                  "title": "Response List System Rules Api Routing System Get"
+                  "title": "Response List-System-Routing-Rules"
                 }
               }
             }
@@ -4320,7 +4320,7 @@
         ],
         "summary": "Create System Rule",
         "description": "Create a user-added system rule (``seeded = 0``).",
-        "operationId": "create_system_rule_api_routing_system_post",
+        "operationId": "create-system-routing-rule",
         "requestBody": {
           "content": {
             "application/json": {
@@ -4362,7 +4362,7 @@
         ],
         "summary": "Update System Rule",
         "description": "Replace a system rule's mutable fields; preserves ``seeded``.",
-        "operationId": "update_system_rule_api_routing_system__rule_id__patch",
+        "operationId": "update-system-routing-rule",
         "parameters": [
           {
             "name": "rule_id",
@@ -4413,7 +4413,7 @@
         ],
         "summary": "Delete System Rule",
         "description": "Delete a system rule; 404 if it didn't exist.",
-        "operationId": "delete_system_rule_api_routing_system__rule_id__delete",
+        "operationId": "delete-system-routing-rule",
         "parameters": [
           {
             "name": "rule_id",
@@ -4449,7 +4449,7 @@
         ],
         "summary": "Preview Routing",
         "description": "Evaluate routing against the supplied tags + first message.\n\nThe new-session dialog calls this on every keystroke (debounced\n300ms per spec \u00a76) so the routing-preview line updates as the\nuser types. Body shape per spec \u00a79:\n``{ tags: [ids], message: \"...\" }``.\nResponse carries ``quota_downgrade_applied`` so the dialog can\nrender the yellow banner with the \"Use anyway\" override action.\n\nThe endpoint runs both ``evaluate`` (pure) and\n``apply_quota_guard`` (pure on top of the latest snapshot). If a\npoller is configured, ``poller.latest`` is the snapshot; otherwise\nthe route falls back to :func:`bearings.agent.quota.load_latest`.",
-        "operationId": "preview_routing_api_routing_preview_post",
+        "operationId": "preview-routing",
         "requestBody": {
           "content": {
             "application/json": {
@@ -4491,7 +4491,7 @@
         ],
         "summary": "Get Current",
         "description": "Most recent quota snapshot; 404 if the poller has never succeeded.\n\nThe poller's in-memory ``latest`` is preferred; the DB fallback\ncatches the case where the poller hasn't been started in this\nprocess (e.g. a test app, or a fresh restart before the first\nrefresh tick).",
-        "operationId": "get_current_api_quota_current_get",
+        "operationId": "get-quota-current",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -4513,7 +4513,7 @@
         ],
         "summary": "Refresh",
         "description": "Force one immediate poll; 502 if the upstream is unreachable.\n\nThe endpoint requires a configured poller (the fetcher is\npoller-owned). 503 when no poller is on ``app.state`` \u2014 this is\ndistinct from the 502-on-fetcher-failure case which means the\npoller exists but couldn't reach upstream.",
-        "operationId": "refresh_api_quota_refresh_post",
+        "operationId": "refresh-quota",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -4535,7 +4535,7 @@
         ],
         "summary": "Get History",
         "description": "Snapshots within ``days`` calendar days, oldest-first.",
-        "operationId": "get_history_api_quota_history_get",
+        "operationId": "get-quota-history",
         "parameters": [
           {
             "name": "days",
@@ -4562,7 +4562,7 @@
                   "items": {
                     "$ref": "#/components/schemas/QuotaSnapshotOut"
                   },
-                  "title": "Response Get History Api Quota History Get"
+                  "title": "Response Get-Quota-History"
                 }
               }
             }
@@ -4587,7 +4587,7 @@
         ],
         "summary": "Merge Session",
         "description": "Merge ``src_id`` into ``target`` in one atomic transaction.\n\nRe-parents every message from the source session to the destination,\nwrites a ``reorg_audit`` row (carrying the id of the first\nre-parented message as ``boundary_msg_id``), then deletes the source\nsession. Cascade deletes clean up the source's checkpoints, tags,\nsdk_session_entries, and other FK-linked rows.\n\nReturns 200 with the audit row on success.\nReturns 409 when ``src_id == target`` (self-merge).\nReturns 404 when either session does not exist.",
-        "operationId": "merge_session_api_sessions__src_id__reorg_merge_post",
+        "operationId": "reorg-merge-sessions",
         "parameters": [
           {
             "name": "src_id",
@@ -4641,7 +4641,7 @@
         ],
         "summary": "Fork Session",
         "description": "Split ``src_id`` at ``from_seq`` into ``target`` atomically.\n\nRe-parents all messages in ``src_id`` with ``rowid >= from_seq`` to\n``target`` in a single transaction and writes a ``kind='split'`` audit\nrow.  The divider will live in ``src_id``; ``target`` is the\ndestination that received the content.\n\nReturns 200 with the audit row and the list of moved message ids.\nReturns 409 when ``src_id == target`` (self-split is not permitted).\nReturns 404 when either session does not exist.",
-        "operationId": "fork_session_api_sessions__src_id__reorg_split_post",
+        "operationId": "reorg-split-session",
         "parameters": [
           {
             "name": "src_id",
@@ -4706,7 +4706,7 @@
         ],
         "summary": "Move Message",
         "description": "Move a single message from ``src_id`` to ``target`` atomically.\n\nRe-parents the message in a single transaction and writes a\n``kind='move'`` audit row.  The divider lives in ``src_id``.\n\nReturns 200 with the audit row.\nReturns 409 when ``src_id == target``.\nReturns 404 when either session or the message is not found in ``src_id``.",
-        "operationId": "move_message_api_sessions__src_id__reorg_move_post",
+        "operationId": "reorg-move-message",
         "parameters": [
           {
             "name": "src_id",
@@ -4771,7 +4771,7 @@
         ],
         "summary": "List Reorg Audits",
         "description": "Return all reorg audit rows for ``dst_id`` (all kinds), oldest-first.\n\n``dst_id`` is the session that hosts the divider for each kind.\nUsed by the frontend on conversation load to hydrate persistent\ndivider rows.  Returns an empty list when no reorg operations have\nbeen recorded for this session.",
-        "operationId": "list_reorg_audits_api_sessions__dst_id__reorg_audits_get",
+        "operationId": "list-reorg-audits",
         "parameters": [
           {
             "name": "dst_id",
@@ -4814,7 +4814,7 @@
         ],
         "summary": "Delete Reorg Audit",
         "description": "Atomically reverse any reorg operation and delete the audit row.\n\nDispatches based on the audit row's ``kind``:\n\n* ``merge``: re-creates the source session, moves merged messages back.\n* ``split``: moves split messages from the target back to ``dst_id``.\n* ``move``: moves the single message from the target back to ``dst_id``.\n\nReturns 200 with ``new_session_id`` on success.\nReturns 404 when ``audit_id`` is absent or does not belong to ``dst_id``.\nReturns 409 when the relevant session has been mutated since the operation.",
-        "operationId": "delete_reorg_audit_api_sessions__dst_id__reorg_audits__audit_id__delete",
+        "operationId": "undo-reorg",
         "parameters": [
           {
             "name": "dst_id",
@@ -4866,7 +4866,7 @@
         ],
         "summary": "Mark a pending operation as resolved",
         "description": "Removes the named entry from ``.bearings/pending.toml`` for the given project directory and persists the file. Returns 204 on success; 404 when the name is absent.",
-        "operationId": "resolve_pending_op_api_pending__name__resolve_post",
+        "operationId": "resolve-pending-op",
         "parameters": [
           {
             "name": "name",
@@ -4913,7 +4913,7 @@
         ],
         "summary": "Dismiss a pending operation",
         "description": "Removes the named entry from ``.bearings/pending.toml`` for the given project directory and persists the file. Behaviorally identical to the resolve endpoint. Returns 204 on success; 404 when the name is absent.",
-        "operationId": "delete_pending_op_api_pending__name__delete",
+        "operationId": "delete-pending-op",
         "parameters": [
           {
             "name": "name",
@@ -4960,7 +4960,7 @@
         ],
         "summary": "By Model",
         "description": "Token totals per model, split by executor/advisor role.\n\nAggregation: walks ``messages`` rows whose ``executor_model`` is\nset, summing the per-model token columns. Two pseudo-rows per\nmodel: one for the executor role, one for the advisor (when the\nadvisor was used on that turn). ``sessions`` is ``COUNT(DISTINCT\nsession_id)``.",
-        "operationId": "by_model_api_usage_by_model_get",
+        "operationId": "get-usage-by-model",
         "parameters": [
           {
             "name": "period",
@@ -4983,7 +4983,7 @@
                   "items": {
                     "$ref": "#/components/schemas/UsageByModelRow"
                   },
-                  "title": "Response By Model Api Usage By Model Get"
+                  "title": "Response Get-Usage-By-Model"
                 }
               }
             }
@@ -5008,7 +5008,7 @@
         ],
         "summary": "By Tag",
         "description": "Token totals per tag, joining ``session_tags`` to the messages.\n\nA session may carry multiple tags; this endpoint returns one row\nper (session, tag) pair, summed. The frontend then renders one row\nper tag with the per-tag total \u2014 multiple tags on the same\nsession count toward each tag, which matches the user-mental\nmodel (\"how much did I spend on architecture sessions?\").",
-        "operationId": "by_tag_api_usage_by_tag_get",
+        "operationId": "get-usage-by-tag",
         "parameters": [
           {
             "name": "period",
@@ -5031,7 +5031,7 @@
                   "items": {
                     "$ref": "#/components/schemas/UsageByTagRow"
                   },
-                  "title": "Response By Tag Api Usage By Tag Get"
+                  "title": "Response Get-Usage-By-Tag"
                 }
               }
             }
@@ -5056,7 +5056,7 @@
         ],
         "summary": "Override Rates",
         "description": "Per-rule override rates for the last ``days`` days (spec \u00a79).",
-        "operationId": "override_rates_api_usage_override_rates_get",
+        "operationId": "get-usage-override-rates",
         "parameters": [
           {
             "name": "days",
@@ -5083,7 +5083,7 @@
                   "items": {
                     "$ref": "#/components/schemas/OverrideRateOut"
                   },
-                  "title": "Response Override Rates Api Usage Override Rates Get"
+                  "title": "Response Get-Usage-Override-Rates"
                 }
               }
             }
@@ -5108,7 +5108,7 @@
         ],
         "summary": "Get Preferences",
         "description": "Return the singleton user-preferences row.",
-        "operationId": "get_preferences_api_preferences_get",
+        "operationId": "get-preferences",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5128,7 +5128,7 @@
         ],
         "summary": "Patch Preferences",
         "description": "Partially update user preferences.\n\nOnly fields present in the request body are written; omitted fields\nretain their current values.",
-        "operationId": "patch_preferences_api_preferences_patch",
+        "operationId": "patch-preferences",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5170,7 +5170,7 @@
         ],
         "summary": "Get Avatar",
         "description": "Serve the current avatar image bytes.\n\nReturns 404 when no avatar has been set. The response carries the\nstored MIME type; callers append ``?v=<updated_at>`` to the URL for\ncache-busting.",
-        "operationId": "get_avatar_api_preferences_avatar_get",
+        "operationId": "get-avatar",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5188,12 +5188,12 @@
         ],
         "summary": "Create Avatar",
         "description": "Create (or replace) the current avatar image.\n\nAccepts ``multipart/form-data`` with a single ``file`` field. The\nMIME type must be one of ``image/jpeg``, ``image/png``,\n``image/gif``, or ``image/webp``; anything else is rejected with\n415. The file may not exceed :data:`MAX_AVATAR_SIZE_BYTES`; a\nlarger body is rejected with 413.\n\nThe previous avatar (if any) is replaced atomically: the new file\nis written, then the DB row is updated.",
-        "operationId": "create_avatar_api_preferences_avatar_post",
+        "operationId": "create-avatar",
         "requestBody": {
           "content": {
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/Body_create_avatar_api_preferences_avatar_post"
+                "$ref": "#/components/schemas/Body_create-avatar"
               }
             }
           },
@@ -5228,7 +5228,7 @@
         ],
         "summary": "Delete Avatar",
         "description": "Remove the current avatar and clear the DB fields.\n\nReturns the updated preferences row. A no-op (no avatar set) is\ntreated as success (idempotent DELETE).",
-        "operationId": "delete_avatar_api_preferences_avatar_delete",
+        "operationId": "delete-avatar",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5250,7 +5250,7 @@
         ],
         "summary": "Refresh From System",
         "description": "Populate display_name and avatar from the running user environment.\n\n* ``display_name`` \u2190 ``$USER`` (falls back to ``$LOGNAME``, then\n  ``$USERNAME``; empty string is treated as \"not set\").\n* avatar \u2190 ``~/.face`` when that file exists and is \u2264\n  :data:`MAX_AVATAR_SIZE_BYTES`.  The MIME type is guessed from\n  the file's magic header (first 4 bytes); unrecognised formats\n  are stored with ``image/jpeg`` as the fallback.\n\nFields are written unconditionally \u2014 a subsequent sync always\nrefreshes both values. Returns the updated preferences row.",
-        "operationId": "refresh_from_system_api_preferences_sync_from_system_post",
+        "operationId": "sync-preferences-from-system",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5272,7 +5272,7 @@
         ],
         "summary": "List Commands",
         "description": "Return all discovered slash-commands from user + project locations.\n\nWhen ``cwd`` is supplied the project-commands scan is rooted there,\nso the response is scoped to that session's working directory.\nOmitting ``cwd`` preserves the previous behaviour (server process cwd).",
-        "operationId": "list_commands_api_commands_get",
+        "operationId": "list-commands",
         "parameters": [
           {
             "name": "cwd",
@@ -5303,7 +5303,7 @@
                   "items": {
                     "$ref": "#/components/schemas/CommandOut"
                   },
-                  "title": "Response List Commands Api Commands Get"
+                  "title": "Response List-Commands"
                 }
               }
             }
@@ -5328,7 +5328,7 @@
         ],
         "summary": "Search History",
         "description": "Search sessions and messages for ``q``.\n\nReturns up to :data:`~bearings.config.constants.HISTORY_SEARCH_RESULT_CAP`\nresults, sessions first. An empty or whitespace-only ``q`` returns ``[]``\nimmediately.",
-        "operationId": "search_history_api_history_search_get",
+        "operationId": "search-history",
         "parameters": [
           {
             "name": "q",
@@ -5352,7 +5352,7 @@
                   "items": {
                     "$ref": "#/components/schemas/HistorySearchResult"
                   },
-                  "title": "Response Search History Api History Search Get"
+                  "title": "Response Search-History"
                 }
               }
             }
@@ -5377,13 +5377,13 @@
         ],
         "summary": "Post Upload",
         "description": "Accept a multipart upload; store body + metadata; return the row.",
-        "operationId": "post_upload_api_uploads_post",
+        "operationId": "create-upload",
         "requestBody": {
           "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/Body_post_upload_api_uploads_post"
+                "$ref": "#/components/schemas/Body_create-upload"
               }
             }
           }
@@ -5417,7 +5417,7 @@
         ],
         "summary": "List Uploads",
         "description": "List uploads newest-first.",
-        "operationId": "list_uploads_api_uploads_get",
+        "operationId": "list-uploads",
         "parameters": [
           {
             "name": "limit",
@@ -5465,7 +5465,7 @@
         ],
         "summary": "Get Upload",
         "description": "Fetch one upload by id; 404 if absent.",
-        "operationId": "get_upload_api_uploads__upload_id__get",
+        "operationId": "get-upload",
         "parameters": [
           {
             "name": "upload_id",
@@ -5506,7 +5506,7 @@
         ],
         "summary": "Delete Upload",
         "description": "Remove the row + on-disk body; 404 if absent.",
-        "operationId": "delete_upload_api_uploads__upload_id__delete",
+        "operationId": "delete-upload",
         "parameters": [
           {
             "name": "upload_id",
@@ -5542,7 +5542,7 @@
         ],
         "summary": "Get Upload Content",
         "description": "Stream the on-disk body for ``upload_id``; 404 if absent.",
-        "operationId": "get_upload_content_api_uploads__upload_id__content_get",
+        "operationId": "get-upload-content",
         "parameters": [
           {
             "name": "upload_id",
@@ -5583,7 +5583,7 @@
         ],
         "summary": "Get List",
         "description": "List a directory under one of the configured allow-roots.",
-        "operationId": "get_list_api_fs_list_get",
+        "operationId": "fs-list",
         "parameters": [
           {
             "name": "path",
@@ -5628,7 +5628,7 @@
         ],
         "summary": "Get Read",
         "description": "Read a file's content as utf-8 text under one of the allow-roots.",
-        "operationId": "get_read_api_fs_read_get",
+        "operationId": "fs-read",
         "parameters": [
           {
             "name": "path",
@@ -5673,7 +5673,7 @@
         ],
         "summary": "Post Pick",
         "description": "Bootstrap a folder-picker session.\n\nValidates ``body.root`` (or ``$HOME`` when omitted), returns the\ndirectory listing, and issues a fresh ``token`` UUID the client\nuses to identify the picker session.  Subsequent navigation steps\nrepeat this endpoint with the new path \u2014 no separate traversal\nendpoint is needed.\n\nWhen ``fs.allow_roots`` is empty the endpoint accepts any path\nunder the user's home directory so the picker is usable on\ndefault installations.",
-        "operationId": "post_pick_api_fs_pick_post",
+        "operationId": "fs-pick",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5715,7 +5715,7 @@
         ],
         "summary": "Post Exec",
         "description": "Validate + dispatch ``payload.argv`` against the configured allowlist.",
-        "operationId": "post_exec_api_shell_exec_post",
+        "operationId": "shell-exec",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5757,7 +5757,7 @@
         ],
         "summary": "Get Server",
         "description": "Process-level diagnostics.",
-        "operationId": "get_server_api_diag_server_get",
+        "operationId": "get-server-diag",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5779,7 +5779,7 @@
         ],
         "summary": "Get Sessions",
         "description": "Per-runner snapshot.",
-        "operationId": "get_sessions_api_diag_sessions_get",
+        "operationId": "get-runner-diag",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5801,7 +5801,7 @@
         ],
         "summary": "Get Drivers",
         "description": "Per-auto-driver-run snapshot.\n\nReads only ``running`` / ``paused`` rows from ``auto_driver_runs``\nso the wire response reflects active runs (terminal rows live in\nthe table for audit but are not \"active\" diagnostics).",
-        "operationId": "get_drivers_api_diag_drivers_get",
+        "operationId": "get-driver-diag",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5823,7 +5823,7 @@
         ],
         "summary": "Get Quota Diag",
         "description": "Quota-poller status.",
-        "operationId": "get_quota_diag_api_diag_quota_get",
+        "operationId": "get-quota-diag",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5845,7 +5845,7 @@
         ],
         "summary": "Get Health",
         "description": "Return the health snapshot \u2014 200 always; readiness in body.",
-        "operationId": "get_health_api_health_get",
+        "operationId": "get-health",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5867,7 +5867,7 @@
         ],
         "summary": "Get Metrics",
         "description": "Render Prometheus 0.0.4 text exposition for the active app.",
-        "operationId": "get_metrics_metrics_get",
+        "operationId": "get-metrics",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5887,7 +5887,7 @@
         ],
         "summary": "Post Import Bearings",
         "description": "Import all data from the original Bearings database.\n\nReads from ~/.local/share/bearings/db.sqlite and copies all sessions,\nmessages, tags, and related data into the current Bearings-v1 database.\n\nRows with duplicate IDs are silently skipped (INSERT OR IGNORE).\nThe entire operation is wrapped in a transaction \u2014 on any error,\nthe import rolls back completely.\n\nReturns:\n    ImportResultOut with counts of imported/skipped rows per table.\n    If errors occurred, they are listed in the errors field (but\n    the operation was rolled back, so no partial state persists).\n\nRaises:\n    404: If the source database file does not exist\n    503: If db_connection is not configured on app.state",
-        "operationId": "post_import_bearings_api_import_bearings_post",
+        "operationId": "import-bearings-db",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -6111,7 +6111,7 @@
         "title": "AutoDriverRunOut",
         "description": "Response shape for the auto-driver run row."
       },
-      "Body_create_avatar_api_preferences_avatar_post": {
+      "Body_create-avatar": {
         "properties": {
           "file": {
             "type": "string",
@@ -6124,9 +6124,9 @@
         "required": [
           "file"
         ],
-        "title": "Body_create_avatar_api_preferences_avatar_post"
+        "title": "Body_create-avatar"
       },
-      "Body_post_upload_api_uploads_post": {
+      "Body_create-upload": {
         "properties": {
           "file": {
             "type": "string",
@@ -6139,7 +6139,7 @@
         "required": [
           "file"
         ],
-        "title": "Body_post_upload_api_uploads_post"
+        "title": "Body_create-upload"
       },
       "BulkSessionsIn": {
         "properties": {

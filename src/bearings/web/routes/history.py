@@ -167,7 +167,11 @@ async def _search(q: str, db: aiosqlite.Connection) -> list[HistorySearchResult]
     return results
 
 
-@router.get("/api/history/search", response_model=list[HistorySearchResult])
+@router.get(
+    "/api/history/search",
+    response_model=list[HistorySearchResult],
+    operation_id="search-history",
+)
 async def search_history(
     request: Request,
     q: Annotated[str, Query(description="Search term (case-insensitive substring match).")],

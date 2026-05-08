@@ -67,6 +67,7 @@ def _to_out(memory: TagMemory) -> TagMemoryOut:
     "/api/tags/{tag_id}/memories",
     status_code=status.HTTP_201_CREATED,
     response_model=TagMemoryOut,
+    operation_id="create-tag-memory",
 )
 async def create_memory(
     tag_id: int,
@@ -96,6 +97,7 @@ async def create_memory(
 @router.get(
     "/api/tags/{tag_id}/memories",
     response_model=list[TagMemoryOut],
+    operation_id="list-tag-memories",
 )
 async def list_memories_for_tag(
     tag_id: int,
@@ -114,6 +116,7 @@ async def list_memories_for_tag(
 @router.get(
     "/api/memories",
     response_model=list[AllMemoriesOut],
+    operation_id="list-all-memories",
 )
 async def list_all_memories(
     request: Request,
@@ -148,7 +151,7 @@ async def list_all_memories(
     ]
 
 
-@router.get("/api/memories/{memory_id}", response_model=TagMemoryOut)
+@router.get("/api/memories/{memory_id}", response_model=TagMemoryOut, operation_id="get-memory")
 async def get_memory(memory_id: int, request: Request) -> TagMemoryOut:
     """Fetch one memory; 404 if absent."""
     db = _db(request)
@@ -160,7 +163,11 @@ async def get_memory(memory_id: int, request: Request) -> TagMemoryOut:
     return _to_out(memory)
 
 
-@router.patch("/api/memories/{memory_id}", response_model=TagMemoryOut)
+@router.patch(
+    "/api/memories/{memory_id}",
+    response_model=TagMemoryOut,
+    operation_id="update-memory",
+)
 async def update_memory(
     memory_id: int,
     payload: TagMemoryIn,
@@ -190,6 +197,7 @@ async def update_memory(
 @router.delete(
     "/api/memories/{memory_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="delete-memory",
 )
 async def delete_memory(memory_id: int, request: Request) -> None:
     """Delete one memory; 404 if absent."""

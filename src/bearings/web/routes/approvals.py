@@ -35,6 +35,7 @@ router = APIRouter()
 @router.post(
     "/api/sessions/{session_id}/approvals/{request_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="resolve-approval",
 )
 async def resolve_approval(
     session_id: str,
