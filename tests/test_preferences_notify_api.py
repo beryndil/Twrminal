@@ -9,6 +9,8 @@ Acceptance criteria covered:
 4. Omitting ``notify_on_complete`` from a PATCH leaves the current value
    unchanged (Pydantic model_fields_set semantics).
 5. Existing PreferencesOut consumers are not broken (other fields present).
+
+CCW-2 / feature-8-003: PATCH with null returns 422 (column is NOT NULL).
 """
 
 from __future__ import annotations
@@ -140,3 +142,19 @@ def test_existing_fields_present_alongside_notify(app_client: TestClient) -> Non
         "notify_on_complete",
     ):
         assert field in payload, f"missing field: {field}"
+
+
+# ---------------------------------------------------------------------------
+# CCW-2 / feature-8-003 — null rejected; column is NOT NULL DEFAULT 0
+# ---------------------------------------------------------------------------
+
+
+def test_patch_notify_on_complete_null_returns_422(app_client: TestClient) -> None:
+    """PATCH with explicit null for notify_on_complete must return 422.
+
+    The column is NOT NULL; the Pydantic type is now ``bool`` (no None),
+    so Pydantic rejects the null at the wire boundary before the DB layer
+    is reached.
+    """
+    response = app_client.patch("/api/preferences", json={"notify_on_complete": None})
+    assert response.status_code == 422

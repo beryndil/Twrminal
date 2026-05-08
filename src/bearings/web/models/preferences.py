@@ -3,7 +3,11 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from bearings.config.constants import DISPLAY_NAME_MAX_LENGTH
 
 
 class PreferencesOut(BaseModel):
@@ -45,9 +49,13 @@ class PreferencesPatch(BaseModel):
     # endpoint; avatar_path / avatar_mime_type are managed by the
     # dedicated avatar upload/delete/sync routes only and are therefore
     # NOT exposed here (prevents a caller from writing an arbitrary path).
-    display_name: str | None = None
+    # CCW-2 / feature-8-002: enforce DISPLAY_NAME_MAX_LENGTH at the wire
+    # boundary so PATCH behaves identically to sync_from_system truncation.
+    display_name: Annotated[str | None, Field(max_length=DISPLAY_NAME_MAX_LENGTH)] = None
     # gap-cycle-07-001: desktop-notification opt-in.
-    notify_on_complete: bool | None = None
+    # CCW-2 / feature-8-003: column is NOT NULL DEFAULT 0; null is never
+    # legitimate — tighten to bool so Pydantic rejects {"notify_on_complete": null}.
+    notify_on_complete: bool = False
 
     # Tracks which fields the caller explicitly set so the route can
     # distinguish "caller sent null" from "caller omitted the field".

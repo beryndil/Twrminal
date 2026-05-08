@@ -9,6 +9,8 @@ Covers acceptance criteria:
 5. ``POST /api/preferences/sync_from_system`` with fixture HOME.
 6. Upload rejects unsupported MIME (415) and oversized body (413).
 7. ``GET /api/preferences/avatar`` returns 404 when no avatar is set.
+
+CCW-2 / feature-8-002: display_name max-length enforced at PATCH boundary.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ import aiosqlite
 import pytest
 from fastapi.testclient import TestClient
 
+from bearings.config.constants import DISPLAY_NAME_MAX_LENGTH
 from bearings.db import get_connection_factory, load_schema
 from bearings.web.app import create_app
 
@@ -321,3 +324,29 @@ def test_patch_preferences_clears_display_name(
     response = client.patch("/api/preferences", json={"display_name": None})
     assert response.status_code == 200
     assert response.json()["display_name"] is None
+
+
+# ---------------------------------------------------------------------------
+# CCW-2 / feature-8-002 — display_name max-length enforced at PATCH
+# ---------------------------------------------------------------------------
+
+
+def test_patch_display_name_at_max_length_succeeds(
+    app_client: tuple[TestClient, Path],
+) -> None:
+    """PATCH with exactly DISPLAY_NAME_MAX_LENGTH chars returns 200."""
+    client, _ = app_client
+    name_at_limit = "A" * DISPLAY_NAME_MAX_LENGTH
+    response = client.patch("/api/preferences", json={"display_name": name_at_limit})
+    assert response.status_code == 200
+    assert response.json()["display_name"] == name_at_limit
+
+
+def test_patch_display_name_over_max_length_returns_422(
+    app_client: tuple[TestClient, Path],
+) -> None:
+    """PATCH with DISPLAY_NAME_MAX_LENGTH+1 chars returns 422 (validator drift fix)."""
+    client, _ = app_client
+    name_over_limit = "A" * (DISPLAY_NAME_MAX_LENGTH + 1)
+    response = client.patch("/api/preferences", json={"display_name": name_over_limit})
+    assert response.status_code == 422

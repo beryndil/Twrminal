@@ -99,7 +99,7 @@ async def patch_preferences(
     display_name: str | None = None,
     avatar_path: str | None = None,
     avatar_mime_type: str | None = None,
-    notify_on_complete: bool | None = None,
+    notify_on_complete: bool = False,
     fields: frozenset[str] = frozenset(),
 ) -> Preferences:
     """Update the singleton row with only the fields named in ``fields``.
@@ -155,7 +155,7 @@ async def patch_preferences(
     _add_prefs_update(
         updates, params, "avatar_mime_type" in fields, "avatar_mime_type", avatar_mime_type
     )
-    if "notify_on_complete" in fields and notify_on_complete is not None:
+    if "notify_on_complete" in fields:
         updates.append("notify_on_complete = ?")
         params.append(1 if notify_on_complete else 0)
 
