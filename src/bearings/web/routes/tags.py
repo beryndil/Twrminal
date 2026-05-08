@@ -57,7 +57,7 @@ def _broadcaster(request: Request) -> SessionsBroadcaster | None:
     that construct a minimal app without a DB); callers guard on
     ``if broadcaster is not None`` before publishing.
     """
-    from bearings.web.routes.ws_sessions import SessionsBroadcaster as _SB  # noqa: PLC0415
+    from bearings.web.routes.ws_sessions import SessionsBroadcaster as _SB
 
     return cast(
         _SB | None,

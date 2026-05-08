@@ -67,7 +67,7 @@ page now wraps it in the index/editor shell rather than rendering it
 at the top level. Its internal behavior (tag selector, CRUD form,
 enabled toggle, validation) is unchanged.
 
-The ``initialTagId`` prop pre-selects a tag on mount (existing).
+The ``initialTagId`` prop preselects a tag on mount (existing).
 The ``initialMemoryId`` prop (added gap-cycle-13-007) auto-opens a
 specific memory for editing once the memories list has loaded; consumed
 once, then cleared.

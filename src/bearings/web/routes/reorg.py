@@ -108,7 +108,7 @@ async def merge_session(
     response_model=ReorgSplitOut,
     status_code=status.HTTP_200_OK,
 )
-async def split_session(
+async def fork_session(
     src_id: str,
     request: Request,
     target: str = Query(..., description="Destination session id"),
@@ -207,7 +207,7 @@ async def list_reorg_audits(
     response_model=UndoReorgOut,
     status_code=status.HTTP_200_OK,
 )
-async def undo_reorg_audit(
+async def delete_reorg_audit(
     dst_id: str,
     audit_id: str,
     request: Request,

@@ -4639,9 +4639,9 @@
         "tags": [
           "reorg"
         ],
-        "summary": "Split Session",
+        "summary": "Fork Session",
         "description": "Split ``src_id`` at ``from_seq`` into ``target`` atomically.\n\nRe-parents all messages in ``src_id`` with ``rowid >= from_seq`` to\n``target`` in a single transaction and writes a ``kind='split'`` audit\nrow.  The divider will live in ``src_id``; ``target`` is the\ndestination that received the content.\n\nReturns 200 with the audit row and the list of moved message ids.\nReturns 409 when ``src_id == target`` (self-split is not permitted).\nReturns 404 when either session does not exist.",
-        "operationId": "split_session_api_sessions__src_id__reorg_split_post",
+        "operationId": "fork_session_api_sessions__src_id__reorg_split_post",
         "parameters": [
           {
             "name": "src_id",
@@ -4812,9 +4812,9 @@
         "tags": [
           "reorg"
         ],
-        "summary": "Undo Reorg Audit",
+        "summary": "Delete Reorg Audit",
         "description": "Atomically reverse any reorg operation and delete the audit row.\n\nDispatches based on the audit row's ``kind``:\n\n* ``merge``: re-creates the source session, moves merged messages back.\n* ``split``: moves split messages from the target back to ``dst_id``.\n* ``move``: moves the single message from the target back to ``dst_id``.\n\nReturns 200 with ``new_session_id`` on success.\nReturns 404 when ``audit_id`` is absent or does not belong to ``dst_id``.\nReturns 409 when the relevant session has been mutated since the operation.",
-        "operationId": "undo_reorg_audit_api_sessions__dst_id__reorg_audits__audit_id__delete",
+        "operationId": "delete_reorg_audit_api_sessions__dst_id__reorg_audits__audit_id__delete",
         "parameters": [
           {
             "name": "dst_id",
@@ -5186,14 +5186,14 @@
         "tags": [
           "preferences"
         ],
-        "summary": "Upload Avatar",
-        "description": "Upload a new avatar image.\n\nAccepts ``multipart/form-data`` with a single ``file`` field. The\nMIME type must be one of ``image/jpeg``, ``image/png``,\n``image/gif``, or ``image/webp``; anything else is rejected with\n415. The file may not exceed :data:`MAX_AVATAR_SIZE_BYTES`; a\nlarger body is rejected with 413.\n\nThe previous avatar (if any) is replaced atomically: the new file\nis written, then the DB row is updated.",
-        "operationId": "upload_avatar_api_preferences_avatar_post",
+        "summary": "Create Avatar",
+        "description": "Create (or replace) the current avatar image.\n\nAccepts ``multipart/form-data`` with a single ``file`` field. The\nMIME type must be one of ``image/jpeg``, ``image/png``,\n``image/gif``, or ``image/webp``; anything else is rejected with\n415. The file may not exceed :data:`MAX_AVATAR_SIZE_BYTES`; a\nlarger body is rejected with 413.\n\nThe previous avatar (if any) is replaced atomically: the new file\nis written, then the DB row is updated.",
+        "operationId": "create_avatar_api_preferences_avatar_post",
         "requestBody": {
           "content": {
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/Body_upload_avatar_api_preferences_avatar_post"
+                "$ref": "#/components/schemas/Body_create_avatar_api_preferences_avatar_post"
               }
             }
           },
@@ -5248,9 +5248,9 @@
         "tags": [
           "preferences"
         ],
-        "summary": "Sync From System",
+        "summary": "Refresh From System",
         "description": "Populate display_name and avatar from the running user environment.\n\n* ``display_name`` \u2190 ``$USER`` (falls back to ``$LOGNAME``, then\n  ``$USERNAME``; empty string is treated as \"not set\").\n* avatar \u2190 ``~/.face`` when that file exists and is \u2264\n  :data:`MAX_AVATAR_SIZE_BYTES`.  The MIME type is guessed from\n  the file's magic header (first 4 bytes); unrecognised formats\n  are stored with ``image/jpeg`` as the fallback.\n\nFields are written unconditionally \u2014 a subsequent sync always\nrefreshes both values. Returns the updated preferences row.",
-        "operationId": "sync_from_system_api_preferences_sync_from_system_post",
+        "operationId": "refresh_from_system_api_preferences_sync_from_system_post",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -6111,6 +6111,21 @@
         "title": "AutoDriverRunOut",
         "description": "Response shape for the auto-driver run row."
       },
+      "Body_create_avatar_api_preferences_avatar_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "Avatar image file."
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_create_avatar_api_preferences_avatar_post"
+      },
       "Body_post_upload_api_uploads_post": {
         "properties": {
           "file": {
@@ -6125,21 +6140,6 @@
           "file"
         ],
         "title": "Body_post_upload_api_uploads_post"
-      },
-      "Body_upload_avatar_api_preferences_avatar_post": {
-        "properties": {
-          "file": {
-            "type": "string",
-            "contentMediaType": "application/octet-stream",
-            "title": "File",
-            "description": "Avatar image file."
-          }
-        },
-        "type": "object",
-        "required": [
-          "file"
-        ],
-        "title": "Body_upload_avatar_api_preferences_avatar_post"
       },
       "BulkSessionsIn": {
         "properties": {

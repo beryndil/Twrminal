@@ -536,7 +536,7 @@ def test_execute_probe_retry_success_on_second_attempt(
     probe = Probe(name="health", path="/api/health", accepted_status_codes=frozenset({200}))
     call_count = 0
 
-    def fake_urlopen(req: object, **_kw: object) -> _FakeResponse:
+    def fake_urlopen(_req: object, **_kw: object) -> _FakeResponse:
         nonlocal call_count
         call_count += 1
         if call_count == 1:
@@ -564,7 +564,7 @@ def test_execute_probe_retry_all_attempts_exhausted(
     probe = Probe(name="health", path="/api/health", accepted_status_codes=frozenset({200}))
     call_count = 0
 
-    def fake_urlopen(req: object, **_kw: object) -> _FakeResponse:
+    def fake_urlopen(_req: object, **_kw: object) -> _FakeResponse:
         nonlocal call_count
         call_count += 1
         raise urllib.error.URLError("Connection refused")
@@ -594,7 +594,7 @@ def test_execute_probe_retry_http_503_then_200(
     probe = Probe(name="health", path="/api/health", accepted_status_codes=frozenset({200}))
     call_count = 0
 
-    def fake_urlopen(req: object, **_kw: object) -> _FakeResponse:
+    def fake_urlopen(_req: object, **_kw: object) -> _FakeResponse:
         nonlocal call_count
         call_count += 1
         if call_count == 1:

@@ -1,0 +1,71 @@
+# Feature 12 — Quality gate stack — verification log
+
+Verifier session: 7416adca632348afaed74eba15bae381
+Started: 2026-05-07
+Callback target: dbeeec369cb84db78ba88f0ec2a07b83
+
+## Read trail
+
+- `.v1-ship/runbooks/verifier.md` (full)
+- `V1_FEATURE_AUDIT.md` §"### 12. Quality gate stack" (lines 517–555)
+- `.pre-commit-config.yaml` (full, 208 lines)
+- `.github/workflows/ci.yml` (full, 244 lines)
+- `pyproject.toml` (full, 186 lines)
+- `frontend/package.json` (full, 57 lines)
+- `git log --oneline -20` — no quality-gate-related commits since audit
+- `Glob .githooks-v1/*` — only `pre-commit` and `post-commit` shims; no `commit-msg`
+- `Grep xenon` — only mentioned in V1_FEATURE_AUDIT.md (not adopted)
+- `Grep commitlint|commit-msg` — only audit + `default_install_hook_types` line
+- `Grep pre-commit-hooks` in `.pre-commit-config.yaml` — no matches
+
+## Per-finding evidence
+
+### F1 — radon `--fail-on` missing → switch to xenon
+- `.pre-commit-config.yaml:104` still `uv run radon cc -s -n B src`
+- `.github/workflows/ci.yml:63` still `uv run radon cc -s -n B src`
+- No xenon dep in `pyproject.toml [project.optional-dependencies] dev`
+- Verdict: STILL_OPEN. `radon cc -n` filters display rank but does NOT fail
+  the process; gate is cosmetic exactly as audited.
+
+### F2 — CI mypy misses scripts/
+- `.pre-commit-config.yaml:68` `args: ["src", "tests", "scripts"]`
+- `.github/workflows/ci.yml:57` `run: uv run mypy src tests`
+- `pyproject.toml:106` `files = ["src", "tests", "scripts"]`
+- mypy CLI args override `[tool.mypy] files=` when given explicitly. CI
+  command lacks `scripts`; pre-commit has it. Drift confirmed.
+- Verdict: STILL_OPEN.
+
+### F3 — ts-prune EOL / TS 5.x incompatible
+- `.pre-commit-config.yaml:180-185` `frontend-ts-prune` hook present
+- `.github/workflows/ci.yml:134-137` `ts-prune` step present
+- `frontend/package.json:16` `"ts-prune": "ts-prune --ignore '...'"` script present
+- `frontend/package.json:47` `"ts-prune": "^0.10.3"` devDep present
+- Verdict: STILL_OPEN.
+
+### F4 — pre-commit/pre-commit-hooks standard suite missing
+- `.pre-commit-config.yaml` has zero `repo: https://github.com/pre-commit/pre-commit-hooks` block
+- None of: check-yaml, check-toml, check-json, end-of-file-fixer,
+  trailing-whitespace, check-merge-conflict, check-added-large-files
+- Verdict: STILL_OPEN.
+
+### F5 — Vestigial `commit-msg` in default_install_hook_types
+- `.pre-commit-config.yaml:17` `default_install_hook_types: [pre-commit, commit-msg]`
+- No hook in the file declares `stages: [commit-msg]`
+- `.githooks-v1/` only contains `pre-commit` and `post-commit` shims (no commit-msg)
+- No commitlint config / dep / npm script anywhere
+- Verdict: STILL_OPEN.
+
+### F6 — Ruff missing N (pep8-naming)
+- `pyproject.toml:84` `select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "ASYNC"]`
+- No `"N"` entry; no `extend-select` containing N either.
+- Verdict: STILL_OPEN.
+
+### F7 — pip-audit `always_run: true` (network on every commit)
+- `.pre-commit-config.yaml:138-145` `always_run: true` with no `files:` gate
+- Audit recommends gating on `pyproject.toml` / `uv.lock` changes
+- Verdict: STILL_OPEN.
+
+## Tally
+
+7 findings audited; 7 STILL_OPEN; 0 FIXED_SINCE_AUDIT; 0 SUPERSEDED.
+No "discovered during verification" extras surfaced.

@@ -97,11 +97,11 @@ def test_get_preferences_includes_profile_fields(
 
 
 # ---------------------------------------------------------------------------
-# 2. POST /api/preferences/avatar — upload round-trip
+# 2. POST /api/preferences/avatar — create/replace round-trip
 # ---------------------------------------------------------------------------
 
 
-def test_upload_avatar_returns_updated_prefs(
+def test_create_avatar_returns_updated_prefs(
     app_client: tuple[TestClient, Path],
 ) -> None:
     client, avatars_root = app_client
@@ -117,7 +117,7 @@ def test_upload_avatar_returns_updated_prefs(
     assert (avatars_root / "current").read_bytes() == _JPEG_1X1
 
 
-def test_upload_avatar_replaces_previous(
+def test_create_avatar_replaces_previous(
     app_client: tuple[TestClient, Path],
 ) -> None:
     client, avatars_root = app_client
@@ -197,7 +197,7 @@ def test_delete_avatar_idempotent(
 # ---------------------------------------------------------------------------
 
 
-def test_sync_from_system_sets_display_name(
+def test_refresh_from_system_sets_display_name(
     app_client: tuple[TestClient, Path],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -215,7 +215,7 @@ def test_sync_from_system_sets_display_name(
     assert payload["avatar_url"] is None
 
 
-def test_sync_from_system_copies_face_file(
+def test_refresh_from_system_copies_face_file(
     app_client: tuple[TestClient, Path],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -240,7 +240,7 @@ def test_sync_from_system_copies_face_file(
     assert avatar_response.content == _PNG_1X1
 
 
-def test_sync_from_system_fallback_logname(
+def test_refresh_from_system_fallback_logname(
     app_client: tuple[TestClient, Path],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -257,11 +257,11 @@ def test_sync_from_system_fallback_logname(
 
 
 # ---------------------------------------------------------------------------
-# 6. Upload validation — 415 and 413
+# 6. Create avatar validation — 415 and 413
 # ---------------------------------------------------------------------------
 
 
-def test_upload_avatar_415_on_unsupported_mime(
+def test_create_avatar_415_on_unsupported_mime(
     app_client: tuple[TestClient, Path],
 ) -> None:
     client, _ = app_client
@@ -272,7 +272,7 @@ def test_upload_avatar_415_on_unsupported_mime(
     assert response.status_code == 415
 
 
-def test_upload_avatar_413_on_oversized_body(
+def test_create_avatar_413_on_oversized_body(
     app_client: tuple[TestClient, Path],
 ) -> None:
     """Body > 2 MiB should be rejected."""
@@ -285,7 +285,7 @@ def test_upload_avatar_413_on_oversized_body(
     assert response.status_code == 413
 
 
-def test_upload_avatar_400_on_empty_body(
+def test_create_avatar_400_on_empty_body(
     app_client: tuple[TestClient, Path],
 ) -> None:
     client, _ = app_client

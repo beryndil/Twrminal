@@ -1,0 +1,89 @@
+# Feature 11 — Reliability & dogfood — Verifier audit log
+
+Verifier session: e634923c60e34ea999d931695192b285
+Callback target (orchestrator): dbeeec369cb84db78ba88f0ec2a07b83
+HEAD: 0036f7c1 docs(routing): resolve spec internal inconsistencies
+
+## Inputs read
+
+- `V1_FEATURE_AUDIT.md` §"### 11. Reliability & dogfood (INTERIM)" — five findings.
+- `scripts/daily_probe.py` (370 lines) — full module.
+- `scripts/diff_probe.py` (780 lines) — full module.
+- `scripts/cutover_smoke.py` (734 lines) — full module.
+- `config/bearings-v1-probe.service`, `config/bearings-v1-probe.timer`.
+- `docs/behavior/` directory listing (14 .md files).
+- `tests/` directory listing (~95 test_*.py files).
+
+## Per-finding verification trail
+
+### Finding 1 — `tests/test_daily_probe.py` is missing
+
+- `Glob: tests/test_*probe*.py` → only `tests/test_diff_probe.py`.
+- `ls tests/test_daily_probe.py` → "No such file or directory".
+- `git log --all -- tests/test_daily_probe.py` → empty (file never existed in repo history).
+- `daily_probe.py` exposes pure-function decomposition the audit named:
+  - `run_probes` (line 229)
+  - `write_log` (line 258)
+  - `render_human` (line 295)
+  - `_result_to_jsonl` (line 243)
+  All are unit-testable; identical shape to `diff_probe.py` which IS covered by
+  `tests/test_diff_probe.py`.
+- Verdict: STILL_OPEN.
+
+### Finding 2 — `docs/behavior/routing.md` does not exist
+
+- `Glob: docs/behavior/*.md` → 14 files, none named `routing.md`:
+  prompt-endpoint, checklists, paired-chats, bearings-cli, tool-output-streaming,
+  vault, modals, keyboard-shortcuts, sessions, chat, memories, themes,
+  preferences, context-menus.
+- `ls docs/behavior/routing.md` → "No such file or directory".
+- `git log --all -- docs/behavior/routing.md` → empty (never existed).
+- Dangling refs confirmed:
+  - `scripts/daily_probe.py:33` — `"per ``docs/behavior/routing.md`` §\"Quota guard\""`.
+  - `scripts/cutover_smoke.py:173` — `"# docs/behavior/routing.md §\"Quota guard\""`.
+- "Quota guard" anchor exists in `docs/model-routing-v1-spec.md` (different file)
+  — confirms the script comments meant a behavior doc that was never created.
+- Verdict: STILL_OPEN.
+
+### Finding 3 — `diff_probe.py` has no systemd service/timer
+
+- `ls config/` → `bearings-v1.service`, `bearings-v1-probe.service`,
+  `bearings-v1-probe.timer`, `allowlists/` only. No `*diff*` units.
+- `grep -rn "diff_probe" config/` → empty.
+- `bearings-v1-probe.service` line 35 → `ExecStart=/usr/bin/python3 .../scripts/daily_probe.py`.
+  No `ExecStartPost=` chain. The unit only invokes `daily_probe.py`.
+- `diff_probe.py` is therefore manual-only (CLI-invoked via `python3 scripts/diff_probe.py`).
+- Verdict: STILL_OPEN.
+
+### Finding 4 — No retry before FAIL
+
+- `_execute_probe()` in `daily_probe.py` (lines 157-226) is a single
+  `urllib.request.urlopen(...)` call inside one `try` block. No retry loop, no
+  `failure_threshold`, no exponential backoff.
+- `Probe` dataclass (line 94) has only `name`, `path`, `accepted_status_codes` —
+  no `failure_threshold` field.
+- A `bearings-v1.service` restart overlapping the 09:15±5min window (per
+  `bearings-v1-probe.timer:18 RandomizedDelaySec=5min`) produces an immediate
+  `url_error reason='Connection refused'` and exit 1 → FAIL log entry.
+- Verdict: STILL_OPEN.
+
+### Finding 5 — No log retention policy
+
+- `daily_probe.py` `_build_arg_parser()` (lines 313-346) declares only
+  `--base-url`, `--log-dir`, `--timeout`, `-q/--quiet`. No `--max-age-days`,
+  `--retention-days`, or any cleanup flag.
+- `grep "max-age|max_age|logrotate|retention|cleanup"` against
+  `scripts/daily_probe.py` → no matches.
+- `grep` against full `scripts/` dir surfaces only `cutover_smoke.py` tempdir
+  cleanup (unrelated; that's `shutil.rmtree` for the cutover workdir).
+- `bearings-v1-probe.service` has no `ExecStartPost` cleanup, no tmpfiles.d
+  conf in `config/`, no logrotate snippet.
+- `~/.local/share/bearings-v1/probes/YYYY-MM-DD.log` therefore accumulates
+  indefinitely. Same hole exists for
+  `~/.local/share/bearings-v1/diff-probes/YYYY-MM-DD.log`.
+- Verdict: STILL_OPEN.
+
+## Summary
+
+5 findings → 5 STILL_OPEN, 0 FIXED_SINCE_AUDIT, 0 SUPERSEDED.
+No "discovered during verification" extras.

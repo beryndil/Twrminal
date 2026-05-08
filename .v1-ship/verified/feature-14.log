@@ -1,0 +1,91 @@
+# Feature 14 verification log — Analytics v1 (PLANNED)
+
+Verifier session: e86e77beeeaa445eb26ae6420135b65b
+Started: 2026-05-07T20:30:00-05:00
+
+May-7 audit verdict: CLOSED. Audit body contains design DECISIONS,
+implementation CHANGES (phase order), and OPEN questions — but no
+numbered defect findings. Feature is correctly framed as PLANNED.
+
+Per orchestrator scope decision 3 (never trust): re-verify the
+closeout against current HEAD, AND scan for regressions since May 7.
+
+## What "verified clean" means for a PLANNED feature
+
+The audit closeout is essentially: "Analytics v1 is not built yet,
+the spec at BEARINGS_ANALYTICS_v1.md is the right plan, here are the
+decisions/phases/open-questions for when it gets built."
+
+For this feature, "still holds" means:
+1. Spec doc still present and unmodified in shape.
+2. None of the analytics-specific surfaces have been built (because
+   the audit's closeout is predicated on PLANNED status — partial
+   implementations that diverge from the spec would be regressions
+   the audit didn't see).
+3. Optional: Phase 0 prerequisites (cache_creation column etc.) may
+   have legitimately landed since — that's progress, not regression.
+
+## Investigation
+
+### 1. Spec doc presence
+
+`BEARINGS_ANALYTICS_v1.md` present at repo root. Read header (§1-§4.1
+lines 1-100) — Status: "Spec, ready for Claude Code implementation".
+Spec body intact and consistent with audit decisions.
+
+### 2. Implementation surfaces (must NOT exist for PLANNED to hold)
+
+- `src/bearings/web/routes/analytics.py` — absent (Glob: No files
+  found). Audit Phase 4 not begun.
+- `src/bearings/agent/plug_capture.py` — absent (Glob: No files
+  found). Audit Phase 2 not begun.
+- Constants `PLUG_YELLOW_THRESHOLD`, `PLUG_RED_THRESHOLD`,
+  `PLUG_REDUNDANCY_*` — absent from `src/` (Grep: 0 hits). Audit
+  Phase 1 constants not added.
+- DB tables `plug_blocks`, `session_plug_blocks`,
+  `suppressed_warnings`, `plug_blocks_fts` — absent from `src/`
+  (Grep: 0 hits). Audit Phase 1 schema not added.
+- `quota_snapshots` columns `five_hour_used/limit`,
+  `weekly_used/limit` — absent from
+  `src/bearings/db/schema.sql:461-469` (current columns:
+  `id, captured_at, overall_used_pct, sonnet_used_pct,
+  overall_resets_at, sonnet_resets_at, raw_payload`). Audit Phase 1
+  extension not landed.
+- `messages.cache_creation_tokens` column — NOT in `messages` table
+  per `src/bearings/db/messages.py:420-450` (`get_token_totals`
+  returns hardcoded 0 for the cache_creation slot, with comment at
+  line 427-430 explicitly stating "messages table has no
+  cache_creation_tokens column yet"). Audit Phase 0 prerequisite NOT
+  landed yet — note that the response-shape slot is reserved (per
+  gap-cycle-13-003) but the column itself is still missing.
+
+### 3. Audit "Open" questions
+
+Audit listed four open items:
+- QuotaPoller raw_payload contents check
+- Burn-rate comparison deferred to v1.x
+- Per-tag thresholds deferred to v1.x
+- MCP/skill blocks deferred to v1.x
+
+These remain open by design — the deferred items are scoped out and
+the QuotaPoller payload check is investigation-pending. None of
+these are defects in HEAD; they are work items pending Phase 0+
+execution.
+
+## Verdict
+
+Audit's CLOSED claim still holds. Analytics v1 is correctly framed
+as PLANNED:
+
+- Spec present and unchanged.
+- Zero analytics implementation surfaces in HEAD.
+- Phase 0 prerequisite (cache_creation_tokens column) NOT landed —
+  matches the audit's expectation that this is a yet-to-do
+  prerequisite.
+
+The audit body contains 0 numbered defect findings for feature 14.
+JSONL output is therefore empty (0 lines).
+
+No regressions discovered during verification.
+
+end: 2026-05-07T20:35:00-05:00

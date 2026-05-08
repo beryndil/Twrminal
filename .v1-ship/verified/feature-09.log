@@ -1,0 +1,21 @@
+# Feature 9 — Themes, keybindings, context menus — verifier log
+
+Verifier session: d391b7c16c5f40c6b10843e5dea5e0fe
+Date: 2026-05-07
+Specs read: docs/behavior/themes.md, docs/behavior/keyboard-shortcuts.md, docs/behavior/context-menus.md
+Audit anchor: V1_FEATURE_AUDIT.md §"Per-feature findings" → "### 9. Themes, keybindings, context menus"
+
+## Read trail
+
+- 2026-05-07T01:30Z — Read V1_FEATURE_AUDIT.md feature 9 (5 findings: 3 bugs, 1 doc gap, 1 deferral).
+- 2026-05-07T01:31Z — Read all three behavior docs (themes.md, keyboard-shortcuts.md, context-menus.md).
+- 2026-05-07T01:32Z — Verified finding 1: read frontend/src/lib/context-menu/registry.ts (SESSION_ACTIONS lines 142-161). Confirmed: imports do NOT pull in MENU_ACTION_SESSION_EDIT; the array contains MENU_ACTION_SESSION_RENAME, MENU_ACTION_SESSION_EDIT_TAGS, MENU_ACTION_SESSION_CHANGE_MODEL but no MENU_ACTION_SESSION_EDIT. Cross-checked config.ts:2781 (defines `MENU_ACTION_SESSION_EDIT = "session.edit"`) and config.ts:2886 (label `"Edit session…"`). Cross-checked SessionRow.svelte:53 (imported), :316 (handler `void openEditModal()`). Bug confirmed: action defined + handled but never rendered because registry SESSION_ACTIONS omits it.
+- 2026-05-07T01:33Z — Verified finding 2: read frontend/src/lib/keyboard/bindings.ts:184-189. KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH chord is { code: "KeyK", ctrl: true } with `global: true`, no `displayOnly` field. The KeybindingSpec interface comment at lines 62-66 explicitly describes the `displayOnly` pattern as "the chord is wired by a colocated component (e.g. ``Ctrl+K`` lives on the sidebar search). The cheat sheet shows it for discoverability; the global dispatcher does NOT consume it." The current `global: true` therefore lets the global dispatcher consume Ctrl+K instead of letting the sidebar search component own it. Behavior doc (keyboard-shortcuts.md §Command palette, "`Ctrl+K` is wired by the sidebar search component itself … the cheat sheet lists it for discoverability") aligns with `displayOnly: true`. Bug confirmed.
+- 2026-05-07T01:34Z — Verified finding 3: read frontend/src/lib/keyboard/nonRegistryBindings.ts. The `context_menu` section (lines 44-53) lists ↑/↓, Enter, →, Esc, A–Z mnemonic — no Home, no End. Read frontend/src/lib/context-menu/ContextMenu.svelte:387-406 — Home (line 387) and End (line 394) handlers exist and call preventDefault, jumping highlight to first/last enabled action. Behavior doc context-menus.md line 16 §"Common behavior across every menu": "Home jumps to the first enabled action; End jumps to the last enabled action". Cheat-sheet omission confirmed.
+- 2026-05-07T01:35Z — Verified finding 4: grep for `session.merge_into` / `session.export_json` / `merge_into` / `export_json` in docs/behavior/context-menus.md returned zero matches. Both action IDs ARE in registry SESSION_ACTIONS at lines 150 and 158 (organize / copy sections respectively); both have label entries in config.ts (lines 2901, 2903) and handlers in SessionRow.svelte (lines 379, 388 — exportSessionJson, showMergePicker). Doc gap confirmed.
+- 2026-05-07T01:36Z — Verified finding 5: read frontend/src/lib/themes/persistence.ts (entire file). Persistence layer is exclusively localStorage (loadStoredTheme reads window.localStorage, saveStoredTheme writes window.localStorage). No fetch/PATCH/API call to /api/preferences anywhere in the module. Behavior doc themes.md §"Persistence boundary" specifies "Per-account, server-synced." Cross-checked TODO.md:164 — "### Item 2.9 — theme server-sync layer (deferred)" explicitly tracks this exact gap with rationale ("v1 ships **localStorage-only** persistence"). Spec-vs-reality gap remains in HEAD; deliberately deferred.
+- 2026-05-07T01:37Z — Ran `git log --oneline -10 frontend/src/lib/context-menu/registry.ts` and the same on bindings.ts / nonRegistryBindings.ts / docs/behavior/context-menus.md. Last touch on these files predates 2026-05-07. No fixes since audit.
+
+## Verdict tally
+
+5 STILL_OPEN, 0 FIXED_SINCE_AUDIT, 0 SUPERSEDED. K=5 / M=0 / S=0. Total findings = 5 = audit count.

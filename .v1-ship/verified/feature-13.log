@@ -1,0 +1,108 @@
+# Feature 13 verification log — SemVer commitment (v1.0.0)
+
+Verifier session: eb841f97950240808e88038ea90d97a1
+HEAD: 0036f7c1854ded6974fe839580accb62fd3e7155
+Started: 2026-05-07T20:17:29-05:00
+
+Audit marked feature 13 CLOSED. Re-verifying each "Changes:" bullet against
+HEAD. Per scope decision 3 (never trust), confirm closure still holds.
+
+## Plan
+
+Treat each "Changes:" bullet under §13 as a finding and verify. Audit lists:
+
+1. CI: spec-drift check (regenerate openapi.json, git diff --exit-code)
+2. CI: DB schema drift check
+3. CI: version alignment (pyproject.toml == openapi.json info.version)
+4. CI: api-compat job (oasdiff against previous semver tag)
+5. Code: pin operation_id= on all 133 route decorators
+6. Code: deprecated=True on tag_ids param + GET /api/tag-groups
+7. Code: verify RoutingDecision/RoutingRule/SystemRoutingRule/QuotaSnapshot
+   are @dataclass(frozen=True)
+8. Docs: behavior docs for all [Unreleased] features before v1.1.0
+9. Docs: CHANGELOG v1.0.0 stability paragraph (WS shapes + CLI flags scope)
+10. Docs: deprecation convention (deprecated=True + x-sunset + Sunset header)
+11. Docs/session: update stale "62 paths / 53 schemas" → 106/94/133
+
+## Investigation
+
+### CI gates (findings 1-4)
+
+`grep -n "openapi\|drift\|oasdiff\|schema\.sql\|version.*pyproject" .github/workflows/ci.yml`
+returns only an unrelated comment ("wiring drift between this YAML and
+.pre-commit-config.yaml"). No spec-drift, no schema-drift, no
+version-alignment, no oasdiff job. All four → **STILL_OPEN**.
+
+### operation_id (finding 5)
+
+`grep -c operation_id src/bearings/web/routes/*.py` → 0 across all 29
+route files. **STILL_OPEN**.
+
+### deprecated=True (finding 6)
+
+- tags.py:170 — `@router.get("/api/tag-groups", ..., deprecated=True)` ✓
+- sessions.py:255 — `tag_ids: Annotated[list[int] | None, Query()] = None`
+  (no deprecated=True). ✗
+
+Half-fixed → **STILL_OPEN** (with partial-fix note in evidence).
+
+### Frozen dataclasses (finding 7)
+
+All four carry `@dataclass(frozen=True)`:
+
+- agent/routing.py:64 → RoutingDecision (line 65)
+- db/routing.py:65 → RoutingRule (line 66)
+- db/routing.py:118 → SystemRoutingRule (line 119)
+- agent/quota.py:62 → QuotaSnapshot (line 63)
+
+→ **FIXED_SINCE_AUDIT** (more precisely: never broken — audit asked to
+verify, verifier confirmed).
+
+### Behavior docs (finding 8)
+
+docs/behavior/ has 14 .md files. Of the five [Unreleased] surfaces the
+audit named, only `preferences.md` exists as a dedicated doc. Missing:
+tag-classes, import-bearings, sdk-history-replay, permission-mode.
+**STILL_OPEN**.
+
+### CHANGELOG stability paragraph (finding 9)
+
+CHANGELOG.md:601-626 enumerates HTTP API / Routing-quota / On-disk
+schema / Behavior docs as in-scope and localhost-posture / single-user
+/ SQLite / orphan-history as explicitly NOT changing. WS shapes and
+CLI flag surface are absent from both lists. **STILL_OPEN**.
+
+### Deprecation convention (finding 10)
+
+`grep -rn "x-sunset\|Sunset" src/bearings/ docs/` → no results. No
+middleware, no x-sunset extension on any decorator, no docs page.
+**STILL_OPEN**.
+
+### Stale 62/53 figure (finding 11)
+
+CHANGELOG.md:593-594 still says "62 paths, 53 schemas" inside the
+v1.0.0 entry; the v0.18.0 entry at line 780 retains the same numbers
+as a historical baseline (correctly). Live count at HEAD via
+`python -c json.load(...)` is 106 paths / 94 schemas / 133 operations.
+Only the v1.0.0 sentence is stale. **STILL_OPEN**.
+
+### Version alignment cross-check
+
+pyproject.toml `version = "1.0.0"`; docs/openapi.json info.version =
+"1.0.0". Today they happen to agree, but no CI step asserts it.
+
+## Verdict tally
+
+- STILL_OPEN: 10 (findings 1, 2, 3, 4, 5, 6, 8, 9, 10, 11)
+- FIXED_SINCE_AUDIT: 1 (finding 7)
+- SUPERSEDED: 0
+- Total: 11 (matches the 11 "Changes:" bullets in V1_FEATURE_AUDIT.md §13)
+
+## Note on audit's CLOSED tag
+
+The audit listed §13 as **CLOSED** with the rationale "scope fully
+bounded — Open: none." That is a *scope* closure, not a *fix* closure.
+Most of the prescribed Changes have not been implemented at HEAD.
+Re-verification per scope decision 3 surfaces 10 of 11 unresolved.
+
+Finished: 2026-05-07T20:18-05:00

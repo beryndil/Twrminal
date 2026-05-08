@@ -1,0 +1,60 @@
+2026-05-07T20:17:45-05:00  start verifier feature 7
+
+## $(date -Is)  feature 7 — Vault & memories — verification trail
+
+### Finding 1 (P0 #1) — Memories empty state fires on chip filter
+- Spec: docs/behavior/memories.md §"Index view layout" → empty state only when GET returns [].
+- Code: frontend/src/lib/components/memories/MemoriesIndex.svelte:119-122
+  - HEAD reads `{:else if rows.length === 0}` — checks unfiltered list.
+  - The audit's bug claim (`filteredRows.length === 0`) is NOT present in HEAD.
+- git log on file: only commit e814f7aa "feat: global memories index view" (2026-05-07 14:59)
+  is the sole commit; predates a few hours but file at HEAD does not exhibit bug.
+- Tests: __tests__/MemoriesIndex.test.ts covers `[]` → empty state. No regression test for
+  chip-filter-active + filtered empty (i.e. asserting empty state does NOT render); that gap
+  is the second sentence of the audit ("Needs fix + test"). Test gap rolls into Finding 4.
+- Verdict: FIXED_SINCE_AUDIT (resolving_commit e814f7aa). Audit-time text appears to have
+  misread the empty-state guard.
+
+### Finding 2 (P0 #2) — Memories not wired into system prompt
+- Spec: docs/behavior/memories.md (memory body is "the prompt-fragment text the assembler
+  injects" per src/bearings/db/memories.py:58).
+- Code:
+  - src/bearings/agent/system_prompt.py: only consumes session_instructions + extras tuple.
+  - src/bearings/agent/options.py:426-429: build_system_prompt(extras=extra_system_prompt_parts).
+  - src/bearings/agent/session_bootstrap.py:150,182: extras computed by
+    resolve_claude_md_blocks(...) — see tags.py.
+  - src/bearings/agent/tags.py:91-140: _load_claude_md_block reads CLAUDE.md from each tag's
+    working_dir; never queries tag_memories table.
+  - src/bearings/agent/prompt_assembler.py: inspector layer assembler that ALSO uses CLAUDE.md
+    walk-up (LAYER_KIND_TAG_MEMORY is misnamed — body is CLAUDE.md content, not tag_memories).
+  - grep for memories_db / tag_memories usage in src/bearings/agent/: zero hits.
+  - Only consumer of memories_db is web/routes/memories.py (CRUD UI).
+- Verdict: STILL_OPEN. The full CRUD surface and DB table exist; no agent-layer reader
+  exists. tag_memories edits never reach the model. Headline ship-blocker per the audit.
+
+### Finding 3 (P1 #3) — Vault cfg fallback is silent
+- Spec: per audit text — fail-fast convention used by tags / DB.
+- Code: src/bearings/web/routes/vault.py:73-87 in HEAD shows _cfg() returning VaultCfg() when
+  app.state.vault_cfg is None. Comment explicitly names this "production fallback".
+- Verdict: STILL_OPEN.
+
+### Finding 4 (P1 #4) — Frontend test coverage thin
+- Vault tests in frontend/src/lib/components/vault/__tests__/VaultPanel.test.ts:
+  - Redaction toggle test exists (line 323 "renders one toggle per redaction range").
+  - Search debounce test exists (line 193 "calls setVaultSearchQuery after the debounce window").
+  - Paste-link / paste-body tests exist (line 237).
+  - Drag-paste-into-composer NOT tested; only ondragstart wiring in VaultPanel.svelte:259+
+    is uncovered.
+- Memories tests in frontend/src/lib/components/memories/__tests__/MemoriesIndex.test.ts:
+  - Empty-on-[] tested.
+  - Chip filter narrow + clear tested.
+  - "Chip filter to a tag with no rows must NOT fire empty state" — NOT tested.
+- Verdict: STILL_OPEN (partial). Two gaps remain: vault drag-paste, and memories chip-filter-
+  empty regression.
+
+### Finding 5 (P2 #5) — Vault per-doc line cap silent
+- Code: src/bearings/agent/vault.py:348-350 — when line_number > line_cap_per_doc, the inner
+  loop breaks silently. SearchResult.capped is only set on the global result_cap path
+  (lines 338-340 and 363-365). Per-doc cap exit leaves capped=False.
+- Verdict: STILL_OPEN.
+2026-05-07T20:21:33-05:00

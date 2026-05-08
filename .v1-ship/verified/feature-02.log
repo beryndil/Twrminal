@@ -1,0 +1,190 @@
+# Feature 2 — Conversation & streaming — verifier audit log
+
+## 2026-05-07 — verifier kickoff
+
+Inputs:
+- Feature: 2. Conversation & streaming
+- Audit anchor: V1_FEATURE_AUDIT.md L87-130
+- Specs: docs/behavior/chat.md, docs/behavior/tool-output-streaming.md, docs/behavior/modals.md
+- Output: .v1-ship/verified/feature-02.jsonl
+
+Findings count in audit (V1_FEATURE_AUDIT.md L87-130): 9
+- Sev-1 #1..5 — copy-text, ANSI, soft-cap, [stopped], stop-undo-inverted
+- Sev-2 #6..9 — ToolProgress dead, elapsed inflate, drawer always open, BearingsSessionStore wiring
+
+## Spec quotes captured
+
+- tool-output-streaming.md §"Clickable file paths and URLs in output":
+  > Selecting and copying a linkified span copies the visible text (the
+  > path or URL as the tool printed it), not the underlying `href`.
+  > ANSI escape sequences are passed through unchanged; this feature
+  > does not introduce ANSI colorisation.
+- tool-output-streaming.md §"What the user does NOT see":
+  > ANSI color codes the tool emits are rendered as colored text inline
+- tool-output-streaming.md §"Very-long-output truncation rules":
+  > Soft cap on display. Output beyond the soft cap is folded inside
+  > an inline "Show full output" expander; the visible head/tail
+  > bookends remain interactive (selectable, copyable). The full body
+  > is still streamed and persisted; the expander simply collapses the
+  > middle for layout.
+- chat.md §"Stopping or interrupting a turn":
+  > Pressing it interrupts the agent at the next safe boundary; the
+  > partially-streamed assistant bubble is preserved with a `[stopped]`
+  > annotation. … A small "undo stop" inline appears for a few seconds
+  > after stopping, letting the user re-issue the same prompt without
+  > retyping it.
+- tool-output-streaming.md §"Reconnect / replay during a stream":
+  > The elapsed-time readout uses the client clock during the live
+  > phase and a server-reported timestamp on first replay so a long
+  > disconnect doesn't show a wildly inflated client-side timer.
+- tool-output-streaming.md §"Long-tool keepalive":
+  > a periodic keepalive event keeps the per-tab UI reactive
+  > … The keepalive is not part of the persisted record. A reconnecting
+  > client picks up the live timer from the next live tick rather than
+  > replaying keepalives.
+- chat.md §"What a message turn looks like":
+  > Tool-work drawer (collapsible <details>)
+
+## Per-finding verification trail
+
+### #1 Copy-text on linkified spans
+- Code path: frontend/src/lib/linkify.ts (linkifyToHtml: file segment
+  emits `<a href="${href}" data-link-kind="file">${displayText}</a>`).
+- For workspace-relative paths the `href` is the resolved file://
+  URL; the anchor's inner text is the displayText (the relative path
+  the tool printed).
+- frontend/src/lib/components/conversation/MessageTurn.svelte:416 and
+  ToolOutput.svelte:223 render via `{@html sanitizeHtml(linkifyToHtml(...))}`.
+- sanitize.ts allowlists `data-link-kind` and `file://` href; does not
+  install a `copy` event handler.
+- Default browser semantics: selection-copy on `<a>` text places the
+  innerText in the plaintext clipboard; the href only surfaces under
+  right-click → "Copy Link Address" (which is not what the spec
+  addresses) or rich-text/HTML clipboard payloads.
+- The audit's literal claim ("copying gives the file:/// href, not the
+  visible text") does not reproduce under default selection-copy
+  semantics. Marking STILL_OPEN per audit caution; the executor needs
+  to either (a) reproduce the audit's failure mode and add a copy
+  intercept, or (b) add a regression test that pins selection-copy to
+  the displayText so the spec guarantee is anchored regardless of any
+  future renderer change.
+
+### #2 ANSI passthrough
+- DOMPurify config in sanitize.ts removes any non-allowlisted tags;
+  ANSI escapes (`\x1b[...m`) are bytes, not tags, so DOMPurify does
+  NOT strip them — they are preserved in the output string. They do
+  however render literally as the byte sequence (no colourisation),
+  matching the linkifier note "ANSI escape sequences are passed
+  through unchanged; this feature does not introduce ANSI colorisation."
+- BUT tool-output-streaming.md §"What the user does NOT see" says:
+  "ANSI color codes the tool emits are rendered as colored text
+  inline". No code in the conversation rendering path translates ANSI
+  escapes to coloured spans. Confirmed: no `ansi-to-html`,
+  `anser`, or hand-rolled ANSI parser anywhere in frontend/src/.
+- Audit's claim "DOMPurify strips ANSI escapes" is technically wrong
+  about the mechanism (DOMPurify operates on tags/attrs, not byte
+  patterns) but the user-observable behaviour matches: bash output
+  loses colour. STILL_OPEN against the spec.
+
+### #3 Soft-cap expander missing
+- runner.py L489-528 implements only the hard cap
+  (`STREAM_MAX_TOOL_OUTPUT_CHARS` + `STREAM_TRUNCATION_MARKER_TEMPLATE`).
+- frontend/src/lib/stores/conversation.svelte.ts has a soft cap
+  (`CHAT_TOOL_OUTPUT_SOFT_CAP_CHARS = 8000`) at L365-367 (hydration)
+  and L770-773 (live tool_output_delta) — but it slices to the LAST N
+  chars (head-truncating, not middle-folding). No "Show full output"
+  expander surface is wired anywhere in ToolOutput.svelte.
+- Spec wants: head AND tail bookends visible, middle collapsed,
+  inline expander to reveal the full body. Implementation has tail
+  only, no expander, no full-body retrieval path. STILL_OPEN.
+
+### #4 [stopped] annotation missing
+- Grep for `\[stopped\]` and `stoppedAnnotation` across
+  src/bearings/** and frontend/src/** returned only the spec text and
+  audit text — zero code references.
+- sdk_loop.py:191-204 calls `session.interrupt()` on stop_event but
+  emits no event annotating the partial assistant bubble.
+- MessageTurn.svelte renders no annotation badge for stopped turns.
+- Confirmed missing on both backend and frontend. STILL_OPEN.
+
+### #5 Stop undo semantics inverted
+- StopUndoInline.svelte:84-103: `handleStop` arms a grace-window
+  setTimeout (STOP_UNDO_GRACE_MS) and only POSTs `/stop` when the
+  timer expires; `handleUndo` clears the timers and aborts the POST.
+- Spec semantics: stop fires, then "undo stop" lets the user re-issue
+  the same prompt.
+- Implementation is the opposite: stop is debounced; Undo cancels the
+  pending stop. Verbatim audit claim. STILL_OPEN.
+- Note: gap-cycle-11-002 (cited in the file's docstring) introduced
+  the grace-window. That cycle apparently did NOT match the spec text
+  — verifier flags this as a spec/implementation divergence the
+  Closer must reconcile (likely by either rewriting the component to
+  match the spec's stop-then-redrive model, or amending the spec to
+  document the grace-window behaviour as the canonical one).
+
+### #6 ToolProgress event dead code
+- events.py L121-128 defines `ToolProgress(type='tool_progress',
+  tool_call_id, elapsed_ms)`.
+- Grep for `ToolProgress(` and `tool_progress` across src/bearings:
+  only events.py defines it; no other module emits it via
+  runner.emit() or any factory. Tests construct it manually in
+  test_session_events.py and test_streaming_unit.py, but no
+  production path emits.
+- Frontend conversation.svelte.ts L788-792 has a reducer for
+  type==='tool_progress' that updates `liveElapsedMs` — this consumer
+  exists but its corresponding producer does not.
+- ToolOutput.svelte L93-115 ticks elapsed via local `setInterval`
+  only; the comment claims this is a "floor" against the
+  server-authoritative tick that does not exist in HEAD.
+- STILL_OPEN.
+
+### #7 Elapsed timer inflates on long-disconnect replay
+- ToolCallStart event (events.py:86-98) carries no `started_at`
+  server timestamp.
+- conversation.svelte.ts L757 sets `startedAt: Date.now()` when the
+  reducer FIRST sees a tool_call_start; L741 makes the reducer
+  idempotent (existing tool_call entry is preserved). Therefore on a
+  disconnect-then-replay, `startedAt` retains the original receive
+  time; while the disconnect was open, `nowMs` advances; on
+  reconnect, `Math.max(nowMs - startedAt, liveElapsedMs)` produces
+  the inflated value.
+- Heartbeat frames (web/serialize.py:107-109, web/streaming.py:148)
+  carry `{kind:"heartbeat", ts:<float>}` — no `tool_call_id`, not
+  ring-buffered, not consumed by the conversation reducer.
+- Audit text reproduced. STILL_OPEN. Coupled with #6 — fixing #6
+  (emit ToolProgress per-tool with elapsed_ms) is the natural
+  surface for the server-authoritative elapsed floor.
+
+### #8 Tool-work drawer always starts open
+- MessageTurn.svelte:425: `<details ... open bind:this={toolWorkEl}>`.
+- Spec says drawer is collapsible; "drawer was collapsed during the
+  streaming turn" is described as a reachable user state in
+  tool-output-streaming.md §Scroll-anchor and chat.md §"What a
+  message turn looks like" (the "⤴ TOOLS" jump button is described
+  for that case).
+- Hard-coding `open` on the `<details>` makes the collapsed-during-
+  streaming path unreachable on first render. STILL_OPEN.
+
+### #9 BearingsSessionStore adapter
+- Grep for `BearingsSessionStore` shows:
+  - src/bearings/agent/session_store.py:74 — class definition.
+  - src/bearings/agent/session_bootstrap.py:43 — import.
+  - src/bearings/agent/session_bootstrap.py:159 — instantiation
+    (`store = BearingsSessionStore(db_factory=db_factory)`).
+  - src/bearings/agent/session_bootstrap.py:183 — passed to
+    compose_session_options (`session_store=store`).
+  - src/bearings/agent/sdk_loop.py:459-460 — forwarded to the SDK
+    (`if kwargs.session_store is not None:
+      sdk_kwargs["session_store"] = kwargs.session_store`).
+  - tests/test_session_bootstrap_resume.py:70,94,115,116 — asserts
+    `isinstance(options.session_store, BearingsSessionStore)`.
+- The adapter is fully wired; the audit's "suspected unwired" status
+  does not reproduce in HEAD. CHANGELOG L19 references the SDK
+  history-replay wiring landing in v0.18.x. Verdict
+  FIXED_SINCE_AUDIT.
+
+## Verdict tally
+- STILL_OPEN: 8 (#1-#8)
+- FIXED_SINCE_AUDIT: 1 (#9)
+- SUPERSEDED: 0
+- Total: 9 (matches audit count)

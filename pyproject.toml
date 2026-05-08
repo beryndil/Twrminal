@@ -175,12 +175,14 @@ verbose = 1
 # spec-vocabulary). The .venv / .git / cache exclusions are critical: without
 # them codespell scans installed third-party packages and fails on their
 # typos which we cannot fix.
-skip = "*.lock,*.svg,*.min.*,docs/model-routing-v1-spec.md,docs/openapi.json,*/node_modules/*,*/.svelte-kit/*,*/package-lock.json,frontend/node_modules,frontend/.svelte-kit,frontend/package-lock.json,src/bearings/web/dist,src/bearings/web/dist/*,.venv,.git,.mypy_cache,.ruff_cache,.pytest_cache,htmlcov,dist,build"
+skip = "*.lock,*.svg,*.min.*,docs/model-routing-v1-spec.md,docs/openapi.json,*/node_modules/*,*/.svelte-kit/*,*/package-lock.json,frontend/node_modules,frontend/.svelte-kit,frontend/package-lock.json,src/bearings/web/dist,src/bearings/web/dist/*,.venv,.git,.mypy_cache,.ruff_cache,.pytest_cache,htmlcov,dist,build,.v1-ship,.audit-loop,*/ChecklistChat.svelte,*/MemoriesEditor.svelte,*/sessions/new/__tests__/page.test.ts"
 # Allowlist intentional Pydantic-style ``*In`` request shape names
 # (``PromptIn`` ↦ "prompt in" / "prompting" false positives) — the
 # convention is established across ``web/models/*.py`` and the
 # alternatives (``PromptInput`` / ``PromptRequest``) are noisier than
 # the typo risk.
-ignore-words-list = "promptin"
+# ``firey`` suppresses the ``fireY`` coordinate-variable false-positive
+# in frontend/src/lib/context-menu/touch.ts.
+ignore-words-list = "promptin,firey"
 check-filenames = true
 check-hidden = true

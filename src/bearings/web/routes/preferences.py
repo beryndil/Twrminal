@@ -7,8 +7,8 @@ singleton row:
 * ``PATCH /api/preferences``              — update supplied fields; omitted
   fields are left unchanged.
 * ``GET  /api/preferences/avatar``        — serve the current avatar bytes.
-* ``POST /api/preferences/avatar``        — upload a new avatar image
-  (multipart/form-data ``file`` field). Replaces any existing avatar.
+* ``POST /api/preferences/avatar``        — create (or replace) the avatar
+  image (multipart/form-data ``file`` field).
 * ``DELETE /api/preferences/avatar``      — remove the avatar file and clear
   the DB fields.
 * ``POST /api/preferences/sync_from_system`` — populate ``display_name``
@@ -168,11 +168,11 @@ async def get_avatar(request: Request) -> Response:
 
 
 @router.post("/api/preferences/avatar", response_model=PreferencesOut)
-async def upload_avatar(
+async def create_avatar(
     request: Request,
     file: Annotated[UploadFile, File(description="Avatar image file.")],
 ) -> PreferencesOut:
-    """Upload a new avatar image.
+    """Create (or replace) the current avatar image.
 
     Accepts ``multipart/form-data`` with a single ``file`` field. The
     MIME type must be one of ``image/jpeg``, ``image/png``,
@@ -254,7 +254,7 @@ async def delete_avatar(request: Request) -> PreferencesOut:
 
 
 @router.post("/api/preferences/sync_from_system", response_model=PreferencesOut)
-async def sync_from_system(request: Request) -> PreferencesOut:
+async def refresh_from_system(request: Request) -> PreferencesOut:
     """Populate display_name and avatar from the running user environment.
 
     * ``display_name`` ← ``$USER`` (falls back to ``$LOGNAME``, then
