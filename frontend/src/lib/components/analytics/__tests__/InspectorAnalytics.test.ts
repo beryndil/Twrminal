@@ -1,16 +1,19 @@
 /**
  * InspectorAnalytics tests — covers rendering states and API call
- * shape for all three sections (A: bucket, B: redundancy, C: plug).
+ * shape for all three sections (A: bucket, B: redundancy, C: plug)
+ * plus promote actions (Phase 6).
  *
- * Uses the component's five test seams so each test owns its fixture
+ * Uses the component's test seams so each test owns its fixture
  * data without touching the global ``fetch``.
  */
-import { render } from "@testing-library/svelte";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, waitFor } from "@testing-library/svelte";
+import { describe, expect, it, vi } from "vitest";
 
 import InspectorAnalytics from "../InspectorAnalytics.svelte";
 import type {
   BucketCurrentOut,
+  PromoteToOnOpenOut,
+  PromoteToTagMemoryOut,
   RedundancyBlockOut,
   SessionPlugSummaryOut,
   TagAttributionOut,
@@ -117,6 +120,8 @@ interface SeamData {
   redundancy?: RedundancyBlockOut[];
   plug?: SessionPlugSummaryOut;
   tags?: TagOut[];
+  promoteTagMemory?: (_hash: string, _body: unknown) => Promise<PromoteToTagMemoryOut>;
+  promoteOnOpen?: (_hash: string, _body: unknown) => Promise<PromoteToOnOpenOut>;
 }
 
 function seams(data: SeamData = {}) {
@@ -126,6 +131,12 @@ function seams(data: SeamData = {}) {
     fetchRedundancy: async () => data.redundancy ?? [],
     fetchPlugSummary: async () => data.plug ?? fakePlugSummary(),
     fetchTags: async () => data.tags ?? [],
+    doPromoteToTagMemory:
+      data.promoteTagMemory ??
+      (async () => ({ memory_id: 1, tag: "infra" }) as PromoteToTagMemoryOut),
+    doPromoteToOnOpen:
+      data.promoteOnOpen ??
+      (async () => ({ on_open_sh_path: "/tmp/.bearings/on_open.sh" }) as PromoteToOnOpenOut),
   };
 }
 
@@ -137,6 +148,9 @@ function pendingSeams() {
     fetchRedundancy: (): Promise<never> => new Promise(() => {}),
     fetchPlugSummary: (): Promise<never> => new Promise(() => {}),
     fetchTags: (): Promise<never> => new Promise(() => {}),
+    doPromoteToTagMemory: async () => ({ memory_id: 1, tag: "infra" }) as PromoteToTagMemoryOut,
+    doPromoteToOnOpen: async () =>
+      ({ on_open_sh_path: "/tmp/.bearings/on_open.sh" }) as PromoteToOnOpenOut,
   };
 }
 
@@ -148,6 +162,9 @@ function errorSeams() {
     fetchRedundancy: () => Promise.reject(new Error("boom")),
     fetchPlugSummary: () => Promise.reject(new Error("boom")),
     fetchTags: () => Promise.reject(new Error("boom")),
+    doPromoteToTagMemory: async () => ({ memory_id: 1, tag: "infra" }) as PromoteToTagMemoryOut,
+    doPromoteToOnOpen: async () =>
+      ({ on_open_sh_path: "/tmp/.bearings/on_open.sh" }) as PromoteToOnOpenOut,
   };
 }
 
@@ -372,5 +389,125 @@ describe("InspectorAnalytics — Section C session plug", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].getAttribute("data-block-type")).toBe("claude_md");
     expect(rows[1].getAttribute("data-block-type")).toBe("tag_memory");
+  });
+
+  it("renders a promote button for each plug block row", async () => {
+    const plug: SessionPlugSummaryOut = {
+      total_tokens: 500,
+      status: "yellow",
+      blocks: [{ hash: "h1", block_type: "claude_md", tokens: 500 }],
+    };
+    const { findAllByTestId } = render(InspectorAnalytics, {
+      props: { session: fakeSession(), ...seams({ plug }) },
+    });
+    const btns = await findAllByTestId("inspector-analytics-plug-block-promote");
+    expect(btns).toHaveLength(1);
+    expect(btns[0].textContent?.trim()).toBe(INSPECTOR_STRINGS.analyticsPromoteBtn);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section B — Promote actions (Phase 6)
+// ---------------------------------------------------------------------------
+
+describe("InspectorAnalytics — Section B promote buttons", () => {
+  it("shows promote buttons in the expanded detail of a redundancy block", async () => {
+    const blocks = [fakeRedundancyBlock({ hash: "hx" })];
+    const { findByTestId } = render(InspectorAnalytics, {
+      props: { session: fakeSession(), ...seams({ redundancy: blocks }) },
+    });
+    // Expand the block first.
+    const expandBtn = await findByTestId("inspector-analytics-redundancy-block-expand");
+    fireEvent.click(expandBtn);
+    // Promote buttons should now be visible.
+    await findByTestId("inspector-analytics-redundancy-promote-actions");
+    await findByTestId("inspector-analytics-redundancy-promote-tag-memory");
+    await findByTestId("inspector-analytics-redundancy-promote-on-open");
+  });
+
+  it("opens the tag-memory modal when the promote-to-tag-memory button is clicked", async () => {
+    const blocks = [fakeRedundancyBlock({ hash: "hx" })];
+    const { findByTestId, queryByTestId } = render(InspectorAnalytics, {
+      props: { session: fakeSession(), ...seams({ redundancy: blocks }) },
+    });
+    const expandBtn = await findByTestId("inspector-analytics-redundancy-block-expand");
+    fireEvent.click(expandBtn);
+    const promoteBtn = await findByTestId("inspector-analytics-redundancy-promote-tag-memory");
+    fireEvent.click(promoteBtn);
+    await findByTestId("inspector-analytics-promote-tag-memory-modal");
+    expect(queryByTestId("inspector-analytics-promote-on-open-modal")).toBeNull();
+  });
+
+  it("opens the on_open modal when the promote-to-on-open button is clicked", async () => {
+    const blocks = [fakeRedundancyBlock({ hash: "hx" })];
+    const { findByTestId, queryByTestId } = render(InspectorAnalytics, {
+      props: { session: fakeSession(), ...seams({ redundancy: blocks }) },
+    });
+    const expandBtn = await findByTestId("inspector-analytics-redundancy-block-expand");
+    fireEvent.click(expandBtn);
+    const promoteBtn = await findByTestId("inspector-analytics-redundancy-promote-on-open");
+    fireEvent.click(promoteBtn);
+    await findByTestId("inspector-analytics-promote-on-open-modal");
+    expect(queryByTestId("inspector-analytics-promote-tag-memory-modal")).toBeNull();
+  });
+
+  it("calls the doPromoteToTagMemory seam on save and shows success message", async () => {
+    const spy = vi.fn().mockResolvedValue({ memory_id: 7, tag: "infra" });
+    const blocks = [fakeRedundancyBlock({ hash: "hx" })];
+    const { findByTestId } = render(InspectorAnalytics, {
+      props: {
+        session: fakeSession(),
+        ...seams({ redundancy: blocks, promoteTagMemory: spy }),
+      },
+    });
+    fireEvent.click(await findByTestId("inspector-analytics-redundancy-block-expand"));
+    fireEvent.click(await findByTestId("inspector-analytics-redundancy-promote-tag-memory"));
+
+    const tagInput = await findByTestId("inspector-analytics-promote-tag-input");
+    fireEvent.input(tagInput, { target: { value: "infra" } });
+
+    const saveBtn = await findByTestId("inspector-analytics-promote-save");
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => expect(spy).toHaveBeenCalledOnce());
+    const status = await findByTestId("inspector-analytics-promote-status");
+    expect(status.textContent).toContain(INSPECTOR_STRINGS.analyticsPromoteTagMemorySuccess);
+  });
+
+  it("calls the doPromoteToOnOpen seam on save and shows success message", async () => {
+    const spy = vi.fn().mockResolvedValue({ on_open_sh_path: "/p/.bearings/on_open.sh" });
+    const blocks = [fakeRedundancyBlock({ hash: "hx" })];
+    const { findByTestId } = render(InspectorAnalytics, {
+      props: {
+        session: fakeSession(),
+        ...seams({ redundancy: blocks, promoteOnOpen: spy }),
+      },
+    });
+    fireEvent.click(await findByTestId("inspector-analytics-redundancy-block-expand"));
+    fireEvent.click(await findByTestId("inspector-analytics-redundancy-promote-on-open"));
+
+    const wdInput = await findByTestId("inspector-analytics-promote-workdir-input");
+    fireEvent.input(wdInput, { target: { value: "/tmp/proj" } });
+
+    const saveBtn = await findByTestId("inspector-analytics-promote-save");
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => expect(spy).toHaveBeenCalledOnce());
+    const status = await findByTestId("inspector-analytics-promote-status");
+    expect(status.textContent).toContain(INSPECTOR_STRINGS.analyticsPromoteOnOpenSuccess);
+  });
+
+  it("closes the modal when cancel is clicked", async () => {
+    const blocks = [fakeRedundancyBlock({ hash: "hx" })];
+    const { findByTestId, queryByTestId } = render(InspectorAnalytics, {
+      props: { session: fakeSession(), ...seams({ redundancy: blocks }) },
+    });
+    fireEvent.click(await findByTestId("inspector-analytics-redundancy-block-expand"));
+    fireEvent.click(await findByTestId("inspector-analytics-redundancy-promote-tag-memory"));
+    await findByTestId("inspector-analytics-promote-tag-memory-modal");
+
+    const cancelBtn = await findByTestId("inspector-analytics-promote-cancel");
+    fireEvent.click(cancelBtn);
+    expect(queryByTestId("inspector-analytics-promote-tag-memory-modal")).toBeNull();
   });
 });

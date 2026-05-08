@@ -369,6 +369,25 @@ export const API_ANALYTICS_WARNINGS_SUPPRESS_ENDPOINT = `${API_ANALYTICS_BASE}/w
 export const API_ANALYTICS_SESSION_PLUG_SUMMARY_ENDPOINT = `${API_ANALYTICS_BASE}/sessions`;
 
 /**
+ * Base path for per-hash plug-block action endpoints (spec §9.3).
+ * Callers append ``/{hash}/promote-to-tag-memory`` or
+ * ``/{hash}/promote-to-on-open``.
+ */
+export const API_ANALYTICS_PLUG_BLOCKS_BASE = `${API_ANALYTICS_BASE}/plug-blocks`;
+
+/**
+ * ``POST /api/analytics/draft-new-session`` — generate a draft plug
+ * for a new session that continues from a source session (spec §9.3).
+ */
+export const API_ANALYTICS_DRAFT_NEW_SESSION_ENDPOINT = `${API_ANALYTICS_BASE}/draft-new-session`;
+
+/**
+ * ``POST /api/analytics/sessions/from-draft`` — create a new session
+ * from a user-reviewed plug draft (spec §9.3).
+ */
+export const API_ANALYTICS_SESSIONS_FROM_DRAFT_ENDPOINT = `${API_ANALYTICS_BASE}/sessions/from-draft`;
+
+/**
  * Plug length yellow threshold (spec §8.1): sessions whose assembled
  * plug token count crosses this value get a dismissible popup.
  * Mirrors :const:`bearings.config.constants.PLUG_YELLOW_THRESHOLD_TOKENS`.
@@ -1867,6 +1886,24 @@ export const INSPECTOR_STRINGS = {
   analyticsPlugStatusRed: "red",
   analyticsPlugColType: "Type",
   analyticsPlugColTokens: "Tokens",
+  // Promote actions (spec §7.5, Phase 6).
+  analyticsPromoteBtn: "Promote…",
+  analyticsPromoteToTagMemoryBtn: "Promote to tag memory",
+  analyticsPromoteToOnOpenBtn: "Promote to on_open.sh",
+  analyticsPromoteTagMemoryModalTitle: "Promote to tag memory",
+  analyticsPromoteOnOpenModalTitle: "Promote to on_open.sh",
+  analyticsPromoteTagLabel: "Tag",
+  analyticsPromoteTagPlaceholder: "Tag name",
+  analyticsPromoteMemoryContentLabel: "Memory content",
+  analyticsPromoteSnippetLabel: "Shell snippet",
+  analyticsPromoteWorkingDirLabel: "Working directory",
+  analyticsPromoteWorkingDirPlaceholder: "/path/to/project",
+  analyticsPromoteSaveBtn: "Save",
+  analyticsPromoteSavingBtn: "Saving…",
+  analyticsPromoteCancelBtn: "Cancel",
+  analyticsPromoteTagMemorySuccess: "Promoted to tag memory.",
+  analyticsPromoteOnOpenSuccess: "Snippet written to on_open.sh.",
+  analyticsPromoteError: "Promote failed. Check the console for details.",
 } as const;
 
 // ---- Session-edit modal string table -------------------------------------

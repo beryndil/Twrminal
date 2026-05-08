@@ -1,5 +1,5 @@
 /**
- * Unit tests for ``api/analytics.ts`` (Analytics Phase 5).
+ * Unit tests for ``api/analytics.ts`` (Analytics Phases 5 + 6).
  *
  * Covers: correct endpoint construction, query-param mapping,
  * and POST body shape for every public function.
@@ -11,13 +11,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  createSessionFromDraft,
+  draftNewSession,
   getAttribution,
   getBucketCurrent,
   getRedundancy,
   getSessionPlugSummary,
+  promoteToOnOpen,
+  promoteToTagMemory,
   suppressWarning,
   type BucketCurrentOut,
+  type DraftNewSessionOut,
+  type PromoteToOnOpenOut,
+  type PromoteToTagMemoryOut,
   type RedundancyBlockOut,
+  type SessionFromDraftOut,
   type SessionPlugSummaryOut,
   type TagAttributionOut,
 } from "../analytics";
@@ -28,7 +36,10 @@ import {
   ANALYTICS_REDUNDANCY_DEFAULT_MIN_REPEATS,
   API_ANALYTICS_ATTRIBUTION_ENDPOINT,
   API_ANALYTICS_BUCKET_CURRENT_ENDPOINT,
+  API_ANALYTICS_DRAFT_NEW_SESSION_ENDPOINT,
+  API_ANALYTICS_PLUG_BLOCKS_BASE,
   API_ANALYTICS_SESSION_PLUG_SUMMARY_ENDPOINT,
+  API_ANALYTICS_SESSIONS_FROM_DRAFT_ENDPOINT,
   API_ANALYTICS_WARNINGS_SUPPRESS_ENDPOINT,
 } from "../../config";
 
@@ -237,5 +248,160 @@ describe("suppressWarning", () => {
     mockFetch({ status: "ok" });
     const result = await suppressWarning({ block_hash: "x", warning_type: "red_length" });
     expect(result).toEqual({ status: "ok" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// promoteToTagMemory (Phase 6)
+// ---------------------------------------------------------------------------
+
+const _TEST_HASH = "a".repeat(64);
+
+describe("promoteToTagMemory", () => {
+  it("POSTs to the correct hash-parameterised endpoint", async () => {
+    const payload: PromoteToTagMemoryOut = { memory_id: 1, tag: "infra" };
+    mockFetch(payload);
+
+    await promoteToTagMemory(_TEST_HASH, {
+      tag: "infra",
+      memory_content: "Remember this.",
+    });
+
+    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${API_ANALYTICS_PLUG_BLOCKS_BASE}/${_TEST_HASH}/promote-to-tag-memory`);
+    expect(init.method).toBe("POST");
+    const sent = JSON.parse(init.body as string) as unknown;
+    expect((sent as Record<string, unknown>)["tag"]).toBe("infra");
+    expect((sent as Record<string, unknown>)["memory_content"]).toBe("Remember this.");
+  });
+
+  it("returns the decoded promote response", async () => {
+    const payload: PromoteToTagMemoryOut = { memory_id: 42, tag: "infra" };
+    mockFetch(payload);
+
+    const result = await promoteToTagMemory(_TEST_HASH, {
+      tag: "infra",
+      memory_content: "x",
+    });
+    expect(result.memory_id).toBe(42);
+    expect(result.tag).toBe("infra");
+  });
+
+  it("passes the AbortSignal when provided", async () => {
+    mockFetch({ memory_id: 1, tag: "infra" });
+    const ctrl = new AbortController();
+    await promoteToTagMemory(
+      _TEST_HASH,
+      { tag: "infra", memory_content: "x" },
+      { signal: ctrl.signal },
+    );
+
+    const [, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBe(ctrl.signal);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// promoteToOnOpen (Phase 6)
+// ---------------------------------------------------------------------------
+
+describe("promoteToOnOpen", () => {
+  it("POSTs to the correct hash-parameterised endpoint", async () => {
+    const payload: PromoteToOnOpenOut = { on_open_sh_path: "/tmp/proj/.bearings/on_open.sh" };
+    mockFetch(payload);
+
+    await promoteToOnOpen(_TEST_HASH, {
+      working_directory: "/tmp/proj",
+      snippet: "echo hello",
+    });
+
+    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${API_ANALYTICS_PLUG_BLOCKS_BASE}/${_TEST_HASH}/promote-to-on-open`);
+    expect(init.method).toBe("POST");
+    const sent = JSON.parse(init.body as string) as unknown;
+    expect((sent as Record<string, unknown>)["working_directory"]).toBe("/tmp/proj");
+    expect((sent as Record<string, unknown>)["snippet"]).toBe("echo hello");
+  });
+
+  it("returns the decoded promote response", async () => {
+    const payload: PromoteToOnOpenOut = { on_open_sh_path: "/out/path" };
+    mockFetch(payload);
+
+    const result = await promoteToOnOpen(_TEST_HASH, {
+      working_directory: "/tmp",
+      snippet: "x",
+    });
+    expect(result.on_open_sh_path).toBe("/out/path");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// draftNewSession (Phase 6)
+// ---------------------------------------------------------------------------
+
+describe("draftNewSession", () => {
+  it("POSTs to the draft-new-session endpoint with the correct body", async () => {
+    const payload: DraftNewSessionOut = {
+      draft_plug: "# Continuing from Foo",
+      estimated_tokens: 80,
+      draft_cost_tokens: { input: 0, output: 0 },
+    };
+    mockFetch(payload);
+
+    await draftNewSession({ source_session_id: "ses_abc", carry_tags: ["infra"] });
+
+    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(API_ANALYTICS_DRAFT_NEW_SESSION_ENDPOINT);
+    expect(init.method).toBe("POST");
+    const sent = JSON.parse(init.body as string) as unknown;
+    expect((sent as Record<string, unknown>)["source_session_id"]).toBe("ses_abc");
+    expect((sent as Record<string, unknown>)["carry_tags"]).toEqual(["infra"]);
+  });
+
+  it("returns the decoded draft payload", async () => {
+    const payload: DraftNewSessionOut = {
+      draft_plug: "draft",
+      estimated_tokens: 10,
+      draft_cost_tokens: { input: 0, output: 0 },
+    };
+    mockFetch(payload);
+
+    const result = await draftNewSession({ source_session_id: "ses_xyz" });
+    expect(result.draft_plug).toBe("draft");
+    expect(result.estimated_tokens).toBe(10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createSessionFromDraft (Phase 6)
+// ---------------------------------------------------------------------------
+
+describe("createSessionFromDraft", () => {
+  it("POSTs to the sessions/from-draft endpoint", async () => {
+    const payload: SessionFromDraftOut = { session_id: "ses_new" };
+    mockFetch(payload);
+
+    await createSessionFromDraft({
+      draft_plug: "# New session",
+      tags: ["infra"],
+      working_directory: "/tmp",
+    });
+
+    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(API_ANALYTICS_SESSIONS_FROM_DRAFT_ENDPOINT);
+    expect(init.method).toBe("POST");
+    const sent = JSON.parse(init.body as string) as unknown;
+    expect((sent as Record<string, unknown>)["draft_plug"]).toBe("# New session");
+    expect((sent as Record<string, unknown>)["tags"]).toEqual(["infra"]);
+    expect((sent as Record<string, unknown>)["working_directory"]).toBe("/tmp");
+  });
+
+  it("returns the new session id", async () => {
+    mockFetch({ session_id: "ses_xyz" });
+    const result = await createSessionFromDraft({
+      draft_plug: "x",
+      working_directory: "/tmp",
+    });
+    expect(result.session_id).toBe("ses_xyz");
   });
 });

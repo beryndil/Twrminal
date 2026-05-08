@@ -552,10 +552,17 @@ async def create_tag_memory_from_plug_block(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"tag {body.tag!r} not found",
         )
+    title = f"Promoted from plug block {hash[:8]}"
+    # Idempotency: if a memory with this exact title already exists for
+    # the tag, return it rather than creating a duplicate (spec §11).
+    existing = await memories_db.list_for_tag(db, tag.id)
+    for mem in existing:
+        if mem.title == title:
+            return PromoteToTagMemoryOut(memory_id=mem.id, tag=tag.name)
     memory = await memories_db.create(
         db,
         tag_id=tag.id,
-        title=f"Promoted from plug block {hash[:8]}",
+        title=title,
         body=body.memory_content,
         enabled=True,
     )
@@ -602,11 +609,17 @@ async def create_on_open_from_plug_block(
     if not snippet.endswith("\n"):
         snippet += "\n"
 
-    def _write_snippet() -> None:
-        with on_open_path.open("a", encoding="utf-8") as fh:
-            fh.write(snippet)
+    def _write_snippet_idempotent() -> None:
+        # Idempotency: read existing content and skip the write if the
+        # snippet is already present (spec §11).
+        existing = ""
+        if on_open_path.exists():
+            existing = on_open_path.read_text(encoding="utf-8")
+        if snippet not in existing:
+            with on_open_path.open("a", encoding="utf-8") as fh:
+                fh.write(snippet)
 
-    await asyncio.to_thread(_write_snippet)
+    await asyncio.to_thread(_write_snippet_idempotent)
     return PromoteToOnOpenOut(on_open_sh_path=str(on_open_path))
 
 

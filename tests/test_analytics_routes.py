@@ -378,6 +378,20 @@ class TestPromoteToTagMemory:
         )
         assert resp.status_code == 404
 
+    def test_idempotent_double_promote(self, client: TestClient) -> None:
+        """Re-promoting the same block to the same tag returns the same memory id."""
+        self._seed_block(client)
+        payload = {"tag": "infra", "memory_content": "Remember this."}
+        r1 = client.post(
+            f"/api/analytics/plug-blocks/{_HASH_A}/promote-to-tag-memory", json=payload
+        )
+        r2 = client.post(
+            f"/api/analytics/plug-blocks/{_HASH_A}/promote-to-tag-memory", json=payload
+        )
+        assert r1.status_code == 200
+        assert r2.status_code == 200
+        assert r1.json()["memory_id"] == r2.json()["memory_id"]
+
 
 class TestPromoteToOnOpen:
     """POST /api/analytics/plug-blocks/{hash}/promote-to-on-open."""
@@ -420,6 +434,18 @@ class TestPromoteToOnOpen:
             json={"working_directory": "/no/such/directory/exists", "snippet": "x"},
         )
         assert resp.status_code == 422
+
+    def test_idempotent_double_promote(self, client: TestClient, tmp_path: Path) -> None:
+        """Re-promoting the same snippet must not duplicate the content."""
+        self._seed_block(client)
+        work_dir = tmp_path / "myproject"
+        work_dir.mkdir()
+        payload = {"working_directory": str(work_dir), "snippet": "echo idempotent"}
+        client.post(f"/api/analytics/plug-blocks/{_HASH_A}/promote-to-on-open", json=payload)
+        client.post(f"/api/analytics/plug-blocks/{_HASH_A}/promote-to-on-open", json=payload)
+        on_open = work_dir / ".bearings" / "on_open.sh"
+        content = on_open.read_text()
+        assert content.count("echo idempotent") == 1
 
 
 class TestDraftNewSession:

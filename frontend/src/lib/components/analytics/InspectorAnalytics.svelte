@@ -14,12 +14,14 @@
    * * **C — Active session plug**: total tokens, status colour, and
    *   per-block breakdown for the currently selected session.
    *
-   * Promote actions (spec §7.5) are Phase 6 scope — intentionally
-   * absent from this component.
+   * Promote actions (spec §7.5): promote buttons appear in Section B
+   * (expanded redundancy block detail) and Section C (per-block row).
+   * Each flow opens a modal that collects the required fields and calls
+   * the backend action endpoint via the injectable test seam.
    *
    * Test seams follow the same pattern as :class:`InspectorUsage`:
-   * the three fetch props default to the live API clients and can be
-   * replaced in tests with async fixtures.
+   * fetch props default to the live API clients and can be replaced in
+   * tests with async fixtures.
    */
   import { onDestroy } from "svelte";
   import {
@@ -38,7 +40,11 @@
     getAttribution,
     getRedundancy,
     getSessionPlugSummary,
+    promoteToTagMemory,
+    promoteToOnOpen,
     type BucketCurrentOut,
+    type PromoteToTagMemoryIn,
+    type PromoteToOnOpenIn,
     type RedundancyBlockOut,
     type SessionPlugSummaryOut,
     type TagAttributionOut,
@@ -59,6 +65,9 @@
     fetchRedundancy?: typeof getRedundancy;
     fetchPlugSummary?: typeof getSessionPlugSummary;
     fetchTags?: typeof listTags;
+    /** Promote action seams (spec §7.5 Phase 6). */
+    doPromoteToTagMemory?: typeof promoteToTagMemory;
+    doPromoteToOnOpen?: typeof promoteToOnOpen;
   }
 
   const {
@@ -68,6 +77,8 @@
     fetchRedundancy = getRedundancy,
     fetchPlugSummary = getSessionPlugSummary,
     fetchTags = listTags,
+    doPromoteToTagMemory = promoteToTagMemory,
+    doPromoteToOnOpen = promoteToOnOpen,
   }: Props = $props();
 
   type LoadState = "idle" | "loading" | "ready" | "error";
@@ -90,6 +101,80 @@
   // ----- Section C state -----------------------------------------------
   let plugSummary: SessionPlugSummaryOut | null = $state(null);
   let plugLoadState: LoadState = $state("idle");
+
+  // ----- Promote modal state (spec §7.5, Phase 6) ----------------------
+  // tagMemoryModal: open when user clicks "Promote to tag memory"
+  // onOpenModal: open when user clicks "Promote to on_open.sh"
+  // promoteHash: hash of the block being promoted
+  // promoteStatus: feedback message after a promote attempt
+  type PromoteModal = "none" | "tagMemory" | "onOpen";
+  let promoteModal: PromoteModal = $state("none");
+  let promoteHash: string = $state("");
+  let promoteTagInput: string = $state("");
+  let promoteMemoryContent: string = $state("");
+  let promoteSnippet: string = $state("");
+  let promoteWorkingDir: string = $state("");
+  let promoteSaving: boolean = $state(false);
+  let promoteStatusMsg: string = $state("");
+
+  function openTagMemoryModal(hash: string, content: string): void {
+    promoteHash = hash;
+    promoteMemoryContent = content;
+    promoteTagInput = "";
+    promoteStatusMsg = "";
+    promoteModal = "tagMemory";
+  }
+
+  function openOnOpenModal(hash: string, content: string): void {
+    promoteHash = hash;
+    promoteSnippet = content;
+    promoteWorkingDir = "";
+    promoteStatusMsg = "";
+    promoteModal = "onOpen";
+  }
+
+  function closePromoteModal(): void {
+    promoteModal = "none";
+    promoteSaving = false;
+    promoteStatusMsg = "";
+  }
+
+  async function submitTagMemory(): Promise<void> {
+    if (!promoteTagInput.trim() || !promoteMemoryContent.trim()) return;
+    promoteSaving = true;
+    promoteStatusMsg = "";
+    try {
+      const body: PromoteToTagMemoryIn = {
+        tag: promoteTagInput.trim(),
+        memory_content: promoteMemoryContent,
+        auto_apply_to_next_session: true,
+      };
+      await doPromoteToTagMemory(promoteHash, body);
+      promoteStatusMsg = INSPECTOR_STRINGS.analyticsPromoteTagMemorySuccess;
+      promoteSaving = false;
+    } catch {
+      promoteStatusMsg = INSPECTOR_STRINGS.analyticsPromoteError;
+      promoteSaving = false;
+    }
+  }
+
+  async function submitOnOpen(): Promise<void> {
+    if (!promoteSnippet.trim() || !promoteWorkingDir.trim()) return;
+    promoteSaving = true;
+    promoteStatusMsg = "";
+    try {
+      const body: PromoteToOnOpenIn = {
+        working_directory: promoteWorkingDir.trim(),
+        snippet: promoteSnippet,
+      };
+      await doPromoteToOnOpen(promoteHash, body);
+      promoteStatusMsg = INSPECTOR_STRINGS.analyticsPromoteOnOpenSuccess;
+      promoteSaving = false;
+    } catch {
+      promoteStatusMsg = INSPECTOR_STRINGS.analyticsPromoteError;
+      promoteSaving = false;
+    }
+  }
 
   // Each section has its own abort controller so cancelling a redundancy
   // re-fetch (filter change) doesn't abort the in-flight bucket load.
@@ -596,6 +681,30 @@
                     {/each}
                   </ul>
                 </div>
+                <!-- Promote actions (spec §7.5) -->
+                <div
+                  class="flex flex-row gap-2"
+                  data-testid="inspector-analytics-redundancy-promote-actions"
+                >
+                  <button
+                    type="button"
+                    class="rounded border border-border px-2 py-0.5 text-xs"
+                    data-testid="inspector-analytics-redundancy-promote-tag-memory"
+                    onclick={() =>
+                      openTagMemoryModal(block.hash, block.source_path ?? block.hash.slice(0, 16))}
+                  >
+                    {INSPECTOR_STRINGS.analyticsPromoteToTagMemoryBtn}
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded border border-border px-2 py-0.5 text-xs"
+                    data-testid="inspector-analytics-redundancy-promote-on-open"
+                    onclick={() =>
+                      openOnOpenModal(block.hash, block.source_path ?? block.hash.slice(0, 16))}
+                  >
+                    {INSPECTOR_STRINGS.analyticsPromoteToOnOpenBtn}
+                  </button>
+                </div>
               </div>
             {/if}
           </li>
@@ -663,6 +772,7 @@
             <tr class="text-left text-fg-muted">
               <th>{INSPECTOR_STRINGS.analyticsPlugColType}</th>
               <th class="text-right">{INSPECTOR_STRINGS.analyticsPlugColTokens}</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -674,6 +784,16 @@
               >
                 <td>{blockTypeLabel(blk.block_type)}</td>
                 <td class="text-right font-mono">{formatTokens(blk.tokens)}</td>
+                <td class="text-right">
+                  <button
+                    type="button"
+                    class="text-xs text-fg-muted underline"
+                    data-testid="inspector-analytics-plug-block-promote"
+                    onclick={() => openTagMemoryModal(blk.hash, blk.block_type)}
+                  >
+                    {INSPECTOR_STRINGS.analyticsPromoteBtn}
+                  </button>
+                </td>
               </tr>
             {/each}
           </tbody>
@@ -681,6 +801,140 @@
       {/if}
     {/if}
   </section>
+
+  <!-- ── Promote modals (spec §7.5) ───────────────────────────────────── -->
+  {#if promoteModal !== "none"}
+    <!-- Backdrop -->
+    <div
+      class="fixed inset-0 z-40 bg-black/50"
+      data-testid="inspector-analytics-promote-backdrop"
+      role="presentation"
+      onclick={closePromoteModal}
+    ></div>
+
+    <!-- Tag memory modal -->
+    {#if promoteModal === "tagMemory"}
+      <div
+        class="fixed inset-x-4 top-1/4 z-50 mx-auto max-w-md rounded-lg border border-border bg-surface-1 p-4 shadow-xl"
+        data-testid="inspector-analytics-promote-tag-memory-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={INSPECTOR_STRINGS.analyticsPromoteTagMemoryModalTitle}
+      >
+        <h3 class="mb-3 text-sm font-semibold">
+          {INSPECTOR_STRINGS.analyticsPromoteTagMemoryModalTitle}
+        </h3>
+        <div class="flex flex-col gap-3">
+          <label class="flex flex-col gap-1 text-xs">
+            <span class="text-fg-muted">{INSPECTOR_STRINGS.analyticsPromoteTagLabel}</span>
+            <input
+              type="text"
+              class="rounded border border-border bg-surface-2 px-2 py-1 text-xs"
+              placeholder={INSPECTOR_STRINGS.analyticsPromoteTagPlaceholder}
+              data-testid="inspector-analytics-promote-tag-input"
+              bind:value={promoteTagInput}
+            />
+          </label>
+          <label class="flex flex-col gap-1 text-xs">
+            <span class="text-fg-muted">{INSPECTOR_STRINGS.analyticsPromoteMemoryContentLabel}</span
+            >
+            <textarea
+              class="h-24 rounded border border-border bg-surface-2 px-2 py-1 font-mono text-xs"
+              data-testid="inspector-analytics-promote-memory-content"
+              bind:value={promoteMemoryContent}
+            ></textarea>
+          </label>
+          {#if promoteStatusMsg}
+            <p class="text-xs" data-testid="inspector-analytics-promote-status">
+              {promoteStatusMsg}
+            </p>
+          {/if}
+          <div class="flex justify-end gap-2">
+            <button
+              type="button"
+              class="rounded border border-border px-3 py-1 text-xs"
+              data-testid="inspector-analytics-promote-cancel"
+              onclick={closePromoteModal}
+            >
+              {INSPECTOR_STRINGS.analyticsPromoteCancelBtn}
+            </button>
+            <button
+              type="button"
+              class="rounded bg-accent px-3 py-1 text-xs font-medium text-white"
+              data-testid="inspector-analytics-promote-save"
+              disabled={promoteSaving}
+              onclick={() => void submitTagMemory()}
+            >
+              {promoteSaving
+                ? INSPECTOR_STRINGS.analyticsPromoteSavingBtn
+                : INSPECTOR_STRINGS.analyticsPromoteSaveBtn}
+            </button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    <!-- on_open.sh modal -->
+    {#if promoteModal === "onOpen"}
+      <div
+        class="fixed inset-x-4 top-1/4 z-50 mx-auto max-w-md rounded-lg border border-border bg-surface-1 p-4 shadow-xl"
+        data-testid="inspector-analytics-promote-on-open-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={INSPECTOR_STRINGS.analyticsPromoteOnOpenModalTitle}
+      >
+        <h3 class="mb-3 text-sm font-semibold">
+          {INSPECTOR_STRINGS.analyticsPromoteOnOpenModalTitle}
+        </h3>
+        <div class="flex flex-col gap-3">
+          <label class="flex flex-col gap-1 text-xs">
+            <span class="text-fg-muted">{INSPECTOR_STRINGS.analyticsPromoteWorkingDirLabel}</span>
+            <input
+              type="text"
+              class="rounded border border-border bg-surface-2 px-2 py-1 font-mono text-xs"
+              placeholder={INSPECTOR_STRINGS.analyticsPromoteWorkingDirPlaceholder}
+              data-testid="inspector-analytics-promote-workdir-input"
+              bind:value={promoteWorkingDir}
+            />
+          </label>
+          <label class="flex flex-col gap-1 text-xs">
+            <span class="text-fg-muted">{INSPECTOR_STRINGS.analyticsPromoteSnippetLabel}</span>
+            <textarea
+              class="h-24 rounded border border-border bg-surface-2 px-2 py-1 font-mono text-xs"
+              data-testid="inspector-analytics-promote-snippet"
+              bind:value={promoteSnippet}
+            ></textarea>
+          </label>
+          {#if promoteStatusMsg}
+            <p class="text-xs" data-testid="inspector-analytics-promote-status">
+              {promoteStatusMsg}
+            </p>
+          {/if}
+          <div class="flex justify-end gap-2">
+            <button
+              type="button"
+              class="rounded border border-border px-3 py-1 text-xs"
+              data-testid="inspector-analytics-promote-cancel"
+              onclick={closePromoteModal}
+            >
+              {INSPECTOR_STRINGS.analyticsPromoteCancelBtn}
+            </button>
+            <button
+              type="button"
+              class="rounded bg-accent px-3 py-1 text-xs font-medium text-white"
+              data-testid="inspector-analytics-promote-save"
+              disabled={promoteSaving}
+              onclick={() => void submitOnOpen()}
+            >
+              {promoteSaving
+                ? INSPECTOR_STRINGS.analyticsPromoteSavingBtn
+                : INSPECTOR_STRINGS.analyticsPromoteSaveBtn}
+            </button>
+          </div>
+        </div>
+      </div>
+    {/if}
+  {/if}
 </section>
 
 <style>
