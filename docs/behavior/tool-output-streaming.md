@@ -41,8 +41,8 @@ The user can right-click the failed row (see [context-menus](context-menus.md)) 
 
 Bearings caps how much output it streams to the screen and persists, to keep a single runaway tool from lagging the UI or filling the database. The user observes:
 
-* **Soft cap on display.** Output beyond the soft cap is folded inside an inline "Show full output" expander; the visible head/tail bookends remain interactive (selectable, copyable). The full body is still streamed and persisted; the expander simply collapses the middle for layout.
 * **Hard cap on persistence.** A tool that produces output beyond the hard cap has its tail truncated; the row's body ends with a clearly-marked `[truncated — N bytes elided]` annotation. Anything past the hard cap is not recoverable from Bearings; the user must re-run the tool with their own redirect to capture it.
+* **Soft-cap inline expander** — *not implemented in v1.0.* The spec describes a two-tier system where a soft cap folds the middle of long output into an inline "Show full output" expander while still persisting the full body. Only the hard-cap tier is implemented; the soft-cap expander will land in a future release.
 * **Truncation marker placement.** The marker always appears at the end of the persisted body, never in the middle, so the rendered tail is the actual end of what the tool produced (up to the cap).
 * **Long lines.** Long single lines wrap inside the row's body container; horizontal scrolling is not introduced.
 * **Multi-byte safety.** The streaming chunks are split on safe boundaries (line breaks, ANSI escape boundaries) so a chunk never splits a multibyte UTF-8 codepoint or an ANSI escape sequence in the middle. The user does not see partial mojibake or stray escape fragments while the stream is live.
@@ -85,14 +85,14 @@ File paths and URLs that appear inside tool output are automatically converted t
 * **Absolute filesystem paths** (e.g. `/home/user/project/src/foo.py`) become `file://` anchors dispatched to the local "Open in editor" handler — no new tab.
 * **Workspace-relative paths** (e.g. `src/bearings/agent/runner.py`, `frontend/src/lib/x.svelte`) are resolved against the active session's `working_dir` and rendered as `file://` anchors. Paths that cannot be resolved (no `working_dir` set, or the path would escape the project root via `..`) are left as plain text rather than producing a broken anchor.
 * **Explicit `file://` URLs** are treated as file anchors directly.
-* **Selecting and copying** a linkified span copies the visible text (the path or URL as the tool printed it), not the underlying `href`.
-* **ANSI escape sequences** are passed through unchanged; this feature does not introduce ANSI colorisation.
+* **Selecting and copying** a linkified span copies the underlying `href` (the expanded `file://` URL or the full `https://` URL), not the visible text as the tool printed it. This is a known v1.0 limitation — right-clicking and using "Copy tool output" from the context menu gives the full unmodified output text.
+* **ANSI escape sequences** are stripped by the HTML sanitizer before rendering. Colored terminal output from tools such as `ls --color` or `git diff` loses its color in the output row. No ANSI-to-color renderer is wired in v1.0.
 
 The same linkification pipeline is used for user message bubbles in the conversation body (see [chat](chat.md) §"Conversation rendering").
 
 ## What the user does NOT see
 
 * **Per-byte timestamps.** The streamed output is rendered as bytes, not as a time-stamped log. Per-call start / end times are visible on the row; per-chunk arrival times are not surfaced.
-* **A separate "raw vs cooked" toggle.** ANSI color codes the tool emits are rendered as colored text inline; the user does not get to see the raw escape sequences without copying them out.
+* **ANSI color rendering.** ANSI escape sequences are stripped before display (see §Clickable file paths above). The rendered output shows plain text; colored terminal output appears without color. There is no raw/cooked toggle.
 * **Cross-tool aggregation.** The drawer lists each tool call as its own row; there is no merged "all output for this turn" view.
 * **Per-chunk ack from the server.** Chunks just appear; there is no progress percentage unless the tool itself emits one in its output.
