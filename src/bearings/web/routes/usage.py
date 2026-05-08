@@ -21,7 +21,6 @@ from __future__ import annotations
 import time
 from typing import Final
 
-import aiosqlite
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from bearings.agent.override_aggregator import OverrideAggregator
@@ -31,22 +30,12 @@ from bearings.web.models.usage import (
     UsageByModelRow,
     UsageByTagRow,
 )
+from bearings.web.routes._deps import _db
 
 router = APIRouter()
 
 
 _KNOWN_USAGE_PERIODS: Final[frozenset[str]] = frozenset({"day", "week"})
-
-
-def _db(request: Request) -> aiosqlite.Connection:
-    """Pull the long-lived DB connection off ``app.state`` (503 if absent)."""
-    db = getattr(request.app.state, "db_connection", None)
-    if db is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="db_connection not configured on app.state",
-        )
-    return db  # type: ignore[no-any-return]
 
 
 def _period_to_seconds(period: str) -> int:

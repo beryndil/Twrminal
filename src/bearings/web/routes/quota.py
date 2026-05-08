@@ -14,38 +14,18 @@ Per arch §1.1.5 the route handlers stay thin; the quota domain code
 
 from __future__ import annotations
 
-import aiosqlite
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from bearings.agent.quota import (
-    QuotaPoller,
     QuotaSnapshot,
     load_history,
     load_latest,
 )
 from bearings.config.constants import USAGE_HEADROOM_WINDOW_DAYS
 from bearings.web.models.quota import QuotaSnapshotOut
+from bearings.web.routes._deps import _db, _quota_poller
 
 router = APIRouter()
-
-
-def _db(request: Request) -> aiosqlite.Connection:
-    """Pull the long-lived DB connection off ``app.state`` (503 if absent)."""
-    db = getattr(request.app.state, "db_connection", None)
-    if db is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="db_connection not configured on app.state",
-        )
-    return db  # type: ignore[no-any-return]
-
-
-def _quota_poller(request: Request) -> QuotaPoller | None:
-    """Pull the optional quota poller off ``app.state``."""
-    poller = getattr(request.app.state, "quota_poller", None)
-    if poller is None:
-        return None
-    return poller  # type: ignore[no-any-return]
 
 
 def _to_out(snapshot: QuotaSnapshot) -> QuotaSnapshotOut:

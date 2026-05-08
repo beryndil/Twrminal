@@ -34,7 +34,6 @@ import aiosqlite
 from fastapi import APIRouter, HTTPException, Request, status
 
 from bearings.agent.quota import (
-    QuotaPoller,
     apply_quota_guard,
     load_latest,
 )
@@ -50,37 +49,9 @@ from bearings.web.models.routing import (
     SystemRoutingRuleIn,
     SystemRoutingRuleOut,
 )
+from bearings.web.routes._deps import _db, _quota_poller
 
 router = APIRouter()
-
-
-def _db(request: Request) -> aiosqlite.Connection:
-    """Pull the long-lived DB connection off ``app.state``.
-
-    Mirrors :func:`bearings.web.routes.tags._db`. 503 if the app was
-    constructed without a DB.
-    """
-    db = getattr(request.app.state, "db_connection", None)
-    if db is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="db_connection not configured on app.state",
-        )
-    return db  # type: ignore[no-any-return]
-
-
-def _quota_poller(request: Request) -> QuotaPoller | None:
-    """Pull the optional quota poller off ``app.state``.
-
-    The preview endpoint reads this so a guard-tripped preview reflects
-    the live snapshot. ``None`` is acceptable: the preview falls back
-    to ``load_latest`` against the DB so a missing poller (e.g. tests
-    that don't start it) still produces a quota-aware preview.
-    """
-    poller = getattr(request.app.state, "quota_poller", None)
-    if poller is None:
-        return None
-    return poller  # type: ignore[no-any-return]
 
 
 def _tag_rule_to_out(rule: RoutingRule) -> RoutingRuleOut:
