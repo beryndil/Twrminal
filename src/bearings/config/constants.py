@@ -1476,9 +1476,83 @@ assert (
 # enforce the alphabet at the API boundary.
 assert frozenset({HEALTH_STATUS_OK, HEALTH_STATUS_DEGRADED}) == KNOWN_HEALTH_STATUSES
 
+# ---------------------------------------------------------------------------
+# Analytics — plug monitoring thresholds and type alphabets.
+# (BEARINGS_ANALYTICS_v1.md §4.1 schema, §8.1 thresholds.)
+#
+# Plug-length thresholds are the spec-mandated defaults; both are exposed
+# in user settings as ``plug_yellow_threshold`` and ``plug_red_threshold``
+# integers so they can be tuned without a code change.  Using named
+# constants here (rather than inline literals) means the threshold can be
+# referenced by both the analytics layer and the settings validator without
+# importing either end from the other.
+# ---------------------------------------------------------------------------
+
+# Plug token-count thresholds for yellow and red status indicators.
+# Values from BEARINGS_ANALYTICS_v1.md §8.1.
+PLUG_YELLOW_THRESHOLD_TOKENS: Final[int] = 500
+PLUG_RED_THRESHOLD_TOKENS: Final[int] = 1500
+
+# Plug-block type discriminator alphabet.  Mirrors the CHECK constraint on
+# plug_blocks.block_type in schema.sql; keep in sync with any schema change.
+ANALYTICS_BLOCK_TYPE_CLAUDE_MD: Final[str] = "claude_md"
+ANALYTICS_BLOCK_TYPE_TAG_MEMORY: Final[str] = "tag_memory"
+ANALYTICS_BLOCK_TYPE_SYSTEM_ADDITION: Final[str] = "system_addition"
+ANALYTICS_BLOCK_TYPE_MCP_TOOLS: Final[str] = "mcp_tools"
+ANALYTICS_BLOCK_TYPE_SKILL_DESC: Final[str] = "skill_desc"
+ANALYTICS_BLOCK_TYPE_OTHER: Final[str] = "other"
+KNOWN_ANALYTICS_BLOCK_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        ANALYTICS_BLOCK_TYPE_CLAUDE_MD,
+        ANALYTICS_BLOCK_TYPE_TAG_MEMORY,
+        ANALYTICS_BLOCK_TYPE_SYSTEM_ADDITION,
+        ANALYTICS_BLOCK_TYPE_MCP_TOOLS,
+        ANALYTICS_BLOCK_TYPE_SKILL_DESC,
+        ANALYTICS_BLOCK_TYPE_OTHER,
+    }
+)
+
+# Suppressed-warning type discriminator alphabet.  Mirrors the CHECK
+# constraint on suppressed_warnings.warning_type in schema.sql.
+ANALYTICS_WARNING_TYPE_YELLOW: Final[str] = "yellow_length"
+ANALYTICS_WARNING_TYPE_RED: Final[str] = "red_length"
+KNOWN_ANALYTICS_WARNING_TYPES: Final[frozenset[str]] = frozenset(
+    {ANALYTICS_WARNING_TYPE_YELLOW, ANALYTICS_WARNING_TYPE_RED}
+)
+
+# Plug status strings — computed from total token count vs thresholds.
+# Used in GET /api/analytics/sessions/{id}/plug-summary response (§9.2).
+ANALYTICS_PLUG_STATUS_GREEN: Final[str] = "green"
+ANALYTICS_PLUG_STATUS_YELLOW: Final[str] = "yellow"
+ANALYTICS_PLUG_STATUS_RED: Final[str] = "red"
+KNOWN_ANALYTICS_PLUG_STATUSES: Final[frozenset[str]] = frozenset(
+    {
+        ANALYTICS_PLUG_STATUS_GREEN,
+        ANALYTICS_PLUG_STATUS_YELLOW,
+        ANALYTICS_PLUG_STATUS_RED,
+    }
+)
+
+# Self-consistency: alphabets must be non-empty and thresholds ordered.
+assert len(KNOWN_ANALYTICS_BLOCK_TYPES) == 6
+assert len(KNOWN_ANALYTICS_WARNING_TYPES) == 2
+assert len(KNOWN_ANALYTICS_PLUG_STATUSES) == 3
+assert PLUG_YELLOW_THRESHOLD_TOKENS < PLUG_RED_THRESHOLD_TOKENS
+
 
 __all__ = [
     "ADVISOR_TOOL_BETA_HEADER",
+    "ANALYTICS_BLOCK_TYPE_CLAUDE_MD",
+    "ANALYTICS_BLOCK_TYPE_MCP_TOOLS",
+    "ANALYTICS_BLOCK_TYPE_OTHER",
+    "ANALYTICS_BLOCK_TYPE_SKILL_DESC",
+    "ANALYTICS_BLOCK_TYPE_SYSTEM_ADDITION",
+    "ANALYTICS_BLOCK_TYPE_TAG_MEMORY",
+    "ANALYTICS_PLUG_STATUS_GREEN",
+    "ANALYTICS_PLUG_STATUS_RED",
+    "ANALYTICS_PLUG_STATUS_YELLOW",
+    "ANALYTICS_WARNING_TYPE_RED",
+    "ANALYTICS_WARNING_TYPE_YELLOW",
     "AUTO_DRIVER_FAILURE_POLICY_HALT",
     "AUTO_DRIVER_FAILURE_POLICY_SKIP",
     "AUTO_DRIVER_STATE_ERRORED",
@@ -1579,6 +1653,9 @@ __all__ = [
     "ITEM_OUTCOME_BLOCKED",
     "ITEM_OUTCOME_FAILED",
     "ITEM_OUTCOME_SKIPPED",
+    "KNOWN_ANALYTICS_BLOCK_TYPES",
+    "KNOWN_ANALYTICS_PLUG_STATUSES",
+    "KNOWN_ANALYTICS_WARNING_TYPES",
     "KNOWN_AUTO_DRIVER_FAILURE_POLICIES",
     "KNOWN_AUTO_DRIVER_STATES",
     "KNOWN_BULK_OPS",
@@ -1630,6 +1707,8 @@ __all__ = [
     "PERMISSION_PROFILE_DISALLOWED_TOOLS",
     "PERMISSION_PROFILE_NAMES",
     "PERMISSION_PROFILE_TO_SDK_MODE",
+    "PLUG_RED_THRESHOLD_TOKENS",
+    "PLUG_YELLOW_THRESHOLD_TOKENS",
     "PRESSURE_INJECT_THRESHOLD_PCT",
     "PROMPT_ACK_QUEUED_KEY",
     "PROMPT_ACK_SESSION_ID_KEY",

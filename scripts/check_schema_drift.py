@@ -45,10 +45,10 @@ SCHEMA_PATH: Final[Path] = REPO_ROOT / "src" / "bearings" / "db" / "schema.sql"
 _SQLITE_INTERNAL_PREFIX: Final[str] = "sqlite_"
 
 #: Regex to extract the object name from a CREATE statement.
-#: Handles TABLE, UNIQUE INDEX, INDEX, VIEW, TRIGGER with optional
-#: ``IF NOT EXISTS``.
+#: Handles TABLE, VIRTUAL TABLE, UNIQUE INDEX, INDEX, VIEW, TRIGGER
+#: with optional ``IF NOT EXISTS``.
 _CREATE_NAME_RE: Final[re.Pattern[str]] = re.compile(
-    r"CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX|VIEW|TRIGGER)\s+"
+    r"CREATE\s+(?:UNIQUE\s+)?(?:VIRTUAL\s+)?(?:TABLE|INDEX|VIEW|TRIGGER)\s+"
     r"(?:IF\s+NOT\s+EXISTS\s+)?([a-z_]\w*)",
     re.IGNORECASE,
 )
@@ -88,18 +88,75 @@ def _normalize_sql(sql: str) -> str:
     return text.strip().rstrip(";").strip()
 
 
+def _split_sql_statements(sql_text: str) -> list[str]:
+    """Split *sql_text* into individual statements, respecting BEGIN...END blocks.
+
+    A naive semicolon split breaks trigger DDL because trigger bodies
+    contain embedded semicolons inside ``BEGIN ... END``.  This tokeniser
+    tracks nesting depth and only splits at a semicolon when depth is 0.
+    Single-quoted string literals are consumed whole so a semicolon inside
+    a string value does not act as a statement boundary.
+    """
+    statements: list[str] = []
+    buf: list[str] = []
+    depth = 0
+
+    # Match: single-quoted strings (with '' escapes), BEGIN/END keywords,
+    # or bare semicolons.  Everything else is consumed as plain text
+    # between matches.
+    _TOKEN_RE: re.Pattern[str] = re.compile(
+        r"'(?:''|[^'])*'"  # single-quoted string literal
+        r"|\bBEGIN\b"  # BEGIN keyword (depth +1)
+        r"|\bEND\b"  # END keyword (depth -1)
+        r"|;",  # statement boundary at depth 0
+        re.IGNORECASE,
+    )
+
+    pos = 0
+    for m in _TOKEN_RE.finditer(sql_text):
+        buf.append(sql_text[pos : m.start()])
+        tok = m.group()
+        pos = m.end()
+        upper = tok.upper()
+        if upper == "BEGIN":
+            depth += 1
+            buf.append(tok)
+        elif upper == "END":
+            depth -= 1
+            buf.append(tok)
+        elif tok == ";" and depth == 0:
+            stmt = "".join(buf).strip()
+            if stmt:
+                statements.append(stmt)
+            buf = []
+        else:
+            buf.append(tok)  # string literal or non-keyword token
+
+    buf.append(sql_text[pos:])
+    last = "".join(buf).strip()
+    if last:
+        statements.append(last)
+
+    return statements
+
+
 def _extract_source_map(schema_text: str) -> dict[str, str]:
     """Return ``{object_name: normalised_sql}`` for every CREATE statement.
 
-    Parses *schema_text* by stripping comments and splitting on ``';'``
-    boundaries, then normalises each resulting CREATE statement.  Non-CREATE
-    statements (``PRAGMA``, ``INSERT``, blank lines) are silently ignored.
+    Uses :func:`_split_sql_statements` (which tracks ``BEGIN...END`` depth)
+    rather than a naive semicolon split so that trigger DDL — whose bodies
+    contain embedded semicolons — is captured as a single complete unit.
+    Virtual-table DDL (``CREATE VIRTUAL TABLE``) is also captured because
+    ``_CREATE_NAME_RE`` now includes the ``VIRTUAL`` modifier.
+
+    Non-CREATE statements (``PRAGMA``, ``INSERT``, blank lines) are silently
+    ignored.
     """
-    # Strip comments before splitting so semicolons inside comments don't
-    # confuse the splitter.
+    # Strip comments before statement-splitting so comment text cannot
+    # confuse the tokeniser.
     stripped = _BLOCK_COMMENT_RE.sub("", _LINE_COMMENT_RE.sub("", schema_text))
     result: dict[str, str] = {}
-    for raw_stmt in stripped.split(";"):
+    for raw_stmt in _split_sql_statements(stripped):
         normalised = _normalize_sql(raw_stmt)
         if not normalised:
             continue
@@ -148,6 +205,23 @@ async def _check_drift() -> int:
     source_names = set(source_map)
     db_names = set(db_map)
 
+    # Identify virtual tables declared in source (DDL starts with
+    # CREATE VIRTUAL TABLE after normalisation).  SQLite auto-creates
+    # shadow tables for virtual table modules (e.g. FTS5's ``_data``,
+    # ``_idx``, ``_config``, ``_docsize`` tables).  These shadow tables
+    # appear in ``sqlite_schema`` but are NOT declared in ``schema.sql``
+    # — exclude them from the "extra in db" check.
+    vt_names = {
+        name
+        for name, sql in source_map.items()
+        if re.match(r"CREATE\s+VIRTUAL\s+TABLE\b", sql, re.IGNORECASE)
+    }
+    vt_shadow_names = {
+        name
+        for name in db_names - source_names
+        if any(name.startswith(vt + "_") for vt in vt_names)
+    }
+
     findings: list[str] = []
 
     for obj in sorted(source_names - db_names):
@@ -155,7 +229,7 @@ async def _check_drift() -> int:
             f"check_schema_drift: {obj!r} declared in schema.sql "
             "but not found in sqlite_schema after apply"
         )
-    for obj in sorted(db_names - source_names):
+    for obj in sorted((db_names - source_names) - vt_shadow_names):
         findings.append(
             f"check_schema_drift: {obj!r} found in sqlite_schema but not declared in schema.sql"
         )

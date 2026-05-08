@@ -750,6 +750,127 @@ CREATE INDEX IF NOT EXISTS idx_reorg_audit_dst_session_id
     ON reorg_audit(dst_session_id);
 
 -- ---------------------------------------------------------------------------
+-- Analytics tables — BEARINGS_ANALYTICS_v1.md §4.
+--
+-- Five tables and one FTS5 virtual table that form the Phase 1 analytics
+-- schema.  Authoritative source: BEARINGS_ANALYTICS_v1.md §4.1 (tables)
+-- and §4.2 (FTS5 index).
+--
+-- Timestamps are INTEGER unix milliseconds throughout (spec §4.1
+-- "unix ms") — diverging from the ISO-8601 TEXT convention on the
+-- user-facing session/message tables, consistent with the routing/quota
+-- tables that already use unix seconds / unix ms.
+-- ---------------------------------------------------------------------------
+
+-- turns — per-turn token accounting. One row per Claude API turn.
+-- Per spec §4.1: "One row per Claude API turn."
+-- UNIQUE(session_id, turn_index) ensures each position within a session
+-- is recorded once; the application layer uses INSERT OR IGNORE for
+-- idempotency on re-delivery.
+CREATE TABLE IF NOT EXISTS turns (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id               TEXT    NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    turn_index               INTEGER NOT NULL,
+    timestamp                INTEGER NOT NULL,
+    model                    TEXT    NOT NULL,
+    input_tokens             INTEGER NOT NULL DEFAULT 0,
+    output_tokens            INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens        INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens    INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(session_id, turn_index)
+);
+CREATE INDEX IF NOT EXISTS idx_turns_session_id ON turns(session_id);
+CREATE INDEX IF NOT EXISTS idx_turns_timestamp ON turns(timestamp);
+CREATE INDEX IF NOT EXISTS idx_turns_model ON turns(model);
+
+-- plug_blocks — unique injected context blocks, content-addressed by sha256.
+-- Same block reused across sessions maps to the same row (INSERT OR IGNORE
+-- on hash deduplicates automatically).
+--
+-- Design note: the spec declares hash as PRIMARY KEY, but the project
+-- convention requires INTEGER id as the first / primary key column.
+-- hash is therefore NOT NULL UNIQUE here; all FK references from
+-- session_plug_blocks and suppressed_warnings point to plug_blocks(hash)
+-- (valid per SQLite's FK rule that the referenced column carry a UNIQUE
+-- constraint).
+CREATE TABLE IF NOT EXISTS plug_blocks (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    hash                     TEXT    NOT NULL UNIQUE,
+    block_type               TEXT    NOT NULL
+                                     CHECK (block_type IN (
+                                         'claude_md', 'tag_memory', 'system_addition',
+                                         'mcp_tools', 'skill_desc', 'other'
+                                     )),
+    content                  TEXT    NOT NULL,
+    token_count              INTEGER NOT NULL,
+    token_count_model        TEXT    NOT NULL,
+    first_seen               INTEGER NOT NULL,
+    last_seen                INTEGER NOT NULL,
+    source_path              TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_plug_blocks_block_type ON plug_blocks(block_type);
+CREATE INDEX IF NOT EXISTS idx_plug_blocks_last_seen ON plug_blocks(last_seen);
+
+-- plug_blocks_fts — FTS5 content-table index over plug_blocks.content.
+-- Per spec §4.2: "Use content='plug_blocks' and content_rowid linkage."
+-- The virtual table delegates content storage to plug_blocks (no duplicate
+-- copy); three AFTER INSERT / UPDATE / DELETE triggers keep the FTS index
+-- current whenever the source table changes.
+CREATE VIRTUAL TABLE IF NOT EXISTS plug_blocks_fts
+    USING fts5(content, content=plug_blocks, content_rowid=rowid);
+
+-- FTS5 sync triggers (required for content= tables).
+CREATE TRIGGER IF NOT EXISTS plug_blocks_ai AFTER INSERT ON plug_blocks BEGIN
+    INSERT INTO plug_blocks_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
+CREATE TRIGGER IF NOT EXISTS plug_blocks_ad AFTER DELETE ON plug_blocks BEGIN
+    INSERT INTO plug_blocks_fts(plug_blocks_fts, rowid, content)
+        VALUES ('delete', old.rowid, old.content);
+END;
+CREATE TRIGGER IF NOT EXISTS plug_blocks_au AFTER UPDATE ON plug_blocks BEGIN
+    INSERT INTO plug_blocks_fts(plug_blocks_fts, rowid, content)
+        VALUES ('delete', old.rowid, old.content);
+    INSERT INTO plug_blocks_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
+
+-- session_plug_blocks — which plug blocks were injected into which sessions.
+-- Plugs are session-scoped (spec §4.1 "plugs are session-scoped").
+-- Composite PK enforces one entry per (session, block) pair.
+CREATE TABLE IF NOT EXISTS session_plug_blocks (
+    session_id               TEXT    NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    block_hash               TEXT    NOT NULL REFERENCES plug_blocks(hash) ON DELETE CASCADE,
+    injected_at              INTEGER NOT NULL,
+    PRIMARY KEY (session_id, block_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_session_plug_blocks_block_hash
+    ON session_plug_blocks(block_hash);
+
+-- bucket_snapshots — snapshots of /usage poll results. One row per poll.
+-- Per spec §4.1: "Don't try to deduplicate; the table is a time-series."
+CREATE TABLE IF NOT EXISTS bucket_snapshots (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp                INTEGER NOT NULL,
+    five_hour_used           INTEGER,
+    five_hour_limit          INTEGER,
+    weekly_used              INTEGER,
+    weekly_limit             INTEGER,
+    raw_response             TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_bucket_snapshots_timestamp
+    ON bucket_snapshots(timestamp);
+
+-- suppressed_warnings — user-dismissed plug-length warnings.
+-- When the user dismisses a yellow or red warning for a block hash,
+-- this row prevents re-notification for that (hash, warning_type) pair.
+CREATE TABLE IF NOT EXISTS suppressed_warnings (
+    block_hash               TEXT    NOT NULL REFERENCES plug_blocks(hash) ON DELETE CASCADE,
+    warning_type             TEXT    NOT NULL
+                                     CHECK (warning_type IN ('yellow_length', 'red_length')),
+    suppressed_at            INTEGER NOT NULL,
+    PRIMARY KEY (block_hash, warning_type)
+);
+
+-- ---------------------------------------------------------------------------
 -- Default system_routing_rules seed.
 --
 -- Verbatim from docs/model-routing-v1-spec.md §3 default rule table.

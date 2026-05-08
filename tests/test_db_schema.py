@@ -88,6 +88,21 @@ EXPECTED_TABLES = frozenset(
         # REST hydration of tool-work drawer rows on sessions older than
         # the ring buffer.
         "tool_calls",
+        # analytics-phase-1: five analytics tables (BEARINGS_ANALYTICS_v1.md §4.1).
+        "turns",
+        "plug_blocks",
+        "session_plug_blocks",
+        "bucket_snapshots",
+        "suppressed_warnings",
+        # analytics-phase-1: FTS5 virtual table for plug_blocks.content
+        # (spec §4.2) plus its four SQLite shadow tables.  Shadow tables
+        # are type='table' in sqlite_master and must be listed explicitly
+        # so the assertion stays accurate.
+        "plug_blocks_fts",
+        "plug_blocks_fts_data",
+        "plug_blocks_fts_idx",
+        "plug_blocks_fts_config",
+        "plug_blocks_fts_docsize",
     }
 )
 
