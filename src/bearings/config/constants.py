@@ -917,6 +917,14 @@ CLI_EXIT_USAGE_ERROR: Final[int] = 2
 # silent on default): 30 days matches a typical project review cadence.
 BEARINGS_TODO_CHECK_DEFAULT_MAX_AGE_DAYS: Final[int] = 30
 
+# ``bearings gc uploads`` default retention window (behavior doc
+# §"bearings gc uploads" — "--retention-days N" flag default). The
+# behavior doc is silent on the default value; 30 days is decided-and-
+# documented: generous enough that a recently-orphaned file is not
+# immediately swept, strict enough to reclaim disk space in a reasonable
+# cadence on an active Bearings instance.
+GC_UPLOADS_DEFAULT_RETENTION_DAYS: Final[int] = 30
+
 # ---------------------------------------------------------------------------
 # Per-message persistence — ``ResultMessage.model_usage`` projection
 # (item 1.9; spec §5 + arch §5 #3).
@@ -1537,6 +1545,7 @@ __all__ = [
     "FS_ENTRY_KIND_SYMLINK",
     "FS_LIST_MAX_ENTRIES",
     "FS_READ_MAX_BYTES",
+    "GC_UPLOADS_DEFAULT_RETENTION_DAYS",
     "GET_TOOL_OUTPUT_TOOL_NAME",
     "HEALTH_DB_PROBE_QUERY",
     "HEALTH_STATUS_DEGRADED",

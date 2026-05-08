@@ -40,10 +40,21 @@ def compute_sha256(body: bytes) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
-def _body_path(storage_root: Path, sha256: str) -> Path:
-    """Resolve ``<storage_root>/<sha256[:N]>/<sha256>`` for a digest."""
+def body_path(storage_root: Path, sha256: str) -> Path:
+    """Resolve ``<storage_root>/<sha256[:N]>/<sha256>`` for a digest.
+
+    Public helper for callers (e.g. the GC sweep in :mod:`bearings.cli.gc`)
+    that need the canonical on-disk path without performing any I/O.
+    The path is derived purely from the sha256 and the shard-prefix
+    constant; no filesystem calls are made.
+    """
     shard = sha256[:UPLOADS_SHA256_SHARD_CHARS]
     return storage_root / shard / sha256
+
+
+# Module-private alias kept so the four read/write helpers below can
+# remain call-site-stable without importing from themselves.
+_body_path = body_path
 
 
 def store_bytes(storage_root: Path, sha256: str, body: bytes) -> Path:
@@ -110,6 +121,7 @@ def delete_bytes(storage_root: Path, sha256: str) -> bool:
 
 
 __all__ = [
+    "body_path",
     "compute_sha256",
     "delete_bytes",
     "read_bytes",

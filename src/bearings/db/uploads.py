@@ -199,6 +199,34 @@ async def list_all(
     return [_row_to_upload(row) for row in rows]
 
 
+async def list_all_sha256s(conn: aiosqlite.Connection) -> frozenset[str]:
+    """Return the set of every sha256 digest recorded in the uploads table.
+
+    Unlike :func:`list_all` there is no row-count cap — the GC sweep
+    must see the complete set to distinguish orphaned on-disk bodies
+    (digests not present here) from valid ones.
+    """
+    async with conn.execute("SELECT sha256 FROM uploads") as cur:
+        rows = await cur.fetchall()
+    return frozenset(str(row[0]) for row in rows)
+
+
+async def list_all_rows_for_gc(conn: aiosqlite.Connection) -> list[UploadRow]:
+    """Return every upload row ordered oldest-first for the GC reverse sweep.
+
+    The GC reverse pass checks each row's on-disk body; it needs the
+    full table (no limit) so a long-running instance with many uploads
+    does not silently skip older rows.
+    """
+    conn.row_factory = aiosqlite.Row
+    async with conn.execute(
+        "SELECT id, sha256, filename, mime_type, size, created_at "
+        "FROM uploads ORDER BY created_at ASC, id ASC"
+    ) as cur:
+        rows = await cur.fetchall()
+    return [_row_to_upload(row) for row in rows]
+
+
 async def delete(conn: aiosqlite.Connection, upload_id: int) -> bool:
     """Remove the row by id; returns ``True`` if a row was removed.
 
@@ -222,4 +250,6 @@ __all__ = [
     "get_by_sha256",
     "insert_or_get",
     "list_all",
+    "list_all_rows_for_gc",
+    "list_all_sha256s",
 ]

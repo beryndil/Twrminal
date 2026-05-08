@@ -17,9 +17,9 @@ and prints a one-line bootstrap notice") without rolling back the
 done-when of either item.
 
 Stubs for ``serve`` / ``init`` / ``window`` / ``send`` / ``here`` /
-``pending`` / ``gc`` are deferred per arch §1.1.1 + behavior doc;
-each subsequent item adds its module under ``cli/`` and registers
-its subparser through :func:`build_subparser`.
+``pending`` are deferred per arch §1.1.1 + behavior doc; each
+subsequent item adds its module under ``cli/`` and registers its
+subparser through :func:`build_subparser`.  ``gc`` is now wired.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ import sys
 from collections.abc import Sequence
 
 from bearings import __version__
+from bearings.cli import gc as gc_cli
 from bearings.cli import serve as serve_cli
 from bearings.cli import todo as todo_cli
 from bearings.config.constants import (
@@ -43,8 +44,8 @@ from bearings.config.constants import (
 # its real subcommand surface). When a real subcommand is supplied the
 # notice is not printed; the subcommand handles its own output.
 _BOOTSTRAP_MESSAGE: str = (
-    "bearings v{version} (v1 rebuild — todo + serve subcommands wired; "
-    "init / window / send / here / pending / gc land in subsequent items)\n"
+    "bearings v{version} (v1 rebuild — todo + serve + gc subcommands wired; "
+    "init / window / send / here / pending land in subsequent items)\n"
 )
 
 
@@ -74,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     todo_cli.build_subparser(sub)
     serve_cli.build_subparser(sub)
+    gc_cli.build_subparser(sub)
     return parser
 
 
