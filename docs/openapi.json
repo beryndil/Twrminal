@@ -7794,7 +7794,8 @@
           "display_name": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 120
               },
               {
                 "type": "null"
@@ -7803,15 +7804,9 @@
             "title": "Display Name"
           },
           "notify_on_complete": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notify On Complete"
+            "type": "boolean",
+            "title": "Notify On Complete",
+            "default": false
           }
         },
         "additionalProperties": false,
