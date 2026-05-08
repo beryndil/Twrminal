@@ -25,10 +25,7 @@
    * nothing and the component reads from :data:`conversationStore`.
    */
   import { INSPECTOR_STRINGS } from "../../config";
-  import {
-    conversationStore,
-    type MessageTurnView,
-  } from "../../stores/conversation.svelte";
+  import { conversationStore, type MessageTurnView } from "../../stores/conversation.svelte";
   import { formatAbsolute } from "../../utils/datetime";
   import type { SessionOut } from "../../api/sessions";
 
@@ -93,10 +90,7 @@
       if (typeof parsed.file_path === "string" && parsed.file_path.length > 0) {
         return parsed.file_path;
       }
-      if (
-        typeof parsed.notebook_path === "string" &&
-        parsed.notebook_path.length > 0
-      ) {
+      if (typeof parsed.notebook_path === "string" && parsed.notebook_path.length > 0) {
         return parsed.notebook_path;
       }
       if (typeof parsed.path === "string" && parsed.path.length > 0) {
@@ -164,8 +158,7 @@
           // two hydrated calls within the same DB-persisted turn) also
           // advance the verb to reflect the later call in iteration order.
           const isNewer =
-            touchMs !== null &&
-            (existing.lastTouchMs === null || touchMs >= existing.lastTouchMs);
+            touchMs !== null && (existing.lastTouchMs === null || touchMs >= existing.lastTouchMs);
           map.set(path, {
             ...existing,
             touchCount: existing.touchCount + 1,
@@ -186,9 +179,7 @@
 </script>
 
 <section class="inspector-files flex flex-col gap-3" data-testid="inspector-files">
-  <h3
-    class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-fg-muted"
-  >
+  <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-fg-muted">
     {INSPECTOR_STRINGS.filesHeading}
     {#if fileRows.length > 0}
       <span
@@ -208,10 +199,7 @@
   {:else}
     <ul class="flex flex-col gap-1" data-testid="inspector-files-list">
       {#each fileRows as row (row.path)}
-        <li
-          class="flex min-w-0 items-baseline gap-2 text-xs"
-          data-testid="inspector-files-row"
-        >
+        <li class="flex min-w-0 items-baseline gap-2 text-xs" data-testid="inspector-files-row">
           <span
             class="min-w-0 flex-1 truncate font-mono text-fg"
             title={row.path}

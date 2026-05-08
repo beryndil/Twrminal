@@ -188,8 +188,7 @@ export function markdownContextMenu(container: HTMLElement): { destroy: () => vo
             ? {
                 [MENU_ACTION_CODE_BLOCK_OPEN_IN_EDITOR]: () => {
                   void shellOpenInEditor(code.trim()).catch((err: unknown) => {
-                    const detail =
-                      err instanceof Error ? err.message : "unknown error";
+                    const detail = err instanceof Error ? err.message : "unknown error";
                     showShellOpError(detail);
                   });
                 },
@@ -234,8 +233,7 @@ export function markdownContextMenu(container: HTMLElement): { destroy: () => vo
             localHrefPath !== null
               ? () => {
                   void shellOpenInEditor(localHrefPath).catch((err: unknown) => {
-                    const detail =
-                      err instanceof Error ? err.message : "unknown error";
+                    const detail = err instanceof Error ? err.message : "unknown error";
                     showShellOpError(detail);
                   });
                 }

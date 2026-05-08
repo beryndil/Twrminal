@@ -9,12 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  DEFAULT_UNDO_WINDOW_MS,
-  UNDO_STACK_CAP,
-  _resetForTests,
-  undoStore,
-} from "../undo.svelte";
+import { DEFAULT_UNDO_WINDOW_MS, UNDO_STACK_CAP, _resetForTests, undoStore } from "../undo.svelte";
 
 beforeEach(() => {
   _resetForTests();

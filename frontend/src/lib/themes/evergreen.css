@@ -50,7 +50,7 @@
  */
 [data-theme="evergreen"] .message-turn__body pre,
 :root .message-turn__body pre {
-  border: 1px solid rgba(56, 65, 75, 0.80);
+  border: 1px solid rgba(56, 65, 75, 0.8);
 }
 
 /* ---- Flat focus outline ------------------------------------------------ */

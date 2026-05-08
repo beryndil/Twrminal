@@ -103,9 +103,7 @@
         turns = [...turns, { id: e.message_id, role: "assistant", body: "", streaming: true }];
         break;
       case "token":
-        turns = turns.map((t) =>
-          t.id === e.message_id ? { ...t, body: t.body + e.delta } : t,
-        );
+        turns = turns.map((t) => (t.id === e.message_id ? { ...t, body: t.body + e.delta } : t));
         break;
       case "message_complete":
         turns = turns.map((t) =>

@@ -622,11 +622,7 @@
     and a one-click escape hatch.
   -->
   {#if bulkError !== null}
-    <p
-      class="session-list__bulk-error"
-      role="alert"
-      data-testid="session-list-bulk-error"
-    >
+    <p class="session-list__bulk-error" role="alert" data-testid="session-list-bulk-error">
       {bulkError}
     </p>
   {/if}

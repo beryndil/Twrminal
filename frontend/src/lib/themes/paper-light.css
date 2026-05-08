@@ -32,7 +32,7 @@
  * inverting the light-mode palette.
  */
 [data-theme="paper-light"] .nav-link--active {
-  background: rgba(25, 91, 168, 0.10);
+  background: rgba(25, 91, 168, 0.1);
   box-shadow: inset 2px 0 0 rgb(25, 91, 168);
   color: rgb(25, 91, 168);
 }
@@ -43,7 +43,7 @@
  * palette and reads cleanly on the cream background.
  */
 [data-theme="paper-light"] .message-turn__body pre {
-  border: 1px solid rgba(196, 188, 168, 0.80);
+  border: 1px solid rgba(196, 188, 168, 0.8);
 }
 
 /* ---- Flat focus outline ------------------------------------------------ */

@@ -261,10 +261,7 @@ describe("TagFilterPanel", () => {
         onClear: vi.fn(),
       },
     });
-    expect(getByTestId("tag-filter-chip-pinned-indicator")).toHaveAttribute(
-      "aria-label",
-      "Pinned",
-    );
+    expect(getByTestId("tag-filter-chip-pinned-indicator")).toHaveAttribute("aria-label", "Pinned");
   });
 
   it("renders pin indicators across all three class sections", () => {

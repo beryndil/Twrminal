@@ -41,7 +41,7 @@
  * dark surface without any glow.
  */
 [data-theme="default"] .message-turn__body pre {
-  border: 1px solid rgba(75, 85, 99, 0.80);
+  border: 1px solid rgba(75, 85, 99, 0.8);
 }
 
 /* ---- Flat focus outline ------------------------------------------------ */

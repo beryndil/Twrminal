@@ -26,10 +26,7 @@
    * chat.md is silent on whether the panel groups visually, and the
    * flat list is the simpler floor.
    */
-  import {
-    SIDEBAR_STRINGS,
-    MENU_TARGET_TAG,
-  } from "../../config";
+  import { SIDEBAR_STRINGS, MENU_TARGET_TAG } from "../../config";
   import type { TagClass, TagOut } from "../../api/tags";
   import { contextMenu } from "../../actions/contextMenu";
   import { tagsStore, refreshTags, tagsByClass, toggleTagPanel } from "../../stores/tags.svelte";
@@ -130,7 +127,9 @@
 
   // ---- context menu handlers per tag --------------------------------------
 
-  function menuHandlersForTag(tag: TagOut): Readonly<Record<string, import("../../context-menu/store.svelte").HandlerEntry>> {
+  function menuHandlersForTag(
+    tag: TagOut,
+  ): Readonly<Record<string, import("../../context-menu/store.svelte").HandlerEntry>> {
     return createTagMenuHandlers(tag, {
       onEdit: (t) => {
         editingTag = t;
@@ -247,15 +246,15 @@
                         class="session-count session-count--open"
                         class:text-emerald-500={tag.open_session_count > 0}
                         class:text-fg-muted={tag.open_session_count === 0}
-                      >{tag.open_session_count}</span
+                        >{tag.open_session_count}</span
                       ><span class="session-count text-fg-muted">/{tag.session_count}</span>
                     </span>
                     {#if tag.pinned}
                       <span
                         class="ml-0.5 text-accent"
                         aria-label={SIDEBAR_STRINGS.tagPinnedIndicatorAriaLabel}
-                        data-testid="tag-filter-chip-pinned-indicator"
-                      >★</span>
+                        data-testid="tag-filter-chip-pinned-indicator">★</span
+                      >
                     {/if}
                   </button>
                 {/each}
@@ -313,9 +312,7 @@
         data-testid="tag-filter-collapse-toggle"
         onclick={toggleTagPanel}
       >
-        <span class="select-none transition-transform {panelCollapsed ? '' : 'rotate-90'}"
-          >▶</span
-        >
+        <span class="select-none transition-transform {panelCollapsed ? '' : 'rotate-90'}">▶</span>
         {panelCollapsed ? SIDEBAR_STRINGS.tagFilterShowLabel : SIDEBAR_STRINGS.tagFilterHideLabel}
       </button>
       {#if panelCollapsed && activeCount > 0}

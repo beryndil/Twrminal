@@ -116,9 +116,7 @@ describe("CheatSheet", () => {
         props: { open: true, onClose: vi.fn() },
       });
       const sections = getAllByTestId("cheat-sheet-section");
-      const checklistSection = sections.find(
-        (s) => s.getAttribute("data-section") === "checklist",
-      );
+      const checklistSection = sections.find((s) => s.getAttribute("data-section") === "checklist");
       expect(checklistSection).toBeDefined();
       const rows = checklistSection!.querySelectorAll('[data-testid="cheat-sheet-row"]');
       expect(rows.length).toBeGreaterThanOrEqual(1);

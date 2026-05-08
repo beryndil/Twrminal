@@ -34,10 +34,7 @@
    * module-singleton store.
    */
   import { INSPECTOR_STRINGS } from "../../config";
-  import {
-    conversationStore,
-    type MessageTurnView,
-  } from "../../stores/conversation.svelte";
+  import { conversationStore, type MessageTurnView } from "../../stores/conversation.svelte";
   import type { SessionOut } from "../../api/sessions";
 
   interface Props {
@@ -185,19 +182,13 @@
     <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
       <div class="flex flex-col gap-0.5">
         <dt class="text-fg-muted">{INSPECTOR_STRINGS.metricsTokenInputLabel}</dt>
-        <dd
-          class="font-mono tabular-nums text-fg"
-          data-testid="inspector-metrics-token-input"
-        >
+        <dd class="font-mono tabular-nums text-fg" data-testid="inspector-metrics-token-input">
           {fmtShort(inputTokens)}
         </dd>
       </div>
       <div class="flex flex-col gap-0.5">
         <dt class="text-fg-muted">{INSPECTOR_STRINGS.metricsTokenOutputLabel}</dt>
-        <dd
-          class="font-mono tabular-nums text-fg"
-          data-testid="inspector-metrics-token-output"
-        >
+        <dd class="font-mono tabular-nums text-fg" data-testid="inspector-metrics-token-output">
           {fmtShort(outputTokens)}
         </dd>
       </div>
@@ -235,10 +226,7 @@
     <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
       <div class="flex flex-col gap-0.5">
         <dt class="text-fg-muted">{INSPECTOR_STRINGS.metricsToolCallsTotalLabel}</dt>
-        <dd
-          class="font-mono tabular-nums text-fg"
-          data-testid="inspector-metrics-tool-total"
-        >
+        <dd class="font-mono tabular-nums text-fg" data-testid="inspector-metrics-tool-total">
           {totalCalls}
         </dd>
       </div>
@@ -266,10 +254,7 @@
       </div>
       <div class="flex flex-col gap-0.5">
         <dt class="text-fg-muted">{INSPECTOR_STRINGS.metricsToolCallsElapsedLabel}</dt>
-        <dd
-          class="font-mono tabular-nums text-fg"
-          data-testid="inspector-metrics-tool-elapsed"
-        >
+        <dd class="font-mono tabular-nums text-fg" data-testid="inspector-metrics-tool-elapsed">
           {hasFinishedWithDuration
             ? formatDuration(totalElapsedMs)
             : INSPECTOR_STRINGS.metricsToolCallsElapsedEmpty}

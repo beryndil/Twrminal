@@ -27,11 +27,7 @@
    * §"Stopping or interrupting a turn".
    */
   import { stopSession } from "../../api/sessions";
-  import {
-    CONVERSATION_STRINGS,
-    STOP_UNDO_GRACE_MS,
-    STOP_UNDO_TICK_MS,
-  } from "../../config";
+  import { CONVERSATION_STRINGS, STOP_UNDO_GRACE_MS, STOP_UNDO_TICK_MS } from "../../config";
 
   interface Props {
     sessionId: string;

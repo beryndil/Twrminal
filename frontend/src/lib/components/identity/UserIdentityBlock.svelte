@@ -35,20 +35,11 @@
     size?: string;
   }
 
-  const {
-    displayName,
-    avatarUrl,
-    cacheBust = "",
-    size = "2.5rem",
-  }: Props = $props();
+  const { displayName, avatarUrl, cacheBust = "", size = "2.5rem" }: Props = $props();
 
   /** Full src attribute — appends cache-bust if an avatar is set. */
   const src: string = $derived(
-    avatarUrl
-      ? cacheBust
-        ? `${avatarUrl}?v=${encodeURIComponent(cacheBust)}`
-        : avatarUrl
-      : "",
+    avatarUrl ? (cacheBust ? `${avatarUrl}?v=${encodeURIComponent(cacheBust)}` : avatarUrl) : "",
   );
 </script>
 

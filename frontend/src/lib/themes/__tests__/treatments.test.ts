@@ -44,7 +44,7 @@ describe("midnight-glass.css — glass + aurora treatment", () => {
     expect(readThemeCss("midnight-glass")).toContain("backdrop-filter");
   });
 
-  it("is scoped under [data-theme=\"midnight-glass\"]", () => {
+  it('is scoped under [data-theme="midnight-glass"]', () => {
     expect(readThemeCss("midnight-glass")).toContain('[data-theme="midnight-glass"]');
   });
 
@@ -76,7 +76,7 @@ describe("evergreen.css — flat surface, no glass", () => {
     expect(readThemeCss("evergreen")).toContain("linear-gradient");
   });
 
-  it("is scoped under [data-theme=\"evergreen\"] or :root", () => {
+  it('is scoped under [data-theme="evergreen"] or :root', () => {
     const css = readThemeCss("evergreen");
     expect(css.includes('[data-theme="evergreen"]') || css.includes(":root")).toBe(true);
   });
@@ -99,7 +99,7 @@ describe("paper-light.css — flat surface, no glass", () => {
     expect(readThemeCss("paper-light")).not.toContain("radial-gradient");
   });
 
-  it("is scoped under [data-theme=\"paper-light\"]", () => {
+  it('is scoped under [data-theme="paper-light"]', () => {
     expect(readThemeCss("paper-light")).toContain('[data-theme="paper-light"]');
   });
 
@@ -121,7 +121,7 @@ describe("default.css — flat surface, no glass", () => {
     expect(readThemeCss("default")).not.toContain("radial-gradient");
   });
 
-  it("is scoped under [data-theme=\"default\"]", () => {
+  it('is scoped under [data-theme="default"]', () => {
     expect(readThemeCss("default")).toContain('[data-theme="default"]');
   });
 

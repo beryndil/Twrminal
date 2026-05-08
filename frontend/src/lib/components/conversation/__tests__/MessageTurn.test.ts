@@ -166,9 +166,7 @@ describe("MessageTurn — Regenerate from here context-menu entry", () => {
       },
     });
     const article = getByTestId("message-turn");
-    article.dispatchEvent(
-      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
-    );
+    article.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     const handlers = contextMenuStore.open?.handlers ?? {};
     expect(MENU_ACTION_MESSAGE_REGENERATE in handlers).toBe(true);
   });
@@ -183,9 +181,7 @@ describe("MessageTurn — Regenerate from here context-menu entry", () => {
       },
     });
     const article = getByTestId("message-turn");
-    article.dispatchEvent(
-      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
-    );
+    article.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     const handlers = contextMenuStore.open?.handlers ?? {};
     expect(MENU_ACTION_MESSAGE_REGENERATE in handlers).toBe(false);
   });
@@ -200,9 +196,7 @@ describe("MessageTurn — Regenerate from here context-menu entry", () => {
       },
     });
     const article = getByTestId("message-turn");
-    article.dispatchEvent(
-      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
-    );
+    article.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     const handlers = contextMenuStore.open?.handlers ?? {};
     expect(MENU_ACTION_MESSAGE_REGENERATE in handlers).toBe(false);
   });
@@ -222,9 +216,7 @@ describe("MessageTurn — Regenerate from here context-menu entry", () => {
 
     // Fire the context-menu handler.
     const article = getByTestId("message-turn");
-    article.dispatchEvent(
-      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
-    );
+    article.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     const handler = contextMenuStore.open?.handlers[MENU_ACTION_MESSAGE_REGENERATE];
     expect(handler).toBeDefined();
     // Narrow to callable — all MessageTurn handlers are functions (none use disabledReason).
@@ -247,10 +239,10 @@ describe("MessageTurn — Regenerate from here context-menu entry", () => {
       },
     });
     const article = getByTestId("message-turn");
-    article.dispatchEvent(
-      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
-    );
-    (contextMenuStore.open?.handlers[MENU_ACTION_MESSAGE_REGENERATE] as (() => void) | undefined)?.();
+    article.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    (
+      contextMenuStore.open?.handlers[MENU_ACTION_MESSAGE_REGENERATE] as (() => void) | undefined
+    )?.();
     await waitFor(() => expect(queryByTestId("confirm-dialog")).not.toBeNull());
 
     getByTestId("confirm-dialog-cancel").click();

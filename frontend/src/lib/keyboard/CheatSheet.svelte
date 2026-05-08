@@ -131,10 +131,7 @@
               <h3 class="cheat-sheet__section-heading">{group.heading}</h3>
               <ul class="cheat-sheet__list">
                 {#each group.bindings as binding, i (i)}
-                  <li
-                    class="cheat-sheet__row"
-                    data-testid="cheat-sheet-row"
-                  >
+                  <li class="cheat-sheet__row" data-testid="cheat-sheet-row">
                     <span class="cheat-sheet__chord" data-testid="cheat-sheet-chord">
                       {#each binding.keys as cap, j (j)}
                         <kbd>{cap}</kbd>

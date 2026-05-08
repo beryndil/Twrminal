@@ -162,15 +162,15 @@ describe("bindingAllowedInContext", () => {
   });
 
   it("allows allowInModalContext chords even when a modal is open", () => {
-    expect(
-      bindingAllowedInContext(modalToggle, { composerFocused: false, modalOpen: true }),
-    ).toBe(true);
+    expect(bindingAllowedInContext(modalToggle, { composerFocused: false, modalOpen: true })).toBe(
+      true,
+    );
   });
 
   it("still blocks allowInModalContext chords when composer is focused", () => {
-    expect(
-      bindingAllowedInContext(modalToggle, { composerFocused: true, modalOpen: true }),
-    ).toBe(false);
+    expect(bindingAllowedInContext(modalToggle, { composerFocused: true, modalOpen: true })).toBe(
+      false,
+    );
   });
 });
 

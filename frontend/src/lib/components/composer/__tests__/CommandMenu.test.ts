@@ -23,7 +23,10 @@ import CommandMenu from "../CommandMenu.svelte";
 // vi.mock factories are hoisted above variable declarations; use vi.hoisted
 // to ensure the mock reference is available inside the factory.
 const { mockListCommands } = vi.hoisted(() => ({
-  mockListCommands: vi.fn<(cwd?: string | null) => Promise<{ name: string; description: string; source: string }[]>>(),
+  mockListCommands:
+    vi.fn<
+      (cwd?: string | null) => Promise<{ name: string; description: string; source: string }[]>
+    >(),
 }));
 
 vi.mock("../../../api/commands", () => ({

@@ -79,9 +79,7 @@
   const filteredSessions = $derived(
     searchQuery.trim() === ""
       ? sessions
-      : sessions.filter((s) =>
-          s.title.toLowerCase().includes(searchQuery.trim().toLowerCase()),
-        ),
+      : sessions.filter((s) => s.title.toLowerCase().includes(searchQuery.trim().toLowerCase())),
   );
 
   async function handleSelect(dst: SessionOut): Promise<void> {
@@ -563,7 +561,9 @@
     color: var(--color-fg-muted);
     font-size: 0.75rem;
     cursor: pointer;
-    transition: background-color 0.1s, color 0.1s;
+    transition:
+      background-color 0.1s,
+      color 0.1s;
   }
 
   .session-picker-modal__chip:hover {

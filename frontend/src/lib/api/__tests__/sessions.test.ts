@@ -8,7 +8,12 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { exportSessionJson, regenerateFromMessage, reopenSession, type SessionOut } from "../sessions";
+import {
+  exportSessionJson,
+  regenerateFromMessage,
+  reopenSession,
+  type SessionOut,
+} from "../sessions";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -172,17 +177,15 @@ describe("regenerateFromMessage", () => {
       }),
     );
     await regenerateFromMessage("ses_a", "msg_1");
-    expect(String(fetchMock.mock.calls[0][0])).toBe(
-      "/api/sessions/ses_a/regenerate_from/msg_1",
-    );
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/api/sessions/ses_a/regenerate_from/msg_1");
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.method).toBe("POST");
   });
 
   it("URL-encodes both session id and message id", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response("{}", { status: 202 }),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("{}", { status: 202 }));
     await regenerateFromMessage("ses a/b", "msg x/y");
     expect(String(fetchMock.mock.calls[0][0])).toBe(
       "/api/sessions/ses%20a%2Fb/regenerate_from/msg%20x%2Fy",

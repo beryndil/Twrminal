@@ -109,8 +109,7 @@
         await onConfirm();
       }
     } catch (err: unknown) {
-      errorMsg =
-        err instanceof Error ? err.message : CONTEXT_MENU_STRINGS.confirmErrorFallback;
+      errorMsg = err instanceof Error ? err.message : CONTEXT_MENU_STRINGS.confirmErrorFallback;
     } finally {
       pending = false;
     }
@@ -128,7 +127,9 @@
   class="confirm-dialog-backdrop"
   role="presentation"
   data-testid="confirm-dialog-backdrop"
-  onclick={() => { if (!pending) onCancel(); }}
+  onclick={() => {
+    if (!pending) onCancel();
+  }}
   onkeydown={handleKeyDown}
 >
   <div
@@ -141,7 +142,13 @@
     onclick={(e) => e.stopPropagation()}
     onkeydown={(e) => e.stopPropagation()}
   >
-    <p id="confirm-dialog-message" class="confirm-dialog__message" data-testid="confirm-dialog-message">{message}</p>
+    <p
+      id="confirm-dialog-message"
+      class="confirm-dialog__message"
+      data-testid="confirm-dialog-message"
+    >
+      {message}
+    </p>
     {#if showSuppressCheckbox}
       <label class="confirm-dialog__suppress" data-testid="confirm-dialog-suppress-label">
         <input
@@ -154,11 +161,9 @@
       </label>
     {/if}
     {#if errorMsg !== null}
-      <p
-        class="confirm-dialog__error"
-        role="alert"
-        data-testid="confirm-dialog-error"
-      >{errorMsg}</p>
+      <p class="confirm-dialog__error" role="alert" data-testid="confirm-dialog-error">
+        {errorMsg}
+      </p>
     {/if}
     <div class="confirm-dialog__actions">
       <button

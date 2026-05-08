@@ -47,10 +47,7 @@ interface PromptAck {
 export async function sendPrompt(
   sessionId: string,
   content: string,
-  {
-    forceAdvisor = false,
-    uploadIds = [],
-  }: { forceAdvisor?: boolean; uploadIds?: number[] } = {},
+  { forceAdvisor = false, uploadIds = [] }: { forceAdvisor?: boolean; uploadIds?: number[] } = {},
 ): Promise<PromptAck> {
   const body: Record<string, unknown> = { content };
   if (forceAdvisor) {

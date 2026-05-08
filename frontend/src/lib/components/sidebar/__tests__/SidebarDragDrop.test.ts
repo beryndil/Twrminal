@@ -145,10 +145,7 @@ describe("importFromFiles — drag-and-drop batch import", () => {
     mockImportSessionJson.mockResolvedValueOnce(MOCK_SESSION_B);
 
     const result = await importFromFiles(
-      [
-        makeJsonFile("bad.json", "this is not json {{{"),
-        makeJsonFile("b.json", VALID_EXPORT_B),
-      ],
+      [makeJsonFile("bad.json", "this is not json {{{"), makeJsonFile("b.json", VALID_EXPORT_B)],
       () => {
         /* progress ignored */
       },
@@ -170,7 +167,11 @@ describe("importFromFiles — drag-and-drop batch import", () => {
   it("surfaces a 409-style ApiError inline without aborting remaining imports", async () => {
     mockImportSessionJson
       .mockRejectedValueOnce(
-        new ApiError(409, { detail: "session 'ses_drag_a' already exists" }, "POST /api/sessions/import → 409"),
+        new ApiError(
+          409,
+          { detail: "session 'ses_drag_a' already exists" },
+          "POST /api/sessions/import → 409",
+        ),
       )
       .mockResolvedValueOnce(MOCK_SESSION_B);
 

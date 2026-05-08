@@ -159,9 +159,7 @@ describe("Settings — Defaults: model select fires immediate PATCH", () => {
     fireEvent.change(select, { target: { value: "sonnet" } });
 
     await waitFor(() => {
-      expect(mockPatch).toHaveBeenCalledWith(
-        expect.objectContaining({ default_model: "sonnet" }),
-      );
+      expect(mockPatch).toHaveBeenCalledWith(expect.objectContaining({ default_model: "sonnet" }));
     });
     expect(mockPatch).toHaveBeenCalledTimes(1);
   });
@@ -177,9 +175,7 @@ describe("Settings — Defaults: model select fires immediate PATCH", () => {
     fireEvent.change(select, { target: { value: "" } });
 
     await waitFor(() => {
-      expect(mockPatch).toHaveBeenCalledWith(
-        expect.objectContaining({ default_model: null }),
-      );
+      expect(mockPatch).toHaveBeenCalledWith(expect.objectContaining({ default_model: null }));
     });
   });
 });
@@ -292,7 +288,10 @@ describe("Settings — Defaults: theme badge transitions", () => {
   it("shows Saving… badge while PATCH is in flight, then Saved on success", async () => {
     let resolvePatch!: (v: PreferencesOut) => void;
     mockPatch.mockImplementation(
-      () => new Promise<PreferencesOut>((res) => { resolvePatch = res; }),
+      () =>
+        new Promise<PreferencesOut>((res) => {
+          resolvePatch = res;
+        }),
     );
 
     const { getByTestId, queryByTestId } = render(SettingsPage);
@@ -344,7 +343,10 @@ describe("Settings — Defaults: model badge transitions", () => {
   it("shows Saving… while PATCH is in flight, then Saved on success", async () => {
     let resolvePatch!: (v: PreferencesOut) => void;
     mockPatch.mockImplementation(
-      () => new Promise<PreferencesOut>((res) => { resolvePatch = res; }),
+      () =>
+        new Promise<PreferencesOut>((res) => {
+          resolvePatch = res;
+        }),
     );
 
     const { getByTestId, queryByTestId } = render(SettingsPage);
@@ -387,7 +389,10 @@ describe("Settings — Defaults: permission-mode badge transitions", () => {
   it("shows Saving… while PATCH is in flight, then Saved on success", async () => {
     let resolvePatch!: (v: PreferencesOut) => void;
     mockPatch.mockImplementation(
-      () => new Promise<PreferencesOut>((res) => { resolvePatch = res; }),
+      () =>
+        new Promise<PreferencesOut>((res) => {
+          resolvePatch = res;
+        }),
     );
 
     const { getByTestId, queryByTestId } = render(SettingsPage);
@@ -436,7 +441,10 @@ describe("Settings — Defaults: working-dir badge transitions", () => {
   it("shows Saving… while PATCH is in flight, then Saved on success", async () => {
     let resolvePatch!: (v: PreferencesOut) => void;
     mockPatch.mockImplementation(
-      () => new Promise<PreferencesOut>((res) => { resolvePatch = res; }),
+      () =>
+        new Promise<PreferencesOut>((res) => {
+          resolvePatch = res;
+        }),
     );
 
     const { getByTestId, queryByTestId } = render(SettingsPage);

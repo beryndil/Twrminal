@@ -77,9 +77,7 @@
     } catch (err) {
       if (err instanceof ApiError) {
         const detail =
-          typeof err.body === "object" &&
-          err.body !== null &&
-          "detail" in err.body
+          typeof err.body === "object" && err.body !== null && "detail" in err.body
             ? String((err.body as Record<string, unknown>).detail)
             : `HTTP ${err.status}`;
         errorMessage = detail;
@@ -107,7 +105,14 @@
     tabindex="-1"
     data-testid="session-import-dialog"
     onclick={(e) => e.stopPropagation()}
-    onkeydown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onCancel(); } else { e.stopPropagation(); } }}
+    onkeydown={(e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onCancel();
+      } else {
+        e.stopPropagation();
+      }
+    }}
   >
     <h2 class="import-dialog__title">Import session</h2>
 
@@ -147,11 +152,7 @@
 
     <!-- Inline error -->
     {#if errorMessage !== null}
-      <p
-        class="import-dialog__error"
-        role="alert"
-        data-testid="session-import-error"
-      >
+      <p class="import-dialog__error" role="alert" data-testid="session-import-error">
         {errorMessage}
       </p>
     {/if}

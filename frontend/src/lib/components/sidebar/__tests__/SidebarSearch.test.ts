@@ -53,14 +53,18 @@ describe("SidebarSearch", () => {
 
   it("shows the dialog after the keybinding handler is called", () => {
     const { queryByTestId } = render(SidebarSearch, { props: { onclose: vi.fn() } });
-    flushSync(() => { getHandler(KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH)?.(); });
+    flushSync(() => {
+      getHandler(KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH)?.();
+    });
     expect(queryByTestId("sidebar-search-dialog")).toBeInTheDocument();
   });
 
   it("close button click closes the overlay", async () => {
     const onclose = vi.fn();
     const { queryByTestId, getByTestId } = render(SidebarSearch, { props: { onclose } });
-    flushSync(() => { getHandler(KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH)?.(); });
+    flushSync(() => {
+      getHandler(KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH)?.();
+    });
     await fireEvent.click(getByTestId("sidebar-search-close"));
     expect(queryByTestId("sidebar-search-dialog")).toBeNull();
     expect(onclose).toHaveBeenCalledOnce();
@@ -69,7 +73,9 @@ describe("SidebarSearch", () => {
   it("backdrop click closes the overlay", async () => {
     const onclose = vi.fn();
     const { queryByTestId, getByTestId } = render(SidebarSearch, { props: { onclose } });
-    flushSync(() => { getHandler(KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH)?.(); });
+    flushSync(() => {
+      getHandler(KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH)?.();
+    });
     await fireEvent.click(getByTestId("sidebar-search-backdrop"));
     expect(queryByTestId("sidebar-search-dialog")).toBeNull();
     expect(onclose).toHaveBeenCalledOnce();
@@ -78,7 +84,9 @@ describe("SidebarSearch", () => {
   it("local Esc on the input closes the overlay (defence-in-depth)", async () => {
     const onclose = vi.fn();
     const { queryByTestId, getByTestId } = render(SidebarSearch, { props: { onclose } });
-    flushSync(() => { getHandler(KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH)?.(); });
+    flushSync(() => {
+      getHandler(KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH)?.();
+    });
     const input = getByTestId("sidebar-search-input");
     await fireEvent.keyDown(input, { key: "Escape" });
     expect(queryByTestId("sidebar-search-dialog")).toBeNull();
@@ -93,7 +101,9 @@ describe("SidebarSearch", () => {
     render(SidebarSearch, { props: { onclose } });
 
     // Open the overlay via the keybinding handler registered in onMount.
-    flushSync(() => { getHandler(KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH)?.(); });
+    flushSync(() => {
+      getHandler(KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH)?.();
+    });
 
     // Move focus away from the search input to simulate e.g. the close button
     // or any non-input element inside the panel owning focus.

@@ -46,9 +46,7 @@
    * the menu opens with every action greyed and the stale-target
    * caption per ``docs/behavior/context-menus.md`` §"Failure modes".
    */
-  const isOpStale = $derived(
-    !pendingOpsStore.ops.some((o) => o.name === op.name),
-  );
+  const isOpStale = $derived(!pendingOpsStore.ops.some((o) => o.name === op.name));
 
   // ---- Live age ticker -------------------------------------------------------
 
@@ -128,16 +126,10 @@
 >
   <!-- Name + age on same line -->
   <div class="flex items-baseline justify-between gap-2">
-    <span
-      class="truncate font-medium text-fg-strong"
-      data-testid="pending-op-name"
-    >
+    <span class="truncate font-medium text-fg-strong" data-testid="pending-op-name">
       {op.name}
     </span>
-    <span
-      class="shrink-0 font-mono text-xs text-fg-muted"
-      data-testid="pending-op-age"
-    >
+    <span class="shrink-0 font-mono text-xs text-fg-muted" data-testid="pending-op-age">
       {PENDING_OPS_CARD_STRINGS.ageLabel(ageSecs)}
     </span>
   </div>

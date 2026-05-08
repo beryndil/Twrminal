@@ -17,10 +17,7 @@
  * contexts. Both read and write degrade silently — in-memory null (Auto)
  * applies for the life of the page load.
  */
-import {
-  DISPLAY_TIMEZONE_STORAGE_KEY,
-  KNOWN_DISPLAY_TIMEZONES,
-} from "../config";
+import { DISPLAY_TIMEZONE_STORAGE_KEY, KNOWN_DISPLAY_TIMEZONES } from "../config";
 
 // ---------------------------------------------------------------------------
 // localStorage helpers (SSR-safe)

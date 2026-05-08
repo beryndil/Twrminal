@@ -199,20 +199,21 @@
             <span
               class="settings-profile__row-badge settings-profile__row-badge--saving"
               role="status"
-              data-testid="profile-display-name-badge"
-            >{PROFILE_STRINGS.savingBadge}</span>
+              data-testid="profile-display-name-badge">{PROFILE_STRINGS.savingBadge}</span
+            >
           {:else if displayNameState === "saved"}
             <span
               class="settings-profile__row-badge settings-profile__row-badge--saved"
               role="status"
-              data-testid="profile-display-name-badge"
-            >{PROFILE_STRINGS.savedBadge}</span>
+              data-testid="profile-display-name-badge">{PROFILE_STRINGS.savedBadge}</span
+            >
           {:else if displayNameState === "error"}
             <span
               class="settings-profile__row-badge settings-profile__row-badge--error"
               role="alert"
               data-testid="profile-display-name-badge"
-            >{PROFILE_STRINGS.saveFailedPrefix} {displayNameError}</span>
+              >{PROFILE_STRINGS.saveFailedPrefix} {displayNameError}</span
+            >
           {/if}
         </div>
       </div>
@@ -244,39 +245,41 @@
             <span
               class="settings-profile__row-badge settings-profile__row-badge--saving"
               role="status"
-              data-testid="profile-avatar-upload-badge"
-            >{PROFILE_STRINGS.savingBadge}</span>
+              data-testid="profile-avatar-upload-badge">{PROFILE_STRINGS.savingBadge}</span
+            >
           {:else if avatarUploadState === "saved"}
             <span
               class="settings-profile__row-badge settings-profile__row-badge--saved"
               role="status"
-              data-testid="profile-avatar-upload-badge"
-            >{PROFILE_STRINGS.savedBadge}</span>
+              data-testid="profile-avatar-upload-badge">{PROFILE_STRINGS.savedBadge}</span
+            >
           {:else if avatarUploadState === "error"}
             <span
               class="settings-profile__row-badge settings-profile__row-badge--error"
               role="alert"
               data-testid="profile-avatar-upload-badge"
-            >{PROFILE_STRINGS.saveFailedPrefix} {avatarUploadError}</span>
+              >{PROFILE_STRINGS.saveFailedPrefix} {avatarUploadError}</span
+            >
           {/if}
           {#if avatarRemoveState === "saving"}
             <span
               class="settings-profile__row-badge settings-profile__row-badge--saving"
               role="status"
-              data-testid="profile-avatar-remove-badge"
-            >{PROFILE_STRINGS.savingBadge}</span>
+              data-testid="profile-avatar-remove-badge">{PROFILE_STRINGS.savingBadge}</span
+            >
           {:else if avatarRemoveState === "saved"}
             <span
               class="settings-profile__row-badge settings-profile__row-badge--saved"
               role="status"
-              data-testid="profile-avatar-remove-badge"
-            >{PROFILE_STRINGS.savedBadge}</span>
+              data-testid="profile-avatar-remove-badge">{PROFILE_STRINGS.savedBadge}</span
+            >
           {:else if avatarRemoveState === "error"}
             <span
               class="settings-profile__row-badge settings-profile__row-badge--error"
               role="alert"
               data-testid="profile-avatar-remove-badge"
-            >{PROFILE_STRINGS.saveFailedPrefix} {avatarRemoveError}</span>
+              >{PROFILE_STRINGS.saveFailedPrefix} {avatarRemoveError}</span
+            >
           {/if}
         </div>
       </div>
@@ -298,20 +301,20 @@
           <span
             class="settings-profile__row-badge settings-profile__row-badge--saving"
             role="status"
-            data-testid="profile-sync-badge"
-          >{PROFILE_STRINGS.savingBadge}</span>
+            data-testid="profile-sync-badge">{PROFILE_STRINGS.savingBadge}</span
+          >
         {:else if syncState === "saved"}
           <span
             class="settings-profile__row-badge settings-profile__row-badge--saved"
             role="status"
-            data-testid="profile-sync-badge"
-          >{PROFILE_STRINGS.savedBadge}</span>
+            data-testid="profile-sync-badge">{PROFILE_STRINGS.savedBadge}</span
+          >
         {:else if syncState === "error"}
           <span
             class="settings-profile__row-badge settings-profile__row-badge--error"
             role="alert"
-            data-testid="profile-sync-badge"
-          >{PROFILE_STRINGS.saveFailedPrefix} {syncError}</span>
+            data-testid="profile-sync-badge">{PROFILE_STRINGS.saveFailedPrefix} {syncError}</span
+          >
         {/if}
       </div>
     </div>

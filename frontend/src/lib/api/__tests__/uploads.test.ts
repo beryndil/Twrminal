@@ -95,7 +95,9 @@ describe("uploadFile", () => {
 
   it("propagates AbortError when the signal fires before the response arrives", async () => {
     const ctrl = new AbortController();
-    fetchMock.mockRejectedValueOnce(Object.assign(new Error("The user aborted a request."), { name: "AbortError" }));
+    fetchMock.mockRejectedValueOnce(
+      Object.assign(new Error("The user aborted a request."), { name: "AbortError" }),
+    );
     const file = new File(["x"], "cancel.txt", { type: "text/plain" });
     ctrl.abort();
     let thrown: unknown = null;

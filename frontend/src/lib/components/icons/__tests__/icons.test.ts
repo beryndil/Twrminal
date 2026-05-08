@@ -95,15 +95,12 @@ describe("SeverityShield", () => {
     ["medium", "fill-yellow-400"],
     ["high", "fill-orange-500"],
     ["critical", "fill-red-500"],
-  ] as const)(
-    "applies %s → %s fill class",
-    (severity: string, expectedClass: string) => {
-      const { getByTestId } = render(SeverityShield, { props: { severity } });
-      const shield = getByTestId("severity-shield");
-      const path = shield.querySelector("path");
-      expect(path).toHaveClass(expectedClass);
-    },
-  );
+  ] as const)("applies %s → %s fill class", (severity: string, expectedClass: string) => {
+    const { getByTestId } = render(SeverityShield, { props: { severity } });
+    const shield = getByTestId("severity-shield");
+    const path = shield.querySelector("path");
+    expect(path).toHaveClass(expectedClass);
+  });
 
   it("applies fill-fg-muted for an unknown severity", () => {
     const { getByTestId } = render(SeverityShield, { props: { severity: "unknown" } });

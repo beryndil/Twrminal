@@ -21,15 +21,8 @@
   import { onMount } from "svelte";
 
   import { PENDING_OPS_CARD_STRINGS } from "../../config";
-  import {
-    ESC_PRIORITY_PENDING_OPS_CARD,
-    registerEscEntry,
-  } from "../../keyboard/escCascade";
-  import {
-    closeCard,
-    pendingOpsStore,
-    refreshOps,
-  } from "../../stores/pending.svelte";
+  import { ESC_PRIORITY_PENDING_OPS_CARD, registerEscEntry } from "../../keyboard/escCascade";
+  import { closeCard, pendingOpsStore, refreshOps } from "../../stores/pending.svelte";
   import { dismissPendingOp, resolvePendingOp } from "../../api/pendingOps";
   import PendingOpRow from "./PendingOpRow.svelte";
 
@@ -180,11 +173,7 @@
       {:else}
         <ul class="py-1" data-testid="pending-ops-list">
           {#each pendingOpsStore.ops as op (op.name)}
-            <PendingOpRow
-              {op}
-              onResolve={handleResolve}
-              onDismiss={handleDismiss}
-            />
+            <PendingOpRow {op} onResolve={handleResolve} onDismiss={handleDismiss} />
           {/each}
         </ul>
       {/if}

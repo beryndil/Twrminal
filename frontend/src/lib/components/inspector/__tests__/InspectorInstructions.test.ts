@@ -114,8 +114,7 @@ describe("layer rows render in correct order", () => {
     const sections = order.map((k) => screen.getByTestId(`instructions-section-${k}`));
     for (let i = 0; i < sections.length - 1; i++) {
       expect(
-        sections[i].compareDocumentPosition(sections[i + 1]) &
-          Node.DOCUMENT_POSITION_FOLLOWING,
+        sections[i].compareDocumentPosition(sections[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     }
   });
@@ -166,9 +165,7 @@ describe("layer rows render in correct order", () => {
     render(InspectorInstructions, { props: { session: fakeSession() } });
     await waitFor(() => {
       const toggle = screen.getByTestId("instructions-layer-toggle-baseline-0");
-      expect(toggle.textContent).toContain(
-        INSPECTOR_STRINGS.instructionsLayerTokensLabel(10),
-      );
+      expect(toggle.textContent).toContain(INSPECTOR_STRINGS.instructionsLayerTokensLabel(10));
     });
   });
 });
@@ -180,9 +177,7 @@ describe("layer rows render in correct order", () => {
 describe("empty-state copy on missing layers", () => {
   it("renders empty-state for session_instructions when absent", async () => {
     vi.spyOn(sessionsApi, "getSessionSystemPrompt").mockResolvedValue(
-      fakeLayersOut([
-        { kind: "baseline", body: "base", token_count: 1, source_path: null },
-      ]),
+      fakeLayersOut([{ kind: "baseline", body: "base", token_count: 1, source_path: null }]),
     );
     render(InspectorInstructions, { props: { session: fakeSession() } });
     await waitFor(() => {
@@ -194,9 +189,7 @@ describe("empty-state copy on missing layers", () => {
 
   it("renders empty-state for project_claude_md when absent", async () => {
     vi.spyOn(sessionsApi, "getSessionSystemPrompt").mockResolvedValue(
-      fakeLayersOut([
-        { kind: "baseline", body: "base", token_count: 1, source_path: null },
-      ]),
+      fakeLayersOut([{ kind: "baseline", body: "base", token_count: 1, source_path: null }]),
     );
     render(InspectorInstructions, { props: { session: fakeSession() } });
     await waitFor(() => {
@@ -208,9 +201,7 @@ describe("empty-state copy on missing layers", () => {
 
   it("renders empty-state for tag_memory when absent", async () => {
     vi.spyOn(sessionsApi, "getSessionSystemPrompt").mockResolvedValue(
-      fakeLayersOut([
-        { kind: "baseline", body: "base", token_count: 1, source_path: null },
-      ]),
+      fakeLayersOut([{ kind: "baseline", body: "base", token_count: 1, source_path: null }]),
     );
     render(InspectorInstructions, { props: { session: fakeSession() } });
     await waitFor(() => {
@@ -222,9 +213,7 @@ describe("empty-state copy on missing layers", () => {
 
   it("does not render an empty-state row when layer has content", async () => {
     vi.spyOn(sessionsApi, "getSessionSystemPrompt").mockResolvedValue(
-      fakeLayersOut([
-        { kind: "baseline", body: "base", token_count: 1, source_path: null },
-      ]),
+      fakeLayersOut([{ kind: "baseline", body: "base", token_count: 1, source_path: null }]),
     );
     render(InspectorInstructions, { props: { session: fakeSession() } });
     await waitFor(() => {
@@ -241,9 +230,7 @@ describe("empty-state copy on missing layers", () => {
 describe("collapse/expand toggles", () => {
   it("shows Collapse label for short layers (≤500 chars) expanded by default", async () => {
     vi.spyOn(sessionsApi, "getSessionSystemPrompt").mockResolvedValue(
-      fakeLayersOut([
-        { kind: "baseline", body: "short body", token_count: 2, source_path: null },
-      ]),
+      fakeLayersOut([{ kind: "baseline", body: "short body", token_count: 2, source_path: null }]),
     );
     render(InspectorInstructions, { props: { session: fakeSession() } });
     await waitFor(() => {
@@ -284,9 +271,7 @@ describe("collapse/expand toggles", () => {
 
   it("clicking toggle collapses an expanded layer and hides the body", async () => {
     vi.spyOn(sessionsApi, "getSessionSystemPrompt").mockResolvedValue(
-      fakeLayersOut([
-        { kind: "baseline", body: "short", token_count: 1, source_path: null },
-      ]),
+      fakeLayersOut([{ kind: "baseline", body: "short", token_count: 1, source_path: null }]),
     );
     render(InspectorInstructions, { props: { session: fakeSession() } });
     await waitFor(() => {

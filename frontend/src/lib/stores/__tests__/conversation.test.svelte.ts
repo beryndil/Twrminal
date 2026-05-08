@@ -763,7 +763,9 @@ describe("hydrateTokens — seed before WS events", () => {
       },
     });
     // New live turn completes.
-    ingestFrame(makeMessageComplete("a_new", { executor_input_tokens: 50, executor_output_tokens: 25 }));
+    ingestFrame(
+      makeMessageComplete("a_new", { executor_input_tokens: 50, executor_output_tokens: 25 }),
+    );
     expect(conversationStore.sessionInputTokens).toBe(1050);
     expect(conversationStore.sessionOutputTokens).toBe(525);
   });
@@ -819,7 +821,9 @@ describe("hydrateTokens — seed before WS events", () => {
         current_turn_id: null,
       },
     });
-    ingestFrame(makeMessageComplete("a1", { executor_input_tokens: 200, executor_output_tokens: 80 }));
+    ingestFrame(
+      makeMessageComplete("a1", { executor_input_tokens: 200, executor_output_tokens: 80 }),
+    );
     expect(conversationStore.sessionInputTokens).toBe(200);
     expect(conversationStore.sessionOutputTokens).toBe(80);
   });

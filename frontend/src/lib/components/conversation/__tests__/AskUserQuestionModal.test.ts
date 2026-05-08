@@ -34,10 +34,7 @@ vi.mock("../../../api/wsSessions", () => ({
   connectSessionsBroadcast: vi.fn().mockReturnValue(() => {}),
 }));
 
-import {
-  _resetWsStatusForTests,
-  _setWsStatusForTests,
-} from "../../../stores/sessions.svelte";
+import { _resetWsStatusForTests, _setWsStatusForTests } from "../../../stores/sessions.svelte";
 import AskUserQuestionModal from "../AskUserQuestionModal.svelte";
 import type { PendingApproval } from "../../../stores/conversation.svelte";
 

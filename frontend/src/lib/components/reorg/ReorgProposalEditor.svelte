@@ -128,9 +128,7 @@
         <p class="rpe__error" role="alert" data-testid="rpe-error">{analyzeError}</p>
       {:else if activeProposals.length === 0}
         <p class="rpe__hint" data-testid="rpe-empty">
-          {proposals.length === 0
-            ? "No split boundaries detected."
-            : "All proposals dismissed."}
+          {proposals.length === 0 ? "No split boundaries detected." : "All proposals dismissed."}
         </p>
       {:else}
         <ul class="rpe__list" data-testid="rpe-proposal-list">

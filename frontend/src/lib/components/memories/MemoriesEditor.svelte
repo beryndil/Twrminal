@@ -95,11 +95,7 @@
   // When the memories list loads and we have a pending memory id (from
   // the global index row click), open that memory for editing.
   $effect(() => {
-    if (
-      pendingMemoryId !== null &&
-      !memoriesStore.loading &&
-      memoriesStore.memories.length > 0
-    ) {
+    if (pendingMemoryId !== null && !memoriesStore.loading && memoriesStore.memories.length > 0) {
       const target = memoriesStore.memories.find((m) => m.id === pendingMemoryId);
       if (target !== undefined) {
         startEdit(target);

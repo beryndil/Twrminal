@@ -82,10 +82,9 @@ describe("picker-docs parity — every KNOWN_THEMES entry is in the table", () =
     const rows = parsePickerTableRows(readThemesDoc());
     const knownSet = new Set<string>(KNOWN_THEMES);
     for (const { id } of rows) {
-      expect(
-        knownSet.has(id),
-        `Theme "${id}" is in the picker table but not in KNOWN_THEMES`,
-      ).toBe(true);
+      expect(knownSet.has(id), `Theme "${id}" is in the picker table but not in KNOWN_THEMES`).toBe(
+        true,
+      );
     }
   });
 });
@@ -123,9 +122,8 @@ describe("picker-docs parity — OS-fallback sentence names correct themes", () 
       section,
       "Dark/non-light OS fallback must be 'evergreen' per resolveOsFallbackTheme()",
     ).toContain("`evergreen` otherwise");
-    expect(
-      section,
-      "themes.md must not say midnight-glass is the dark OS fallback",
-    ).not.toContain("`midnight-glass` otherwise");
+    expect(section, "themes.md must not say midnight-glass is the dark OS fallback").not.toContain(
+      "`midnight-glass` otherwise",
+    );
   });
 });

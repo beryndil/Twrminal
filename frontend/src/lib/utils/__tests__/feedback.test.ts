@@ -18,11 +18,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  _resetVersionCacheForTests,
-  buildFeedbackUrl,
-  fetchVersion,
-} from "../feedback";
+import { _resetVersionCacheForTests, buildFeedbackUrl, fetchVersion } from "../feedback";
 
 // ---------------------------------------------------------------------------
 // Helpers

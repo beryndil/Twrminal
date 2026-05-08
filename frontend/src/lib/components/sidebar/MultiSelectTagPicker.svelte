@@ -43,9 +43,7 @@
     try {
       const ids = Array.from(selectedSessionIds);
       const result =
-        mode === "add"
-          ? await bulkTagSessions(ids, tagId)
-          : await bulkUntagSessions(ids, tagId);
+        mode === "add" ? await bulkTagSessions(ids, tagId) : await bulkUntagSessions(ids, tagId);
       const failed = result.results.filter((r) => !r.ok);
       if (failed.length > 0) {
         const details = failed

@@ -14,7 +14,11 @@
  * Behavior anchor: ``docs/behavior/chat.md`` §"App chrome" "Status strip".
  */
 import { getJson } from "../api/client";
-import { API_DIAG_SERVER_ENDPOINT, STATUS_BAR_VERSION_POLL_INTERVAL_MS, STATUS_BAR_STRINGS } from "../config";
+import {
+  API_DIAG_SERVER_ENDPOINT,
+  STATUS_BAR_VERSION_POLL_INTERVAL_MS,
+  STATUS_BAR_STRINGS,
+} from "../config";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -106,8 +110,5 @@ export function _resetVersionWatcherForTests(): void {
  */
 export function _startVersionPollForTests(): void {
   if (_pollInterval !== null) clearInterval(_pollInterval);
-  _pollInterval = setInterval(
-    () => void refreshVersion(),
-    STATUS_BAR_VERSION_POLL_INTERVAL_MS,
-  );
+  _pollInterval = setInterval(() => void refreshVersion(), STATUS_BAR_VERSION_POLL_INTERVAL_MS);
 }

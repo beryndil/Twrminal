@@ -103,12 +103,7 @@
   carries an explicit height only while content is hidden, preserving
   the total document height so the scrollbar thumb does not jump.
 -->
-<div
-  bind:this={wrapperEl}
-  class="virtual-item"
-  style={wrapperStyle}
-  data-testid="virtual-item"
->
+<div bind:this={wrapperEl} class="virtual-item" style={wrapperStyle} data-testid="virtual-item">
   {#if visible}
     {@render children?.()}
   {:else}

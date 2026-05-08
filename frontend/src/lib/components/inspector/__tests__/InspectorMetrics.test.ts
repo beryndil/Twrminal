@@ -11,10 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import InspectorMetrics from "../InspectorMetrics.svelte";
 import { INSPECTOR_STRINGS } from "../../../config";
-import type {
-  MessageTurnView,
-  ToolCallView,
-} from "../../../stores/conversation.svelte";
+import type { MessageTurnView, ToolCallView } from "../../../stores/conversation.svelte";
 import type { SessionOut } from "../../../api/sessions";
 
 // ---------------------------------------------------------------------------
@@ -174,9 +171,7 @@ describe("InspectorMetrics — cache-read colour class", () => {
         cacheReadTokens: 0,
       },
     });
-    expect(getByTestId("inspector-metrics-token-cache-read")).toHaveClass(
-      "text-emerald-400",
-    );
+    expect(getByTestId("inspector-metrics-token-cache-read")).toHaveClass("text-emerald-400");
   });
 });
 
@@ -234,9 +229,7 @@ describe("InspectorMetrics — running-count colour class", () => {
       props: { session: fakeSession(), turns },
     });
     expect(getByTestId("inspector-metrics-tool-running")).toHaveClass("text-amber-400");
-    expect(getByTestId("inspector-metrics-tool-running")).not.toHaveClass(
-      "text-fg-muted",
-    );
+    expect(getByTestId("inspector-metrics-tool-running")).not.toHaveClass("text-fg-muted");
   });
 
   it("applies muted colour when running === 0", () => {
@@ -244,9 +237,7 @@ describe("InspectorMetrics — running-count colour class", () => {
       props: { session: fakeSession(), turns: [] },
     });
     expect(getByTestId("inspector-metrics-tool-running")).toHaveClass("text-fg-muted");
-    expect(getByTestId("inspector-metrics-tool-running")).not.toHaveClass(
-      "text-amber-400",
-    );
+    expect(getByTestId("inspector-metrics-tool-running")).not.toHaveClass("text-amber-400");
   });
 });
 
@@ -265,9 +256,7 @@ describe("InspectorMetrics — failed-count colour class", () => {
       props: { session: fakeSession(), turns },
     });
     expect(getByTestId("inspector-metrics-tool-failed")).toHaveClass("text-rose-400");
-    expect(getByTestId("inspector-metrics-tool-failed")).not.toHaveClass(
-      "text-fg-muted",
-    );
+    expect(getByTestId("inspector-metrics-tool-failed")).not.toHaveClass("text-fg-muted");
   });
 
   it("applies muted colour when failed === 0", () => {
@@ -280,9 +269,7 @@ describe("InspectorMetrics — failed-count colour class", () => {
       props: { session: fakeSession(), turns },
     });
     expect(getByTestId("inspector-metrics-tool-failed")).toHaveClass("text-fg-muted");
-    expect(getByTestId("inspector-metrics-tool-failed")).not.toHaveClass(
-      "text-rose-400",
-    );
+    expect(getByTestId("inspector-metrics-tool-failed")).not.toHaveClass("text-rose-400");
   });
 });
 
@@ -323,9 +310,7 @@ describe("InspectorMetrics — total elapsed", () => {
   it("renders — when all calls are still in flight (none finished)", () => {
     const turns = [
       fakeTurn({
-        toolCalls: [
-          fakeToolCall({ id: "tc1", done: false, ok: null, durationMs: null }),
-        ],
+        toolCalls: [fakeToolCall({ id: "tc1", done: false, ok: null, durationMs: null })],
       }),
     ];
     const { getByTestId } = render(InspectorMetrics, {

@@ -107,9 +107,7 @@
     loadError = null;
 
     const params =
-      filterArr.length > 0
-        ? { includeClosed: false, tagIds: filterArr }
-        : { includeClosed: false };
+      filterArr.length > 0 ? { includeClosed: false, tagIds: filterArr } : { includeClosed: false };
 
     void listSessions(params)
       .then((rows) => {
@@ -146,9 +144,7 @@
     const q = filterText.toLowerCase().trim();
     if (q === "") return sessions;
     return sessions.filter(
-      (s) =>
-        s.title.toLowerCase().includes(q) ||
-        (s.description ?? "").toLowerCase().includes(q),
+      (s) => s.title.toLowerCase().includes(q) || (s.description ?? "").toLowerCase().includes(q),
     );
   });
 
@@ -320,7 +316,9 @@
             bind:value={createTitle}
             data-testid="rp-create-title"
           />
-          <div class="rp-create-form__tags-label">Tags <span class="rp-create-form__required">(≥ 1 required)</span></div>
+          <div class="rp-create-form__tags-label">
+            Tags <span class="rp-create-form__required">(≥ 1 required)</span>
+          </div>
           <div class="rp-tag-chips" data-testid="rp-create-tags">
             {#if allTags.length === 0}
               <span class="rp-list__hint">Loading tags…</span>
@@ -416,7 +414,9 @@
                   type="button"
                   class="rp-list__item"
                   class:rp-list__item--selected={selectedId === session.id}
-                  onclick={() => { selectedId = session.id; }}
+                  onclick={() => {
+                    selectedId = session.id;
+                  }}
                   data-testid={`rp-session-${session.id}`}
                 >
                   <span class="rp-list__title">{session.title}</span>
@@ -561,7 +561,9 @@
     font: inherit;
     font-size: 0.75rem;
     cursor: pointer;
-    transition: background 0.1s, color 0.1s;
+    transition:
+      background 0.1s,
+      color 0.1s;
   }
   .rp-chip:hover {
     background: rgb(var(--bearings-accent) / 0.12);

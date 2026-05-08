@@ -61,9 +61,7 @@
 
   /** Resolved error message — falls back to the default copy string. */
   const errorMessage = $derived(
-    error !== null && error !== undefined && error !== ""
-      ? error
-      : DATA_VIEW_STRINGS.errorFallback,
+    error !== null && error !== undefined && error !== "" ? error : DATA_VIEW_STRINGS.errorFallback,
   );
 
   /** True when the error prop signals a failure (non-null and non-empty). */
@@ -106,7 +104,10 @@
     {#if errorContent !== undefined}
       {@render errorContent(errorMessage)}
     {:else}
-      <p class="data-view__error-message text-sm text-red-400" data-testid="data-view-error-message">
+      <p
+        class="data-view__error-message text-sm text-red-400"
+        data-testid="data-view-error-message"
+      >
         {errorMessage}
       </p>
       {#if onretry !== undefined}

@@ -45,11 +45,7 @@
   import { contextMenu } from "../../actions/contextMenu";
   import { markdownContextMenu } from "../../actions/markdownContextMenu";
   import { createCheckpoint, forkCheckpoint } from "../../api/checkpoints";
-  import {
-    deleteMessage,
-    patchMessageHidden,
-    patchMessagePinned,
-  } from "../../api/messages";
+  import { deleteMessage, patchMessageHidden, patchMessagePinned } from "../../api/messages";
   import { regenerateSession } from "../../api/sessions";
   import { linkifyToHtml } from "../../linkify";
   import { renderMarkdown } from "../../render";
@@ -127,9 +123,7 @@
    * greyed and the stale-target caption per
    * ``docs/behavior/context-menus.md`` §"Failure modes".
    */
-  const isTurnStale = $derived(
-    !conversationStore.turns.some((t) => t.id === turn.id),
-  );
+  const isTurnStale = $derived(!conversationStore.turns.some((t) => t.id === turn.id));
 
   function handleAskForMoreDetail(): void {
     onAskForMoreDetail?.();
@@ -422,7 +416,12 @@
     </div>
   {:else}
     {#if turn.toolCalls.length > 0}
-      <details class="rounded border border-border" data-testid="tool-work-drawer" open bind:this={toolWorkEl}>
+      <details
+        class="rounded border border-border"
+        data-testid="tool-work-drawer"
+        open
+        bind:this={toolWorkEl}
+      >
         <summary class="cursor-pointer px-2 py-1 text-xs text-fg-muted">
           {CONVERSATION_STRINGS.toolDrawerLabel} ({turn.toolCalls.length})
         </summary>

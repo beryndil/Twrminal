@@ -206,9 +206,7 @@ describe("moveMessageReorg", () => {
     expect(result.dst_session_id).toBe("ses_src");
 
     const calledUrl = String(fetchMock.mock.calls[0][0]);
-    expect(calledUrl).toBe(
-      "/api/sessions/ses_src/reorg/move?target=ses_dst&message_id=msg_moved",
-    );
+    expect(calledUrl).toBe("/api/sessions/ses_src/reorg/move?target=ses_dst&message_id=msg_moved");
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.method).toBe("POST");
   });
@@ -230,8 +228,8 @@ describe("moveMessageReorg", () => {
         headers: { "content-type": "application/json" },
       }),
     );
-    await expect(
-      moveMessageReorg("ses_src", "ses_dst", "msg_nonexistent"),
-    ).rejects.toBeInstanceOf(ApiError);
+    await expect(moveMessageReorg("ses_src", "ses_dst", "msg_nonexistent")).rejects.toBeInstanceOf(
+      ApiError,
+    );
   });
 });

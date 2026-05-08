@@ -335,8 +335,8 @@
               aria-label={`Remove tag ${tag.name}`}
               data-testid="session-edit-tag-remove"
               disabled={saving}
-              onclick={() => removeTag(tag.id)}
-            >×</button>
+              onclick={() => removeTag(tag.id)}>×</button
+            >
           </span>
         {/each}
         <div class="session-edit-modal__tag-input-wrap">
@@ -360,7 +360,11 @@
             }}
           />
           {#if showSuggestions && (tagSuggestions.length > 0 || canCreateTag)}
-            <ul class="session-edit-modal__suggestions" data-testid="session-edit-tag-suggestions" role="listbox">
+            <ul
+              class="session-edit-modal__suggestions"
+              data-testid="session-edit-tag-suggestions"
+              role="listbox"
+            >
               {#each tagSuggestions as suggestion (suggestion.id)}
                 <li
                   role="option"

@@ -32,7 +32,9 @@ function getDataTheme(): string | null {
 }
 
 function getMetaColor(): string | null {
-  return document.querySelector<HTMLMetaElement>(`meta[name="${THEME_META_NAME}"]`)?.content ?? null;
+  return (
+    document.querySelector<HTMLMetaElement>(`meta[name="${THEME_META_NAME}"]`)?.content ?? null
+  );
 }
 
 function setMatchMedia(matches: boolean): void {

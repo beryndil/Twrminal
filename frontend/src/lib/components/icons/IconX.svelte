@@ -27,7 +27,23 @@
   data-testid="icon-x"
 >
   <!-- ╲ line -->
-  <line x1="3" y1="3" x2="13" y2="13" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" />
+  <line
+    x1="3"
+    y1="3"
+    x2="13"
+    y2="13"
+    stroke="currentColor"
+    stroke-width="1.75"
+    stroke-linecap="round"
+  />
   <!-- ╱ line -->
-  <line x1="13" y1="3" x2="3" y2="13" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" />
+  <line
+    x1="13"
+    y1="3"
+    x2="3"
+    y2="13"
+    stroke="currentColor"
+    stroke-width="1.75"
+    stroke-linecap="round"
+  />
 </svg>

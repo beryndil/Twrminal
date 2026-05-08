@@ -39,7 +39,10 @@ import {
 // ---- mock listCommands so tests never hit the network -------------------
 // vi.mock factories are hoisted; use vi.hoisted to keep the ref available.
 const { mockListCommands, mockPasteIntoComposer } = vi.hoisted(() => ({
-  mockListCommands: vi.fn<(cwd?: string | null) => Promise<{ name: string; description: string; source: string }[]>>(),
+  mockListCommands:
+    vi.fn<
+      (cwd?: string | null) => Promise<{ name: string; description: string; source: string }[]>
+    >(),
   mockPasteIntoComposer: vi.fn(),
 }));
 

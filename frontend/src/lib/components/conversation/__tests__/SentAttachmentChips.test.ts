@@ -82,10 +82,7 @@ describe("SentAttachmentChips — with attachments", () => {
     const { getByTestId } = render(SentAttachmentChips, {
       props: { attachments: [attachment({ id: "att-42" })] },
     });
-    expect(getByTestId("sent-attachment-chip")).toHaveAttribute(
-      "data-attachment-id",
-      "att-42",
-    );
+    expect(getByTestId("sent-attachment-chip")).toHaveAttribute("data-attachment-id", "att-42");
   });
 });
 

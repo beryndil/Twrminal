@@ -116,10 +116,9 @@ describe("theme blocks — scrollbar variable declarations", () => {
     it(`${label} declares --bearings-scrollbar-thumb`, () => {
       const block = extractThemeBlock(css, selector);
       expect(block, `${label} block not found`).not.toBe("");
-      expect(
-        block,
-        `${label} must declare --bearings-scrollbar-thumb`,
-      ).toContain("--bearings-scrollbar-thumb:");
+      expect(block, `${label} must declare --bearings-scrollbar-thumb`).toContain(
+        "--bearings-scrollbar-thumb:",
+      );
     });
 
     it(`${label} declares --bearings-scrollbar-thumb-hover`, () => {

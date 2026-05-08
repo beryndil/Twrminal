@@ -753,7 +753,12 @@ export async function getSessionTodos(
  */
 export interface SystemPromptLayer {
   /** Layer kind — one of the LAYER_KIND_* values. */
-  kind: "baseline" | "project_claude_md" | "tag_memory" | "session_instructions" | "template_baseline";
+  kind:
+    | "baseline"
+    | "project_claude_md"
+    | "tag_memory"
+    | "session_instructions"
+    | "template_baseline";
   /** Text body of the layer. Non-empty for every returned layer. */
   body: string;
   /** Approximate token count (len(body) // 4). */

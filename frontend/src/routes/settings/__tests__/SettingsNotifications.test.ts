@@ -146,9 +146,7 @@ describe("Settings — Notifications toggle ON triggers patch", () => {
 
     await waitFor(() => {
       expect(mockRequestPermission).toHaveBeenCalled();
-      expect(mockPatch).toHaveBeenCalledWith(
-        expect.objectContaining({ notify_on_complete: true }),
-      );
+      expect(mockPatch).toHaveBeenCalledWith(expect.objectContaining({ notify_on_complete: true }));
     });
   });
 });

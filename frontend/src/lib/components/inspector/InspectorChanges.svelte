@@ -29,10 +29,7 @@
    * nothing and the component reads from :data:`conversationStore`.
    */
   import { INSPECTOR_STRINGS } from "../../config";
-  import {
-    conversationStore,
-    type MessageTurnView,
-  } from "../../stores/conversation.svelte";
+  import { conversationStore, type MessageTurnView } from "../../stores/conversation.svelte";
   import { formatAbsolute } from "../../utils/datetime";
   import type { SessionOut } from "../../api/sessions";
 
@@ -117,8 +114,7 @@
     try {
       const parsed = JSON.parse(inputJson) as Record<string, unknown>;
       if (name === "NotebookEdit") {
-        return typeof parsed.notebook_path === "string" &&
-          parsed.notebook_path.length > 0
+        return typeof parsed.notebook_path === "string" && parsed.notebook_path.length > 0
           ? parsed.notebook_path
           : null;
       }
@@ -150,10 +146,7 @@
         raw = parsed.content;
       } else if (name === "Edit" && typeof parsed.new_string === "string") {
         raw = parsed.new_string;
-      } else if (
-        name === "NotebookEdit" &&
-        typeof parsed.new_source === "string"
-      ) {
+      } else if (name === "NotebookEdit" && typeof parsed.new_source === "string") {
         raw = parsed.new_source;
       }
       if (raw === undefined) return "";
@@ -225,13 +218,8 @@
   });
 </script>
 
-<section
-  class="inspector-changes flex flex-col gap-3"
-  data-testid="inspector-changes"
->
-  <h3
-    class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-fg-muted"
-  >
+<section class="inspector-changes flex flex-col gap-3" data-testid="inspector-changes">
+  <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-fg-muted">
     {INSPECTOR_STRINGS.changesHeading}
     {#if changeRows.length > 0}
       <span
@@ -253,15 +241,9 @@
       </p>
     </div>
   {:else}
-    <ul
-      class="flex flex-col gap-2"
-      data-testid="inspector-changes-list"
-    >
+    <ul class="flex flex-col gap-2" data-testid="inspector-changes-list">
       {#each changeRows as row (row.id)}
-        <li
-          class="flex min-w-0 flex-col gap-0.5 text-xs"
-          data-testid="inspector-changes-row"
-        >
+        <li class="flex min-w-0 flex-col gap-0.5 text-xs" data-testid="inspector-changes-row">
           <div class="flex min-w-0 items-baseline gap-2">
             <span
               class="min-w-0 flex-1 truncate font-mono text-fg"
@@ -276,18 +258,12 @@
             >
               {row.verb}
             </span>
-            <span
-              class="shrink-0 tabular-nums text-fg-muted"
-              data-testid="inspector-changes-time"
-            >
+            <span class="shrink-0 tabular-nums text-fg-muted" data-testid="inspector-changes-time">
               {row.timestampMs !== null ? formatAbsolute(row.timestampMs) : "—"}
             </span>
           </div>
           {#if row.excerpt.length > 0}
-            <p
-              class="truncate font-mono text-fg-muted"
-              data-testid="inspector-changes-excerpt"
-            >
+            <p class="truncate font-mono text-fg-muted" data-testid="inspector-changes-excerpt">
               {row.excerpt}
             </p>
           {/if}

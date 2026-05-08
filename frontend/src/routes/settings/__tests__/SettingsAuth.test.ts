@@ -61,12 +61,7 @@ vi.mock("../../../lib/api/import", () => ({
 }));
 
 import { getPreferences, type PreferencesOut } from "../../../lib/api/preferences";
-import {
-  authStore,
-  clearToken,
-  getStoredToken,
-  saveToken,
-} from "../../../lib/stores/auth.svelte";
+import { authStore, clearToken, getStoredToken, saveToken } from "../../../lib/stores/auth.svelte";
 import SettingsPage from "../+page.svelte";
 
 function makePrefs(overrides: Partial<PreferencesOut> = {}): PreferencesOut {

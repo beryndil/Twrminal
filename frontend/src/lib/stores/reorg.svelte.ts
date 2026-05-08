@@ -9,12 +9,7 @@
  * ReorgAuditDivider and a 30-second ReorgUndoToast appears.
  */
 import { listMessages, moveMessage } from "../api/messages";
-import {
-  deleteReorgAudit,
-  listReorgAudits,
-  moveMessageReorg,
-  splitSession,
-} from "../api/reorg";
+import { deleteReorgAudit, listReorgAudits, moveMessageReorg, splitSession } from "../api/reorg";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -358,10 +353,7 @@ function _addAuditEntry(sourceSessionId: string, entry: ReorgAuditEntry): void {
  * Returns a list of proposals ordered by message position.  The
  * ReorgProposalEditor renders these for the user to accept or dismiss.
  */
-export async function analyzeReorg(
-  sessionId: string,
-  chunkSize = 10,
-): Promise<ReorgProposal[]> {
+export async function analyzeReorg(sessionId: string, chunkSize = 10): Promise<ReorgProposal[]> {
   const page = await listMessages(sessionId);
   const msgs = page.items;
   const proposals: ReorgProposal[] = [];

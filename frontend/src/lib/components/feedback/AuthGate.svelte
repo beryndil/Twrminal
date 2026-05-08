@@ -25,10 +25,7 @@
    * so it does not disturb the three-column grid layout.
    */
   import { tick } from "svelte";
-  import {
-    AUTH_GATE_STRINGS,
-    WS_CLOSE_CODE_AUTH_FAILURE,
-  } from "../../config";
+  import { AUTH_GATE_STRINGS, WS_CLOSE_CODE_AUTH_FAILURE } from "../../config";
   import { authStore, _setBlocking, saveToken } from "../../stores/auth.svelte";
   import { wsConnectionStatus } from "../../stores/sessions.svelte";
 

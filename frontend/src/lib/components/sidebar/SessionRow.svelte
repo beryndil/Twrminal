@@ -130,7 +130,9 @@
      * Provided by :class:`SessionList` so all selected-row menus
      * share the same wired actions.
      */
-    multiSelectHandlers?: Readonly<Record<string, import("../../context-menu/store.svelte").HandlerEntry>>;
+    multiSelectHandlers?: Readonly<
+      Record<string, import("../../context-menu/store.svelte").HandlerEntry>
+    >;
     /**
      * Called on plain click and ctrl/cmd-click so :class:`SessionList`
      * can track the last non-shift click as the anchor for the next
@@ -167,9 +169,7 @@
    * (``session_delete`` event), so this flag becomes true in all open
    * tabs within the same broadcast tick.
    */
-  const isSessionStale = $derived(
-    !sessionsStore.sessions.some((s) => s.id === session.id),
-  );
+  const isSessionStale = $derived(!sessionsStore.sessions.some((s) => s.id === session.id));
 
   const isClosed = $derived(session.closed_at !== null);
 
@@ -192,8 +192,7 @@
       unviewed:
         !isSelected &&
         session.last_completed_at !== null &&
-        (session.last_viewed_at === null ||
-          session.last_completed_at > session.last_viewed_at),
+        (session.last_viewed_at === null || session.last_completed_at > session.last_viewed_at),
     }),
   );
 
@@ -361,8 +360,7 @@
               void refreshSessions(currentFilter());
               undoStore.push({
                 message: UNDO_TOAST_STRINGS.sessionArchived,
-                inverse: () =>
-                  reopenSession(id).then(() => refreshSessions(currentFilter())),
+                inverse: () => reopenSession(id).then(() => refreshSessions(currentFilter())),
               });
             });
           },
@@ -394,12 +392,10 @@
     session.working_dir !== ""
       ? {
           [MENU_ACTION_SESSION_OPEN_IN_TERMINAL]: () => {
-            void shellOpenInTerminal(session.working_dir as string).catch(
-              (err: unknown) => {
-                const detail = err instanceof Error ? err.message : "unknown error";
-                showShellOpError(detail);
-              },
-            );
+            void shellOpenInTerminal(session.working_dir as string).catch((err: unknown) => {
+              const detail = err instanceof Error ? err.message : "unknown error";
+              showShellOpError(detail);
+            });
           },
         }
       : {}),
@@ -777,10 +773,9 @@
       under all themes automatically.
     -->
     {#if session.description !== null && session.description !== undefined && session.description.trim() !== ""}
-      <span
-        class="truncate text-xs text-fg-muted"
-        data-testid="session-row-description"
-      >{session.description}</span>
+      <span class="truncate text-xs text-fg-muted" data-testid="session-row-description"
+        >{session.description}</span
+      >
     {/if}
 
     <!-- Paired-chat annotation (↳ parent checklist title) -->

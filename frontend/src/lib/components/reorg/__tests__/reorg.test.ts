@@ -257,8 +257,22 @@ beforeEach(() => {
   listSessionsMock.mockResolvedValue(SESSION_FIXTURES);
   listMessagesMock.mockResolvedValue({
     items: [
-      { id: "msg1", session_id: "sess-a", role: "user", content: "hello", seq: 1, created_at: "2026-01-01T10:00:00Z" },
-      { id: "msg2", session_id: "sess-a", role: "assistant", content: "hi", seq: 2, created_at: "2026-01-01T10:01:00Z" },
+      {
+        id: "msg1",
+        session_id: "sess-a",
+        role: "user",
+        content: "hello",
+        seq: 1,
+        created_at: "2026-01-01T10:00:00Z",
+      },
+      {
+        id: "msg2",
+        session_id: "sess-a",
+        role: "assistant",
+        content: "hi",
+        seq: 2,
+        created_at: "2026-01-01T10:01:00Z",
+      },
     ],
     has_more: false,
   });
@@ -397,7 +411,10 @@ describe("ReorgAuditDivider — divider render after commit", () => {
   });
 
   it("renders a link to the target session", () => {
-    const entry = makeAuditEntry({ targetSessionId: "sess-b", targetSessionTitle: "Target Session" });
+    const entry = makeAuditEntry({
+      targetSessionId: "sess-b",
+      targetSessionTitle: "Target Session",
+    });
     const { getByTestId } = render(ReorgAuditDivider, { props: { entry } });
 
     const link = getByTestId("reorg-audit-divider-target-link");

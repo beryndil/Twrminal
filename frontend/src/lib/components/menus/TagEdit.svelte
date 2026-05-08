@@ -21,12 +21,7 @@
    */
   import { untrack } from "svelte";
   import { ApiError } from "../../api/client";
-  import {
-    TAG_CLASS_SEVERITY,
-    type TagClass,
-    type TagOut,
-    updateTag,
-  } from "../../api/tags";
+  import { TAG_CLASS_SEVERITY, type TagClass, type TagOut, updateTag } from "../../api/tags";
   import {
     EXECUTOR_MODEL_HAIKU,
     EXECUTOR_MODEL_OPUS,

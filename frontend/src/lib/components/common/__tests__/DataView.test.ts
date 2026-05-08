@@ -68,9 +68,7 @@ describe("DataView — error state", () => {
   it("displays the supplied error message", () => {
     const { getByTestId } = render(DataViewErrorHarness);
 
-    expect(getByTestId("data-view-error-message")).toHaveTextContent(
-      "Test error message",
-    );
+    expect(getByTestId("data-view-error-message")).toHaveTextContent("Test error message");
   });
 
   it("renders the retry button", () => {

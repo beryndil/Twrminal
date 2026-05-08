@@ -138,8 +138,7 @@
    */
   const streamingContentLength = $derived(
     conversationStore.turns.reduce(
-      (sum, t) =>
-        sum + t.body.length + t.toolCalls.reduce((s, tc) => s + tc.output.length, 0),
+      (sum, t) => sum + t.body.length + t.toolCalls.reduce((s, tc) => s + tc.output.length, 0),
       0,
     ),
   );
@@ -177,9 +176,7 @@
         // whose ring-buffer events are no longer available (gap-cycle-03-012).
         // Run in parallel with the WS connect; errors are non-fatal (the
         // drawer will be populated by WS replay for recent sessions).
-        const assistantIds = page.items
-          .filter((m) => m.role === "assistant")
-          .map((m) => m.id);
+        const assistantIds = page.items.filter((m) => m.role === "assistant").map((m) => m.id);
         if (assistantIds.length > 0) {
           try {
             const toolCalls = await listToolCalls(sid, assistantIds);
@@ -365,8 +362,7 @@
               {turn}
               {sessionId}
               onAskForMoreDetail={handleAskForMoreDetail}
-              isLastAssistantTurn={turn.role === "assistant" &&
-                turnIdx === lastAssistantTurnIndex}
+              isLastAssistantTurn={turn.role === "assistant" && turnIdx === lastAssistantTurnIndex}
               turnsAfterCount={conversationStore.turns.length - 1 - turnIdx}
               {isPaired}
               workingDir={activeWorkingDir}
@@ -374,7 +370,9 @@
           </VirtualItem>
           <!-- Reorg audit dividers appear after their anchor turn. -->
           {#if sessionId !== null}
-            {#each reorgStore.auditEntriesFor(sessionId).filter((e) => e.anchorMessageId === turn.id) as entry (entry.id)}
+            {#each reorgStore
+              .auditEntriesFor(sessionId)
+              .filter((e) => e.anchorMessageId === turn.id) as entry (entry.id)}
               <ReorgAuditDivider
                 {entry}
                 onUndo={entry.serverAuditId !== undefined

@@ -39,10 +39,7 @@ function triggerResize(height: number): void {
   if (capturedCallback === null) {
     throw new Error("No ResizeObserver callback captured — was the component mounted?");
   }
-  capturedCallback(
-    [{ contentRect: { height } } as ResizeObserverEntry],
-    {} as ResizeObserver,
-  );
+  capturedCallback([{ contentRect: { height } } as ResizeObserverEntry], {} as ResizeObserver);
 }
 
 beforeEach(() => {
@@ -129,8 +126,7 @@ describe("CollapsibleBody — over threshold", () => {
       expect(inner.style.overflow).toBe("hidden");
       // mask-image is set (either prefixed or unprefixed variant is present)
       const hasMask =
-        inner.style.maskImage !== "" ||
-        inner.style.getPropertyValue("-webkit-mask-image") !== "";
+        inner.style.maskImage !== "" || inner.style.getPropertyValue("-webkit-mask-image") !== "";
       expect(hasMask).toBe(true);
     });
   });

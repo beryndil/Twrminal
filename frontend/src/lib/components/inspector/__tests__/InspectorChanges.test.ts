@@ -10,10 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import InspectorChanges from "../InspectorChanges.svelte";
 import { INSPECTOR_STRINGS } from "../../../config";
-import type {
-  MessageTurnView,
-  ToolCallView,
-} from "../../../stores/conversation.svelte";
+import type { MessageTurnView, ToolCallView } from "../../../stores/conversation.svelte";
 import type { SessionOut } from "../../../api/sessions";
 
 function fakeSession(overrides: Partial<SessionOut> = {}): SessionOut {
@@ -194,9 +191,7 @@ describe("InspectorChanges — verb mapping", () => {
     const { getByTestId } = render(InspectorChanges, {
       props: { session: fakeSession(), turns },
     });
-    expect(getByTestId("inspector-changes-verb")).toHaveTextContent(
-      "Notebook-edited",
-    );
+    expect(getByTestId("inspector-changes-verb")).toHaveTextContent("Notebook-edited");
   });
 });
 
@@ -222,9 +217,7 @@ describe("InspectorChanges — excerpt extraction", () => {
     const { getByTestId } = render(InspectorChanges, {
       props: { session: fakeSession(), turns },
     });
-    expect(getByTestId("inspector-changes-excerpt")).toHaveTextContent(
-      "export const answer = 42;",
-    );
+    expect(getByTestId("inspector-changes-excerpt")).toHaveTextContent("export const answer = 42;");
   });
 
   it("uses the new_string field for Edit calls", () => {
@@ -245,9 +238,7 @@ describe("InspectorChanges — excerpt extraction", () => {
     const { getByTestId } = render(InspectorChanges, {
       props: { session: fakeSession(), turns },
     });
-    expect(getByTestId("inspector-changes-excerpt")).toHaveTextContent(
-      "const x = 99;",
-    );
+    expect(getByTestId("inspector-changes-excerpt")).toHaveTextContent("const x = 99;");
   });
 
   it("uses the new_source field for NotebookEdit calls", () => {
@@ -267,9 +258,7 @@ describe("InspectorChanges — excerpt extraction", () => {
     const { getByTestId } = render(InspectorChanges, {
       props: { session: fakeSession(), turns },
     });
-    expect(getByTestId("inspector-changes-excerpt")).toHaveTextContent(
-      "import numpy as np",
-    );
+    expect(getByTestId("inspector-changes-excerpt")).toHaveTextContent("import numpy as np");
   });
 
   it("takes only the first newline-delimited line of multi-line content", () => {
@@ -312,9 +301,7 @@ describe("InspectorChanges — excerpt extraction", () => {
     const { getByTestId } = render(InspectorChanges, {
       props: { session: fakeSession(), turns },
     });
-    expect(getByTestId("inspector-changes-excerpt")).toHaveTextContent(
-      "indented content",
-    );
+    expect(getByTestId("inspector-changes-excerpt")).toHaveTextContent("indented content");
   });
 
   it("clips the first line to 120 characters", () => {
@@ -443,9 +430,7 @@ describe("InspectorChanges — row rendering", () => {
     const { getByTestId } = render(InspectorChanges, {
       props: { session: fakeSession(), turns },
     });
-    expect(getByTestId("inspector-changes-path")).toHaveTextContent(
-      "~/Projects/foo.ts",
-    );
+    expect(getByTestId("inspector-changes-path")).toHaveTextContent("~/Projects/foo.ts");
   });
 
   it("preserves the full path in the title tooltip", () => {
@@ -463,9 +448,7 @@ describe("InspectorChanges — row rendering", () => {
     const { getByTestId } = render(InspectorChanges, {
       props: { session: fakeSession(), turns },
     });
-    expect(getByTestId("inspector-changes-path").getAttribute("title")).toBe(
-      fullPath,
-    );
+    expect(getByTestId("inspector-changes-path").getAttribute("title")).toBe(fullPath);
   });
 });
 
@@ -502,9 +485,7 @@ describe("InspectorChanges — sort order", () => {
     const { getAllByTestId } = render(InspectorChanges, {
       props: { session: fakeSession(), turns },
     });
-    const paths = getAllByTestId("inspector-changes-path").map(
-      (el) => el.textContent?.trim(),
-    );
+    const paths = getAllByTestId("inspector-changes-path").map((el) => el.textContent?.trim());
     expect(paths[0]).toBe("/tmp/newer.ts");
     expect(paths[1]).toBe("/tmp/older.ts");
   });
@@ -539,9 +520,7 @@ describe("InspectorChanges — sort order", () => {
         turns: [nullTimestampTurn, timestampedTurn],
       },
     });
-    const paths = getAllByTestId("inspector-changes-path").map(
-      (el) => el.textContent?.trim(),
-    );
+    const paths = getAllByTestId("inspector-changes-path").map((el) => el.textContent?.trim());
     expect(paths[0]).toBe("/tmp/has-ts.ts");
     expect(paths[1]).toBe("/tmp/no-ts.ts");
   });

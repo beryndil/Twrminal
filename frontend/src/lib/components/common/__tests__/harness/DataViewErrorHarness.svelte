@@ -5,4 +5,9 @@
   let _retries = $state(0);
 </script>
 
-<DataView error="Test error message" onretry={() => { _retries += 1; }} />
+<DataView
+  error="Test error message"
+  onretry={() => {
+    _retries += 1;
+  }}
+/>

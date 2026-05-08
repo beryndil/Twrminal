@@ -573,9 +573,7 @@ describe("ContextMenu", () => {
       );
       await fireEvent.click(deleteRow as HTMLElement);
 
-      expect(getByTestId("confirm-dialog-message")).toHaveTextContent(
-        'Delete checkpoint "my-cp"?',
-      );
+      expect(getByTestId("confirm-dialog-message")).toHaveTextContent('Delete checkpoint "my-cp"?');
       expect(getByTestId("confirm-dialog-confirm")).toHaveTextContent("Delete");
     });
 

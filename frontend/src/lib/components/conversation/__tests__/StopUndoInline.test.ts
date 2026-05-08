@@ -92,9 +92,7 @@ describe("StopUndoInline — arm → countdown → commit (AC1)", () => {
     await advance(0);
 
     const initialSeconds = Math.ceil(STOP_UNDO_GRACE_MS / 1000); // 3
-    expect(getByTestId("stop-undo-countdown").textContent).toContain(
-      `Stopping ${initialSeconds}s`,
-    );
+    expect(getByTestId("stop-undo-countdown").textContent).toContain(`Stopping ${initialSeconds}s`);
   });
 
   it("decrements the countdown at each tick interval", async () => {

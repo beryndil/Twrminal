@@ -24,10 +24,7 @@ vi.mock("../../../api/wsSessions", () => ({
   connectSessionsBroadcast: vi.fn().mockReturnValue(() => {}),
 }));
 
-import {
-  _resetWsStatusForTests,
-  _setWsStatusForTests,
-} from "../../../stores/sessions.svelte";
+import { _resetWsStatusForTests, _setWsStatusForTests } from "../../../stores/sessions.svelte";
 import { BACKEND_UNREACHABLE_THRESHOLD_MS } from "../../../config";
 import BackendStatusBanner from "../BackendStatusBanner.svelte";
 

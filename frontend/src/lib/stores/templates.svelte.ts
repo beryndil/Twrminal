@@ -19,7 +19,12 @@
  * Pattern mirrors :mod:`stores/sessions.svelte.ts` — single ``$state``
  * proxy, cancellable refresh, test seam via :func:`_resetForTests`.
  */
-import { deleteTemplate, instantiateTemplate, listTemplates, type TemplateOut } from "../api/templates";
+import {
+  deleteTemplate,
+  instantiateTemplate,
+  listTemplates,
+  type TemplateOut,
+} from "../api/templates";
 
 interface TemplatesState {
   /** Cached template list, newest-first (sorted by ``created_at`` DESC). */

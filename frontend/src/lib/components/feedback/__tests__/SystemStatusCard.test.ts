@@ -24,10 +24,7 @@ vi.mock("../../../api/wsSessions", () => ({
   connectSessionsBroadcast: vi.fn().mockReturnValue(() => {}),
 }));
 
-import {
-  _resetWsStatusForTests,
-  _setWsStatusForTests,
-} from "../../../stores/sessions.svelte";
+import { _resetWsStatusForTests, _setWsStatusForTests } from "../../../stores/sessions.svelte";
 import { SYSTEM_STATUS_CARD_STRINGS } from "../../../config";
 import SystemStatusCard from "../SystemStatusCard.svelte";
 

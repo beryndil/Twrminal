@@ -22,24 +22,22 @@ afterEach(() => {
 
 describe("resolvePendingOp", () => {
   it("POSTs to the correct resolve endpoint and returns on 204", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(null, { status: 204 }),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     await resolvePendingOp("my-op", "/home/user/project");
 
     const calledUrl = String(fetchMock.mock.calls[0][0]);
-    expect(calledUrl).toBe(
-      "/api/pending/my-op/resolve?directory=%2Fhome%2Fuser%2Fproject",
-    );
+    expect(calledUrl).toBe("/api/pending/my-op/resolve?directory=%2Fhome%2Fuser%2Fproject");
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.method).toBe("POST");
   });
 
   it("URL-encodes op name with special characters", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(null, { status: 204 }),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     await resolvePendingOp("op with spaces/slashes", "/dir");
 
@@ -81,24 +79,22 @@ describe("resolvePendingOp", () => {
 
 describe("dismissPendingOp", () => {
   it("DELETEs to the correct dismiss endpoint and returns on 204", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(null, { status: 204 }),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     await dismissPendingOp("review", "/home/user/project");
 
     const calledUrl = String(fetchMock.mock.calls[0][0]);
-    expect(calledUrl).toBe(
-      "/api/pending/review?directory=%2Fhome%2Fuser%2Fproject",
-    );
+    expect(calledUrl).toBe("/api/pending/review?directory=%2Fhome%2Fuser%2Fproject");
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.method).toBe("DELETE");
   });
 
   it("URL-encodes directory path", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(null, { status: 204 }),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     await dismissPendingOp("op", "/path with spaces");
 

@@ -18,11 +18,7 @@ import { QUOTA_BAR_RED_PCT, QUOTA_BAR_YELLOW_PCT, TOKEN_METER_STRINGS } from "..
 
 // ---- helpers ---------------------------------------------------------------
 
-function renderMeter(
-  inputTokens: number,
-  outputTokens: number,
-  overallUsedPct: number | null,
-) {
+function renderMeter(inputTokens: number, outputTokens: number, overallUsedPct: number | null) {
   return render(TokenMeter, {
     props: { inputTokens, outputTokens, overallUsedPct },
   });
@@ -113,10 +109,7 @@ describe("TokenMeter", () => {
   // AC: correct aria-label by state
   it("uses the base aria-label when usage is below warn threshold", () => {
     const { getByTestId } = renderMeter(500, 200, 0.5);
-    expect(getByTestId("token-meter")).toHaveAttribute(
-      "aria-label",
-      TOKEN_METER_STRINGS.ariaLabel,
-    );
+    expect(getByTestId("token-meter")).toHaveAttribute("aria-label", TOKEN_METER_STRINGS.ariaLabel);
   });
 
   it("uses the warn aria-label in yellow state", () => {

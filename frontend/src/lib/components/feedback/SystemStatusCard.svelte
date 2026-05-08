@@ -42,7 +42,10 @@
   data-testid="system-status-card"
 >
   <!-- Connection row -->
-  <div class="flex items-center justify-between gap-2 py-0.5" data-testid="system-status-connection-row">
+  <div
+    class="flex items-center justify-between gap-2 py-0.5"
+    data-testid="system-status-connection-row"
+  >
     <span class="text-xs text-fg-muted">{SYSTEM_STATUS_CARD_STRINGS.connectionRowLabel}</span>
     <span class="flex items-center gap-1.5">
       <span
@@ -61,7 +64,10 @@
   </div>
 
   <!-- Claude reachability row -->
-  <div class="flex items-center justify-between gap-2 py-0.5" data-testid="system-status-claude-row">
+  <div
+    class="flex items-center justify-between gap-2 py-0.5"
+    data-testid="system-status-claude-row"
+  >
     <span class="text-xs text-fg-muted">{SYSTEM_STATUS_CARD_STRINGS.claudeRowLabel}</span>
     <span class="flex items-center gap-1.5">
       <span

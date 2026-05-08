@@ -251,7 +251,10 @@ describe("Settings — Profile: display-name badge transitions", () => {
   it("shows Saving… badge while PATCH is in flight, then Saved on success", async () => {
     let resolvePatch!: (v: PreferencesOut) => void;
     mockPatch.mockImplementation(
-      () => new Promise<PreferencesOut>((res) => { resolvePatch = res; }),
+      () =>
+        new Promise<PreferencesOut>((res) => {
+          resolvePatch = res;
+        }),
     );
 
     const { getByTestId, queryByTestId } = render(SettingsPage);
@@ -305,7 +308,10 @@ describe("Settings — Profile: avatar-upload badge transitions", () => {
   it("shows Saving… while upload is in flight, then Saved on success", async () => {
     let resolveUpload!: (v: PreferencesOut) => void;
     mockUpload.mockImplementation(
-      () => new Promise<PreferencesOut>((res) => { resolveUpload = res; }),
+      () =>
+        new Promise<PreferencesOut>((res) => {
+          resolveUpload = res;
+        }),
     );
 
     const { getByTestId, queryByTestId } = render(SettingsPage);
@@ -362,7 +368,10 @@ describe("Settings — Profile: avatar-remove badge transitions", () => {
     mockGet.mockResolvedValue(makePrefs({ avatar_url: "/api/preferences/avatar" }));
     let resolveDelete!: (v: PreferencesOut) => void;
     mockDelete.mockImplementation(
-      () => new Promise<PreferencesOut>((res) => { resolveDelete = res; }),
+      () =>
+        new Promise<PreferencesOut>((res) => {
+          resolveDelete = res;
+        }),
     );
 
     const { getByTestId, queryByTestId } = render(SettingsPage);
@@ -409,7 +418,10 @@ describe("Settings — Profile: sync badge transitions", () => {
   it("shows Saving… while sync is in flight, then Saved on success", async () => {
     let resolveSync!: (v: PreferencesOut) => void;
     mockSync.mockImplementation(
-      () => new Promise<PreferencesOut>((res) => { resolveSync = res; }),
+      () =>
+        new Promise<PreferencesOut>((res) => {
+          resolveSync = res;
+        }),
     );
 
     const { getByTestId, queryByTestId } = render(SettingsPage);

@@ -73,10 +73,7 @@ describe("formatAbsolute — active timezone", () => {
     setTimezone("UTC");
     const spy = vi.spyOn(Date.prototype, "toLocaleString");
     formatAbsolute(new Date("2024-01-01T00:00:00Z"));
-    expect(spy).toHaveBeenCalledWith(
-      undefined,
-      expect.objectContaining({ timeZone: "UTC" }),
-    );
+    expect(spy).toHaveBeenCalledWith(undefined, expect.objectContaining({ timeZone: "UTC" }));
   });
 
   it("passes the chosen IANA zone, not a hardcoded value", () => {

@@ -197,22 +197,14 @@ export const sessionReorgAuditEndpoint = (sessionId: string, auditId: string): s
  * split src at the given message rowid, moving all messages with
  * rowid >= n to dst atomically (gap-cycle-13-002).
  */
-export const sessionReorgSplitEndpoint = (
-  srcId: string,
-  dstId: string,
-  fromSeq: number,
-): string =>
+export const sessionReorgSplitEndpoint = (srcId: string, dstId: string, fromSeq: number): string =>
   `${API_BASE}/sessions/${encodeURIComponent(srcId)}/reorg/split?target=${encodeURIComponent(dstId)}&from_seq=${fromSeq}`;
 
 /**
  * ``POST /api/sessions/{src}/reorg/move?target={dst}&message_id={id}`` —
  * move a single message from src to dst atomically (gap-cycle-13-002).
  */
-export const sessionReorgMoveEndpoint = (
-  srcId: string,
-  dstId: string,
-  messageId: string,
-): string =>
+export const sessionReorgMoveEndpoint = (srcId: string, dstId: string, messageId: string): string =>
   `${API_BASE}/sessions/${encodeURIComponent(srcId)}/reorg/move?target=${encodeURIComponent(dstId)}&message_id=${encodeURIComponent(messageId)}`;
 
 /**
@@ -770,8 +762,7 @@ export const CONVERSATION_HEADER_STRINGS = {
  * data — the browser opens the form and the user submits manually
  * (Beryndil standards §17 / gap-cycle-01-008).
  */
-export const FEEDBACK_GITHUB_ISSUES_URL =
-  "https://github.com/Beryndil/Bearings/issues/new";
+export const FEEDBACK_GITHUB_ISSUES_URL = "https://github.com/Beryndil/Bearings/issues/new";
 
 /**
  * UI strings for :component:`FeedbackButton` (gap-cycle-01-008).
@@ -3014,8 +3005,7 @@ export const APPROVAL_STRINGS = {
    *
    * Behavior anchor: ``docs/behavior/chat.md`` §"Approval modal".
    */
-  reconnectingBanner:
-    "Reconnecting — your response will send once the socket is back.",
+  reconnectingBanner: "Reconnecting — your response will send once the socket is back.",
 } as const;
 
 /**
@@ -3119,7 +3109,8 @@ export const TAG_EDIT_STRINGS = {
   /** Placeholder for the default model field when no value is set. */
   defaultModelPlaceholder: "e.g. sonnet",
   /** Hint shown below the field when severity is selected. */
-  severityInheritanceHint: "Severity tags carry no inherited model or working dir — cleared and disabled.",
+  severityInheritanceHint:
+    "Severity tags carry no inherited model or working dir — cleared and disabled.",
   /** Working directory field label. */
   workingDirLabel: "Default working dir",
   /** Placeholder for the working dir field. */

@@ -127,7 +127,11 @@ describe("TagEdit — severity 422 surfaces inline", () => {
   });
 
   it("surfaces a backend 422 detail message inline without closing", async () => {
-    const apiErr = new ApiError(422, { detail: "severity tags cannot have inheritance fields" }, "PATCH /api/tags/1 → 422");
+    const apiErr = new ApiError(
+      422,
+      { detail: "severity tags cannot have inheritance fields" },
+      "PATCH /api/tags/1 → 422",
+    );
     mockUpdateTag.mockRejectedValueOnce(apiErr);
 
     const onClose = vi.fn();

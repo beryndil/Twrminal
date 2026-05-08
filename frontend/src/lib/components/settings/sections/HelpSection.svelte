@@ -44,12 +44,8 @@
       data-testid="help-keyboard-shortcuts-btn"
     >
       <span class="settings-help__row-body">
-        <span class="settings-help__row-title"
-          >{HELP_SECTION_STRINGS.keyboardShortcutsLabel}</span
-        >
-        <span
-          class="settings-help__row-desc"
-          data-testid="help-keyboard-shortcuts-desc"
+        <span class="settings-help__row-title">{HELP_SECTION_STRINGS.keyboardShortcutsLabel}</span>
+        <span class="settings-help__row-desc" data-testid="help-keyboard-shortcuts-desc"
           >{HELP_SECTION_STRINGS.keyboardShortcutsDescription}</span
         >
       </span>
@@ -79,8 +75,7 @@
       <span
         class="settings-help__row-trailing"
         aria-hidden="true"
-        data-testid="help-readme-trailing"
-        >{HELP_SECTION_STRINGS.readmeTrailing}</span
+        data-testid="help-readme-trailing">{HELP_SECTION_STRINGS.readmeTrailing}</span
       >
     </a>
   </div>
@@ -99,10 +94,7 @@
           >{HELP_SECTION_STRINGS.docsDescription}</span
         >
       </span>
-      <span
-        class="settings-help__row-trailing"
-        aria-hidden="true"
-        data-testid="help-docs-trailing"
+      <span class="settings-help__row-trailing" aria-hidden="true" data-testid="help-docs-trailing"
         >{HELP_SECTION_STRINGS.docsTrailing}</span
       >
     </a>
@@ -125,8 +117,7 @@
       <span
         class="settings-help__row-trailing"
         aria-hidden="true"
-        data-testid="help-report-bug-trailing"
-        >{HELP_SECTION_STRINGS.reportBugTrailing}</span
+        data-testid="help-report-bug-trailing">{HELP_SECTION_STRINGS.reportBugTrailing}</span
       >
     </button>
   </div>
@@ -140,12 +131,8 @@
       data-testid="help-request-feature-btn"
     >
       <span class="settings-help__row-body">
-        <span class="settings-help__row-title"
-          >{HELP_SECTION_STRINGS.requestFeatureLabel}</span
-        >
-        <span
-          class="settings-help__row-desc"
-          data-testid="help-request-feature-desc"
+        <span class="settings-help__row-title">{HELP_SECTION_STRINGS.requestFeatureLabel}</span>
+        <span class="settings-help__row-desc" data-testid="help-request-feature-desc"
           >{HELP_SECTION_STRINGS.requestFeatureDescription}</span
         >
       </span>

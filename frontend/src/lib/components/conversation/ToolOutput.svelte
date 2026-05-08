@@ -208,8 +208,7 @@
     <CollapsibleBody>
       <pre
         class="whitespace-pre-wrap break-words font-mono text-fg-muted"
-        data-testid="tool-output-input"
-      >{inputPretty}</pre>
+        data-testid="tool-output-input">{inputPretty}</pre>
     </CollapsibleBody>
     {#if call.output.length === 0 && !call.done}
       <p class="mt-2 text-fg-muted" data-testid="tool-output-empty">
@@ -220,7 +219,9 @@
       <CollapsibleBody class="mt-2">
         <pre
           class="whitespace-pre-wrap break-words font-mono text-fg"
-          data-testid="tool-output-stream">{@html sanitizeHtml(linkifyToHtml(call.output, { workingDir: workingDir ?? undefined }))}</pre>
+          data-testid="tool-output-stream">{@html sanitizeHtml(
+            linkifyToHtml(call.output, { workingDir: workingDir ?? undefined }),
+          )}</pre>
       </CollapsibleBody>
       <!-- eslint-enable svelte/no-at-html-tags -->
     {/if}

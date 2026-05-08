@@ -231,8 +231,7 @@
     } catch (error) {
       if (error instanceof ApiError) {
         const detail = (error.body as { detail?: unknown } | null)?.detail;
-        tagCreateError =
-          typeof detail === "string" ? detail : `Could not create tag "${trimmed}".`;
+        tagCreateError = typeof detail === "string" ? detail : `Could not create tag "${trimmed}".`;
       } else {
         tagCreateError = String(error);
       }
@@ -415,11 +414,7 @@
         disabled={tagCreating}
       />
       {#if tagCreateError !== null}
-        <p
-          class="new-session-page__error"
-          role="alert"
-          data-testid="new-session-tag-create-error"
-        >
+        <p class="new-session-page__error" role="alert" data-testid="new-session-tag-create-error">
           {tagCreateError}
         </p>
       {/if}
@@ -427,8 +422,8 @@
       {#if availableTags.length === 0 && tagInput.trim() === ""}
         <!-- No tags at all and nothing typed yet — show hint instead of empty columns. -->
         <p class="new-session-page__hint">
-          No tags yet. Type a name above and press <kbd>Enter</kbd> to create one; at least one
-          tag is required.
+          No tags yet. Type a name above and press <kbd>Enter</kbd> to create one; at least one tag is
+          required.
         </p>
       {:else}
         <div class="new-session-page__tags-container">

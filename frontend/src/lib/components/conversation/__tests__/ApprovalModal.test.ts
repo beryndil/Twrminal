@@ -31,10 +31,7 @@ vi.mock("../../../api/wsSessions", () => ({
   connectSessionsBroadcast: vi.fn().mockReturnValue(() => {}),
 }));
 
-import {
-  _resetWsStatusForTests,
-  _setWsStatusForTests,
-} from "../../../stores/sessions.svelte";
+import { _resetWsStatusForTests, _setWsStatusForTests } from "../../../stores/sessions.svelte";
 import ApprovalModal from "../ApprovalModal.svelte";
 import type { PendingApproval } from "../../../stores/conversation.svelte";
 
@@ -68,7 +65,9 @@ describe("ApprovalModal — WS connected: buttons enabled", () => {
     });
     expect((getByTestId("approval-allow") as HTMLButtonElement).disabled).toBe(false);
     expect((getByTestId("approval-deny") as HTMLButtonElement).disabled).toBe(false);
-    expect(getByTestId("approval-modal").querySelector("[data-testid='approval-reconnect-banner']")).toBeNull();
+    expect(
+      getByTestId("approval-modal").querySelector("[data-testid='approval-reconnect-banner']"),
+    ).toBeNull();
   });
 });
 
@@ -153,7 +152,11 @@ describe("ApprovalModal — pending label flip (gap-cycle-20-002)", () => {
   it("clicking Allow flips its label to 'Approving…' while POST is in flight", async () => {
     // Keep the POST unresolved for the duration of the assertion.
     let resolvePost!: () => void;
-    postApprovalMock.mockReturnValue(new Promise<void>((res) => { resolvePost = res; }));
+    postApprovalMock.mockReturnValue(
+      new Promise<void>((res) => {
+        resolvePost = res;
+      }),
+    );
 
     const { getByTestId } = render(ApprovalModal, {
       props: { sessionId: "ses_x", approval: makeApproval() },
@@ -170,7 +173,11 @@ describe("ApprovalModal — pending label flip (gap-cycle-20-002)", () => {
 
   it("clicking Deny flips its label to 'Denying…' while POST is in flight", async () => {
     let resolvePost!: () => void;
-    postApprovalMock.mockReturnValue(new Promise<void>((res) => { resolvePost = res; }));
+    postApprovalMock.mockReturnValue(
+      new Promise<void>((res) => {
+        resolvePost = res;
+      }),
+    );
 
     const { getByTestId } = render(ApprovalModal, {
       props: { sessionId: "ses_x", approval: makeApproval() },

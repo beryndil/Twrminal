@@ -91,8 +91,7 @@
         {#each uniqueTags as tag (tag.id)}
           <button
             type="button"
-            class="rounded-full border px-2 py-0.5 text-xs transition-colors {filterTagId ===
-            tag.id
+            class="rounded-full border px-2 py-0.5 text-xs transition-colors {filterTagId === tag.id
               ? 'border-accent bg-accent/20 text-fg-strong'
               : 'border-border bg-surface-2 text-fg-muted hover:bg-surface-0'}"
             data-testid="memories-index-chip"
@@ -132,11 +131,7 @@
             data-tag-id={row.tag_id}
             data-enabled={row.enabled ? "true" : "false"}
           >
-            <button
-              type="button"
-              class="w-full text-left"
-              onclick={() => onRowClick(row)}
-            >
+            <button type="button" class="w-full text-left" onclick={() => onRowClick(row)}>
               <div class="flex items-baseline gap-2">
                 <span
                   class="memories-index__row-title truncate text-sm font-medium text-fg-strong"

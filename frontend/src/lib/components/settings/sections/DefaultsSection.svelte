@@ -192,20 +192,21 @@
             <span
               class="settings-defaults__row-badge settings-defaults__row-badge--saving"
               role="status"
-              data-testid="prefs-theme-badge"
-            >{PREFERENCES_STRINGS.savingBadge}</span>
+              data-testid="prefs-theme-badge">{PREFERENCES_STRINGS.savingBadge}</span
+            >
           {:else if themeState === "saved"}
             <span
               class="settings-defaults__row-badge settings-defaults__row-badge--saved"
               role="status"
-              data-testid="prefs-theme-badge"
-            >{PREFERENCES_STRINGS.savedBadge}</span>
+              data-testid="prefs-theme-badge">{PREFERENCES_STRINGS.savedBadge}</span
+            >
           {:else if themeState === "error"}
             <span
               class="settings-defaults__row-badge settings-defaults__row-badge--error"
               role="alert"
               data-testid="prefs-theme-badge"
-            >{PREFERENCES_STRINGS.saveFailedPrefix} {themeError}</span>
+              >{PREFERENCES_STRINGS.saveFailedPrefix} {themeError}</span
+            >
           {/if}
         </div>
       </div>
@@ -228,20 +229,21 @@
             <span
               class="settings-defaults__row-badge settings-defaults__row-badge--saving"
               role="status"
-              data-testid="prefs-model-badge"
-            >{PREFERENCES_STRINGS.savingBadge}</span>
+              data-testid="prefs-model-badge">{PREFERENCES_STRINGS.savingBadge}</span
+            >
           {:else if modelState === "saved"}
             <span
               class="settings-defaults__row-badge settings-defaults__row-badge--saved"
               role="status"
-              data-testid="prefs-model-badge"
-            >{PREFERENCES_STRINGS.savedBadge}</span>
+              data-testid="prefs-model-badge">{PREFERENCES_STRINGS.savedBadge}</span
+            >
           {:else if modelState === "error"}
             <span
               class="settings-defaults__row-badge settings-defaults__row-badge--error"
               role="alert"
               data-testid="prefs-model-badge"
-            >{PREFERENCES_STRINGS.saveFailedPrefix} {modelError}</span>
+              >{PREFERENCES_STRINGS.saveFailedPrefix} {modelError}</span
+            >
           {/if}
         </div>
       </div>
@@ -264,20 +266,21 @@
             <span
               class="settings-defaults__row-badge settings-defaults__row-badge--saving"
               role="status"
-              data-testid="prefs-permission-mode-badge"
-            >{PREFERENCES_STRINGS.savingBadge}</span>
+              data-testid="prefs-permission-mode-badge">{PREFERENCES_STRINGS.savingBadge}</span
+            >
           {:else if permissionModeState === "saved"}
             <span
               class="settings-defaults__row-badge settings-defaults__row-badge--saved"
               role="status"
-              data-testid="prefs-permission-mode-badge"
-            >{PREFERENCES_STRINGS.savedBadge}</span>
+              data-testid="prefs-permission-mode-badge">{PREFERENCES_STRINGS.savedBadge}</span
+            >
           {:else if permissionModeState === "error"}
             <span
               class="settings-defaults__row-badge settings-defaults__row-badge--error"
               role="alert"
               data-testid="prefs-permission-mode-badge"
-            >{PREFERENCES_STRINGS.saveFailedPrefix} {permissionModeError}</span>
+              >{PREFERENCES_STRINGS.saveFailedPrefix} {permissionModeError}</span
+            >
           {/if}
         </div>
       </div>
@@ -297,20 +300,21 @@
             <span
               class="settings-defaults__row-badge settings-defaults__row-badge--saving"
               role="status"
-              data-testid="prefs-working-dir-badge"
-            >{PREFERENCES_STRINGS.savingBadge}</span>
+              data-testid="prefs-working-dir-badge">{PREFERENCES_STRINGS.savingBadge}</span
+            >
           {:else if workingDirState === "saved"}
             <span
               class="settings-defaults__row-badge settings-defaults__row-badge--saved"
               role="status"
-              data-testid="prefs-working-dir-badge"
-            >{PREFERENCES_STRINGS.savedBadge}</span>
+              data-testid="prefs-working-dir-badge">{PREFERENCES_STRINGS.savedBadge}</span
+            >
           {:else if workingDirState === "error"}
             <span
               class="settings-defaults__row-badge settings-defaults__row-badge--error"
               role="alert"
               data-testid="prefs-working-dir-badge"
-            >{PREFERENCES_STRINGS.saveFailedPrefix} {workingDirError}</span>
+              >{PREFERENCES_STRINGS.saveFailedPrefix} {workingDirError}</span
+            >
           {/if}
         </div>
       </div>

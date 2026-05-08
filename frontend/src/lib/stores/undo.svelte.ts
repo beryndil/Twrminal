@@ -126,8 +126,7 @@ export const undoStore = {
       windowMs: params.windowMs ?? DEFAULT_UNDO_WINDOW_MS,
     };
     // Trim to cap-1 before prepending so we never exceed the cap.
-    const trimmed =
-      _stack.length >= UNDO_STACK_CAP ? _stack.slice(0, UNDO_STACK_CAP - 1) : _stack;
+    const trimmed = _stack.length >= UNDO_STACK_CAP ? _stack.slice(0, UNDO_STACK_CAP - 1) : _stack;
     _stack = [entry, ...trimmed];
     startTimerForTop();
   },

@@ -121,9 +121,7 @@ describe("SessionEdit", () => {
       },
     });
 
-    expect((getByTestId("session-edit-title-input") as HTMLInputElement).value).toBe(
-      session.title,
-    );
+    expect((getByTestId("session-edit-title-input") as HTMLInputElement).value).toBe(session.title);
     expect((getByTestId("session-edit-description-input") as HTMLTextAreaElement).value).toBe(
       session.description,
     );

@@ -135,7 +135,9 @@ describe("ChecklistChat — streaming delta updates", () => {
     await waitFor(() => expect(mock.messageHandler).not.toBeNull());
 
     // Simulate message_start — opens an assistant bubble.
-    mock.messageHandler!({ data: eventFrame("message_start", { message_id: "msg_1" }) } as MessageEvent);
+    mock.messageHandler!({
+      data: eventFrame("message_start", { message_id: "msg_1" }),
+    } as MessageEvent);
 
     await waitFor(() => {
       const turns = getAllByTestId("checklist-chat-turn");
@@ -185,9 +187,11 @@ describe("ChecklistChat — streaming delta updates", () => {
 describe("ChecklistChat — send disabled while in flight", () => {
   it("disables the send button while the 202 handshake is pending", async () => {
     let resolvePrompt: (value: unknown) => void = () => {};
-    const sendPromptFn = vi
-      .fn()
-      .mockReturnValue(new Promise((res) => { resolvePrompt = res; }));
+    const sendPromptFn = vi.fn().mockReturnValue(
+      new Promise((res) => {
+        resolvePrompt = res;
+      }),
+    );
     const listMessagesFn = vi.fn().mockResolvedValue(emptyPage());
     const mock = makeMockWs();
     const createWs = vi.fn().mockReturnValue(mock.ws);

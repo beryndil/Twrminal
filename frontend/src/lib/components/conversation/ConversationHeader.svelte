@@ -77,15 +77,11 @@
 
   /** Active session row driven by the sessions store. */
   const session = $derived(
-    sessionId === null
-      ? null
-      : (sessionsStore.sessions.find((s) => s.id === sessionId) ?? null),
+    sessionId === null ? null : (sessionsStore.sessions.find((s) => s.id === sessionId) ?? null),
   );
 
   /** All tags attached to the active session (from the per-session tag cache). */
-  const tags = $derived(
-    sessionId !== null ? (sessionsStore.tagsBySessionId[sessionId] ?? []) : [],
-  );
+  const tags = $derived(sessionId !== null ? (sessionsStore.tagsBySessionId[sessionId] ?? []) : []);
 
   /**
    * The attached severity tag (at most one — cardinality enforced at session
@@ -145,7 +141,9 @@
    * deleted — both inputs being null triggers the "deleted" state inside
    * :component:`PairedChatIndicator`.
    */
-  const breadcrumbParentTitle = $derived(parentDeleted ? null : (session?.paired_parent_title ?? null));
+  const breadcrumbParentTitle = $derived(
+    parentDeleted ? null : (session?.paired_parent_title ?? null),
+  );
 
   /**
    * Item-label segment of the breadcrumb chip.

@@ -280,7 +280,10 @@ describe("Composer — attachment chips (gap-cycle-03-001)", () => {
     const { getByTestId } = render(Composer, { props: { sessionId: "ses_attach" } });
     const textarea = getByTestId("composer-textarea");
 
-    await fireEvent(textarea, makeDropEvent(textarea, [new File(["hi"], "hello.txt", { type: "text/plain" })]));
+    await fireEvent(
+      textarea,
+      makeDropEvent(textarea, [new File(["hi"], "hello.txt", { type: "text/plain" })]),
+    );
 
     await waitFor(() => {
       expect(getByTestId("composer-attachment-chips")).toBeInTheDocument();
@@ -348,7 +351,9 @@ describe("Composer — attachment chips (gap-cycle-03-001)", () => {
   it("Send is disabled while a chip is uploading, enabled once all chips are done", async () => {
     // Keep first upload unresolved to observe the blocked state.
     let resolveUpload!: (r: Response) => void;
-    const pendingUpload = new Promise<Response>((res) => { resolveUpload = res; });
+    const pendingUpload = new Promise<Response>((res) => {
+      resolveUpload = res;
+    });
     fetchMock.mockReturnValueOnce(pendingUpload);
 
     const { getByTestId } = render(Composer, { props: { sessionId: "ses_gate" } });
@@ -374,14 +379,12 @@ describe("Composer — attachment chips (gap-cycle-03-001)", () => {
 
   it("submitting includes upload_ids of done chips in the prompt POST body", async () => {
     // Upload resolves first, then prompt ack.
-    fetchMock
-      .mockResolvedValueOnce(uploadOkResponse(99, "doc.txt"))
-      .mockResolvedValueOnce({
-        status: 202,
-        statusText: "Accepted",
-        json: async () => ({ queued: true, session_id: "ses_ids" }),
-        text: async () => JSON.stringify({ queued: true, session_id: "ses_ids" }),
-      } as unknown as Response);
+    fetchMock.mockResolvedValueOnce(uploadOkResponse(99, "doc.txt")).mockResolvedValueOnce({
+      status: 202,
+      statusText: "Accepted",
+      json: async () => ({ queued: true, session_id: "ses_ids" }),
+      text: async () => JSON.stringify({ queued: true, session_id: "ses_ids" }),
+    } as unknown as Response);
 
     const { getByTestId } = render(Composer, { props: { sessionId: "ses_ids" } });
     const textarea = getByTestId("composer-textarea") as HTMLTextAreaElement;
@@ -407,14 +410,12 @@ describe("Composer — attachment chips (gap-cycle-03-001)", () => {
   });
 
   it("chips are cleared after a successful send", async () => {
-    fetchMock
-      .mockResolvedValueOnce(uploadOkResponse(1, "clear.txt"))
-      .mockResolvedValueOnce({
-        status: 202,
-        statusText: "Accepted",
-        json: async () => ({ queued: true, session_id: "ses_clr" }),
-        text: async () => JSON.stringify({ queued: true, session_id: "ses_clr" }),
-      } as unknown as Response);
+    fetchMock.mockResolvedValueOnce(uploadOkResponse(1, "clear.txt")).mockResolvedValueOnce({
+      status: 202,
+      statusText: "Accepted",
+      json: async () => ({ queued: true, session_id: "ses_clr" }),
+      text: async () => JSON.stringify({ queued: true, session_id: "ses_clr" }),
+    } as unknown as Response);
 
     const { getByTestId, queryByTestId } = render(Composer, { props: { sessionId: "ses_clr" } });
     const textarea = getByTestId("composer-textarea") as HTMLTextAreaElement;

@@ -177,10 +177,7 @@ export interface LongPressParams {
  * ``pointerup`` / ``pointercancel`` / ``pointerleave`` fires before the
  * timer expires.
  */
-export function longpress(
-  node: HTMLElement,
-  params: LongPressParams,
-): { destroy: () => void } {
+export function longpress(node: HTMLElement, params: LongPressParams): { destroy: () => void } {
   // No-op on fine (mouse / trackpad) pointer devices.
   if (!isCoarsePointer()) {
     return { destroy(): void {} };

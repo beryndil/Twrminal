@@ -215,7 +215,11 @@
     if (m === null) return null;
     const idx = label.toLowerCase().indexOf(m);
     if (idx === -1) return null;
-    return { before: label.slice(0, idx), char: label.slice(idx, idx + 1), after: label.slice(idx + 1) };
+    return {
+      before: label.slice(0, idx),
+      char: label.slice(idx, idx + 1),
+      after: label.slice(idx + 1),
+    };
   }
 
   function isActionEnabled(action: MenuActionDescriptor): boolean {

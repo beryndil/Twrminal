@@ -240,9 +240,7 @@
   const structuredAnswered = $derived(
     parsed.kind === "structured" &&
       selections.length === parsed.questions.length &&
-      selections.every(
-        (picks, idx) => picks.length > 0 || (otherTexts[idx]?.trim() ?? "") !== "",
-      ),
+      selections.every((picks, idx) => picks.length > 0 || (otherTexts[idx]?.trim() ?? "") !== ""),
   );
 
   /**
@@ -417,10 +415,7 @@
                 {/each}
               </ul>
               <div class="mt-1.5">
-                <label
-                  class="mb-1 block text-xs font-medium text-fg-muted"
-                  for={`other-q${qIdx}`}
-                >
+                <label class="mb-1 block text-xs font-medium text-fg-muted" for={`other-q${qIdx}`}>
                   {APPROVAL_STRINGS.otherLabel}
                 </label>
                 <input

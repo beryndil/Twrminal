@@ -428,7 +428,8 @@
                             ? "text-success font-semibold"
                             : "text-fg-muted"}
                           title={ruleId === row.matched_rule_id ? "matched" : "skipped"}
-                        >#{ruleId}</span>
+                          >#{ruleId}</span
+                        >
                       {/each}
                       {#if row.matched_rule_id === null}
                         <span class="text-fg-muted"> → default</span>

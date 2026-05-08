@@ -80,9 +80,7 @@ export interface AllMemoriesRow {
  * ``onlyEnabled: true`` to restrict to enabled memories (mirrors the
  * ``?only_enabled=true`` query param on the per-tag list endpoint).
  */
-export async function listAllMemories(
-  options: RequestOptions = {},
-): Promise<AllMemoriesRow[]> {
+export async function listAllMemories(options: RequestOptions = {}): Promise<AllMemoriesRow[]> {
   return await getJson<AllMemoriesRow[]>(API_ALL_MEMORIES_ENDPOINT, options);
 }
 

@@ -557,7 +557,10 @@
       >
         {#each pendingChips as chip (chip.id)}
           <span
-            class="inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs {chip.status === 'error' ? 'border-red-400 text-red-400' : 'border-border bg-surface-1 text-fg-muted'}"
+            class="inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs {chip.status ===
+            'error'
+              ? 'border-red-400 text-red-400'
+              : 'border-border bg-surface-1 text-fg-muted'}"
             data-testid="composer-attachment-chip"
             data-chip-id={chip.id}
             data-chip-status={chip.status}
@@ -583,8 +586,8 @@
               <span
                 class="inline-block animate-spin"
                 aria-label={COMPOSER_ATTACHMENT_STRINGS.uploadingAriaLabel}
-                aria-hidden="false"
-              >⟳</span>
+                aria-hidden="false">⟳</span
+              >
             {/if}
             <span>{chip.filename}</span>
             {#if chip.status === "error" && chip.errorMessage !== null}
@@ -595,8 +598,8 @@
               class="ml-0.5 opacity-60 hover:opacity-100"
               aria-label={COMPOSER_ATTACHMENT_STRINGS.removeChipAriaLabel(chip.filename)}
               data-testid="composer-chip-remove"
-              onclick={() => removeChip(chip.id)}
-            >×</button>
+              onclick={() => removeChip(chip.id)}>×</button
+            >
           </span>
         {/each}
       </div>

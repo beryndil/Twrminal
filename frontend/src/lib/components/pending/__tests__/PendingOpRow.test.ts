@@ -16,10 +16,7 @@ import {
   _resetForTests as resetContextMenu,
   contextMenuStore,
 } from "../../../context-menu/store.svelte";
-import {
-  _resetForTests as resetPending,
-  pendingOpsStore,
-} from "../../../stores/pending.svelte";
+import { _resetForTests as resetPending, pendingOpsStore } from "../../../stores/pending.svelte";
 import type { PendingOp } from "../../../api/pendingOps";
 
 import PendingOpRow from "../PendingOpRow.svelte";

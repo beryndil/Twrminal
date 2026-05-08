@@ -78,10 +78,7 @@
   // Group layers by kind (derived so it re-computes when allLayers changes).
   const layersByKind = $derived(
     Object.fromEntries(
-      LAYER_DISPLAY_ORDER.map((kind) => [
-        kind,
-        allLayers.filter((l) => l.kind === kind),
-      ]),
+      LAYER_DISPLAY_ORDER.map((kind) => [kind, allLayers.filter((l) => l.kind === kind)]),
     ) as Record<LayerKind, SystemPromptLayer[]>,
   );
 
@@ -188,10 +185,7 @@
 
         {#if kindLayers.length === 0}
           <!-- Empty-state row for this kind -->
-          <p
-            class="text-xs italic text-fg-muted"
-            data-testid={`instructions-empty-${kind}`}
-          >
+          <p class="text-xs italic text-fg-muted" data-testid={`instructions-empty-${kind}`}>
             {emptyMsg}
           </p>
         {:else}
@@ -233,8 +227,7 @@
                 <pre
                   class="whitespace-pre-wrap break-words border-t border-border px-2 py-2 font-mono text-xs text-fg"
                   data-testid={`instructions-layer-body-${kind}-${i}`}
-                  aria-label={`${kindLabel} body`}
-                >{layer.body}</pre>
+                  aria-label={`${kindLabel} body`}>{layer.body}</pre>
               {/if}
             </div>
           {/each}

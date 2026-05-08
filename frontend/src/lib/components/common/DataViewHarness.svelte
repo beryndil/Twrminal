@@ -67,10 +67,7 @@
   </p>
 
   <!-- DataView under test -->
-  <div
-    class="rounded border border-border"
-    data-testid="data-view-harness-target"
-  >
+  <div class="rounded border border-border" data-testid="data-view-harness-target">
     <DataView {loading} {error} {isEmpty} onretry={handleRetry}>
       {#snippet empty()}
         <p class="text-sm text-fg-muted" data-testid="data-view-harness-empty-slot">

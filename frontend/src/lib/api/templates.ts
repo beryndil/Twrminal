@@ -153,11 +153,7 @@ export async function instantiateTemplate(
   params: InstantiateTemplateParams = {},
   options: RequestOptions = {},
 ): Promise<SessionOut> {
-  return await postJson<SessionOut>(
-    templateInstantiateEndpoint(templateId),
-    params,
-    options,
-  );
+  return await postJson<SessionOut>(templateInstantiateEndpoint(templateId), params, options);
 }
 
 // Silence unused-variable warnings in editors until consumers are added.

@@ -35,11 +35,7 @@
   // For merge entries the count field is 0 (unknown from audit row alone);
   // suppress the count label in that case.
   const countLabel = $derived(
-    isMerge
-      ? ""
-      : entry.count === 1
-        ? "1 message"
-        : `${entry.count} messages`,
+    isMerge ? "" : entry.count === 1 ? "1 message" : `${entry.count} messages`,
   );
 
   const formattedTime = $derived(
@@ -83,8 +79,8 @@
         class="rad__undo"
         data-testid="reorg-audit-divider-undo"
         onclick={onUndo}
-        type="button"
-      >Undo</button>
+        type="button">Undo</button
+      >
     {/if}
   </span>
   <span class="rad__line" aria-hidden="true"></span>

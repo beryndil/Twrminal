@@ -104,7 +104,9 @@ function makeSession(overrides: Partial<PartialSession> = {}): PartialSession {
   };
 }
 
-function makeTag(overrides: Partial<TagOut> & { id: number; name: string; class_: TagOut["class_"] }): TagOut {
+function makeTag(
+  overrides: Partial<TagOut> & { id: number; name: string; class_: TagOut["class_"] },
+): TagOut {
   return {
     color: null,
     default_model: null,
@@ -170,12 +172,17 @@ beforeEach(() => {
   fetchMock.mockReset();
   setupFetch();
   vi.stubGlobal("fetch", fetchMock);
-  analyzeReorgMock.mockResolvedValue([
-    { messageId: "msg2", reason: "Natural chunk boundary" },
-  ]);
+  analyzeReorgMock.mockResolvedValue([{ messageId: "msg2", reason: "Natural chunk boundary" }]);
   listMessagesMock.mockResolvedValue({
     items: [
-      { id: "msg2", session_id: "ses_1", role: "assistant", content: "hi", seq: 2, created_at: "2026-01-01T10:01:00Z" },
+      {
+        id: "msg2",
+        session_id: "ses_1",
+        role: "assistant",
+        content: "hi",
+        seq: 2,
+        created_at: "2026-01-01T10:01:00Z",
+      },
     ],
     has_more: false,
   });

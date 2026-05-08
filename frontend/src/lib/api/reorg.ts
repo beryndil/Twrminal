@@ -67,10 +67,7 @@ export interface UndoMergeOut {
  * Returns the audit record on success.
  * Throws :class:`ApiError` (409 for self-merge, 404 for missing session).
  */
-export async function mergeSession(
-  srcId: string,
-  dstId: string,
-): Promise<ReorgAuditOut> {
+export async function mergeSession(srcId: string, dstId: string): Promise<ReorgAuditOut> {
   return await postJson<ReorgAuditOut>(sessionReorgMergeEndpoint(srcId, dstId), undefined);
 }
 
@@ -88,10 +85,7 @@ export async function splitSession(
   dstId: string,
   fromSeq: number,
 ): Promise<ReorgSplitOut> {
-  return await postJson<ReorgSplitOut>(
-    sessionReorgSplitEndpoint(srcId, dstId, fromSeq),
-    undefined,
-  );
+  return await postJson<ReorgSplitOut>(sessionReorgSplitEndpoint(srcId, dstId, fromSeq), undefined);
 }
 
 /**
@@ -131,9 +125,6 @@ export async function listReorgAudits(sessionId: string): Promise<ReorgAuditList
  * Returns the id of the session to navigate to on success.
  * Throws :class:`ApiError` (404 when audit absent, 409 when stale).
  */
-export async function deleteReorgAudit(
-  sessionId: string,
-  auditId: string,
-): Promise<UndoMergeOut> {
+export async function deleteReorgAudit(sessionId: string, auditId: string): Promise<UndoMergeOut> {
   return await deleteResource<UndoMergeOut>(sessionReorgAuditEndpoint(sessionId, auditId));
 }

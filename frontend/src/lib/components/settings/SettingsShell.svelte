@@ -41,9 +41,7 @@
   const { sections = SETTINGS_SECTIONS, initialSectionId }: Props = $props();
 
   /** Registry sorted by weight ascending (already ordered, but defensive). */
-  const sortedSections = $derived(
-    [...sections].sort((a, b) => a.weight - b.weight),
-  );
+  const sortedSections = $derived([...sections].sort((a, b) => a.weight - b.weight));
 
   /** Resolve initial section: prop override (validated) > URL param > first section. */
   function resolveInitialId(): string {
@@ -208,7 +206,9 @@
     font: inherit;
     font-size: 0.8125rem;
     cursor: pointer;
-    transition: background 0.1s, color 0.1s;
+    transition:
+      background 0.1s,
+      color 0.1s;
   }
   .shell__rail-item:hover {
     background: rgb(var(--bearings-surface-2));

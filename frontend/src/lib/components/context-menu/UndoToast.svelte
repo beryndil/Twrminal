@@ -52,12 +52,7 @@
 </script>
 
 {#if top !== null}
-  <div
-    class="ut"
-    role="status"
-    aria-live="polite"
-    data-testid="undo-toast"
-  >
+  <div class="ut" role="status" aria-live="polite" data-testid="undo-toast">
     <span class="ut__label" data-testid="undo-toast-label">{top.message}</span>
 
     {#if undoError !== null}

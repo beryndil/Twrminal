@@ -58,7 +58,13 @@ const QUOTED_OPS_SECTION_RE = /^\[ops\."(.+)"\]$/;
  */
 export function parsePendingToml(content: string): PendingOp[] {
   const ops: PendingOp[] = [];
-  let current: { name: string; description: string; started_at: string; command?: string; dir?: string } | null = null;
+  let current: {
+    name: string;
+    description: string;
+    started_at: string;
+    command?: string;
+    dir?: string;
+  } | null = null;
 
   function flush(): void {
     if (current !== null && current.started_at !== "") {
@@ -124,10 +130,9 @@ export async function fetchPendingOps(
   const path = `${workingDir}/.bearings/pending.toml`;
   let out: FsReadOut;
   try {
-    out = await getJson<FsReadOut>(
-      `${API_FS_READ_ENDPOINT}?path=${encodeURIComponent(path)}`,
-      { signal: options.signal },
-    );
+    out = await getJson<FsReadOut>(`${API_FS_READ_ENDPOINT}?path=${encodeURIComponent(path)}`, {
+      signal: options.signal,
+    });
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
       return [];
@@ -143,10 +148,7 @@ export async function fetchPendingOps(
  * Fire a pending-op action (POST or DELETE) against a 204-returning
  * endpoint.  Throws :class:`ApiError` on non-2xx.
  */
-async function _mutateOp(
-  method: "POST" | "DELETE",
-  url: string,
-): Promise<void> {
+async function _mutateOp(method: "POST" | "DELETE", url: string): Promise<void> {
   const response = await fetch(url, {
     method,
     headers: { Accept: "application/json" },
@@ -177,10 +179,7 @@ async function _mutateOp(
  * :class:`ApiError` on non-2xx (caller is responsible for leaving the
  * row in the UI when an error is thrown).
  */
-export async function resolvePendingOp(
-  name: string,
-  workingDir: string,
-): Promise<void> {
+export async function resolvePendingOp(name: string, workingDir: string): Promise<void> {
   const url = `${pendingResolveEndpoint(name)}?directory=${encodeURIComponent(workingDir)}`;
   await _mutateOp("POST", url);
 }
@@ -192,10 +191,7 @@ export async function resolvePendingOp(
  * Returns when the server confirms the removal (204). Throws
  * :class:`ApiError` on non-2xx.
  */
-export async function dismissPendingOp(
-  name: string,
-  workingDir: string,
-): Promise<void> {
+export async function dismissPendingOp(name: string, workingDir: string): Promise<void> {
   const url = `${pendingDismissEndpoint(name)}?directory=${encodeURIComponent(workingDir)}`;
   await _mutateOp("DELETE", url);
 }

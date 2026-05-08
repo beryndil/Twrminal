@@ -58,7 +58,12 @@
   import SidebarSearch from "$lib/components/sidebar/SidebarSearch.svelte";
   import SessionImportDialog from "$lib/components/sidebar/SessionImportDialog.svelte";
   import PairedChatIndicator from "$lib/components/conversation/PairedChatIndicator.svelte";
-  import { reopenSession, getPairedChatInfo, type PairedChatInfo, type SessionOut } from "$lib/api/sessions";
+  import {
+    reopenSession,
+    getPairedChatInfo,
+    type PairedChatInfo,
+    type SessionOut,
+  } from "$lib/api/sessions";
   import { importFromFiles, type BatchImportProgress } from "$lib/utils/batchImport";
   import { sidebarNavNext, sidebarNavPrev, sidebarNavSlot } from "$lib/keyboard/sidebarNav";
   import BackendStatusBanner from "$lib/components/feedback/BackendStatusBanner.svelte";
@@ -284,9 +289,7 @@
    * because Svelte prohibits exporting ``$derived`` from a ``.svelte.ts``
    * module (see: https://svelte.dev/e/derived_invalid_export).
    */
-  const openSessionsList = $derived(
-    sessionsStore.sessions.filter((s) => s.closed_at === null),
-  );
+  const openSessionsList = $derived(sessionsStore.sessions.filter((s) => s.closed_at === null));
 
   // ---- Keyboard handler wiring (item 4.1) ---------------------------
   //
@@ -402,7 +405,9 @@
               class="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-surface-1 hover:text-fg focus:outline-none focus:ring-2 focus:ring-accent/70"
               aria-label="Import session from JSON export"
               data-testid="import-session-btn"
-              onclick={() => { showImportDialog = true; }}
+              onclick={() => {
+                showImportDialog = true;
+              }}
             >
               <span aria-hidden="true">↓</span>
               <span>Import session…</span>
@@ -643,7 +648,8 @@
               onclick={() => void goto("/settings")}
             >
               <UserIdentityBlock
-                displayName={preferencesStore.displayName ?? SIDEBAR_STRINGS.identityBlockFallbackName}
+                displayName={preferencesStore.displayName ??
+                  SIDEBAR_STRINGS.identityBlockFallbackName}
                 avatarUrl={preferencesStore.avatarUrl}
                 cacheBust={preferencesStore.cacheBust}
                 size="1.75rem"
@@ -762,7 +768,11 @@
                   </button>
                 </div>
               {:else}
-                <Composer sessionId={selectedSessionId} disabled={false} workingDir={activeWorkingDir} />
+                <Composer
+                  sessionId={selectedSessionId}
+                  disabled={false}
+                  workingDir={activeWorkingDir}
+                />
               {/if}
             {/if}
           </footer>
@@ -809,7 +819,9 @@
     {#if showImportDialog}
       <SessionImportDialog
         onImported={handleImported}
-        onCancel={() => { showImportDialog = false; }}
+        onCancel={() => {
+          showImportDialog = false;
+        }}
       />
     {/if}
   </KeybindingsProvider>

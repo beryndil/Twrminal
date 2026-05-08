@@ -159,7 +159,9 @@
     el?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
   }
 
-  function makeMenuHandlers(cp: CheckpointOut): Record<string, import("../../context-menu/store.svelte").HandlerEntry> {
+  function makeMenuHandlers(
+    cp: CheckpointOut,
+  ): Record<string, import("../../context-menu/store.svelte").HandlerEntry> {
     return {
       [MENU_ACTION_CHECKPOINT_FORK]: () => {
         void (async () => {

@@ -116,9 +116,7 @@ export async function importFromFiles(
       let detail: string;
       if (err instanceof ApiError) {
         detail =
-          typeof err.body === "object" &&
-          err.body !== null &&
-          "detail" in err.body
+          typeof err.body === "object" && err.body !== null && "detail" in err.body
             ? String((err.body as Record<string, unknown>).detail)
             : `HTTP ${err.status}`;
       } else if (err instanceof Error) {

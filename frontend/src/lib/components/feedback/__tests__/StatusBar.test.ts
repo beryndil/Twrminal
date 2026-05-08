@@ -35,10 +35,7 @@ vi.mock("../../../api/client", () => ({
   getJson: vi.fn().mockResolvedValue({ version: "0.0.0-test" }),
 }));
 
-import {
-  _resetWsStatusForTests,
-  _setWsStatusForTests,
-} from "../../../stores/sessions.svelte";
+import { _resetWsStatusForTests, _setWsStatusForTests } from "../../../stores/sessions.svelte";
 import {
   _resetVersionWatcherForTests,
   _setVersionForTests,

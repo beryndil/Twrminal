@@ -12,8 +12,15 @@
 import { fireEvent, render, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { _resetForTests as resetEsc, ESC_PRIORITY_PENDING_OPS_CARD } from "../../../keyboard/escCascade";
-import { _resetForTests as resetPending, openCard, pendingOpsStore } from "../../../stores/pending.svelte";
+import {
+  _resetForTests as resetEsc,
+  ESC_PRIORITY_PENDING_OPS_CARD,
+} from "../../../keyboard/escCascade";
+import {
+  _resetForTests as resetPending,
+  openCard,
+  pendingOpsStore,
+} from "../../../stores/pending.svelte";
 import { PENDING_OPS_CARD_STRINGS } from "../../../config";
 import PendingOpsCard from "../PendingOpsCard.svelte";
 
@@ -54,9 +61,7 @@ describe("PendingOpsCard", () => {
       props: { workingDir: null },
     });
     expect(getByTestId("pending-ops-empty")).toBeInTheDocument();
-    expect(getByTestId("pending-ops-empty").textContent).toBe(
-      PENDING_OPS_CARD_STRINGS.emptyLabel,
-    );
+    expect(getByTestId("pending-ops-empty").textContent).toBe(PENDING_OPS_CARD_STRINGS.emptyLabel);
   });
 
   it("close button calls closeCard", () => {
@@ -75,8 +80,8 @@ describe("PendingOpsCard", () => {
         JSON.stringify({
           path: "/proj/.bearings/pending.toml",
           content:
-            "[ops.deploy]\ndescription = \"Deploy to prod\"\nstarted_at = \"2024-01-01T00:00:00Z\"\n\n" +
-            "[ops.review]\ndescription = \"Code review\"\nstarted_at = \"2024-01-02T00:00:00Z\"\n",
+            '[ops.deploy]\ndescription = "Deploy to prod"\nstarted_at = "2024-01-01T00:00:00Z"\n\n' +
+            '[ops.review]\ndescription = "Code review"\nstarted_at = "2024-01-02T00:00:00Z"\n',
           size: 100,
           truncated: false,
         }),
@@ -98,7 +103,7 @@ describe("PendingOpsCard", () => {
         JSON.stringify({
           path: "/proj/.bearings/pending.toml",
           content:
-            "[ops.my-task]\ndescription = \"A pending task\"\nstarted_at = \"2024-01-01T00:00:00Z\"\n",
+            '[ops.my-task]\ndescription = "A pending task"\nstarted_at = "2024-01-01T00:00:00Z"\n',
           size: 80,
           truncated: false,
         }),
@@ -121,7 +126,7 @@ describe("PendingOpsCard", () => {
         JSON.stringify({
           path: "/proj/.bearings/pending.toml",
           content:
-            "[ops.old-task]\ndescription = \"Old task\"\nstarted_at = \"2020-01-01T00:00:00Z\"\n",
+            '[ops.old-task]\ndescription = "Old task"\nstarted_at = "2020-01-01T00:00:00Z"\n',
           size: 80,
           truncated: false,
         }),
@@ -166,9 +171,7 @@ describe("PendingOpsBadge visibility logic", () => {
     // The badge itself is a simple conditional render in PendingOpsBadge.svelte.
     // Verify the store drives it correctly.
     expect(pendingOpsStore.ops.length).toBe(0);
-    pendingOpsStore.ops = [
-      { name: "t1", description: "", started_at: "2024-01-01T00:00:00Z" },
-    ];
+    pendingOpsStore.ops = [{ name: "t1", description: "", started_at: "2024-01-01T00:00:00Z" }];
     expect(pendingOpsStore.ops.length).toBe(1);
   });
 });
@@ -198,8 +201,7 @@ function mockFetchForOps(): void {
         new Response(
           JSON.stringify({
             path: "/proj/.bearings/pending.toml",
-            content:
-              "[ops.deploy]\ndescription = \"Deploy\"\nstarted_at = \"2024-01-01T00:00:00Z\"\n",
+            content: '[ops.deploy]\ndescription = "Deploy"\nstarted_at = "2024-01-01T00:00:00Z"\n',
             size: 80,
             truncated: false,
           }),
@@ -264,8 +266,7 @@ describe("PendingOpsCard resolve/dismiss API wiring", () => {
         new Response(
           JSON.stringify({
             path: "/proj/.bearings/pending.toml",
-            content:
-              "[ops.deploy]\ndescription = \"Deploy\"\nstarted_at = \"2024-01-01T00:00:00Z\"\n",
+            content: '[ops.deploy]\ndescription = "Deploy"\nstarted_at = "2024-01-01T00:00:00Z"\n',
             size: 80,
             truncated: false,
           }),
@@ -312,8 +313,8 @@ describe("PendingOpsCard resolve/dismiss API wiring", () => {
           JSON.stringify({
             path: "/proj/.bearings/pending.toml",
             content:
-              "[ops.deploy]\ndescription = \"Deploy\"\nstarted_at = \"2024-01-01T00:00:00Z\"\n" +
-              "[ops.review]\ndescription = \"Review\"\nstarted_at = \"2024-01-02T00:00:00Z\"\n",
+              '[ops.deploy]\ndescription = "Deploy"\nstarted_at = "2024-01-01T00:00:00Z"\n' +
+              '[ops.review]\ndescription = "Review"\nstarted_at = "2024-01-02T00:00:00Z"\n',
             size: 160,
             truncated: false,
           }),

@@ -293,9 +293,7 @@ describe("/sessions/new — tag inline filter/create (gap-cycle-10-003)", () => 
     await fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => {
-      expect(getByTestId("new-session-tag-create-error")).toHaveTextContent(
-        "name already exists",
-      );
+      expect(getByTestId("new-session-tag-create-error")).toHaveTextContent("name already exists");
     });
 
     // No tag chip should have been added to the selected list.

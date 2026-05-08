@@ -28,10 +28,7 @@ import {
   _setBlockingForTests,
   authStore,
 } from "../../../stores/auth.svelte";
-import {
-  _resetWsStatusForTests,
-  _setWsStatusForTests,
-} from "../../../stores/sessions.svelte";
+import { _resetWsStatusForTests, _setWsStatusForTests } from "../../../stores/sessions.svelte";
 import AuthGate from "../AuthGate.svelte";
 
 // ---------------------------------------------------------------------------
