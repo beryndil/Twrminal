@@ -7,7 +7,7 @@ Sibling subsystems referenced here:
 
 ## When the user creates a chat
 
-The user opens the new-session dialog (sidebar "+" button, the keyboard shortcut documented in [keyboard-shortcuts](keyboard-shortcuts.md), or by selecting a template). The dialog requires:
+The user opens the new-session dialog (sidebar "+" button, the keyboard shortcut documented in [keyboard-shortcuts](keyboard-shortcuts.md), or by selecting a template). On mount the form **pre-fills** two fields from the most-recently-updated session: the working directory and the executor model. When no prior session exists the form falls back to the preferences-API defaults instead. Either source is overridable before the user submits. Pressing `Shift+C` (or `Shift`-clicking the "+" button) opens the same dialog with all defaults cleared — useful when starting something unrelated to recent work. The dialog requires:
 
 * any number of tags (zero or more), partitioned across the three tag classes — at most one *project*, at most one *severity*, any number of *general* labels. The project tag drives sidebar grouping and inheritance; the severity tag drives the header shield colour; general tags are free-form labels (see [vault](vault.md) for how tags surface elsewhere). Cardinality is enforced on session create: payloads with two project tags or two severity tags return 422.
 * a working directory (free-text path or browse);
@@ -24,7 +24,7 @@ Pressing **Start Session** creates the row, attaches the tags, sends the first m
 
 Clicking a sidebar row selects that chat. The conversation pane renders:
 
-* a header band: title, severity shield, attached tag chips, paired-checklist breadcrumb (when the chat was spawned from a checklist item — see [paired-chats](paired-chats.md)), executor model dropdown, total-cost / context-window indicator, a quota bar pair, and a **feedback button** (megaphone glyph) — clicking the feedback button opens `https://github.com/Beryndil/Bearings/issues/new` in a new tab, pre-filled with the Bearings version (fetched lazily on first click and cached), browser UA, platform, language, and a steps-to-reproduce scaffold; Bearings does not POST any data — the user submits the GitHub form manually (gap-cycle-01-008, Beryndil standards §17);
+* a header band: title, severity shield, attached tag chips, paired-checklist breadcrumb (when the chat was spawned from a checklist item — see [paired-chats](paired-chats.md)), executor model dropdown, **permission-mode selector**, total-cost / context-window indicator, a quota bar pair, and a **feedback button** (megaphone glyph) — clicking the feedback button opens `https://github.com/Beryndil/Bearings/issues/new` in a new tab, pre-filled with the Bearings version (fetched lazily on first click and cached), browser UA, platform, language, and a steps-to-reproduce scaffold; Bearings does not POST any data — the user submits the GitHub form manually (gap-cycle-01-008, Beryndil standards §17);
 * the conversation body: every message turn in chronological order, oldest at top;
 * a composer: multi-line input, attachment chips, send button, slash-command popup.
 
@@ -192,9 +192,51 @@ The endpoint returns `202 Accepted` on success. It returns `404` if the session 
 
 ## Stopping or interrupting a turn
 
-A **Stop** control appears in the composer area whenever a turn is in flight. Pressing it interrupts the agent at the next safe boundary; the partially-streamed assistant bubble is preserved with a `[stopped]` annotation. The user can immediately type a new message — the session is ready for the next turn.
+A **Stop** control appears in the composer area whenever a turn is in flight.
+Clicking it does **not** fire the stop immediately — it arms a short grace
+window instead. While the grace window is open, the Stop button is replaced
+(same DOM slot, no layout shift) by a countdown chip ("Stopping Ns", ticking
+down at one-second intervals) and an **Undo** button.
 
-A small "undo stop" inline appears for a few seconds after stopping, letting the user re-issue the same prompt without retyping it.
+* **Clicking Undo** cancels the pending stop. The turn continues
+  uninterrupted; no `POST /api/sessions/{id}/stop` is issued.
+* **Grace window expires** (without Undo) — a single stop POST fires.
+  The agent interrupts at the next safe boundary; the partially-streamed
+  assistant bubble is preserved as-is and the session is immediately ready
+  for the next message.
+* **Session switch during the grace window** — the stop commits for the
+  original session (the safer default: the user already asked for it;
+  silently discarding on a switch would be surprising). The new session
+  opens normally.
+
+The grace-window duration and tick cadence are `STOP_UNDO_GRACE_MS` and
+`STOP_UNDO_TICK_MS` in `frontend/src/lib/config.ts`.
+
+## Permission-mode selector
+
+The conversation header carries a **`PermissionModeSelector`** dropdown
+alongside the executor-model dropdown. The user picks from four options:
+
+| Label | Wire value | Effect |
+|---|---|---|
+| Default | `null` | Runner uses the profile default set in the Bearings config. |
+| Accept edits | `"acceptEdits"` | SDK runs with `--permission-mode acceptEdits`. |
+| Bypass permissions | `"bypassPermissions"` | SDK runs with `--permission-mode bypassPermissions`. |
+| Plan only | `"plan"` | SDK runs with `--permission-mode plan`. |
+
+Changing the selector fires `PATCH /api/sessions/{id}/permission_mode`
+immediately. The dropdown is disabled while the PATCH is in-flight; an
+inline error appears on failure. On success, a sessions-broadcast upsert
+propagates the new value to other open tabs.
+
+The selected mode applies from the **next runner spawn** onward — a
+turn already in flight runs to completion under the old mode. The
+Inspector → Agent subsection shows the current `permission_mode` value as
+the authoritative read-back (the header dropdown reads from `sessionsStore`
+which the broadcast keeps current).
+
+Setting the selector back to **Default** clears the column to `null` so
+the runner reverts to the profile default on the next spawn.
 
 ## Manual mid-session model switch
 
