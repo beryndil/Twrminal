@@ -380,7 +380,7 @@ async def list_sessions(
     request: Request,
     kind: str | None = None,
     include_closed: bool = True,
-    tag_ids: Annotated[list[int] | None, Query()] = None,
+    tag_ids: Annotated[list[int] | None, Query(deprecated=True)] = None,
     tag_ids_project: Annotated[list[int] | None, Query()] = None,
     tag_ids_severity: Annotated[list[int] | None, Query()] = None,
     tag_ids_other: Annotated[list[int] | None, Query()] = None,

@@ -50,7 +50,7 @@ behavior docs, and tests; findings were posted back to orchestrator session
 | 10 | Filesystem, uploads, shell, MCP          | **CLOSED** (closer `deae2e1e526c443da0b098e9d2771332` · 2026-05-08) | `e7525f366f864bdd83d49e888a29549e` |
 | 11 | Reliability & dogfood                    | **CLOSED** (closer c8ec881d · 2026-05-08) | `cb4ae047ef7c4a9ea767b00afbb1e550` |
 | 12 | Quality gate stack                       | **CLOSED** (closer `d3a0fc02a9e64f359aeb7bc5cfb4e18f` · 2026-05-08) | `c649e6b658634b828a5dfdde555d1e3c` |
-| 13 | SemVer commitment (v1.0.0)               | **CLOSED** | `f4b0b90360b1437abbee9cc9f10c813c` |
+| 13 | SemVer commitment (v1.0.0)               | **CLOSED** (closer `c6e2a79063a34e21a2fe8b01ee081ef9` · 2026-05-08) | `f4b0b90360b1437abbee9cc9f10c813c` |
 | 14 | Analytics v1 (PLANNED)                   | **CLOSED** | `47c9b0886bf24d3c8d87fb55d2fcf2e9` |
 
 INTERIM means: findings reported in the session's transcript, no formal

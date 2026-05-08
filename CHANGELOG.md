@@ -616,8 +616,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 The stability commitment. v1.0.0 promotes the v0.18.0 rebuild after a
 two-week dogfood window against the live `bearings-v1.service` running
-concurrently with v0.17.x. The public HTTP surface (62 paths, 53
-schemas — see [`docs/openapi.json`](docs/openapi.json)), the
+concurrently with v0.17.x. The public HTTP surface (107 paths, 95
+schemas, 134 operations — see [`docs/openapi.json`](docs/openapi.json)), the
 per-subsystem behavior contracts under [`docs/behavior/`](docs/behavior/),
 and the routing/quota wire shapes in
 [`docs/model-routing-v1-spec.md`](docs/model-routing-v1-spec.md)
@@ -645,6 +645,17 @@ What this means concretely:
   service is treated as either a doc bug or a code bug — not a "the
   spec is just guidance" situation. Behavior addenda (per the plan's
   "Behavioral gap escalation" §) extend, never silently override.
+* **WebSocket message shapes**: JSON payloads on `/ws/sessions/{id}`
+  and `/ws/sessions` (the fan-out channel) are part of the
+  SemVer-governed surface. Their schema is the contract documented in
+  `docs/behavior/tool-output-streaming.md`. Additive fields are
+  permitted in v1.x; field removals or type changes require v2.
+* **CLI flag surface**: `bearings serve`, `bearings init`,
+  `bearings gc`, `bearings todo`, and `bearings migrate` — including
+  their named flags (`--host`, `--port`, etc.) — are stable within
+  v1.x. Flag renames or removals ship in v2.0.0. New optional flags
+  are additive (minor bump). The flag contract lives in
+  `src/bearings/cli/`.
 
 What this does *not* mean: localhost-only posture, single-user model,
 SQLite backend, and the orphan `v1-rebuild` history are all retained

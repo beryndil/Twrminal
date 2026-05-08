@@ -2408,8 +2408,10 @@
                   "type": "null"
                 }
               ],
+              "deprecated": true,
               "title": "Tag Ids"
-            }
+            },
+            "deprecated": true
           },
           {
             "name": "tag_ids_project",

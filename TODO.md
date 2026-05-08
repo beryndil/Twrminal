@@ -334,3 +334,20 @@ but never emits it. Template `system_prompt_baseline` is baked into
 `session_instructions` at session-creation time and there is no `template_id` FK
 on the session row to recover the original text. Emit `template_baseline` when
 sessions gain a `template_id` column.
+
+## feature-13-010 deferred: x-sunset extension + Sunset header middleware
+
+Deprecation convention (docs/deprecation-convention.md) is established.
+The two remaining parts are deferred to v1.1.0:
+
+1. **`x-sunset` extension** — add `openapi_extra={"x-sunset": "v1.2.0"}` to
+   `GET /api/tag-groups` (tags.py) and the `tag_ids` param route decorator
+   (sessions.py). Regen openapi.json in the same commit.
+
+2. **Sunset response header middleware** — author
+   `src/bearings/web/middleware/sunset.py`: ASGI middleware that emits
+   `Sunset: <date>` for requests whose matched route carries `x-sunset` in
+   `openapi_extra`. Wire into `create_app()`. Add unit test asserting header
+   present on `GET /api/tag-groups`, absent on non-deprecated routes.
+
+Must land before any deprecated surface is removed (earliest: v1.2.0).
