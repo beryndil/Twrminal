@@ -547,12 +547,42 @@ async def test_patch_session_valid_mixed_tags_200(
 async def test_close_session(
     app_and_db: tuple[FastAPI, aiosqlite.Connection],
 ) -> None:
+    """Chat sessions close successfully and get a closed_at timestamp."""
     app, conn = app_and_db
     sid = await _new_chat(conn)
     with TestClient(app) as client:
         response = client.post(f"/api/sessions/{sid}/close")
     assert response.status_code == 200
     assert response.json()["closed_at"] is not None
+
+
+async def test_close_checklist_session_422(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """Checklist sessions must not be closeable — 422 with explanatory detail.
+
+    Closing a checklist session would produce the inconsistent
+    ``(kind='checklist', closed_at IS NOT NULL)`` row state that the
+    verifier identified in feature-1-004.  The kind guard in
+    ``close_session`` must reject the request before writing anything.
+    """
+    app, conn = app_and_db
+    checklist_session = await sessions_db.create(
+        conn,
+        kind=SESSION_KIND_CHECKLIST,
+        title="my-checklist",
+        working_dir="/wd",
+        model="sonnet",
+    )
+    with TestClient(app) as client:
+        response = client.post(f"/api/sessions/{checklist_session.id}/close")
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "checklist" in detail
+    # Row must remain unmodified — closed_at stays NULL.
+    row = await sessions_db.get(conn, checklist_session.id)
+    assert row is not None
+    assert row.closed_at is None
 
 
 async def test_patch_model_swap(

@@ -65,6 +65,7 @@ from bearings.agent.prompt_dispatch import (
 )
 from bearings.agent.runner import RunnerFactory
 from bearings.config.constants import (
+    CLOSEABLE_SESSION_KINDS,
     KNOWN_SESSION_KINDS,
     PROMPT_ACK_QUEUED_KEY,
     PROMPT_ACK_SESSION_ID_KEY,
@@ -482,8 +483,29 @@ async def delete_session(session_id: str, request: Request) -> None:
 
 @router.post("/api/sessions/{session_id}/close", response_model=SessionOut)
 async def close_session(session_id: str, request: Request) -> SessionOut:
-    """Stamp ``closed_at`` so the prompt-endpoint returns 409 on next POST."""
+    """Stamp ``closed_at`` so the prompt-endpoint returns 409 on next POST.
+
+    Only session kinds in :data:`~bearings.config.constants.CLOSEABLE_SESSION_KINDS`
+    support the close/reopen lifecycle.  Checklist sessions are long-lived and
+    not subject to this lifecycle (per ``docs/behavior/checklists.md``); a
+    ``POST /close`` on one returns 422 to prevent the inconsistent
+    ``(kind='checklist', closed_at IS NOT NULL)`` row state.
+    """
     db = _db(request)
+    existing_kind = await sessions_db.get_kind(db, session_id)
+    if existing_kind is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no session matches {session_id!r}",
+        )
+    if existing_kind not in CLOSEABLE_SESSION_KINDS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"sessions of kind {existing_kind!r} cannot be closed; "
+                f"close is only supported for: {sorted(CLOSEABLE_SESSION_KINDS)}"
+            ),
+        )
     row = await sessions_db.close(db, session_id)
     if row is None:
         raise HTTPException(

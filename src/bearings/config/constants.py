@@ -706,6 +706,15 @@ SESSION_KIND_CHAT: Final[str] = "chat"
 SESSION_KIND_CHECKLIST: Final[str] = "checklist"
 KNOWN_SESSION_KINDS: Final[frozenset[str]] = frozenset({SESSION_KIND_CHAT, SESSION_KIND_CHECKLIST})
 
+# Session kinds that support the close/reopen lifecycle
+# (``POST /api/sessions/{id}/close`` + ``POST /api/sessions/{id}/reopen``).
+# Checklist sessions are long-lived and do not participate in the chat
+# close/reopen lifecycle (per docs/behavior/checklists.md); closing one
+# would produce an inconsistent ``(kind='checklist', closed_at IS NOT NULL)``
+# row state. The set is a ``frozenset`` so membership tests are O(1) and the
+# constant is immutable at runtime.
+CLOSEABLE_SESSION_KINDS: Final[frozenset[str]] = frozenset({SESSION_KIND_CHAT})
+
 # Session id prefix. ``ses_<32-hex>`` per the ``new_id`` convention in
 # ``db/_id.py`` so a stray id in a log line is self-describing.
 SESSION_ID_PREFIX: Final[str] = "ses"
@@ -1505,6 +1514,7 @@ __all__ = [
     "CLI_EXIT_OK",
     "CLI_EXIT_OPERATION_FAILURE",
     "CLI_EXIT_USAGE_ERROR",
+    "CLOSEABLE_SESSION_KINDS",
     "CLOSE_SESSION_TOOL_NAME",
     "DEFAULT_ADVISOR_MAX_USES_HAIKU",
     "DEFAULT_ADVISOR_MAX_USES_SONNET",

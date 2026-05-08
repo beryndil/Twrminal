@@ -2681,7 +2681,7 @@
           "sessions"
         ],
         "summary": "Close Session",
-        "description": "Stamp ``closed_at`` so the prompt-endpoint returns 409 on next POST.",
+        "description": "Stamp ``closed_at`` so the prompt-endpoint returns 409 on next POST.\n\nOnly session kinds in :data:`~bearings.config.constants.CLOSEABLE_SESSION_KINDS`\nsupport the close/reopen lifecycle.  Checklist sessions are long-lived and\nnot subject to this lifecycle (per ``docs/behavior/checklists.md``); a\n``POST /close`` on one returns 422 to prevent the inconsistent\n``(kind='checklist', closed_at IS NOT NULL)`` row state.",
         "operationId": "close_session_api_sessions__session_id__close_post",
         "parameters": [
           {
