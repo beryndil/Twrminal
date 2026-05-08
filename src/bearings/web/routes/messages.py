@@ -74,6 +74,7 @@ def _to_out(message: Message) -> MessageOut:
         routing_source=message.routing_source,
         routing_reason=message.routing_reason,
         matched_rule_id=message.matched_rule_id,
+        evaluated_rules=message.evaluated_rules,
         executor_input_tokens=message.executor_input_tokens,
         executor_output_tokens=message.executor_output_tokens,
         advisor_input_tokens=message.advisor_input_tokens,

@@ -41,6 +41,9 @@ export interface MessageOut {
   routing_source: string | null;
   routing_reason: string | null;
   matched_rule_id: number | null;
+  /** Ordered rule ids tested by the routing engine (``RoutingDecision.evaluated_rules``).
+   *  Empty array for manual/legacy rows or rows predating this column. */
+  evaluated_rules: number[];
   // Spec §5 per-model usage projection.
   executor_input_tokens: number | null;
   executor_output_tokens: number | null;

@@ -135,6 +135,12 @@ CREATE TABLE IF NOT EXISTS messages (
     -- routing source is 'manual' / 'manual_override_quota' /
     -- 'unknown_legacy' / 'default' (no rule fired).
     matched_rule_id          INTEGER,
+    -- spec §App A ``RoutingDecision.evaluated_rules`` projection.
+    -- JSON array of integer rule ids in the order they were tested
+    -- (up to and including the matched rule). Empty array '[]' when
+    -- no rules were evaluated (e.g. 'manual' / 'unknown_legacy').
+    -- NULL on rows that predate this column; treated as '[]' on read.
+    evaluated_rules          TEXT    DEFAULT '[]',
     -- spec §5 per-model usage columns (from ResultMessage.model_usage)
     executor_input_tokens    INTEGER,
     executor_output_tokens   INTEGER,

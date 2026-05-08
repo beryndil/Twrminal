@@ -43,7 +43,8 @@ top of ``insert_assistant``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
 
 import aiosqlite
 
@@ -100,6 +101,10 @@ class Message:
     # G3 context-menu state columns (DEFAULT 0 for all existing rows).
     pinned: bool = False
     hidden_from_context: bool = False
+    # Inspector Routing eval-chain — ordered rule ids tested by the
+    # routing engine (``RoutingDecision.evaluated_rules``). Empty list
+    # for rows that predate this column or used a manual/legacy source.
+    evaluated_rules: list[int] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -193,6 +198,7 @@ async def _insert(
         input_tokens=None,
         output_tokens=None,
         seq=0,  # placeholder — rowid assigned by DB; actual value via get()
+        evaluated_rules=[],
     )
     await connection.execute(
         "INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -220,6 +226,7 @@ async def insert_assistant(
     routing_source: str,
     routing_reason: str,
     matched_rule_id: int | None,
+    evaluated_rules: list[int],
     executor_input_tokens: int | None,
     executor_output_tokens: int | None,
     advisor_input_tokens: int | None,
@@ -278,16 +285,17 @@ async def insert_assistant(
         input_tokens=None,
         output_tokens=None,
         seq=0,
+        evaluated_rules=evaluated_rules,
     )
     await connection.execute(
         "INSERT INTO messages ("
         "id, session_id, role, content, created_at, "
         "executor_model, advisor_model, effort_level, "
-        "routing_source, routing_reason, matched_rule_id, "
+        "routing_source, routing_reason, matched_rule_id, evaluated_rules, "
         "executor_input_tokens, executor_output_tokens, "
         "advisor_input_tokens, advisor_output_tokens, "
         "advisor_calls_count, cache_read_tokens"
-        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             message_id,
             session_id,
@@ -300,6 +308,7 @@ async def insert_assistant(
             routing_source,
             routing_reason,
             matched_rule_id,
+            json.dumps(evaluated_rules),
             executor_input_tokens,
             executor_output_tokens,
             advisor_input_tokens,
@@ -622,7 +631,8 @@ _SELECT_MESSAGE_COLUMNS = (
     "advisor_output_tokens, advisor_calls_count, cache_read_tokens, "
     "input_tokens, output_tokens, rowid AS seq, "
     "COALESCE(pinned, 0) AS pinned, "
-    "COALESCE(hidden_from_context, 0) AS hidden_from_context "
+    "COALESCE(hidden_from_context, 0) AS hidden_from_context, "
+    "COALESCE(evaluated_rules, '[]') AS evaluated_rules "
     "FROM messages"
 )
 
@@ -668,6 +678,7 @@ async def import_messages(
             m.get("routing_source"),
             m.get("routing_reason"),
             m.get("matched_rule_id"),
+            json.dumps(m.get("evaluated_rules") or []),
             m.get("executor_input_tokens"),
             m.get("executor_output_tokens"),
             m.get("advisor_input_tokens"),
@@ -685,10 +696,10 @@ async def import_messages(
         "INSERT INTO messages "
         "(id, session_id, role, content, created_at, "
         "executor_model, advisor_model, effort_level, routing_source, routing_reason, "
-        "matched_rule_id, executor_input_tokens, executor_output_tokens, "
+        "matched_rule_id, evaluated_rules, executor_input_tokens, executor_output_tokens, "
         "advisor_input_tokens, advisor_output_tokens, advisor_calls_count, "
         "cache_read_tokens, input_tokens, output_tokens, pinned, hidden_from_context) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rows,
     )
     await connection.commit()
@@ -696,6 +707,11 @@ async def import_messages(
 
 def _row_to_message(row: aiosqlite.Row | tuple[object, ...]) -> Message:
     """Translate a raw SELECT tuple into a validated :class:`Message`."""
+    raw_evaluated = row[22]
+    try:
+        evaluated_rules: list[int] = json.loads(str(raw_evaluated)) if raw_evaluated else []
+    except (ValueError, TypeError):
+        evaluated_rules = []
     return Message(
         id=str(row[0]),
         session_id=str(row[1]),
@@ -719,6 +735,7 @@ def _row_to_message(row: aiosqlite.Row | tuple[object, ...]) -> Message:
         seq=int(str(row[19])),
         pinned=bool(int(str(row[20]))) if row[20] is not None else False,
         hidden_from_context=bool(int(str(row[21]))) if row[21] is not None else False,
+        evaluated_rules=evaluated_rules,
     )
 
 

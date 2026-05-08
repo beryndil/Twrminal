@@ -122,6 +122,7 @@ async def _insert_assistant(
         routing_source="default",
         routing_reason="default routing",
         matched_rule_id=None,
+        evaluated_rules=[],
         executor_input_tokens=None,
         executor_output_tokens=None,
         advisor_input_tokens=None,

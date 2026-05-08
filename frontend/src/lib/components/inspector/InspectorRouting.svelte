@@ -414,6 +414,28 @@
                     {/if}
                   </dd>
 
+                  {#if row.evaluated_rules.length > 0}
+                    <dt class="text-fg-muted">{INSPECTOR_STRINGS.routingTimelineEvalChainLabel}</dt>
+                    <dd
+                      class="font-mono text-fg"
+                      data-testid="inspector-routing-eval-chain"
+                      data-message-id={row.id}
+                    >
+                      {#each row.evaluated_rules as ruleId, i (ruleId)}
+                        {#if i > 0}<span class="text-fg-muted"> → </span>{/if}
+                        <span
+                          class={ruleId === row.matched_rule_id
+                            ? "text-success font-semibold"
+                            : "text-fg-muted"}
+                          title={ruleId === row.matched_rule_id ? "matched" : "skipped"}
+                        >#{ruleId}</span>
+                      {/each}
+                      {#if row.matched_rule_id === null}
+                        <span class="text-fg-muted"> → default</span>
+                      {/if}
+                    </dd>
+                  {/if}
+
                   <dt class="text-fg-muted">{INSPECTOR_STRINGS.routingCurrentReasonLabel}</dt>
                   <dd class="whitespace-pre-wrap text-fg">
                     {row.routing_reason ?? ""}

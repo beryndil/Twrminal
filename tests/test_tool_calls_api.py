@@ -70,6 +70,7 @@ async def _make_assistant(conn: aiosqlite.Connection, session_id: str) -> str:
         source="default",
         reason="default",
         matched_rule_id=None,
+        evaluated_rules=[],
     )
     msg = await messages_db.insert_assistant(
         conn,
@@ -81,6 +82,7 @@ async def _make_assistant(conn: aiosqlite.Connection, session_id: str) -> str:
         routing_source=decision.source,
         routing_reason=decision.reason,
         matched_rule_id=decision.matched_rule_id,
+        evaluated_rules=[],
         executor_input_tokens=10,
         executor_output_tokens=20,
         advisor_input_tokens=None,

@@ -20,7 +20,15 @@
   import { untrack } from "svelte";
   import { patchSession, type SessionOut } from "../../api/sessions";
   import { attachTagToSession, createTag, type TagOut } from "../../api/tags";
-  import { SESSION_EDIT_MODAL_STRINGS } from "../../config";
+  import { contextMenu } from "../../actions/contextMenu";
+  import {
+    MENU_ACTION_TAG_CHIP_COPY_NAME,
+    MENU_ACTION_TAG_CHIP_DETACH,
+    MENU_TARGET_TAG_CHIP,
+    SESSION_EDIT_MODAL_STRINGS,
+    UNDO_TOAST_STRINGS,
+  } from "../../config";
+  import { undoStore } from "../../stores/undo.svelte";
 
   interface Props {
     session: SessionOut;
@@ -293,7 +301,33 @@
       </span>
       <div class="session-edit-modal__tags" data-testid="session-edit-tags">
         {#each attachedTags as tag (tag.id)}
-          <span class="session-edit-modal__tag-chip" data-testid="session-edit-tag-chip" data-tag-id={tag.id}>
+          <span
+            class="session-edit-modal__tag-chip"
+            data-testid="session-edit-tag-chip"
+            data-tag-id={tag.id}
+            use:contextMenu={{
+              target: MENU_TARGET_TAG_CHIP,
+              handlers: {
+                [MENU_ACTION_TAG_CHIP_COPY_NAME]: () => {
+                  void navigator.clipboard.writeText(tag.name);
+                },
+                [MENU_ACTION_TAG_CHIP_DETACH]: {
+                  handler: () => {
+                    removeTag(tag.id);
+                    undoStore.push({
+                      message: UNDO_TOAST_STRINGS.tagRemoved,
+                      inverse: () => {
+                        attachedTags = [...attachedTags, tag];
+                      },
+                    });
+                  },
+                  confirmMessage: `Remove tag "${tag.name}" from session?`,
+                  confirmLabel: "Remove",
+                },
+              },
+              data: { tagId: tag.id, sessionId: session.id },
+            }}
+          >
             {tag.name}
             <button
               type="button"

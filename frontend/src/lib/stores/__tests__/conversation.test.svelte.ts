@@ -360,6 +360,7 @@ describe("hydrateTurns", () => {
           seq: 1,
           pinned: false,
           hidden_from_context: false,
+          evaluated_rules: [],
         },
         {
           id: "a1",
@@ -384,6 +385,7 @@ describe("hydrateTurns", () => {
           seq: 2,
           pinned: false,
           hidden_from_context: false,
+          evaluated_rules: [],
         },
       ],
       has_more: false,
@@ -420,6 +422,7 @@ describe("hydrateTurns", () => {
           seq: 7,
           pinned: false,
           hidden_from_context: false,
+          evaluated_rules: [],
         },
       ],
       has_more: true,
@@ -458,6 +461,7 @@ function makeMsg(id: string, role: "user" | "assistant") {
     seq: 1,
     pinned: false,
     hidden_from_context: false,
+    evaluated_rules: [],
   };
 }
 

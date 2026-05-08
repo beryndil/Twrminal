@@ -21,7 +21,7 @@ InspectorUsage panels (item 2.6) can render the per-message badge
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MessageOut(BaseModel):
@@ -53,6 +53,12 @@ class MessageOut(BaseModel):
     # Spec §App A ``RoutingDecision.matched_rule_id`` projection (item
     # 1.8 schema column + item 1.9 wire surface).
     matched_rule_id: int | None
+    # Spec §App A ``RoutingDecision.evaluated_rules`` projection — ordered
+    # rule ids tested by the routing engine (up to and including the
+    # matched rule). Empty list for manual/legacy rows or rows that predate
+    # this column. Exposed so the Inspector Routing eval-chain widget can
+    # render "rule A → rule B → rule C (matched)" without a second fetch.
+    evaluated_rules: list[int] = Field(default_factory=list)
     # Spec §5 per-model usage projection (from
     # ``ResultMessage.model_usage`` via item 1.9
     # :func:`bearings.agent.persistence.extract_model_usage`).

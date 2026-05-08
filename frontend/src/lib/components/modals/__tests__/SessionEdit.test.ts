@@ -15,11 +15,17 @@
  */
 import { fireEvent, render, waitFor } from "@testing-library/svelte";
 import { flushSync } from "svelte";
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 
 import SessionEdit from "../SessionEdit.svelte";
 import type { SessionOut } from "../../../api/sessions";
 import type { TagOut } from "../../../api/tags";
+import { _resetForTests, contextMenuStore } from "../../../context-menu/store.svelte";
+import {
+  MENU_ACTION_TAG_CHIP_COPY_NAME,
+  MENU_ACTION_TAG_CHIP_DETACH,
+  MENU_TARGET_TAG_CHIP,
+} from "../../../config";
 
 // ---- mock API surface ------------------------------------------------------
 
@@ -33,10 +39,19 @@ vi.mock("../../../api/tags", () => ({
   attachTagToSession: vi.fn(),
 }));
 
+vi.mock("../../../stores/undo.svelte", () => ({
+  undoStore: { push: vi.fn() },
+}));
+
 import { patchSession } from "../../../api/sessions";
 import { createTag } from "../../../api/tags";
 
+beforeEach(() => {
+  _resetForTests();
+});
+
 afterEach(() => {
+  _resetForTests();
   vi.clearAllMocks();
 });
 
@@ -301,5 +316,105 @@ describe("SessionEdit", () => {
     // Remove button should be present.
     const removeBtn = getAllByTestId("session-edit-tag-remove");
     expect(removeBtn).toHaveLength(1);
+  });
+});
+
+// ---- tag chip context menu (gap-cycle-20-001) --------------------------------
+
+describe("SessionEdit tag chip context menu", () => {
+  it("renders chip with data-tag-id bound to the tag id", () => {
+    const tag = fakeTag(7, "alpha");
+    const { getAllByTestId } = render(SessionEdit, {
+      props: {
+        session: fakeSession(),
+        currentTags: [tag],
+        allTags: [tag],
+        onSave: noop,
+        onCancel: noop,
+      },
+    });
+
+    const chips = getAllByTestId("session-edit-tag-chip");
+    expect(chips).toHaveLength(1);
+    expect(chips[0].getAttribute("data-tag-id")).toBe("7");
+  });
+
+  it("right-click opens context menu with copy and detach entries", () => {
+    const tag = fakeTag(3, "bearings");
+    const { getAllByTestId } = render(SessionEdit, {
+      props: {
+        session: fakeSession(),
+        currentTags: [tag],
+        allTags: [tag],
+        onSave: noop,
+        onCancel: noop,
+      },
+    });
+
+    const chip = getAllByTestId("session-edit-tag-chip")[0];
+    fireEvent(chip, new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+
+    const open = contextMenuStore.open;
+    expect(open).not.toBeNull();
+    expect(open?.target).toBe(MENU_TARGET_TAG_CHIP);
+    expect(open?.handlers).toHaveProperty(MENU_ACTION_TAG_CHIP_COPY_NAME);
+    expect(open?.handlers).toHaveProperty(MENU_ACTION_TAG_CHIP_DETACH);
+    expect(open?.data).toMatchObject({ tagId: 3 });
+  });
+
+  it("detach entry carries confirmMessage for ConfirmDialog routing", () => {
+    const tag = fakeTag(5, "my-tag");
+    const { getAllByTestId } = render(SessionEdit, {
+      props: {
+        session: fakeSession(),
+        currentTags: [tag],
+        allTags: [tag],
+        onSave: noop,
+        onCancel: noop,
+      },
+    });
+
+    const chip = getAllByTestId("session-edit-tag-chip")[0];
+    fireEvent(chip, new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+
+    const open = contextMenuStore.open;
+    const detachEntry = open?.handlers[MENU_ACTION_TAG_CHIP_DETACH];
+    expect(detachEntry).toBeDefined();
+    expect(typeof detachEntry).toBe("object");
+    // Must have confirmMessage (routes through central confirm bridge).
+    expect((detachEntry as { confirmMessage: string }).confirmMessage).toContain("my-tag");
+    // And a handler function.
+    expect(typeof (detachEntry as { handler: unknown }).handler).toBe("function");
+  });
+
+  it("copy-name handler writes the tag name to clipboard", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+
+    const tag = fakeTag(9, "clipboard-tag");
+    const { getAllByTestId } = render(SessionEdit, {
+      props: {
+        session: fakeSession(),
+        currentTags: [tag],
+        allTags: [tag],
+        onSave: noop,
+        onCancel: noop,
+      },
+    });
+
+    const chip = getAllByTestId("session-edit-tag-chip")[0];
+    fireEvent(chip, new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+
+    const open = contextMenuStore.open;
+    const copyHandler = open?.handlers[MENU_ACTION_TAG_CHIP_COPY_NAME];
+    expect(typeof copyHandler).toBe("function");
+    (copyHandler as () => void)();
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("clipboard-tag");
+    });
   });
 });

@@ -1694,6 +1694,7 @@ export const INSPECTOR_STRINGS = {
   routingTimelineWhyLabel: "Why this model?",
   routingTimelineMatchedRuleLabel: "Matched rule",
   routingTimelineNoMatchedRule: "(no rule — fallback default)",
+  routingTimelineEvalChainLabel: "Eval chain",
   // Routing-source presentation labels (spec §App A enum). Mirror the
   // wire alphabet via :const:`KNOWN_ROUTING_SOURCES`.
   routingSourceLabels: {

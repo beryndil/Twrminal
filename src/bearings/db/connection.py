@@ -101,6 +101,10 @@ _ADDED_COLUMNS: Final[tuple[tuple[str, str, str], ...]] = (
     # Existing rows default to 0 (not pinned, not hidden).
     ("messages", "pinned", "INTEGER NOT NULL DEFAULT 0"),
     ("messages", "hidden_from_context", "INTEGER NOT NULL DEFAULT 0"),
+    # Inspector Routing eval-chain column — JSON array of rule ids tested
+    # (``RoutingDecision.evaluated_rules``). Existing rows get '[]' (empty
+    # chain — pre-dates the column; treated as no-chain on read).
+    ("messages", "evaluated_rules", "TEXT DEFAULT '[]'"),
     # Spawn-from-reply back-pointers (gap-cycle-03-007). FK constraints
     # cannot be added via ALTER TABLE in SQLite; declared as plain TEXT
     # here (schema.sql carries the FKs for fresh DBs; existing rows get

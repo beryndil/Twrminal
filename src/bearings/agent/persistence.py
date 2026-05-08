@@ -354,6 +354,7 @@ async def persist_assistant_turn(
         routing_source=decision.source,
         routing_reason=decision.reason,
         matched_rule_id=decision.matched_rule_id,
+        evaluated_rules=decision.evaluated_rules,
         executor_input_tokens=breakdown.executor_input_tokens,
         executor_output_tokens=breakdown.executor_output_tokens,
         advisor_input_tokens=breakdown.advisor_input_tokens,

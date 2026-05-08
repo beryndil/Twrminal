@@ -36,6 +36,7 @@ const sampleRow: MessageOut = {
   seq: 42,
   pinned: false,
   hidden_from_context: false,
+  evaluated_rules: [],
 };
 
 const samplePage: MessagePage = {

@@ -71,6 +71,7 @@ function msg(overrides: Partial<MessageOut> = {}): MessageOut {
     seq: 1,
     pinned: false,
     hidden_from_context: false,
+    evaluated_rules: [],
     ...overrides,
   };
 }
