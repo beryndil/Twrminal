@@ -71,10 +71,7 @@ const fakeStores = (sessions: readonly SessionOut[]) => ({
 });
 
 /** Wire a global ``fetch`` fake for ``/api/sessions/bulk`` calls. */
-function wireBulkFetch(
-  response: object,
-  status: number = 200,
-): { calls: string[] } {
+function wireBulkFetch(response: object, status: number = 200): { calls: string[] } {
   const calls: string[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, _init) => {
     const url = typeof input === "string" ? input : String(input);
@@ -335,6 +332,41 @@ describe("sessionsBulk API — single-call contract", () => {
 
     expect(calls.length).toBe(1);
     expect(calls[0]).toContain("/bulk");
+  });
+
+  it("bulkExportSessions strips null slots from server response before returning Blob", async () => {
+    const { bulkExportSessions } = await import("../../../api/sessionsBulk");
+
+    const presentExport = { session: { id: "ses_a", title: "Alpha" }, messages: [] };
+    const serverPayload = {
+      // "ses_b" was not found on the server — null slot.
+      sessions: [presentExport, null, null],
+    };
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(serverPayload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const blob = await bulkExportSessions(["ses_a", "ses_b", "ses_c"]);
+
+    // jsdom's Blob does not implement .text() or .arrayBuffer() —
+    // use FileReader (which jsdom does implement) to decode.
+    const text = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(blob);
+    });
+    const parsed = JSON.parse(text) as { sessions: unknown[] };
+
+    // Only the non-null entry should survive.
+    expect(parsed.sessions).toHaveLength(1);
+    expect(parsed.sessions[0]).toEqual(presentExport);
+    // Explicit check: no nulls anywhere in the array.
+    expect(parsed.sessions.every((s) => s !== null)).toBe(true);
   });
 
   it("bulkCloseSessions returns per-id results including failures", async () => {

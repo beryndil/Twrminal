@@ -37,6 +37,25 @@ export interface BulkSessionsOut {
   results: BulkResultItem[];
 }
 
+/**
+ * Wire shape returned by the server for the export op.
+ *
+ * ``sessions`` is a positional array aligned to the requested IDs — slots for
+ * IDs that were not found are ``null``.  The frontend filters those before
+ * writing the download bundle.
+ */
+interface BulkExportServerResponse {
+  sessions: (Record<string, unknown> | null)[];
+}
+
+/**
+ * Filtered export bundle that ``bulkExportSessions`` encodes into the returned
+ * ``Blob`` — null slots have been removed.
+ */
+interface BulkExportBundle {
+  sessions: Record<string, unknown>[];
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -135,17 +154,23 @@ export async function bulkUntagSessions(
 /**
  * Export multiple sessions as a single bundled JSON download.
  *
- * The backend assembles ``{sessions: [SessionExport|null, …]}`` in one
- * pass and streams the bundle as ``application/json``. This function
- * returns the raw ``Blob`` so the caller can create an object URL and
- * trigger a browser ``<a download>`` click.
+ * The backend assembles ``{sessions: [SessionExport|null, …]}`` in one pass.
+ * This function parses that response, strips ``null`` slots (sessions that
+ * were not found on the server), and returns a ``Blob`` of the filtered
+ * ``{sessions: SessionExport[]}`` JSON so the caller can create an object URL
+ * and trigger a browser ``<a download>`` click without nulls in the output.
  *
- * Sessions not found on the server produce a ``null`` slot in the array
- * — the bundle is still valid; the importer skips nulls.
+ * Per ``docs/behavior/sessions.md`` §"Response — export op": "null slots
+ * represent session IDs that were not found. The frontend filters them out
+ * before triggering the download."
  *
  * @throws {@link ApiError} on network failure or non-2xx HTTP.
  */
 export async function bulkExportSessions(sessionIds: string[]): Promise<Blob> {
   const resp = await _postBulk({ op: "export", session_ids: sessionIds });
-  return await resp.blob();
+  const raw = (await resp.json()) as BulkExportServerResponse;
+  const bundle: BulkExportBundle = {
+    sessions: raw.sessions.filter((s): s is Record<string, unknown> => s !== null),
+  };
+  return new Blob([JSON.stringify(bundle)], { type: "application/json" });
 }
