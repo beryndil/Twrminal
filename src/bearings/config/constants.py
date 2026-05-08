@@ -222,7 +222,7 @@ STREAM_HEARTBEAT_INTERVAL_S: Final[float] = WS_IDLE_PING_INTERVAL_S
 # subscriber and closes its websocket (documented overflow policy —
 # feature-5-011 / CCW-3). Value chosen to hold ~10 seconds of
 # high-frequency session churn while bounding per-subscriber memory to
-# ~256 × ≈300 bytes ≈ 75 KiB in the worst case.
+# ~256 x ~300 bytes ~= 75 KiB in the worst case.
 SESSIONS_BROADCAST_QUEUE_MAX: Final[int] = 256
 
 # ---------------------------------------------------------------------------
@@ -1673,6 +1673,7 @@ __all__ = [
     "SENTINEL_KIND_ITEM_BLOCKED",
     "SENTINEL_KIND_ITEM_DONE",
     "SENTINEL_KIND_ITEM_FAILED",
+    "SESSIONS_BROADCAST_QUEUE_MAX",
     "SESSION_CLOSING_SUMMARY_MAX_LENGTH",
     "SESSION_CLOSING_SUMMARY_MIN_LENGTH",
     "SESSION_DESCRIPTION_MAX_LENGTH",
@@ -1685,7 +1686,6 @@ __all__ = [
     "SHELL_EXEC_TIMEOUT_S",
     "SHELL_OUTPUT_MAX_BYTES",
     "SPAWN_FROM_REPLY_QUOTE_PREFIX",
-    "SESSIONS_BROADCAST_QUEUE_MAX",
     "STREAM_HEARTBEAT_INTERVAL_S",
     "STREAM_MAX_DELTA_CHARS",
     "STREAM_MAX_TOOL_OUTPUT_CHARS",
