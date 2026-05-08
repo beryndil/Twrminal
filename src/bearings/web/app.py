@@ -302,10 +302,28 @@ def create_app(
             db=db_connection,
             sessions_broadcaster=sessions_broadcaster,
         )
+        # Leg-cutover close-and-broadcast callback (feature-6-008 / CCW-3).
+        # Stamps closed_at on the predecessor leg session and fans a
+        # session_upsert frame so the sidebar shows the row move to Closed
+        # without a page reload. Lives here (web/ layer) because it needs
+        # both the DB connection and the broadcaster — the agent/ layer
+        # must not import web/.
+        _db_ref = db_connection
+        _bc_ref = sessions_broadcaster
+
+        async def _close_leg_session(leg_session_id: str) -> None:
+            from bearings.db import sessions as sessions_db
+            from bearings.web.routes.sessions import _to_out
+
+            closed = await sessions_db.close(_db_ref, leg_session_id)
+            if closed is not None:
+                _bc_ref.publish_upsert(_to_out(closed))
+
         app.state.driver_runtime = build_runtime(
             runner_factory=factory,
             turn_driver=_turn_driver,
             leg_session_factory=_leg_factory,
+            close_session_callback=_close_leg_session,
         )
     else:
         app.state.driver_runtime = None

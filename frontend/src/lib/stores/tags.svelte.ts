@@ -82,6 +82,51 @@ const state: TagsState = $state({
 export const tagsStore = state;
 
 /**
+ * Apply a ``tag_upsert`` broadcast frame.
+ *
+ * Replaces the existing entry with the same id in-place, or appends
+ * the new tag at the end of the list. Called by the sessions-broadcast
+ * WS consumer in ``stores/sessions.svelte.ts`` when a ``tag_upsert``
+ * frame arrives so filter panels in all open tabs refresh without a
+ * full ``GET /api/tags`` round-trip (feature-5-004 / CCW-3).
+ */
+export function _applyTagUpsert(tag: TagOut): void {
+  const idx = state.all.findIndex((t) => t.id === tag.id);
+  if (idx >= 0) {
+    state.all[idx] = tag;
+  } else {
+    state.all = [...state.all, tag];
+  }
+}
+
+/**
+ * Apply a ``tag_delete`` broadcast frame.
+ *
+ * Removes the tag with the given id from the local list (no-op when
+ * absent). Also clears the id from any active filter sets so a deleted
+ * tag can't leave a ghost constraint that silently filters sessions.
+ */
+export function _applyTagDelete(tagId: number): void {
+  state.all = state.all.filter((t) => t.id !== tagId);
+  // Clear from filter sets so a deleted tag can't ghost-constrain the list.
+  if (state.selectedProjectIds.has(tagId)) {
+    const next = new Set(state.selectedProjectIds);
+    next.delete(tagId);
+    state.selectedProjectIds = next;
+  }
+  if (state.selectedSeverityIds.has(tagId)) {
+    const next = new Set(state.selectedSeverityIds);
+    next.delete(tagId);
+    state.selectedSeverityIds = next;
+  }
+  if (state.selectedOtherIds.has(tagId)) {
+    const next = new Set(state.selectedOtherIds);
+    next.delete(tagId);
+    state.selectedOtherIds = next;
+  }
+}
+
+/**
  * Refresh the global tag list from ``GET /api/tags``.
  *
  * The store is single-tenant — calling :func:`refresh` while a

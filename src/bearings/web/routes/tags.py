@@ -29,6 +29,8 @@ tuples — 404 for absent resource, 409 for unique-constraint violation,
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
+
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Request, status
 
@@ -42,7 +44,25 @@ from bearings.web.models.tags import (
     TagSortOrderUpdate,
 )
 
+if TYPE_CHECKING:
+    from bearings.web.routes.ws_sessions import SessionsBroadcaster
+
 router = APIRouter()
+
+
+def _broadcaster(request: Request) -> SessionsBroadcaster | None:
+    """Pull the optional sessions broadcaster off ``app.state``.
+
+    Returns ``None`` when no broadcaster is wired (test-only paths
+    that construct a minimal app without a DB); callers guard on
+    ``if broadcaster is not None`` before publishing.
+    """
+    from bearings.web.routes.ws_sessions import SessionsBroadcaster as _SB  # noqa: PLC0415
+
+    return cast(
+        _SB | None,
+        getattr(request.app.state, "sessions_broadcaster", None),
+    )
 
 
 def _db(request: Request) -> aiosqlite.Connection:
@@ -166,7 +186,11 @@ async def create_tag(payload: TagIn, request: Request) -> TagOut:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
-    return _to_out(tag)
+    out = _to_out(tag)
+    broadcaster = _broadcaster(request)
+    if broadcaster is not None:
+        broadcaster.publish_tag_upsert(out)
+    return out
 
 
 @router.get("/api/tags", response_model=list[TagOut])
@@ -208,16 +232,26 @@ async def update_tags_sort_order(payload: TagSortOrderUpdate, request: Request) 
     or belongs to a different class.
     """
     db = _db(request)
+    ordered_ids = tuple(payload.ordered_ids)
     try:
         await tags_db.update_sort_orders(
             db,
             class_=payload.class_,
-            ordered_ids=tuple(payload.ordered_ids),
+            ordered_ids=ordered_ids,
         )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+    broadcaster = _broadcaster(request)
+    if broadcaster is not None and ordered_ids:
+        # Broadcast tag_upsert for every reordered tag so filter panels in
+        # other tabs refresh sort positions without polling.
+        rows = await tags_db.list_all_with_counts(db, class_=payload.class_)
+        for tag, open_count, total_count in rows:
+            broadcaster.publish_tag_upsert(
+                _to_out(tag, open_session_count=open_count, session_count=total_count)
+            )
 
 
 @router.get("/api/tag-groups", response_model=list[str], deprecated=True)
@@ -269,7 +303,11 @@ async def update_tag(tag_id: int, payload: TagIn, request: Request) -> TagOut:
         ) from exc
     if tag is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"tag {tag_id} not found")
-    return _to_out(tag)
+    out = _to_out(tag)
+    broadcaster = _broadcaster(request)
+    if broadcaster is not None:
+        broadcaster.publish_tag_upsert(out)
+    return out
 
 
 @router.patch("/api/tags/{tag_id}/pinned", response_model=TagOut)
@@ -283,7 +321,11 @@ async def patch_tag_pinned(tag_id: int, payload: TagPinnedUpdate, request: Reque
     tag = await tags_db.update_pinned(db, tag_id, pinned=payload.pinned)
     if tag is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"tag {tag_id} not found")
-    return _to_out(tag)
+    out = _to_out(tag)
+    broadcaster = _broadcaster(request)
+    if broadcaster is not None:
+        broadcaster.publish_tag_upsert(out)
+    return out
 
 
 @router.delete("/api/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -293,6 +335,9 @@ async def delete_tag(tag_id: int, request: Request) -> None:
     removed = await tags_db.delete(db, tag_id)
     if not removed:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"tag {tag_id} not found")
+    broadcaster = _broadcaster(request)
+    if broadcaster is not None:
+        broadcaster.publish_tag_delete(tag_id)
 
 
 @router.get("/api/sessions/{session_id}/tags", response_model=list[TagOut])
@@ -339,6 +384,18 @@ async def attach_tag(session_id: str, tag_id: int, request: Request) -> TagOut:
     tag = await tags_db.get(db, tag_id)
     if tag is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"tag {tag_id} not found")
+    broadcaster = _broadcaster(request)
+    if broadcaster is not None:
+        # Broadcast the post-mutation session row so other tabs see the
+        # updated tag set without a full re-fetch (feature-5-003 / CCW-3).
+        # Local import avoids circular dependency: sessions.py already
+        # imports _validate_tag_cardinality from this module at module load.
+        from bearings.db import sessions as sessions_db
+        from bearings.web.routes.sessions import _to_out as _session_to_out
+
+        session_row = await sessions_db.get(db, session_id)
+        if session_row is not None:
+            broadcaster.publish_upsert(_session_to_out(session_row))
     return _to_out(tag)
 
 
@@ -355,6 +412,16 @@ async def detach_tag(session_id: str, tag_id: int, request: Request) -> None:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"session {session_id!r} not tagged with {tag_id}",
         )
+    broadcaster = _broadcaster(request)
+    if broadcaster is not None:
+        # Broadcast the post-detach session row so other tabs see the
+        # updated tag set without polling (feature-5-003 / CCW-3).
+        from bearings.db import sessions as sessions_db
+        from bearings.web.routes.sessions import _to_out as _session_to_out
+
+        session_row = await sessions_db.get(db, session_id)
+        if session_row is not None:
+            broadcaster.publish_upsert(_session_to_out(session_row))
 
 
 __all__ = ["router"]

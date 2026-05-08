@@ -31,6 +31,7 @@
 import { listSessions, type SessionOut } from "../api/sessions";
 import { listSessionTags, type TagOut } from "../api/tags";
 import { connectSessionsBroadcast } from "../api/wsSessions";
+import { _applyTagDelete, _applyTagUpsert } from "./tags.svelte";
 
 interface SessionsState {
   /** Last successful list response. */
@@ -174,6 +175,14 @@ connectSessionsBroadcast(
           state.sessions[idx] = { ...state.sessions[idx], error_pending: true };
         }
       }
+    } else if (event.type === "tag_upsert") {
+      // Forward tag change events to the tags store so filter panels in
+      // all open tabs refresh without a full GET /api/tags round-trip
+      // (feature-5-004 / CCW-3). The single /ws/sessions connection is
+      // shared — no second WebSocket needed.
+      _applyTagUpsert(event.tag);
+    } else if (event.type === "tag_delete") {
+      _applyTagDelete(event.tag_id);
     }
   },
   {

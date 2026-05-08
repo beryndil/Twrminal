@@ -47,6 +47,14 @@ type TurnDriver = Callable[[SessionRunner, str], Awaitable[str]]
 # in tests it can be a counter-backed stub.
 type LegSessionFactory = Callable[[int, int, str | None], Awaitable[str]]
 
+# Optional close-and-broadcast hook injected from the web/ layer.
+# When a leg completes (handoff or item-done), ``teardown_leg`` calls
+# this to stamp ``closed_at`` on the predecessor chat session and
+# broadcast the change so the sidebar shows the row move to Closed.
+# Defaults to ``None`` so unit tests that don't need DB + broadcast
+# wiring can omit it (feature-6-008 / CCW-3).
+type CloseSessionCallback = Callable[[str], Awaitable[None]]
+
 
 @dataclass(frozen=True)
 class _RuntimeOptions:
@@ -55,6 +63,7 @@ class _RuntimeOptions:
     runner_factory: RunnerFactory
     turn_driver: TurnDriver
     leg_session_factory: LegSessionFactory
+    close_session_callback: CloseSessionCallback | None = None
 
 
 class AgentRunnerDriverRuntime:
@@ -78,11 +87,13 @@ class AgentRunnerDriverRuntime:
         runner_factory: RunnerFactory,
         turn_driver: TurnDriver,
         leg_session_factory: LegSessionFactory,
+        close_session_callback: CloseSessionCallback | None = None,
     ) -> None:
         self._opts = _RuntimeOptions(
             runner_factory=runner_factory,
             turn_driver=turn_driver,
             leg_session_factory=leg_session_factory,
+            close_session_callback=close_session_callback,
         )
         # Per-leg context-pressure readout cache; updated by
         # ``run_turn`` when the SDK reports usage. ``None`` until the
@@ -126,14 +137,21 @@ class AgentRunnerDriverRuntime:
         return body
 
     async def teardown_leg(self, *, leg_session_id: str) -> None:
-        """Drop the per-leg pressure entry; runner stays alive.
+        """Close the leg session and broadcast the change; drop pressure entry.
 
-        Per behavior/checklists.md the originating runner stays in the
-        sidebar (chat row remains; pair pointer is cleared at the API
-        layer when the next leg spawns). The runner's own idle-reap
-        eventually frees it.
+        On handoff (and on any per-item terminal that ends a leg), stamps
+        ``closed_at`` on the predecessor chat session and fans a
+        ``session_upsert`` frame so the sidebar shows the row move to the
+        Closed group without a page reload (feature-6-008 / CCW-3).
+
+        The close-and-broadcast is delegated to the optional
+        ``close_session_callback`` injected from the web/ layer so this
+        module never imports web/. When the callback is ``None`` (unit
+        tests without DB wiring), the close is skipped.
         """
         self._pressure_by_leg.pop(leg_session_id, None)
+        if self._opts.close_session_callback is not None:
+            await self._opts.close_session_callback(leg_session_id)
 
     def last_context_percentage(self, leg_session_id: str) -> float | None:
         """Return the cached per-leg pressure (or ``None`` if absent)."""
@@ -226,6 +244,7 @@ def build_runtime(
     runner_factory: RunnerFactory,
     turn_driver: TurnDriver,
     leg_session_factory: LegSessionFactory,
+    close_session_callback: CloseSessionCallback | None = None,
 ) -> DriverRuntime:
     """Construct an :class:`AgentRunnerDriverRuntime` typed at the Protocol.
 
@@ -234,11 +253,15 @@ def build_runtime(
     typing — if the runtime's method signatures drift from the
     Protocol the project fails type-check at this function rather
     than at the consumer.
+
+    ``close_session_callback`` is optional so callers that don't need
+    leg-cutover broadcast (e.g. test harnesses) can omit it.
     """
     return AgentRunnerDriverRuntime(
         runner_factory=runner_factory,
         turn_driver=turn_driver,
         leg_session_factory=leg_session_factory,
+        close_session_callback=close_session_callback,
     )
 
 

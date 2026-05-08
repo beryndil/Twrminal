@@ -16,10 +16,11 @@
  * Call it to stop reconnecting and close the active socket.
  */
 import { WS_SESSIONS_PATH } from "../config";
+import type { TagOut } from "./tags";
 import type { SessionOut } from "./sessions";
 
 /** Union of all message types the sessions-broadcast channel emits. */
-type SessionsBroadcastEvent =
+export type SessionsBroadcastEvent =
   | { type: "session_upsert"; session: SessionOut }
   | { type: "session_delete"; session_id: string }
   | {
@@ -28,7 +29,9 @@ type SessionsBroadcastEvent =
       is_running: boolean;
       is_awaiting_user: boolean;
       is_error: boolean;
-    };
+    }
+  | { type: "tag_upsert"; tag: TagOut }
+  | { type: "tag_delete"; tag_id: number };
 
 type SessionsBroadcastHandler = (event: SessionsBroadcastEvent) => void;
 
@@ -188,6 +191,20 @@ function _parseFrame(text: string): SessionsBroadcastEvent | null {
       return null;
     }
     return { type: "runner_state", session_id, is_running, is_awaiting_user, is_error };
+  }
+  if (type === "tag_upsert") {
+    const tag = obj.tag;
+    if (typeof tag !== "object" || tag === null) {
+      return null;
+    }
+    return { type: "tag_upsert", tag: tag as TagOut };
+  }
+  if (type === "tag_delete") {
+    const tag_id = obj.tag_id;
+    if (typeof tag_id !== "number") {
+      return null;
+    }
+    return { type: "tag_delete", tag_id };
   }
   return null;
 }
