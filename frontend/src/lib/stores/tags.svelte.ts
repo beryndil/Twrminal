@@ -234,8 +234,7 @@ export function _hydrateTagPanelFromStorage(): void {
     return;
   }
   try {
-    state.panelCollapsed =
-      window.localStorage.getItem(TAG_FILTER_PANEL_COLLAPSED_KEY) === "true";
+    state.panelCollapsed = window.localStorage.getItem(TAG_FILTER_PANEL_COLLAPSED_KEY) === "true";
   } catch {
     // Private browsing / storage quota — in-memory default applies.
   }
