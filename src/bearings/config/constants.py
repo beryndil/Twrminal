@@ -1251,6 +1251,42 @@ HISTORY_SEARCH_SNIPPET_CHARS: Final[int] = 120
 # vault-search debounce so two reactive search surfaces feel consistent.
 HISTORY_SEARCH_DEBOUNCE_MS: Final[int] = 300
 
+# ---------------------------------------------------------------------------
+# bearings_dir — .bearings/ directory layout (arch §1.1.6).
+#
+# The ``bearings.bearings_dir`` package owns the on-disk contract for
+# ``~/Projects/<X>/.bearings/``.  Every path component and schema constant
+# that the package uses is pinned here so a future rename (e.g. moving from
+# ``.bearings/`` to ``.bdir/``) is a single-symbol edit.
+#
+# The SCHEMA_VERSION is bumped when the on-disk shape of manifest.toml or
+# state.toml changes in a backwards-incompatible way; the contract module
+# reads this constant at validation time and rejects mismatched files with
+# a clear ``ValueError`` rather than silently coercing stale data.
+#
+# HISTORY_CAP bounds how many ``context_start`` (and future) events are
+# kept in ``history.jsonl``.  100 entries ≈ 1-2 months of daily use;
+# ``lifecycle.note_directory_context_start`` trims from the head when the
+# cap is exceeded via atomic rename so the trim is never partial.
+# ---------------------------------------------------------------------------
+
+# Subdirectory name for the bearings directory-context store.
+BEARINGS_DIR_SUBDIR: Final[str] = ".bearings"
+
+# Filenames within BEARINGS_DIR_SUBDIR.
+BEARINGS_DIR_MANIFEST_FILENAME: Final[str] = "manifest.toml"
+BEARINGS_DIR_STATE_FILENAME: Final[str] = "state.toml"
+BEARINGS_DIR_PENDING_FILENAME: Final[str] = "pending.toml"
+BEARINGS_DIR_HISTORY_FILENAME: Final[str] = "history.jsonl"
+
+# Current on-disk schema version.  Read by ``contract.validate_schema_version``
+# and written by ``onboarding.dir_init_body`` when creating fresh files.
+BEARINGS_DIR_SCHEMA_VERSION: Final[int] = 1
+
+# Maximum number of JSONL entries kept in history.jsonl.  Oldest entries
+# (from the head) are dropped when an append would exceed this cap.
+BEARINGS_DIR_HISTORY_CAP: Final[int] = 100
+
 
 # Self-consistency: every profile that appears in the resolution tables
 # below must also appear in :data:`PERMISSION_PROFILE_NAMES`, and every
@@ -1301,6 +1337,13 @@ __all__ = [
     "AUTO_DRIVER_STATE_PAUSED",
     "AUTO_DRIVER_STATE_RUNNING",
     "AVATAR_ALLOWED_MIME_TYPES",
+    "BEARINGS_DIR_HISTORY_CAP",
+    "BEARINGS_DIR_HISTORY_FILENAME",
+    "BEARINGS_DIR_MANIFEST_FILENAME",
+    "BEARINGS_DIR_PENDING_FILENAME",
+    "BEARINGS_DIR_SCHEMA_VERSION",
+    "BEARINGS_DIR_STATE_FILENAME",
+    "BEARINGS_DIR_SUBDIR",
     "BEARINGS_MCP_SERVER_NAME",
     "BEARINGS_TODO_CHECK_DEFAULT_MAX_AGE_DAYS",
     "BEARINGS_TODO_ENTRY_HEADING_PREFIX",
