@@ -1110,8 +1110,7 @@ async def get_session_tokens(
 
     * ``200`` — :class:`TokenTotalsOut` with ``input``, ``output``,
       ``cache_read``, and ``cache_creation`` summed across all
-      assistant-role message rows for the session.  ``cache_creation``
-      is always ``0`` in v18 (no ``cache_creation_tokens`` column).
+      assistant-role message rows for the session.
     * ``404`` — session not found.
 
     Returns ``0`` for all fields when the session exists but has no
@@ -1211,6 +1210,7 @@ async def export_session(session_id: str, request: Request) -> Response:
                 advisor_output_tokens=m.advisor_output_tokens,
                 advisor_calls_count=m.advisor_calls_count,
                 cache_read_tokens=m.cache_read_tokens,
+                cache_creation_tokens=m.cache_creation_tokens,
                 input_tokens=m.input_tokens,
                 output_tokens=m.output_tokens,
                 seq=m.seq,

@@ -79,6 +79,7 @@ import aiosqlite
 from bearings.agent.routing import RoutingDecision
 from bearings.config.constants import (
     EXECUTOR_MODEL_FULL_ID_PREFIX,
+    MODEL_USAGE_KEY_CACHE_CREATION,
     MODEL_USAGE_KEY_CACHE_READ_TOKENS,
     MODEL_USAGE_KEY_INPUT_TOKENS,
     MODEL_USAGE_KEY_OUTPUT_TOKENS,
@@ -114,6 +115,11 @@ class ModelUsageBreakdown:
       across executor + advisor combined (the spec §5 column is a
       single bucket — the SDK reports cache reads per model but
       Bearings persists the rolled-up total per spec).
+    * ``cache_creation_tokens`` — sum across every entry's
+      ``cache_creation_input_tokens`` (per
+      :data:`bearings.config.constants.MODEL_USAGE_KEY_CACHE_CREATION`),
+      across executor + advisor combined. Captures Anthropic's
+      cache-creation billing counter (analytics spec §4.1).
 
     All fields default to ``0`` when ``model_usage`` is ``None``
     (the SDK's ``None`` carrier per ``claude_agent_sdk.types.ResultMessage``)
@@ -128,6 +134,7 @@ class ModelUsageBreakdown:
     advisor_output_tokens: int
     advisor_calls_count: int
     cache_read_tokens: int
+    cache_creation_tokens: int
 
     def __post_init__(self) -> None:
         for field_name, value in (
@@ -137,6 +144,7 @@ class ModelUsageBreakdown:
             ("advisor_output_tokens", self.advisor_output_tokens),
             ("advisor_calls_count", self.advisor_calls_count),
             ("cache_read_tokens", self.cache_read_tokens),
+            ("cache_creation_tokens", self.cache_creation_tokens),
         ):
             if value < 0:
                 raise ValueError(f"ModelUsageBreakdown.{field_name} must be >= 0 (got {value})")
@@ -171,8 +179,8 @@ def extract_model_usage(
             precedence — see module docstring).
 
     Returns:
-        Frozen :class:`ModelUsageBreakdown` with the six spec §5
-        numeric columns. All fields are ``>= 0``.
+        Frozen :class:`ModelUsageBreakdown` with the seven numeric
+        columns. All fields are ``>= 0``.
     """
     if not model_usage:
         return ModelUsageBreakdown(
@@ -182,6 +190,7 @@ def extract_model_usage(
             advisor_output_tokens=0,
             advisor_calls_count=0,
             cache_read_tokens=0,
+            cache_creation_tokens=0,
         )
 
     executor_input = 0
@@ -190,6 +199,7 @@ def extract_model_usage(
     advisor_output = 0
     advisor_calls = 0
     cache_read_total = 0
+    cache_creation_total = 0
 
     for model_key, payload in model_usage.items():
         if not isinstance(payload, Mapping):
@@ -201,6 +211,7 @@ def extract_model_usage(
         input_tokens = _coerce_int(payload.get(MODEL_USAGE_KEY_INPUT_TOKENS))
         output_tokens = _coerce_int(payload.get(MODEL_USAGE_KEY_OUTPUT_TOKENS))
         cache_read_total += _coerce_int(payload.get(MODEL_USAGE_KEY_CACHE_READ_TOKENS))
+        cache_creation_total += _coerce_int(payload.get(MODEL_USAGE_KEY_CACHE_CREATION))
 
         role = _classify_role(
             model_key=model_key,
@@ -227,6 +238,7 @@ def extract_model_usage(
         advisor_output_tokens=advisor_output,
         advisor_calls_count=advisor_calls,
         cache_read_tokens=cache_read_total,
+        cache_creation_tokens=cache_creation_total,
     )
 
 
@@ -362,6 +374,7 @@ async def persist_assistant_turn(
         advisor_output_tokens=breakdown.advisor_output_tokens,
         advisor_calls_count=breakdown.advisor_calls_count,
         cache_read_tokens=breakdown.cache_read_tokens,
+        cache_creation_tokens=breakdown.cache_creation_tokens,
         stopped=stopped,
     )
     if total_cost_usd is not None:

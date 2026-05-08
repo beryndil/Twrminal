@@ -129,6 +129,7 @@ async def _insert_assistant(
         advisor_output_tokens=None,
         advisor_calls_count=0,
         cache_read_tokens=None,
+        cache_creation_tokens=None,
     )
 
 
@@ -244,6 +245,7 @@ async def test_invalid_role_rejected_at_dataclass(
             advisor_output_tokens=None,
             advisor_calls_count=None,
             cache_read_tokens=None,
+            cache_creation_tokens=None,
             input_tokens=None,
             output_tokens=None,
             seq=1,

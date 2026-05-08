@@ -81,6 +81,7 @@ def _to_out(message: Message) -> MessageOut:
         advisor_output_tokens=message.advisor_output_tokens,
         advisor_calls_count=message.advisor_calls_count,
         cache_read_tokens=message.cache_read_tokens,
+        cache_creation_tokens=message.cache_creation_tokens,
         input_tokens=message.input_tokens,
         output_tokens=message.output_tokens,
         seq=message.seq,

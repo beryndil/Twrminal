@@ -311,9 +311,6 @@ class TokenTotalsOut(BaseModel):
     the token columns are treated as 0 by the ``COALESCE(SUM(...), 0)``
     aggregate.
 
-    ``cache_creation`` is always ``0`` in v18 — the ``messages`` table has
-    no ``cache_creation_tokens`` column yet.  The field is included so the
-    response shape is stable when the backend surface lands.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -390,6 +387,7 @@ class MessageExport(BaseModel):
     advisor_output_tokens: int | None
     advisor_calls_count: int | None
     cache_read_tokens: int | None
+    cache_creation_tokens: int | None
     input_tokens: int | None
     output_tokens: int | None
     seq: int

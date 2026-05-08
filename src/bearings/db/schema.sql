@@ -148,6 +148,7 @@ CREATE TABLE IF NOT EXISTS messages (
     advisor_output_tokens    INTEGER,
     advisor_calls_count      INTEGER DEFAULT 0,
     cache_read_tokens        INTEGER,
+    cache_creation_tokens    INTEGER,
     -- legacy flat columns (kept nullable for pre-routing-aware migrated rows
     -- per spec §5 "Backfill for legacy data" and arch §4.7 Optional[int]).
     input_tokens             INTEGER,

@@ -831,6 +831,7 @@ async def _insert_assistant_row(
         advisor_output_tokens=None,
         advisor_calls_count=0,
         cache_read_tokens=None,
+        cache_creation_tokens=None,
     )
 
 
@@ -1112,6 +1113,7 @@ async def _insert_assistant_with_tokens(
         advisor_output_tokens=None,
         advisor_calls_count=0,
         cache_read_tokens=cache_read_tokens,
+        cache_creation_tokens=None,
     )
 
 

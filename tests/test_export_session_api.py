@@ -121,6 +121,7 @@ async def test_export_includes_all_messages(
         "advisor_output_tokens",
         "advisor_calls_count",
         "cache_read_tokens",
+        "cache_creation_tokens",
         "input_tokens",
         "output_tokens",
         "seq",

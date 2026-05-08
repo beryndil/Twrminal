@@ -965,6 +965,7 @@ GC_UPLOADS_DEFAULT_RETENTION_DAYS: Final[int] = 30
 MODEL_USAGE_KEY_INPUT_TOKENS: Final[str] = "inputTokens"
 MODEL_USAGE_KEY_OUTPUT_TOKENS: Final[str] = "outputTokens"
 MODEL_USAGE_KEY_CACHE_READ_TOKENS: Final[str] = "cacheReadInputTokens"
+MODEL_USAGE_KEY_CACHE_CREATION: Final[str] = "cacheCreationInputTokens"
 
 # ``GET /api/sessions/{id}/messages`` page-size cap. The endpoint
 # returns the full transcript by default — for very long sessions a
@@ -1612,6 +1613,7 @@ __all__ = [
     "METRIC_NAME_QUOTA_SONNET",
     "METRIC_NAME_ROUTING_DECISIONS_TOTAL",
     "METRIC_NAME_UPTIME_SECONDS",
+    "MODEL_USAGE_KEY_CACHE_CREATION",
     "MODEL_USAGE_KEY_CACHE_READ_TOKENS",
     "MODEL_USAGE_KEY_INPUT_TOKENS",
     "MODEL_USAGE_KEY_OUTPUT_TOKENS",

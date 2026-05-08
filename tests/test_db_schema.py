@@ -111,6 +111,8 @@ EXPECTED_MESSAGES_ROUTING_COLUMNS: dict[str, str] = {
     "advisor_output_tokens": "INTEGER",
     "advisor_calls_count": "INTEGER",
     "cache_read_tokens": "INTEGER",
+    # analytics-phase-0: cache-creation token billing counter.
+    "cache_creation_tokens": "INTEGER",
 }
 
 # Per docs/model-routing-v1-spec.md §3 default rule table.
@@ -406,6 +408,97 @@ async def test_seeded_rule_has_no_duplicate_priorities(
         per_priority_counts = {int(row[0]): int(row[1]) for row in rows}
 
     assert per_priority_counts == {10: 1, 20: 1, 30: 1, 40: 1, 50: 1, 60: 1, 1000: 1}
+
+
+async def test_cache_creation_tokens_column_exists_nullable_and_round_trips(
+    database_path: Path,
+) -> None:
+    """analytics-phase-0: cache_creation_tokens column added, accepts NULL, round-trips a value.
+
+    Three assertions:
+    1. The column exists on the ``messages`` table after fresh bootstrap.
+    2. Inserting a row with NULL succeeds (legacy / non-caching turns).
+    3. Inserting a row with an integer value and reading it back returns the
+       same integer (round-trip).
+    """
+    factory = get_connection_factory(database_path)
+    async with factory() as connection:
+        await load_schema(connection)
+
+        # 1. Column exists.
+        column_types = await _column_types(connection, "messages")
+        assert "cache_creation_tokens" in column_types, (
+            "messages.cache_creation_tokens missing — schema.sql or _ADDED_COLUMNS regression"
+        )
+        assert column_types["cache_creation_tokens"] == "INTEGER"
+
+        # Minimal session row required for the FK on messages.
+        await connection.execute(
+            "INSERT INTO sessions "
+            "(id, kind, title, working_dir, model, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "sess-1",
+                "chat",
+                "t",
+                "/tmp",
+                "sonnet",
+                "2026-01-01T00:00:00Z",
+                "2026-01-01T00:00:00Z",
+            ),
+        )
+        await connection.commit()
+
+        # 2. NULL accepted.
+        await connection.execute(
+            "INSERT INTO messages (id, session_id, role, content, created_at, "
+            "cache_creation_tokens) VALUES (?, ?, ?, ?, ?, NULL)",
+            ("msg-null", "sess-1", "assistant", "hello", "2026-01-01T00:00:00Z"),
+        )
+        await connection.commit()
+        null_rows = list(
+            await connection.execute_fetchall(
+                "SELECT cache_creation_tokens FROM messages WHERE id = ?", ("msg-null",)
+            )
+        )
+        assert len(null_rows) == 1
+        assert null_rows[0][0] is None
+
+        # 3. Integer round-trips.
+        await connection.execute(
+            "INSERT INTO messages (id, session_id, role, content, created_at, "
+            "cache_creation_tokens) VALUES (?, ?, ?, ?, ?, ?)",
+            ("msg-val", "sess-1", "assistant", "world", "2026-01-01T00:00:01Z", 4200),
+        )
+        await connection.commit()
+        val_rows = list(
+            await connection.execute_fetchall(
+                "SELECT cache_creation_tokens FROM messages WHERE id = ?", ("msg-val",)
+            )
+        )
+        assert len(val_rows) == 1
+        assert int(val_rows[0][0]) == 4200
+
+
+def test_cache_creation_tokens_in_added_columns_registry() -> None:
+    """analytics-phase-0: _ADDED_COLUMNS contains the cache_creation_tokens entry.
+
+    Verifies the ALTER-path guard that lets existing DBs (pre-phase-0) pick up
+    the column on next bootstrap without a separate migration script.  The
+    idempotent-re-init test above already verifies that _ADDED_COLUMNS does not
+    error on a fresh DB; this test verifies the entry is *present*.
+    """
+    from bearings.db.connection import _ADDED_COLUMNS
+
+    messages_entries = [(t, c, ct) for t, c, ct in _ADDED_COLUMNS if t == "messages"]
+    column_names = [c for _, c, _ in messages_entries]
+    assert "cache_creation_tokens" in column_names, (
+        "messages.cache_creation_tokens missing from _ADDED_COLUMNS — "
+        "existing DBs will not receive the column on next bootstrap"
+    )
+    # Locate the entry and verify the type.
+    entry = next(e for e in messages_entries if e[1] == "cache_creation_tokens")
+    assert entry[2] == "INTEGER"
 
 
 async def test_hand_verify_recipe_runs_clean() -> None:

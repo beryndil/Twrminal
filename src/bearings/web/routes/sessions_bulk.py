@@ -122,6 +122,7 @@ async def _build_session_export(db: aiosqlite.Connection, session_id: str) -> Se
                 advisor_output_tokens=m.advisor_output_tokens,
                 advisor_calls_count=m.advisor_calls_count,
                 cache_read_tokens=m.cache_read_tokens,
+                cache_creation_tokens=m.cache_creation_tokens,
                 input_tokens=m.input_tokens,
                 output_tokens=m.output_tokens,
                 seq=m.seq,

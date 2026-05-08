@@ -93,6 +93,7 @@ class Message:
     advisor_output_tokens: int | None
     advisor_calls_count: int | None
     cache_read_tokens: int | None
+    cache_creation_tokens: int | None
     input_tokens: int | None
     output_tokens: int | None
     # SQLite implicit rowid — monotonically increasing per insertion order.
@@ -130,6 +131,7 @@ class Message:
             ("advisor_output_tokens", self.advisor_output_tokens),
             ("advisor_calls_count", self.advisor_calls_count),
             ("cache_read_tokens", self.cache_read_tokens),
+            ("cache_creation_tokens", self.cache_creation_tokens),
             ("input_tokens", self.input_tokens),
             ("output_tokens", self.output_tokens),
         ):
@@ -199,6 +201,7 @@ async def _insert(
         advisor_output_tokens=None,
         advisor_calls_count=None,
         cache_read_tokens=None,
+        cache_creation_tokens=None,
         input_tokens=None,
         output_tokens=None,
         seq=0,  # placeholder — rowid assigned by DB; actual value via get()
@@ -237,6 +240,7 @@ async def insert_assistant(
     advisor_output_tokens: int | None,
     advisor_calls_count: int,
     cache_read_tokens: int | None,
+    cache_creation_tokens: int | None,
     stopped: bool = False,
 ) -> Message:
     """Insert an assistant-role row carrying the spec §5 routing + usage fields.
@@ -287,6 +291,7 @@ async def insert_assistant(
         advisor_output_tokens=advisor_output_tokens,
         advisor_calls_count=advisor_calls_count,
         cache_read_tokens=cache_read_tokens,
+        cache_creation_tokens=cache_creation_tokens,
         input_tokens=None,
         output_tokens=None,
         seq=0,
@@ -300,8 +305,8 @@ async def insert_assistant(
         "routing_source, routing_reason, matched_rule_id, evaluated_rules, "
         "executor_input_tokens, executor_output_tokens, "
         "advisor_input_tokens, advisor_output_tokens, "
-        "advisor_calls_count, cache_read_tokens, stopped"
-        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "advisor_calls_count, cache_read_tokens, cache_creation_tokens, stopped"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             message_id,
             session_id,
@@ -321,6 +326,7 @@ async def insert_assistant(
             advisor_output_tokens,
             advisor_calls_count,
             cache_read_tokens,
+            cache_creation_tokens,
             1 if stopped else 0,
         ),
     )
@@ -431,10 +437,7 @@ async def get_token_totals(
 
     Returns ``(input, output, cache_read, cache_creation)`` summed across
     all assistant-role rows.  NULL token fields are treated as 0 by
-    ``COALESCE``.  ``cache_creation`` is always ``0`` in v18 — the
-    ``messages`` table has no ``cache_creation_tokens`` column yet; the
-    slot is reserved in the response shape for when the backend surface
-    lands.
+    ``COALESCE``.
 
     Per ``docs/behavior/chat.md`` §"Token totals hydration contract"
     (gap-cycle-13-003).
@@ -443,7 +446,8 @@ async def get_token_totals(
         "SELECT"
         "  COALESCE(SUM(executor_input_tokens), 0),"
         "  COALESCE(SUM(executor_output_tokens), 0),"
-        "  COALESCE(SUM(cache_read_tokens), 0)"
+        "  COALESCE(SUM(cache_read_tokens), 0),"
+        "  COALESCE(SUM(cache_creation_tokens), 0)"
         " FROM messages"
         " WHERE session_id = ? AND role = 'assistant'",
         (session_id,),
@@ -454,7 +458,7 @@ async def get_token_totals(
         await cursor.close()
     if row is None:
         return (0, 0, 0, 0)
-    return (int(row[0]), int(row[1]), int(row[2]), 0)
+    return (int(row[0]), int(row[1]), int(row[2]), int(row[3]))
 
 
 async def count_for_session(
@@ -635,7 +639,7 @@ _SELECT_MESSAGE_COLUMNS = (
     "executor_model, advisor_model, effort_level, routing_source, routing_reason, "
     "matched_rule_id, "
     "executor_input_tokens, executor_output_tokens, advisor_input_tokens, "
-    "advisor_output_tokens, advisor_calls_count, cache_read_tokens, "
+    "advisor_output_tokens, advisor_calls_count, cache_read_tokens, cache_creation_tokens, "
     "input_tokens, output_tokens, rowid AS seq, "
     "COALESCE(pinned, 0) AS pinned, "
     "COALESCE(hidden_from_context, 0) AS hidden_from_context, "
@@ -693,6 +697,7 @@ async def import_messages(
             m.get("advisor_output_tokens"),
             m.get("advisor_calls_count"),
             m.get("cache_read_tokens"),
+            m.get("cache_creation_tokens"),
             m.get("input_tokens"),
             m.get("output_tokens"),
             int(bool(m.get("pinned", False))),
@@ -707,8 +712,9 @@ async def import_messages(
         "executor_model, advisor_model, effort_level, routing_source, routing_reason, "
         "matched_rule_id, evaluated_rules, executor_input_tokens, executor_output_tokens, "
         "advisor_input_tokens, advisor_output_tokens, advisor_calls_count, "
-        "cache_read_tokens, input_tokens, output_tokens, pinned, hidden_from_context, stopped) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "cache_read_tokens, cache_creation_tokens, input_tokens, output_tokens, "
+        "pinned, hidden_from_context, stopped) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rows,
     )
     await connection.commit()
@@ -752,13 +758,14 @@ def _row_to_message(row: aiosqlite.Row | tuple[object, ...]) -> Message:
         advisor_output_tokens=_opt_int(row[14]),
         advisor_calls_count=_opt_int(row[15]),
         cache_read_tokens=_opt_int(row[16]),
-        input_tokens=_opt_int(row[17]),
-        output_tokens=_opt_int(row[18]),
-        seq=int(str(row[19])),
-        pinned=bool(int(str(row[20]))) if row[20] is not None else False,
-        hidden_from_context=bool(int(str(row[21]))) if row[21] is not None else False,
-        evaluated_rules=_parse_evaluated_rules(row[22]),
-        stopped=bool(int(str(row[23]))) if row[23] is not None else False,
+        cache_creation_tokens=_opt_int(row[17]),
+        input_tokens=_opt_int(row[18]),
+        output_tokens=_opt_int(row[19]),
+        seq=int(str(row[20])),
+        pinned=bool(int(str(row[21]))) if row[21] is not None else False,
+        hidden_from_context=bool(int(str(row[22]))) if row[22] is not None else False,
+        evaluated_rules=_parse_evaluated_rules(row[23]),
+        stopped=bool(int(str(row[24]))) if row[24] is not None else False,
     )
 
 

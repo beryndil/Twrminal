@@ -147,6 +147,7 @@ async def test_insert_assistant_stopped_true(db: aiosqlite.Connection) -> None:
         advisor_output_tokens=None,
         advisor_calls_count=0,
         cache_read_tokens=None,
+        cache_creation_tokens=None,
         stopped=True,
     )
     assert msg.stopped is True
@@ -174,6 +175,7 @@ async def test_insert_assistant_stopped_false_default(db: aiosqlite.Connection) 
         advisor_output_tokens=None,
         advisor_calls_count=0,
         cache_read_tokens=None,
+        cache_creation_tokens=None,
         # stopped not passed — defaults to False
     )
     assert msg.stopped is False
@@ -348,6 +350,7 @@ def test_message_out_stopped_field_default() -> None:
         advisor_output_tokens=None,
         advisor_calls_count=None,
         cache_read_tokens=None,
+        cache_creation_tokens=None,
         input_tokens=None,
         output_tokens=None,
         seq=1,
@@ -375,6 +378,7 @@ def test_message_out_stopped_true() -> None:
         advisor_output_tokens=None,
         advisor_calls_count=None,
         cache_read_tokens=None,
+        cache_creation_tokens=None,
         input_tokens=None,
         output_tokens=None,
         seq=1,

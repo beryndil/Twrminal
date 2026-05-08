@@ -57,6 +57,7 @@ def test_breakdown_rejects_negative_token_count() -> None:
             advisor_output_tokens=0,
             advisor_calls_count=0,
             cache_read_tokens=0,
+            cache_creation_tokens=0,
         )
 
 
@@ -71,6 +72,7 @@ def test_extract_none_returns_all_zero_breakdown() -> None:
         advisor_output_tokens=0,
         advisor_calls_count=0,
         cache_read_tokens=0,
+        cache_creation_tokens=0,
     )
 
 

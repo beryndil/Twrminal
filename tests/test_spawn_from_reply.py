@@ -65,6 +65,7 @@ async def _make_parent_with_assistant_message(
         advisor_output_tokens=None,
         advisor_calls_count=0,
         cache_read_tokens=None,
+        cache_creation_tokens=None,
     )
     return session.id, msg.id
 
@@ -202,6 +203,7 @@ async def test_spawn_from_reply_404_on_message_from_other_session(
         advisor_output_tokens=None,
         advisor_calls_count=0,
         cache_read_tokens=None,
+        cache_creation_tokens=None,
     )
     with TestClient(app) as client:
         response = client.post(f"/api/sessions/{parent_id}/spawn_from_reply/{other_msg.id}")

@@ -68,6 +68,7 @@ class MessageOut(BaseModel):
     advisor_output_tokens: int | None
     advisor_calls_count: int | None
     cache_read_tokens: int | None
+    cache_creation_tokens: int | None
     # Legacy flat carriers for ``unknown_legacy`` migrated rows per
     # spec §5 "Backfill for legacy data". The migration in item 3.2
     # populates these from v0.17.x ``messages.input_tokens`` /

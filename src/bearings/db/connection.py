@@ -143,6 +143,11 @@ _ADDED_COLUMNS: Final[tuple[tuple[str, str, str], ...]] = (
         "stopped",
         "INTEGER NOT NULL DEFAULT 0 CHECK (stopped IN (0, 1))",
     ),
+    # analytics-phase-0: cache-creation token billing counter per Anthropic
+    # API ``cacheCreationInputTokens`` field. Existing rows get NULL (no
+    # data captured before this column landed; treated as 0 by COALESCE in
+    # aggregation queries per analytics spec §4.1).
+    ("messages", "cache_creation_tokens", "INTEGER"),
 )
 
 

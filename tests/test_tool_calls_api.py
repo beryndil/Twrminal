@@ -89,6 +89,7 @@ async def _make_assistant(conn: aiosqlite.Connection, session_id: str) -> str:
         advisor_output_tokens=None,
         advisor_calls_count=0,
         cache_read_tokens=None,
+        cache_creation_tokens=None,
     )
     return msg.id
 
