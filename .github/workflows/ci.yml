@@ -54,7 +54,7 @@ jobs:
         run: uv run ruff format --check .
 
       - name: mypy --strict
-        run: uv run mypy src tests
+        run: uv run mypy src tests scripts
 
       - name: vulture (with allowlist)
         run: uv run vulture src tests config/allowlists/vulture.txt
