@@ -7315,6 +7315,13 @@
             ],
             "title": "Matched Rule Id"
           },
+          "evaluated_rules": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Evaluated Rules"
+          },
           "executor_input_tokens": {
             "anyOf": [
               {

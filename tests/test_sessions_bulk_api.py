@@ -5,6 +5,7 @@ Covers:
 * Transactional semantics: a missing ID in the middle does not abort the batch.
 * Export bundle round-trips through ``POST /api/sessions/import``.
 * 422 on unknown op, missing tag_id for tag/untag.
+* Broadcast survives concurrent delete after commit (feature-1-001 regression).
 """
 
 from __future__ import annotations
@@ -17,11 +18,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import bearings.web.routes.sessions_bulk as sessions_bulk_module
 from bearings.db import messages as messages_db
 from bearings.db import sessions as sessions_db
 from bearings.db import tags as tags_db
 from bearings.db.connection import load_schema
+from bearings.db.sessions import Session
 from bearings.web.app import create_app
+from bearings.web.models.sessions import BulkResultItem, SessionOut
 
 
 @pytest.fixture
@@ -148,6 +152,66 @@ async def test_bulk_close_partial_failure(
     row2 = await sessions_db.get(conn, s2)
     assert row1 is not None and row1.closed_at is not None
     assert row2 is not None and row2.closed_at is not None
+
+
+async def test_bulk_close_broadcast_survives_concurrent_delete(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for feature-1-001: broadcast must fire even when the session
+    row is deleted from the DB after _bulk_close commits.
+
+    Simulates the race by wrapping _bulk_close so it deletes the row after
+    returning (mimicking a concurrent DELETE arriving in the window between
+    _bulk_close's COMMIT and the route's broadcast).  With the fix in place,
+    the route uses the Session captured inside the transaction, so
+    publish_upsert still fires for the closed session despite the row being
+    absent from the DB at broadcast time.
+    """
+    app, conn = app_and_db
+    sid = await _new_chat(conn, "race-target")
+
+    # Track publish_upsert calls via the app's wired broadcaster.
+    broadcaster = app.state.sessions_broadcaster
+    upserted_ids: list[str] = []
+    original_publish_upsert = broadcaster.publish_upsert
+
+    def tracking_publish_upsert(session_out: SessionOut) -> None:
+        upserted_ids.append(session_out.id)
+        original_publish_upsert(session_out)
+
+    monkeypatch.setattr(broadcaster, "publish_upsert", tracking_publish_upsert)
+
+    # Wrap _bulk_close to simulate the race: after it returns (and commits),
+    # delete the row so that a post-commit re-fetch would return None.
+    original_bulk_close = sessions_bulk_module._bulk_close
+
+    async def racing_bulk_close(
+        db: aiosqlite.Connection,
+        session_ids: list[str],
+    ) -> list[tuple[BulkResultItem, Session | None]]:
+        pairs = await original_bulk_close(db, session_ids)
+        # Concurrent DELETE arrives here — the row is gone from the DB
+        # before the route has a chance to broadcast.
+        for session_id in session_ids:
+            await db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        await db.commit()
+        return pairs
+
+    monkeypatch.setattr(sessions_bulk_module, "_bulk_close", racing_bulk_close)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/sessions/bulk",
+            json={"op": "close", "session_ids": [sid]},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["results"][0]["ok"] is True
+    # The broadcast must still fire even though the row no longer exists
+    # in the DB at the time the route processes the results.
+    assert sid in upserted_ids
 
 
 # ---------------------------------------------------------------------------

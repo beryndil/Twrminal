@@ -52,6 +52,7 @@ from bearings.db import messages as messages_db
 from bearings.db import sdk_entries as sdk_entries_db
 from bearings.db import sessions as sessions_db
 from bearings.db._id import now_iso
+from bearings.db.sessions import Session
 from bearings.web.models.sessions import (
     BulkExportOut,
     BulkResultItem,
@@ -155,9 +156,18 @@ _SAVEPOINT = "bulk_item"
 async def _bulk_close(
     db: aiosqlite.Connection,
     session_ids: list[str],
-) -> list[BulkResultItem]:
-    """Close each session; per-ID savepoint isolation."""
-    results: list[BulkResultItem] = []
+) -> list[tuple[BulkResultItem, Session | None]]:
+    """Close each session; per-ID savepoint isolation.
+
+    Returns pairs of ``(BulkResultItem, Session | None)``.  The
+    ``Session`` slot holds the closed row as it existed *inside* the
+    transaction — populated for every ``ok=True`` entry, ``None`` for
+    failures.  Callers use this pre-captured row to broadcast upserts
+    without a post-commit re-fetch, closing the race window where a
+    concurrent delete between ``COMMIT`` and the re-fetch would silently
+    drop the broadcast (feature-1-001).
+    """
+    results: list[tuple[BulkResultItem, Session | None]] = []
     for sid in session_ids:
         await db.execute(f"SAVEPOINT {_SAVEPOINT}")
         try:
@@ -172,19 +182,26 @@ async def _bulk_close(
                 await db.execute(f"ROLLBACK TO SAVEPOINT {_SAVEPOINT}")
                 await db.execute(f"RELEASE SAVEPOINT {_SAVEPOINT}")
                 results.append(
-                    BulkResultItem(
-                        session_id=sid,
-                        ok=False,
-                        detail=f"no session matches {sid!r}",
+                    (
+                        BulkResultItem(
+                            session_id=sid,
+                            ok=False,
+                            detail=f"no session matches {sid!r}",
+                        ),
+                        None,
                     )
                 )
             else:
                 await db.execute(f"RELEASE SAVEPOINT {_SAVEPOINT}")
-                results.append(BulkResultItem(session_id=sid, ok=True))
+                # Capture the closed row inside the transaction so the caller
+                # can broadcast without a post-commit re-fetch that is
+                # vulnerable to a concurrent delete (feature-1-001).
+                closed_row = await sessions_db.get(db, sid)
+                results.append((BulkResultItem(session_id=sid, ok=True), closed_row))
         except Exception as exc:
             await db.execute(f"ROLLBACK TO SAVEPOINT {_SAVEPOINT}")
             await db.execute(f"RELEASE SAVEPOINT {_SAVEPOINT}")
-            results.append(BulkResultItem(session_id=sid, ok=False, detail=str(exc)))
+            results.append((BulkResultItem(session_id=sid, ok=False, detail=str(exc)), None))
             _LOG.warning("bulk close failed for %r: %s", sid, exc)
     await db.commit()
     return results
@@ -330,14 +347,15 @@ async def run_sessions_bulk(payload: BulkSessionsIn, request: Request) -> Respon
     # Structured as if/elif so both constants are referenced (ruff F401).
     # The KNOWN_BULK_OPS guard above ensures op is "close" or "delete" here.
     if payload.op == BULK_OP_CLOSE:
-        results = await _bulk_close(db, session_ids)
-        # Broadcast upserts so the sidebar refreshes on all open tabs.
+        close_pairs = await _bulk_close(db, session_ids)
+        results = [r for r, _ in close_pairs]
+        # Broadcast upserts using rows captured inside _bulk_close's
+        # transaction — no post-commit re-fetch, no race window
+        # (feature-1-001).
         if broadcaster is not None:
-            for r in results:
-                if r.ok:
-                    row = await sessions_db.get(db, r.session_id)
-                    if row is not None:
-                        broadcaster.publish_upsert(_to_out(row))
+            for r, closed_session in close_pairs:
+                if r.ok and closed_session is not None:
+                    broadcaster.publish_upsert(_to_out(closed_session))
     elif payload.op == BULK_OP_DELETE:
         results = await _bulk_delete(db, session_ids)
         if broadcaster is not None:
