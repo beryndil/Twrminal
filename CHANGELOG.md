@@ -9,6 +9,39 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **fix(frontend): F9-rt-01 — per-theme treatment CSS now in dist bundle:**
+  `[data-theme=midnight-glass]` radial-gradient, backdrop-filter, and aside treatments
+  were absent from the served CSS bundle because the four `@import` statements in
+  `frontend/src/app.css` appeared after `@tailwind base;`, causing PostCSS/Vite to
+  silently drop them on every rebuild. The `@import` lines were moved above
+  `@tailwind base;` (theme-sweep-001, commit `788b0e1d`) and the dist was rebuilt.
+  Verified: `[data-theme=midnight-glass]` treatment rules confirmed present in current
+  dist bundle. (Already resolved by sibling executor A3 at `788b0e1d`.)
+
+- **fix(keyboard): F9-rt-14 — Ctrl+K now opens the SidebarSearch overlay:**
+  `KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH` had `displayOnly: true` in `bindings.ts`,
+  so `buildRegistry` skipped it and Ctrl+K was never dispatched. `SidebarSearch`
+  registered its handler via `bindHandler` — removing `displayOnly: true` connects the
+  two. (Already resolved by sibling executor A5 at `26a0d7d5`.)
+
+- **fix(frontend): F9-rt-17 — no state\_unsafe\_mutation on ? → ? → Ctrl+Shift+P → Esc:**
+  A reactive computation in the cheat-sheet / command-palette overlay path mutated
+  `$state` mid-derivation (Svelte error `state_unsafe_mutation`). Fixed by the
+  Svelte 5.55.5 compiler upgrade (commit `5a9cff64` CVE dep bump), which corrects
+  the compiled reactive graph for the `$effect` in `KeybindingsProvider` that calls
+  `setModalOpen`. Dist rebuilt after the upgrade. Added `KeybindingsProvider.test.ts`
+  regression guard for the `?` → `?` → Ctrl+Shift+P → Esc sequence.
+
+- **fix(context-menus): F9-rt-25 — destructive confirm dialog renders "Don't ask again this session" checkbox:**
+  The per-session suppression checkbox was unreachable because `ConfirmDialog` was not
+  invoked with `showSuppressCheckbox={true}` from the `ContextMenu` bridge.
+  `ContextMenu.svelte` now passes `showSuppressCheckbox={true}` and the
+  `onConfirmAndSuppress` callback wired to `suppressAction(actionId)`. Subsequent
+  destructive actions of the same type short-circuit the dialog; the in-memory
+  suppression set resets on hard-refresh / new tab. (Source wiring was added in
+  gap-cycle-10-004, commit `ef69195d`; dist rebuilt at `51c2cabd`.) Regression
+  tests added to `ConfirmDialog.test.ts`.
+
 - **perf(frontend): code-split shiki via dynamic import (PERF-BUG-005/006 frontend):**
   `render.ts` statically imported shiki at module load time. Changed to `import("shiki")`
   inside `getHighlighter()` so shiki only loads when the first code block needs
