@@ -9,6 +9,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **fix(vault): row metadata — parent-dir subtitle + relative mtime
+  (F7-RT-00):** Vault list rows were rendering the entry label alone.
+  Now each plan/todo row renders a subtitle line showing the parent
+  directory short name and a relative-time string ("5m ago", "2d ago").
+  Added `parentDirName` and `formatRelativeTime` helpers (exported for
+  unit tests) to the VaultPanel module block.
+
+- **fix(vault): linkifier applied to vault reader body (F7-RT-01):**
+  `renderMarkdown` in `render.ts` had no linkifier extension, so bare
+  URLs and session references in vault doc bodies rendered as plain text.
+  Added `renderMarkdownWithLinkifier` — a separate `Marked` instance with
+  two inline extensions: `vaultBareUrl` (bare `https?://` → `<a
+  target="_blank">`) and `vaultSessionId` (`ses_<hex>` → internal
+  `/sessions/<id>` anchor). VaultPanel now uses this path for the reading
+  panel body. `BearingsRenderer` (`data-cm-target` attributes) is
+  preserved via `setOptions()`.
+
+- **fix(vault): "Open against this session" affordance (F7-RT-02):**
+  The reader header had no affordance to pin the active session. Added an
+  "Open against this session" button (visible when `activeSessionId ≠
+  null` and a doc is selected) that stores a `pinnedSessionId` in local
+  state and shows a "Pinned to session" indicator in the header. Paste-
+  into-composer operations use the pinned session when set, falling back
+  to the prop-supplied `activeSessionId`.
+
 - **feat(cli): add `bearings init` and `bearings migrate` subcommands
   (F13-rr-12 — fulfils v1.0.0 stability commitment §"CLI flag surface"):**
   Both subcommands were named as stable v1.x CLI surfaces in the

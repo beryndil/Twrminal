@@ -5,6 +5,11 @@
  * - Runs `marked` against CommonMark + GFM input.
  * - `BearingsRenderer` stamps `data-cm-target` on code blocks and links.
  *
+ * `renderMarkdownWithLinkifier` contract (F7-RT-01):
+ * - Same as `renderMarkdown` plus two inline extensions:
+ *   - Bare https?:// URLs become ``<a target="_blank">`` anchors.
+ *   - ``ses_<hex>`` session-id references become ``/sessions/<id>`` anchors.
+ *
  * `highlightCode` contract (gap-cycle-04-002):
  * - Uses shiki's CSS-variables theme so every highlighted span carries
  *   ``var(--shiki-token-*)`` placeholders rather than baked hex literals.
@@ -15,7 +20,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { THEME_EVERGREEN, THEME_PAPER_LIGHT } from "../config";
-import { highlightCode, renderMarkdown } from "../render";
+import { highlightCode, renderMarkdown, renderMarkdownWithLinkifier } from "../render";
 import { _resetForTests } from "../themes/store.svelte";
 
 describe("renderMarkdown", () => {
@@ -40,6 +45,46 @@ describe("renderMarkdown", () => {
     const html = await renderMarkdown("[click](https://example.com)");
     expect(html).toContain('data-cm-target="link"');
     expect(html).toContain('href="https://example.com"');
+  });
+});
+
+describe("renderMarkdownWithLinkifier (F7-RT-01)", () => {
+  it("auto-links bare https:// URLs in Markdown body", async () => {
+    const html = await renderMarkdownWithLinkifier(
+      "See https://example.com for details.",
+    );
+    expect(html).toContain('href="https://example.com"');
+    expect(html).toContain('target="_blank"');
+  });
+
+  it("auto-links ses_<hex> session-id references to /sessions/<id>", async () => {
+    const sessionId = "ses_19a99d945d553189176f00be1afb3e6b";
+    const html = await renderMarkdownWithLinkifier(
+      `Check ${sessionId} in the sidebar.`,
+    );
+    expect(html).toContain(`href="/sessions/${sessionId}"`);
+    expect(html).toContain(sessionId);
+  });
+
+  it("still renders normal Markdown (bold, links) correctly", async () => {
+    const html = await renderMarkdownWithLinkifier(
+      "**bold** and [click](https://x.com)",
+    );
+    expect(html).toContain("<strong>bold</strong>");
+    expect(html).toContain('href="https://x.com"');
+  });
+
+  it("does NOT double-link explicit Markdown links", async () => {
+    // An explicit [text](url) markdown link should not be processed
+    // a second time by the vaultBareUrl extension.
+    const html = await renderMarkdownWithLinkifier("[text](https://example.com)");
+    const matchCount = (html.match(/href="https:\/\/example\.com"/g) ?? []).length;
+    expect(matchCount).toBe(1);
+  });
+
+  it("stamps data-cm-target on code blocks (BearingsRenderer still active)", async () => {
+    const html = await renderMarkdownWithLinkifier("```\ncode\n```");
+    expect(html).toContain('data-cm-target="code_block"');
   });
 });
 

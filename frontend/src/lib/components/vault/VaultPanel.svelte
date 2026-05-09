@@ -75,6 +75,43 @@
   export function entryLabel(entry: VaultEntryOut): string {
     return entry.title ?? entry.slug;
   }
+
+  /**
+   * Extract the parent directory short name from an absolute path
+   * (F7-RT-00; vault.md §"When the user opens the vault" — "the parent
+   * directory short name").
+   *
+   * ``/home/u/.claude/plans/foo.md`` → ``plans``
+   * ``/home/u/Projects/my-project/TODO.md`` → ``my-project``
+   *
+   * Returns an empty string when the path has no discernible parent
+   * (fewer than two non-empty path segments).
+   */
+  export function parentDirName(path: string): string {
+    const parts = path.split("/").filter((p) => p.length > 0);
+    return parts.length >= 2 ? (parts[parts.length - 2] ?? "") : "";
+  }
+
+  /**
+   * Format a Unix timestamp in **seconds** as a human-readable
+   * relative-time string (F7-RT-00; vault.md §"When the user opens the
+   * vault" — "a relative mtime ('2 days ago')").
+   *
+   * Tiers: < 60 s → "Xs ago" · < 3600 s → "Xm ago" ·
+   * < 86 400 s → "Xh ago" · otherwise → "Xd ago".
+   *
+   * ``nowMs`` defaults to ``Date.now()`` and is exposed as a parameter
+   * so unit tests can supply a fixed clock without mocking globals.
+   */
+  export function formatRelativeTime(mtimeSec: number, nowMs: number = Date.now()): string {
+    const diffSec = Math.max(0, Math.floor((nowMs - mtimeSec * 1000) / 1000));
+    if (diffSec < 60) return `${diffSec}s ago`;
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHour = Math.floor(diffMin / 60);
+    if (diffHour < 24) return `${diffHour}h ago`;
+    return `${Math.floor(diffHour / 24)}d ago`;
+  }
 </script>
 
 <script lang="ts">
@@ -120,7 +157,7 @@
     pasteIntoComposer as pasteIntoComposerDefault,
     type PendingPaste,
   } from "../../stores/composerBridge.svelte";
-  import { renderMarkdown as renderMarkdownDefault } from "../../render";
+  import { renderMarkdownWithLinkifier as renderMarkdownDefault } from "../../render";
   import { sanitizeHtml as sanitizeHtmlDefault } from "../../sanitize";
 
   interface Props {
@@ -161,6 +198,14 @@
   let revealedRedactions = $state<ReadonlySet<number>>(new Set<number>());
   let renderedHtml = $state("");
   let toast = $state<string | null>(null);
+  /**
+   * Session explicitly pinned to this vault reader via the "Open
+   * against this session" affordance (F7-RT-02; vault.md §"Tag
+   * association"). When set, paste operations target this id instead
+   * of ``activeSessionId`` so the user can lock a session even after
+   * navigating away from it.
+   */
+  let pinnedSessionId = $state<string | null>(null);
 
   /**
    * Default clipboard write — uses :data:`navigator.clipboard.writeText`
@@ -274,12 +319,13 @@
   }
 
   function handlePasteLinkIntoComposer(entry: VaultEntryOut): void {
-    if (activeSessionId === null) {
+    const targetSession = pinnedSessionId ?? activeSessionId;
+    if (targetSession === null) {
       showToast(VAULT_STRINGS.pasteToastNoActiveSession);
       return;
     }
     const paste: PendingPaste = {
-      sessionId: activeSessionId,
+      sessionId: targetSession,
       text: entry.markdown_link,
       kind: "link",
     };
@@ -288,17 +334,25 @@
   }
 
   function handlePasteBodyIntoComposer(doc: VaultDocOut): void {
-    if (activeSessionId === null) {
+    const targetSession = pinnedSessionId ?? activeSessionId;
+    if (targetSession === null) {
       showToast(VAULT_STRINGS.pasteToastNoActiveSession);
       return;
     }
     const paste: PendingPaste = {
-      sessionId: activeSessionId,
+      sessionId: targetSession,
       text: doc.body,
       kind: "body",
     };
     pasteIntoComposer(paste);
     showToast(VAULT_STRINGS.pasteToastBodyPasted);
+  }
+
+  /** Pin the currently-active session to this vault reader (F7-RT-02). */
+  function handleOpenAgainstSession(): void {
+    if (activeSessionId !== null) {
+      pinnedSessionId = activeSessionId;
+    }
   }
 
   function showToast(message: string): void {
@@ -325,6 +379,13 @@
   const isFullyEmpty = $derived(
     list !== null && list.plans.length === 0 && list.todos.length === 0,
   );
+  /**
+   * Effective session id for paste-into-composer operations (F7-RT-02).
+   * ``pinnedSessionId`` wins when set (user explicitly pinned a session
+   * via the "Open against this session" affordance); falls back to the
+   * routed ``activeSessionId`` prop.
+   */
+  const effectiveSessionId = $derived(pinnedSessionId ?? activeSessionId);
 </script>
 
 <section
@@ -423,7 +484,7 @@
               <li>
                 <button
                   type="button"
-                  class="w-full rounded px-2 py-1 text-left text-sm hover:bg-surface-2"
+                  class="w-full rounded px-2 py-1 text-left hover:bg-surface-2"
                   class:bg-surface-2={vaultStore.selected?.entry.id === entry.id}
                   draggable={true}
                   data-testid="vault-panel-row"
@@ -432,7 +493,14 @@
                   onclick={() => handleSelectEntry(entry.id)}
                   ondragstart={(event) => handleDragStartVaultRow(entry, event)}
                 >
-                  {entryLabel(entry)}
+                  <span class="block truncate text-sm">{entryLabel(entry)}</span>
+                  <span
+                    class="flex items-baseline justify-between text-xs text-fg-muted"
+                    data-testid="vault-panel-row-meta"
+                  >
+                    <span class="truncate">{parentDirName(entry.path)}</span>
+                    <span class="ml-1 shrink-0">{formatRelativeTime(entry.mtime)}</span>
+                  </span>
                 </button>
               </li>
             {/each}
@@ -448,7 +516,7 @@
               <li>
                 <button
                   type="button"
-                  class="w-full rounded px-2 py-1 text-left text-sm hover:bg-surface-2"
+                  class="w-full rounded px-2 py-1 text-left hover:bg-surface-2"
                   class:bg-surface-2={vaultStore.selected?.entry.id === entry.id}
                   draggable={true}
                   data-testid="vault-panel-row"
@@ -457,7 +525,14 @@
                   onclick={() => handleSelectEntry(entry.id)}
                   ondragstart={(event) => handleDragStartVaultRow(entry, event)}
                 >
-                  {entryLabel(entry)}
+                  <span class="block truncate text-sm">{entryLabel(entry)}</span>
+                  <span
+                    class="flex items-baseline justify-between text-xs text-fg-muted"
+                    data-testid="vault-panel-row-meta"
+                  >
+                    <span class="truncate">{parentDirName(entry.path)}</span>
+                    <span class="ml-1 shrink-0">{formatRelativeTime(entry.mtime)}</span>
+                  </span>
                 </button>
               </li>
             {/each}
@@ -516,8 +591,8 @@
             type="button"
             class="rounded border border-border bg-surface-2 px-2 py-1 text-xs text-fg hover:bg-surface-1 disabled:opacity-50"
             data-testid="vault-panel-paste-link"
-            disabled={activeSessionId === null}
-            title={activeSessionId === null ? VAULT_STRINGS.pasteToastNoActiveSession : undefined}
+            disabled={effectiveSessionId === null}
+            title={effectiveSessionId === null ? VAULT_STRINGS.pasteToastNoActiveSession : undefined}
             onclick={() => handlePasteLinkIntoComposer(vaultStore.selected!.entry)}
           >
             {VAULT_STRINGS.pasteMarkdownLinkIntoComposer}
@@ -526,13 +601,29 @@
             type="button"
             class="rounded border border-border bg-surface-2 px-2 py-1 text-xs text-fg hover:bg-surface-1 disabled:opacity-50"
             data-testid="vault-panel-paste-body"
-            disabled={activeSessionId === null}
-            title={activeSessionId === null ? VAULT_STRINGS.pasteToastNoActiveSession : undefined}
+            disabled={effectiveSessionId === null}
+            title={effectiveSessionId === null ? VAULT_STRINGS.pasteToastNoActiveSession : undefined}
             onclick={() => handlePasteBodyIntoComposer(vaultStore.selected!)}
           >
             {VAULT_STRINGS.pasteBodyIntoComposer}
           </button>
+          {#if activeSessionId !== null}
+            <button
+              type="button"
+              class="rounded border border-border bg-surface-2 px-2 py-1 text-xs text-fg hover:bg-surface-1"
+              class:border-accent={pinnedSessionId !== null}
+              data-testid="vault-panel-open-against-session"
+              onclick={handleOpenAgainstSession}
+            >
+              {VAULT_STRINGS.openAgainstSession}
+            </button>
+          {/if}
         </div>
+        {#if pinnedSessionId !== null}
+          <p class="text-xs text-fg-muted" data-testid="vault-panel-pinned-session">
+            {VAULT_STRINGS.pinnedToSession}: {pinnedSessionId}
+          </p>
+        {/if}
         {#if vaultStore.selected.redactions.length > 0}
           <div
             class="flex flex-row flex-wrap gap-1 pt-2"

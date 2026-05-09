@@ -10,6 +10,8 @@
  *   ``docs/behavior/vault.md`` §"CRUD flow").
  * * Redaction toggles flip the mask state per-range.
  * * Empty state names the configured plan_roots / todo_globs.
+ * * F7-RT-00: row metadata — parent-dir + relative mtime rendered.
+ * * F7-RT-02: "Open against this session" affordance present + functional.
  *
  * The store is stubbed at the prop seam to keep the surface
  * deterministic — the singleton store is exercised in
@@ -18,7 +20,12 @@
 import { fireEvent, render, waitFor } from "@testing-library/svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import VaultPanel, { formatEmptyConfigCopy, segmentBody } from "../VaultPanel.svelte";
+import VaultPanel, {
+  formatEmptyConfigCopy,
+  formatRelativeTime,
+  parentDirName,
+  segmentBody,
+} from "../VaultPanel.svelte";
 import type { SearchResultOut, VaultDocOut, VaultEntryOut, VaultListOut } from "../../../api/vault";
 import { VAULT_KIND_PLAN, VAULT_KIND_TODO, VAULT_SEARCH_DEBOUNCE_MS } from "../../../config";
 
@@ -397,5 +404,188 @@ describe("VaultPanel — selection", () => {
     const rows = getAllByTestId("vault-panel-row");
     await fireEvent.click(rows[1]);
     expect(selectVaultDoc).toHaveBeenCalledWith(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F7-RT-00 — Row metadata: parent-dir + relative mtime
+// ---------------------------------------------------------------------------
+
+describe("parentDirName (helper)", () => {
+  it("returns the directory segment one level above the filename", () => {
+    expect(parentDirName("/home/u/.claude/plans/foo.md")).toBe("plans");
+    expect(parentDirName("/home/u/Projects/my-project/TODO.md")).toBe("my-project");
+  });
+
+  it("returns empty string for a path with no parent", () => {
+    expect(parentDirName("/file.md")).toBe("");
+    expect(parentDirName("")).toBe("");
+  });
+
+  it("handles paths with a leading slash and no segments", () => {
+    expect(parentDirName("/")).toBe("");
+  });
+});
+
+describe("formatRelativeTime (helper)", () => {
+  const NOW = 1_700_000_000_000; // fixed ms epoch
+
+  it("formats sub-60s difference as 'Xs ago'", () => {
+    const mtime = (NOW - 45_000) / 1000; // 45 s ago
+    expect(formatRelativeTime(mtime, NOW)).toBe("45s ago");
+  });
+
+  it("formats 0s difference as '0s ago'", () => {
+    const mtime = NOW / 1000;
+    expect(formatRelativeTime(mtime, NOW)).toBe("0s ago");
+  });
+
+  it("formats minutes-range as 'Xm ago'", () => {
+    const mtime = (NOW - 5 * 60 * 1000) / 1000; // 5 min ago
+    expect(formatRelativeTime(mtime, NOW)).toBe("5m ago");
+  });
+
+  it("formats hours-range as 'Xh ago'", () => {
+    const mtime = (NOW - 3 * 3600 * 1000) / 1000; // 3 h ago
+    expect(formatRelativeTime(mtime, NOW)).toBe("3h ago");
+  });
+
+  it("formats days-range as 'Xd ago'", () => {
+    const mtime = (NOW - 2 * 86_400 * 1000) / 1000; // 2 d ago
+    expect(formatRelativeTime(mtime, NOW)).toBe("2d ago");
+  });
+
+  it("clamps negative diff to 0s ago (future mtime)", () => {
+    const mtime = (NOW + 10_000) / 1000; // 10 s in the future
+    expect(formatRelativeTime(mtime, NOW)).toBe("0s ago");
+  });
+});
+
+describe("VaultPanel — row metadata (F7-RT-00)", () => {
+  it("renders parent-dir and relative-mtime in each row (plan + todo)", () => {
+    // Use real Date.now() so formatRelativeTime() inside the component
+    // (which calls Date.now() internally) sees the same clock as the test.
+    const NOW_MS = Date.now();
+    const mtimeSec = (NOW_MS - 5 * 60 * 1000) / 1000; // 5 min ago
+    const stubStore = makeStubStore({
+      list: {
+        plans: [
+          fakeEntry({
+            id: 1,
+            title: "Plan A",
+            path: "/home/u/.claude/plans/plan-a.md",
+            mtime: mtimeSec,
+          }),
+        ],
+        todos: [
+          fakeEntry({
+            id: 2,
+            title: null,
+            kind: VAULT_KIND_TODO,
+            path: "/home/u/Projects/my-project/TODO.md",
+            mtime: mtimeSec,
+          }),
+        ],
+        plan_roots: ["/home/u/.claude/plans"],
+        todo_globs: ["**/TODO.md"],
+      },
+    });
+    const { getAllByTestId } = render(VaultPanel, {
+      props: {
+        vaultStore: stubStore,
+        refreshVault: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+    const metas = getAllByTestId("vault-panel-row-meta");
+    // Two rows (plan + todo) each render a meta line
+    expect(metas).toHaveLength(2);
+    // Plan row: parent dir = "plans", mtime = "5m ago"
+    expect(metas[0]?.textContent).toContain("plans");
+    expect(metas[0]?.textContent).toContain("5m ago");
+    // Todo row: parent dir = "my-project"
+    expect(metas[1]?.textContent).toContain("my-project");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F7-RT-02 — "Open against this session" affordance
+// ---------------------------------------------------------------------------
+
+describe("VaultPanel — open-against-session affordance (F7-RT-02)", () => {
+  function makeSelectedDoc(): VaultDocOut {
+    return {
+      entry: fakeEntry({ id: 5 }),
+      body: "doc body",
+      redactions: [],
+      truncated: false,
+    };
+  }
+
+  it("renders 'Open against this session' button when activeSessionId is set + doc selected", () => {
+    const stubStore = makeStubStore({ selected: makeSelectedDoc() });
+    const { getByTestId } = render(VaultPanel, {
+      props: {
+        activeSessionId: "sess_abc",
+        vaultStore: stubStore,
+        refreshVault: vi.fn().mockResolvedValue(undefined),
+        renderMarkdown: vi.fn().mockResolvedValue(""),
+        sanitizeHtml: vi.fn().mockReturnValue(""),
+      },
+    });
+    expect(getByTestId("vault-panel-open-against-session")).toBeInTheDocument();
+  });
+
+  it("does NOT render 'Open against this session' button when activeSessionId is null", () => {
+    const stubStore = makeStubStore({ selected: makeSelectedDoc() });
+    const { queryByTestId } = render(VaultPanel, {
+      props: {
+        activeSessionId: null,
+        vaultStore: stubStore,
+        refreshVault: vi.fn().mockResolvedValue(undefined),
+        renderMarkdown: vi.fn().mockResolvedValue(""),
+        sanitizeHtml: vi.fn().mockReturnValue(""),
+      },
+    });
+    expect(queryByTestId("vault-panel-open-against-session")).toBeNull();
+  });
+
+  it("clicking the button shows the pinned-session indicator", async () => {
+    const stubStore = makeStubStore({ selected: makeSelectedDoc() });
+    const { getByTestId, queryByTestId } = render(VaultPanel, {
+      props: {
+        activeSessionId: "sess_xyz",
+        vaultStore: stubStore,
+        refreshVault: vi.fn().mockResolvedValue(undefined),
+        renderMarkdown: vi.fn().mockResolvedValue(""),
+        sanitizeHtml: vi.fn().mockReturnValue(""),
+      },
+    });
+    // Indicator absent before pinning
+    expect(queryByTestId("vault-panel-pinned-session")).toBeNull();
+    await fireEvent.click(getByTestId("vault-panel-open-against-session"));
+    // Indicator appears after pinning, showing the session id
+    const indicator = getByTestId("vault-panel-pinned-session");
+    expect(indicator).toBeInTheDocument();
+    expect(indicator.textContent).toContain("sess_xyz");
+  });
+
+  it("paste-link uses the pinned session id after pinning", async () => {
+    const pasteIntoComposer = vi.fn();
+    const stubStore = makeStubStore({ selected: makeSelectedDoc() });
+    const { getByTestId } = render(VaultPanel, {
+      props: {
+        activeSessionId: "sess_xyz",
+        vaultStore: stubStore,
+        refreshVault: vi.fn().mockResolvedValue(undefined),
+        pasteIntoComposer,
+        renderMarkdown: vi.fn().mockResolvedValue(""),
+        sanitizeHtml: vi.fn().mockReturnValue(""),
+      },
+    });
+    await fireEvent.click(getByTestId("vault-panel-open-against-session"));
+    await fireEvent.click(getByTestId("vault-panel-paste-link"));
+    expect(pasteIntoComposer).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "sess_xyz" }),
+    );
   });
 });
