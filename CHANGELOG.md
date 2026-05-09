@@ -9,6 +9,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **feat(cli): add `bearings init` and `bearings migrate` subcommands
+  (F13-rr-12 — fulfils v1.0.0 stability commitment §"CLI flag surface"):**
+  Both subcommands were named as stable v1.x CLI surfaces in the
+  `[1.0.0]` entry but were absent from the binary. Now wired:
+  * `bearings init [--db PATH] [--uploads-root PATH] [--avatars-root PATH]`
+    — creates `~/.local/share/bearings-v1/` directory tree (data dir,
+    uploads root, avatars root) and applies the canonical DB schema via
+    `load_schema`. Fully idempotent (`exist_ok=True` on dirs, `IF NOT EXISTS`
+    guards on all schema objects); safe to run on an already-initialised
+    installation.
+  * `bearings migrate [--db PATH]`
+    — applies any pending column additions from `connection._ADDED_COLUMNS`
+    to the existing DB, using `PRAGMA table_info` probes to skip columns that
+    already exist. Returns the count of columns actually altered (0 on an
+    up-to-date schema). Exits 1 with a hint to run `bearings init` first if
+    the DB file is absent.
+  Both handlers are thin argparse dispatchers per arch §1.1.1; domain logic
+  lives in `bearings.bearings_dir.init.ensure_data_dir` and
+  `bearings.db.migrate.run_migrations` respectively. Seven pytest smoke
+  tests cover creation, idempotency, missing-DB error path, and help text
+  for both subcommands (`tests/test_cli_init_migrate.py`).
+
 - **fix(a11y): resolve 10 WCAG AA violations — contrast, aria-label, touch
   target, accessible names (BUG-A11Y-01..07 + NEW-BUG-A11Y-01..03):**
   Ten axe-core serious/critical a11y violations fixed across seven frontend
