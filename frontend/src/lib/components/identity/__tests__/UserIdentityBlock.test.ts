@@ -76,3 +76,24 @@ describe("UserIdentityBlock — display name", () => {
     expect(queryByTestId("user-identity-name")).toBeNull();
   });
 });
+
+describe("UserIdentityBlock — a11y regressions (BUG-A11Y-06)", () => {
+  it("fallback span has role=img so aria-label is valid (axe aria-prohibited-attr)", () => {
+    // BUG-A11Y-06: <span> aria-label without a valid role is prohibited.
+    // Fix: role="img" makes aria-label valid per ARIA 1.2 §6.
+    const { getByTestId } = render(UserIdentityBlock, {
+      props: { displayName: null, avatarUrl: null },
+    });
+    const fallback = getByTestId("user-identity-avatar-fallback");
+    expect(fallback.getAttribute("role")).toBe("img");
+    expect(fallback.getAttribute("aria-label")).toBeTruthy();
+  });
+
+  it("fallback span aria-label is non-empty string", () => {
+    const { getByTestId } = render(UserIdentityBlock, {
+      props: { displayName: null, avatarUrl: null },
+    });
+    const fallback = getByTestId("user-identity-avatar-fallback");
+    expect((fallback.getAttribute("aria-label") ?? "").length).toBeGreaterThan(0);
+  });
+});

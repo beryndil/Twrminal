@@ -105,7 +105,8 @@ describe("sidebar templates button (gap-cycle-08-007)", () => {
     const { getByTestId } = render(Layout);
 
     const btn = getByTestId("sidebar-templates-button");
-    expect(btn.getAttribute("aria-label")).toBe("Open template picker");
+    // Updated: WCAG 2.5.3 requires aria-label to contain visible text "Templates…".
+    expect(btn.getAttribute("aria-label")).toBe("Templates… — open picker");
   });
 
   it("clicking the templates button opens the TemplatePicker dialog", async () => {

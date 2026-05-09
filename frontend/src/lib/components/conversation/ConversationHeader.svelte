@@ -200,6 +200,39 @@
     };
   });
 
+  // ---- Severity badge contrast helper ----------------------------------------
+
+  /**
+   * Returns the WCAG-AA-safe text colour for a severity badge whose background
+   * is a user-supplied hex colour.  Parses #RGB or #RRGGBB, computes
+   * perceived brightness (ITU-R BT.601 coefficients), and returns the
+   * CSS class for dark text when the background is light (≥ 128/255) or white
+   * class when dark.  Falls back to "text-white" for non-hex values (e.g.
+   * the theme fallback `rgb(var(…))`) where the fg-muted token supplies a
+   * dark-enough background.
+   *
+   * Fixes NEW-BUG-A11Y-02 (.tracking-wide text-white on light severity tag).
+   */
+  function severityTextClass(hex: string | null | undefined): string {
+    if (!hex || !hex.startsWith("#")) return "text-white";
+    const clean = hex.slice(1);
+    let r: number, g: number, b: number;
+    if (clean.length === 3) {
+      r = parseInt(clean[0] + clean[0], 16);
+      g = parseInt(clean[1] + clean[1], 16);
+      b = parseInt(clean[2] + clean[2], 16);
+    } else if (clean.length === 6) {
+      r = parseInt(clean.slice(0, 2), 16);
+      g = parseInt(clean.slice(2, 4), 16);
+      b = parseInt(clean.slice(4, 6), 16);
+    } else {
+      return "text-white";
+    }
+    // ITU-R BT.601 perceived brightness — standard for WCAG contrast decisions.
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+    return brightness >= 128 ? "text-fg-strong" : "text-white";
+  }
+
   // ---- Reorg panel -----------------------------------------------------------
 
   /**
@@ -270,7 +303,9 @@
       <!-- Severity shield — coloured chip for the severity tag -->
       {#if severityTag !== null}
         <span
-          class="rounded px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-white"
+          class="rounded px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide {severityTextClass(
+            severityTag.color,
+          )}"
           aria-label={CONVERSATION_HEADER_STRINGS.severityShieldAriaLabel}
           data-testid="conversation-header-severity"
           style:background-color={severityTag.color ?? "rgb(var(--bearings-fg-muted))"}

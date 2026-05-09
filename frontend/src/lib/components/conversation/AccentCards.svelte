@@ -77,7 +77,7 @@
         {ACCENT_CARDS_STRINGS.cacheSavingsLabel}
       </span>
       <span class="opacity-40" aria-hidden="true">—</span>
-      <span data-testid="accent-card-cache-ratio" class="text-accent/70">
+      <span data-testid="accent-card-cache-ratio" class="text-fg-muted">
         {fmtTokens(actualCost)}
         {ACCENT_CARDS_STRINGS.cacheVsLabel}
         {fmtTokens(totalWithout)}

@@ -142,4 +142,18 @@ describe("AccentCards", () => {
     expect(wrapper).toBeDefined();
     expect(wrapper).toHaveAttribute("aria-label", ACCENT_CARDS_STRINGS.ariaLabel);
   });
+
+  // A11y regression — NEW-BUG-A11Y-02 ----------------------------------------
+
+  it("cache-ratio span does not use text-accent/70 (WCAG contrast regression)", () => {
+    // text-accent/70 failed 4.5:1 on paper-light (bg-accent/10 ~3.06:1).
+    // The span must NOT carry the opacity modifier; it must use text-fg-muted
+    // which passes on all theme backgrounds.
+    const { getByTestId } = renderCards(1_000, 2_000);
+    const ratioEl = getByTestId("accent-card-cache-ratio");
+    expect(ratioEl.classList.contains("text-accent/70")).toBe(false);
+    expect(ratioEl.classList.contains("text-accent\\/70")).toBe(false);
+    // Must carry the muted fg class instead.
+    expect(ratioEl.classList.contains("text-fg-muted")).toBe(true);
+  });
 });

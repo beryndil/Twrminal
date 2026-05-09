@@ -643,7 +643,7 @@
             <button
               type="button"
               class="flex w-full items-center gap-2 px-3 py-2 hover:bg-surface-2 transition-colors focus:outline-none focus:ring-inset focus:ring-2 focus:ring-accent/70"
-              aria-label={SIDEBAR_STRINGS.identityBlockAriaLabel}
+              aria-label={`${preferencesStore.displayName ?? SIDEBAR_STRINGS.identityBlockFallbackName} — ${SIDEBAR_STRINGS.identityBlockAriaLabel}`}
               data-testid="sidebar-identity-btn"
               onclick={() => void goto("/settings")}
             >
@@ -691,9 +691,10 @@
                   {#each sessionsStore.tagsBySessionId[activeSession.id] ?? [] as tag (tag.id)}
                     <span
                       class="rounded px-1.5 py-0.5 text-xs"
-                      style={tag.color ? `background:${tag.color}22;color:${tag.color}` : undefined}
+                      style={tag.color ? `background:${tag.color}22` : undefined}
                       class:bg-surface-2={!tag.color}
                       class:text-fg-muted={!tag.color}
+                      class:text-fg-strong={!!tag.color}
                       data-testid="conversation-header-tag"
                     >
                       {tag.name}

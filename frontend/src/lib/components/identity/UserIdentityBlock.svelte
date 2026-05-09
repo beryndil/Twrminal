@@ -65,6 +65,7 @@
     {:else}
       <span
         class="user-identity-block__fallback"
+        role="img"
         aria-label={PROFILE_STRINGS.avatarFallbackAriaLabel}
         data-testid="user-identity-avatar-fallback"
       >

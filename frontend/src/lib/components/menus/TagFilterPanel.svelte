@@ -224,7 +224,7 @@
                   {/if}
                   <button
                     type="button"
-                    class="rounded px-1.5 py-0.5 text-xs transition-colors"
+                    class="inline-flex min-h-6 items-center rounded px-1.5 py-0.5 text-xs transition-colors"
                     class:bg-accent={selectionFor(section.klass).has(tag.id)}
                     class:text-fg-strong={selectionFor(section.klass).has(tag.id)}
                     class:bg-surface-2={!selectionFor(section.klass).has(tag.id)}
@@ -244,7 +244,7 @@
                     <span data-testid="tag-filter-chip-counts">
                       <span
                         class="session-count session-count--open"
-                        class:text-emerald-500={tag.open_session_count > 0}
+                        class:text-ok={tag.open_session_count > 0}
                         class:text-fg-muted={tag.open_session_count === 0}
                         >{tag.open_session_count}</span
                       ><span class="session-count text-fg-muted">/{tag.session_count}</span>
@@ -273,7 +273,7 @@
                   ></div>
                   <button
                     type="button"
-                    class="rounded px-1.5 py-0.5 text-xs italic transition-colors"
+                    class="inline-flex min-h-6 items-center rounded px-1.5 py-0.5 text-xs italic transition-colors"
                     class:bg-accent={selectedSeverityNone}
                     class:text-fg-strong={selectedSeverityNone}
                     class:bg-surface-2={!selectedSeverityNone}
@@ -321,7 +321,7 @@
           still applied without expanding the panel.
         -->
         <span
-          class="text-xs text-emerald-500"
+          class="text-xs text-ok"
           data-testid="tag-filter-collapsed-active-count"
           aria-label="{activeCount} filter{activeCount === 1 ? '' : 's'} active"
         >

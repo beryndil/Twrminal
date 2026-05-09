@@ -230,7 +230,9 @@
   }
 
   .inspector__tab--active {
-    color: rgb(var(--bearings-accent));
+    /* Use accent-text (lighter tint) for legibility on dark surface-1.
+       Falls back to accent if the token is absent (paper-light uses same value). */
+    color: rgb(var(--bearings-accent-text, var(--bearings-accent)));
     background-color: transparent;
     box-shadow: inset 0 -2px 0 rgb(var(--bearings-accent));
   }

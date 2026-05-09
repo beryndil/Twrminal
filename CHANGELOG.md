@@ -9,6 +9,54 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **fix(a11y): resolve 10 WCAG AA violations — contrast, aria-label, touch
+  target, accessible names (BUG-A11Y-01..07 + NEW-BUG-A11Y-01..03):**
+  Ten axe-core serious/critical a11y violations fixed across seven frontend
+  files:
+  (1) *Tag chip contrast (BUG-A11Y-01)* — conversation header tag chips used
+  `color:${tag.color}` (purple text on tinted-purple bg). Removed inline text
+  color; chips now use `text-fg-strong` on the tinted background.
+  (2) *White-on-accent buttons (BUG-A11Y-02)* — primary CTA buttons failed
+  4.5:1 in evergreen (4.48), default (2.55), and midnight-glass (2.5) themes.
+  Darkened `--bearings-accent` tokens: evergreen `#107538`, default blue-600
+  `#2563eb`, midnight-glass `#3769d2`. Introduced `--bearings-accent-text`
+  (lighter tint) for text-on-dark-surface usage via unlayered `.text-accent`
+  override in `app.css`.
+  (3) *Evergreen accent as text (BUG-A11Y-03)* — brand heading, nav links,
+  and active inspector tabs used `#258846` directly on dark surfaces (3.9:1).
+  Fixed via `--bearings-accent-text: 134 239 172` (green-300, 13:1) and
+  Inspector.svelte active-tab CSS updated to use the new token.
+  (4) *Default fg-muted on surface-2 (BUG-A11Y-04 + NEW-BUG-A11Y-03)* —
+  muted text on elevated cards yielded 4.01:1. Lightened
+  `--bearings-fg-muted` in default theme from `156 163 175` to `176 183 196`
+  (now 5.07:1). Fixes model badge, tag-filter chips, import/templates buttons,
+  and system-status rows.
+  (5) *Paper-light error text (BUG-A11Y-05)* — `text-red-400` on cream
+  background yielded 2.58:1. Added unlayered `[data-theme="paper-light"]
+  .text-red-400` override to `--bearings-accent-error`; darkened error token
+  to red-700 (6.1:1 on all paper-light surfaces).
+  (6) *Avatar fallback aria-label on span (BUG-A11Y-06)* —
+  `<span aria-label>` without a role is prohibited. Added `role="img"` to
+  `UserIdentityBlock.svelte`'s fallback span.
+  (7) *Label-content-name mismatch (BUG-A11Y-07)* — sidebar templates button
+  `aria-label="Open template picker"` did not contain visible text
+  "Templates…"; identity button `aria-label="Open Settings"` did not contain
+  user's display name. Fixed: templates label updated to `"Templates… — open
+  picker"`; identity button aria-label now prefixes with the display name.
+  (8) *Touch target (NEW-BUG-A11Y-01)* — tag filter chip buttons too small
+  for WCAG 2.5.8 (< 24px). Added `min-h-6 inline-flex items-center` to all
+  chip buttons in `TagFilterPanel.svelte`.
+  (9) *Emerald-500 badge + accent/70 contrast (NEW-BUG-A11Y-02)* —
+  `text-emerald-500` session-count badges failed on paper-light surface-2
+  (1.99:1); `text-accent/70` in AccentCards failed (3.06:1); severity badge
+  `tracking-wide text-white` could fail on light-colored tags. Fixed:
+  emerald-500 → `text-ok` (green-800 in paper-light); `text-accent/70` →
+  `text-fg-muted`; severity badge now uses `severityTextClass()` helper to
+  select `text-white` or `text-fg-strong` based on background luminance.
+  Also darkened `--bearings-accent-ok` in paper-light to green-800 (22,101,52)
+  for sufficient contrast.
+  All fixes include vitest regression tests (attribute and class assertions).
+
 - **fix(keyboard): resolve 8 keyboard-nav bugs — focus-trap, Ctrl+Shift+P
   toggle, Ctrl+K dispatcher (KBD-04/07/15/24/28/52/53/54):**
   Three root-cause fixes:

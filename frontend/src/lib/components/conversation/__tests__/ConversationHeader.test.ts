@@ -257,6 +257,29 @@ describe("ConversationHeader", () => {
     expect(queryByTestId("conversation-header-tags")).toBeNull();
   });
 
+  // A11y regressions — NEW-BUG-A11Y-02 severity badge contrast (tracking-wide) ----------
+
+  it("severity badge uses text-fg-strong on light tag color (NEW-BUG-A11Y-02)", () => {
+    // White text on a light background (e.g., #ffff00) fails WCAG AA.
+    // severityTextClass() must return text-fg-strong for light colors.
+    const lightTag = makeTag({ id: 1, name: "P0", class_: "severity", color: "#ffff00" });
+    setSession(makeSession(), [lightTag]);
+    const { getByTestId } = render(ConversationHeader, { props: { sessionId: "ses_1" } });
+    const shield = getByTestId("conversation-header-severity");
+    expect(shield.classList.contains("text-fg-strong")).toBe(true);
+    expect(shield.classList.contains("text-white")).toBe(false);
+  });
+
+  it("severity badge uses text-white on dark tag color (NEW-BUG-A11Y-02)", () => {
+    // Dark red #ef4444: brightness ≈ 94 < 128 → text-white.
+    const darkTag = makeTag({ id: 1, name: "P0", class_: "severity", color: "#ef4444" });
+    setSession(makeSession(), [darkTag]);
+    const { getByTestId } = render(ConversationHeader, { props: { sessionId: "ses_1" } });
+    const shield = getByTestId("conversation-header-severity");
+    expect(shield.classList.contains("text-white")).toBe(true);
+    expect(shield.classList.contains("text-fg-strong")).toBe(false);
+  });
+
   it("renders the model selector (executor dropdown)", () => {
     setSession(makeSession({ model: "sonnet" }));
     const { getByTestId } = render(ConversationHeader, { props: { sessionId: "ses_1" } });

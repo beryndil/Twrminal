@@ -993,7 +993,8 @@ export const SIDEBAR_STRINGS = {
   identityBlockFallbackName: "Operator",
   /** Templates button — sidebar affordance for the template picker (gap-cycle-08-007). */
   templatesButtonLabel: "Templates…",
-  templatesButtonAriaLabel: "Open template picker",
+  /** WCAG 2.5.3: accessible name must contain the visible label "Templates…". */
+  templatesButtonAriaLabel: "Templates… — open picker",
 } as const;
 
 /**
@@ -2287,6 +2288,11 @@ export const VAULT_STRINGS = {
   pasteToastClipboardLink: "Copied Markdown link",
   pasteToastClipboardBody: "Copied doc body",
   pasteToastNoActiveSession: "No active chat session — open one first.",
+  // F7-RT-02 — "Open against this session" affordance
+  // (vault.md §"Tag association" — "visually pins the chat session to
+  // its header so Paste into composer targets that specific chat").
+  openAgainstSession: "Open against this session",
+  pinnedToSession: "Pinned to session",
   // Per vault.md §"CRUD flow" the vault is read-only — no create /
   // update / delete affordances in the UI. The string table
   // intentionally omits any "delete doc" / "rename doc" / "new doc"

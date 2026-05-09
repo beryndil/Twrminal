@@ -333,7 +333,8 @@ describe("TagFilterPanel", () => {
     const countPair = getAllByTestId("tag-filter-chip-counts")[0];
     const openSpan = countPair.querySelector(".session-count--open");
     expect(openSpan).not.toBeNull();
-    expect(openSpan!.classList.contains("text-emerald-500")).toBe(true);
+    // Changed text-emerald-500 → text-ok (WCAG contrast fix NEW-BUG-A11Y-02).
+    expect(openSpan!.classList.contains("text-ok")).toBe(true);
     expect(openSpan!.classList.contains("text-fg-muted")).toBe(false);
     expect(openSpan!.textContent).toBe("3");
   });
@@ -632,6 +633,53 @@ describe("TagFilterPanel", () => {
       });
       await fireEvent.click(getByTestId("tag-filter-collapse-toggle"));
       expect(getByTestId("tag-filter-collapsed-active-count")).toHaveTextContent("1 on");
+    });
+  });
+
+  // A11y regressions — NEW-BUG-A11Y-01 (touch target) + NEW-BUG-A11Y-02 (contrast) ---
+
+  describe("a11y regressions", () => {
+    it("tag chip buttons have min-h-6 for WCAG 2.5.8 touch target (NEW-BUG-A11Y-01)", () => {
+      // Minimum 24×24 CSS px touch target. min-h-6 = 1.5rem = 24px.
+      const { getAllByTestId } = render(TagFilterPanel, {
+        props: baseProps({
+          tags: [tag(1, "bearings", "project"), tag(2, "high", "severity")],
+        }),
+      });
+      for (const chip of getAllByTestId("tag-filter-chip")) {
+        expect(chip.classList.contains("min-h-6")).toBe(true);
+      }
+    });
+
+    it("open-count badge uses text-ok not text-emerald-500 (NEW-BUG-A11Y-02 contrast)", () => {
+      // text-emerald-500 fails 4.5:1 on paper-light surface-2 (~1.99:1).
+      // text-ok maps to --bearings-accent-ok which is green-800 in paper-light.
+      const tagWithOpenSessions: TagOut = {
+        ...tag(1, "bearings", "general"),
+        open_session_count: 3,
+      };
+      const { getByTestId } = render(TagFilterPanel, {
+        props: baseProps({ tags: [tagWithOpenSessions] }),
+      });
+      // There is exactly one tag-filter-chip-counts element.
+      const countsEl = getByTestId("tag-filter-chip-counts");
+      const openSpan = countsEl.querySelector(".session-count--open");
+      expect(openSpan).toBeTruthy();
+      expect(openSpan!.classList.contains("text-ok")).toBe(true);
+      expect(openSpan!.classList.contains("text-emerald-500")).toBe(false);
+    });
+
+    it("collapsed active-count badge uses text-ok not text-emerald-500", async () => {
+      const { getByTestId } = render(TagFilterPanel, {
+        props: baseProps({
+          tags: [tag(1, "bearings", "project")],
+          selectedProjectIds: new Set([1]),
+        }),
+      });
+      await fireEvent.click(getByTestId("tag-filter-collapse-toggle"));
+      const badge = getByTestId("tag-filter-collapsed-active-count");
+      expect(badge.classList.contains("text-ok")).toBe(true);
+      expect(badge.classList.contains("text-emerald-500")).toBe(false);
     });
   });
 });

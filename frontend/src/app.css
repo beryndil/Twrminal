@@ -48,8 +48,9 @@
     --bearings-fg: 231 234 237; /* slate-100 */
     --bearings-fg-muted: 139 152 161; /* slate-400 */
     --bearings-fg-strong: 245 246 249; /* slate-50 */
-    --bearings-accent: 37 136 70; /* emerald-500: forest green brand */
-    --bearings-accent-muted: 30 110 56; /* emerald-600 */
+    --bearings-accent: 16 117 56; /* emerald-700-ish: darkened for WCAG AA white-on-accent (was 37 136 70, contrast 4.48:1 — fail) */
+    --bearings-accent-muted: 12 96 46; /* darker hover */
+    --bearings-accent-text: 134 239 172; /* green-300 — AA-safe accent for text on dark surfaces */
     --bearings-border: 56 65 75; /* slate-700 */
     /* Semantic state tokens — used by charts, error bubbles, status indicators. */
     --bearings-accent-info: 56 189 248; /* sky-400 */
@@ -81,8 +82,9 @@
     --bearings-fg: 220 226 240;
     --bearings-fg-muted: 148 163 196;
     --bearings-fg-strong: 244 247 255;
-    --bearings-accent: 110 168 254;
-    --bearings-accent-muted: 64 110 200;
+    --bearings-accent: 55 105 210; /* blue — darkened for WCAG AA white-on-accent (was 110 168 254, contrast ~2.5:1 — fail) */
+    --bearings-accent-muted: 43 82 165; /* darker hover */
+    --bearings-accent-text: 110 168 254; /* original light blue — AA-safe accent for text on dark surfaces */
     --bearings-border: 48 64 96;
     /* Semantic state tokens — used by charts, error bubbles, status indicators. */
     --bearings-accent-info: 56 189 248; /* sky-400 */
@@ -112,10 +114,11 @@
     --bearings-surface-1: 31 41 55;
     --bearings-surface-2: 55 65 81;
     --bearings-fg: 229 231 235;
-    --bearings-fg-muted: 156 163 175;
+    --bearings-fg-muted: 176 183 196; /* lightened for WCAG AA on surface-2 (was 156 163 175 → 4.01:1 — fail; now ~5.07:1) */
     --bearings-fg-strong: 249 250 251;
-    --bearings-accent: 96 165 250;
-    --bearings-accent-muted: 59 130 246;
+    --bearings-accent: 37 99 235; /* blue-600 — darkened for WCAG AA white-on-accent (was 96 165 250, contrast ~2.55:1 — fail) */
+    --bearings-accent-muted: 29 78 216; /* blue-700 hover */
+    --bearings-accent-text: 96 165 250; /* blue-400 original — AA-safe accent for text on dark surfaces */
     --bearings-border: 75 85 99;
     /* Semantic state tokens — used by charts, error bubbles, status indicators. */
     --bearings-accent-info: 56 189 248; /* sky-400 */
@@ -149,12 +152,13 @@
     --bearings-fg-strong: 11 17 25;
     --bearings-accent: 25 91 168;
     --bearings-accent-muted: 70 130 180;
+    --bearings-accent-text: 25 91 168; /* same as accent — Prussian blue already passes on light surfaces */
     --bearings-border: 196 188 168;
     /* Semantic state tokens — darker shades for contrast on the cream background. */
     --bearings-accent-info: 2 132 199; /* sky-600 */
-    --bearings-accent-ok: 22 163 74; /* green-600 */
+    --bearings-accent-ok: 22 101 52; /* green-800 — darkened for WCAG AA on surface-2 (was green-600 → 2.6:1 fail) */
     --bearings-accent-warn: 180 83 9; /* amber-700 */
-    --bearings-accent-error: 220 38 38; /* red-600 */
+    --bearings-accent-error: 185 28 28; /* red-700 — darkened for WCAG AA on cream (was red-600 → 4.33:1 fail on surface-1) */
     /* Scrollbar palette — thumb darker than cream surface (slate-500 / slate-600). */
     --bearings-scrollbar-thumb: 100 116 139; /* slate-500 */
     --bearings-scrollbar-thumb-hover: 71 85 105; /* slate-600 */
@@ -297,4 +301,36 @@
 }
 .message-turn__body em {
   @apply italic;
+}
+
+/*
+ * ==== A11y contrast overrides (BUG-A11Y-01..07, NEW-BUG-A11Y-01..03) ====
+ *
+ * These rules are intentionally UNLAYERED (not inside @layer base/utilities)
+ * so the CSS cascade level-5 layer-ordering gives them higher precedence than
+ * Tailwind's @layer utilities classes.  See app.css header for rationale.
+ *
+ * Do NOT move these inside a @layer block.
+ */
+
+/*
+ * text-accent on dark surfaces: use the per-theme --bearings-accent-text
+ * token (a lighter tint of the brand colour) instead of --bearings-accent
+ * which is now darkened for WCAG AA bg-button contrast.
+ * Fixes BUG-A11Y-03 (evergreen brand/nav/inspector), prevents regression on
+ * default and midnight-glass where the original accent served as text colour.
+ */
+.text-accent {
+  color: rgb(var(--bearings-accent-text, var(--bearings-accent)));
+}
+
+/*
+ * Paper-light: hardcoded text-red-400 components use Tailwind red-400
+ * (rgb 248 113 113) which yields only ~2.58:1 on cream surfaces.
+ * Override to the theme's --bearings-accent-error (red-700 in paper-light,
+ * ~6.1:1 on surface-0).  Fixes BUG-A11Y-05 and covers all error state
+ * elements using text-red-400 without requiring per-component changes.
+ */
+[data-theme="paper-light"] .text-red-400 {
+  color: rgb(var(--bearings-accent-error));
 }
