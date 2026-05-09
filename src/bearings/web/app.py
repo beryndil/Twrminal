@@ -28,6 +28,7 @@ References:
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
@@ -75,7 +76,9 @@ from bearings.config.constants import (
     ROUTE_TAG_USAGE,
     ROUTE_TAG_VAULT,
     ROUTE_TAG_WS_SESSIONS,
+    SESSION_ID_PREFIX,
     STREAM_HEARTBEAT_INTERVAL_S,
+    WS_CLOSE_INVALID_SESSION_ID,
 )
 from bearings.config.settings import FsCfg, ShellCfg, UploadsCfg, VaultCfg
 from bearings.db import checklists as checklists_db
@@ -121,6 +124,16 @@ from bearings.web.static import mount_static_bundle, spa_fallback_handler
 from bearings.web.streaming import SINCE_SEQ_QUERY_PARAM, serve_session_stream
 
 _LOG = logging.getLogger(__name__)
+
+# Regex that matches the only session id format the agent runner accepts:
+# ``ses_<32 lowercase hex chars>`` per :data:`bearings.config.constants.SESSION_ID_PREFIX`.
+# Used for pre-handshake validation in the per-session WS endpoint so bare-
+# 32-hex legacy ids are rejected with a typed 4400 close before the runner
+# factory (and the deep ``bearings_to_sdk_uuid`` call inside it) can raise
+# an untyped ``ValueError`` that would bubble up as HTTP 500.
+_VALID_SESSION_ID_RE: re.Pattern[str] = re.compile(
+    rf"^{re.escape(SESSION_ID_PREFIX)}_[0-9a-f]{{32}}$",
+)
 
 
 def _build_leg_session_factory(
@@ -391,6 +404,25 @@ def create_app(
             since_seq = int(raw)
         except ValueError:
             await websocket.close(code=1003, reason="invalid since_seq")
+            return
+        # Pre-handshake validation: bare-32-hex legacy ids (pre-dating the
+        # ``ses_`` prefix) are rejected before the runner factory is called.
+        # The deep ``bearings_to_sdk_uuid`` call inside the factory raises
+        # an untyped ``ValueError`` for such ids, which would bubble up as
+        # HTTP 500. Catching it here keeps the stack trace out of the uvicorn
+        # log and delivers a typed 4400 close code to the client instead.
+        # (Domain boundary: ``bearings_to_sdk_uuid`` lives in agent/ -- Orch A
+        # exclusive -- so the fix lives here at the web route boundary.)
+        if not _VALID_SESSION_ID_RE.match(session_id):
+            _LOG.warning(
+                "WS /ws/sessions/%s rejected: not ses_<32hex> format "
+                "(bare-32-hex legacy id or malformed id)",
+                session_id,
+            )
+            await websocket.close(
+                code=WS_CLOSE_INVALID_SESSION_ID,
+                reason="session_id must be ses_<32hex> Bearings format",
+            )
             return
         runner = await factory(session_id)
         await serve_session_stream(

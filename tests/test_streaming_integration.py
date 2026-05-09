@@ -51,6 +51,13 @@ from bearings.web.streaming import serve_session_stream
 # but long enough that no heartbeat fires in a sub-second test path.
 _TEST_HEARTBEAT_S: Final[float] = 5.0
 
+# Valid ses_<32hex> session ids used by tests that exercise the happy path.
+# The pre-validation guard in app.py rejects anything that does not match
+# the ``ses_<32hex>`` format, so tests that connect to the WS endpoint must
+# use ids in this form.
+_VALID_SID_ROUNDTRIP: Final[str] = "ses_00000000000000000000000000000001"
+_VALID_SID_RESUME: Final[str] = "ses_00000000000000000000000000000002"
+
 
 # ---------------------------------------------------------------------------
 # Fake WebSocket — captures send_text calls + raises WebSocketDisconnect
@@ -124,14 +131,16 @@ def test_websocket_handshake_and_replay_path() -> None:
     app = create_app(runner_factory=factory, heartbeat_interval_s=_TEST_HEARTBEAT_S)
 
     # Pre-populate the runner.
-    runner = SessionRunner("sess-roundtrip")
-    runners["sess-roundtrip"] = runner
+    # Pre-populate the runner. Use a valid ses_<32hex> id so the pre-
+    # validation guard in the WS handler passes and the runner is reached.
+    runner = SessionRunner(_VALID_SID_ROUNDTRIP)
+    runners[_VALID_SID_ROUNDTRIP] = runner
     events = _tool_roundtrip_events()
     asyncio.run(_emit_all(runner, events))
 
     with (
         TestClient(app) as client,
-        client.websocket_connect("/ws/sessions/sess-roundtrip") as ws,
+        client.websocket_connect(f"/ws/sessions/{_VALID_SID_ROUNDTRIP}") as ws,
     ):
         received: list[AgentEvent] = []
         seqs: list[int] = []
@@ -152,15 +161,16 @@ def test_websocket_resume_with_since_seq() -> None:
     """``since_seq=N`` skips events with seq ≤ N on replay."""
     factory, runners = _capturing_factory()
     app = create_app(runner_factory=factory, heartbeat_interval_s=_TEST_HEARTBEAT_S)
-    runner = SessionRunner("sess-resume")
-    runners["sess-resume"] = runner
+    # Use a valid ses_<32hex> id so the pre-validation guard passes.
+    runner = SessionRunner(_VALID_SID_RESUME)
+    runners[_VALID_SID_RESUME] = runner
     events = _tool_roundtrip_events()
     asyncio.run(_emit_all(runner, events))
 
     # Resume from seq=2 → expect only events with seq > 2 (3..N).
     with (
         TestClient(app) as client,
-        client.websocket_connect("/ws/sessions/sess-resume?since_seq=2") as ws,
+        client.websocket_connect(f"/ws/sessions/{_VALID_SID_RESUME}?since_seq=2") as ws,
     ):
         for expected_seq in range(3, 1 + len(events)):
             text = ws.receive_text()
@@ -182,6 +192,81 @@ def test_websocket_invalid_since_seq_closes_with_1003() -> None:
     ):
         ws.receive_text()
     assert exc_info.value.code == 1003
+
+
+# ---------------------------------------------------------------------------
+# Regression tests — console-replay-011 + console-replay-new-001
+# Bare-32-hex legacy ids (pre-``ses_`` prefix) must be rejected with 4400
+# at the WS upgrade boundary, not bubble up as HTTP 500.
+# ---------------------------------------------------------------------------
+
+# Two real legacy session ids from the failing console replays:
+_LEGACY_ID_011 = "964ba5f9e44145e093fdb4bd2d086568"
+_LEGACY_ID_NEW_001 = "59ca09a3693e49c7a34849420166f98c"
+
+
+def test_websocket_bare_32hex_legacy_id_closes_with_4400() -> None:
+    """Bare-32-hex session id (console-replay-011) is rejected with close 4400.
+
+    Root cause: ``bearings_to_sdk_uuid`` raises ``ValueError`` for ids
+    without the ``ses_`` prefix. The WS handler pre-validates the format and
+    closes with 4400 *before* calling the runner factory, so no 500 appears
+    in the server log and the ValueError stack trace is suppressed.
+    """
+    factory, _runners = _capturing_factory()
+    app = create_app(runner_factory=factory, heartbeat_interval_s=_TEST_HEARTBEAT_S)
+
+    with (
+        TestClient(app) as client,
+        pytest.raises(WebSocketDisconnect) as exc_info,
+        client.websocket_connect(f"/ws/sessions/{_LEGACY_ID_011}") as ws,
+    ):
+        ws.receive_text()
+    assert exc_info.value.code == 4400
+
+
+def test_websocket_bare_32hex_regression_new_001_closes_with_4400() -> None:
+    """Bare-32-hex session id (console-replay-new-001) is rejected with 4400.
+
+    Regression: was HTTP 101 in the original survey but regressed to 500
+    after the ``ses_``-prefix enforcement landed. Confirms the fix covers
+    both affected ids.
+    """
+    factory, _runners = _capturing_factory()
+    app = create_app(runner_factory=factory, heartbeat_interval_s=_TEST_HEARTBEAT_S)
+
+    with (
+        TestClient(app) as client,
+        pytest.raises(WebSocketDisconnect) as exc_info,
+        client.websocket_connect(f"/ws/sessions/{_LEGACY_ID_NEW_001}") as ws,
+    ):
+        ws.receive_text()
+    assert exc_info.value.code == 4400
+
+
+def test_websocket_ses_prefixed_id_is_not_rejected() -> None:
+    """``ses_``-prefixed ids are NOT rejected by the pre-validation guard.
+
+    The capturing factory creates a runner on first touch for any session_id;
+    a valid ``ses_<32hex>`` id must pass the format check and proceed to the
+    101 handshake + event stream (confirmed by receiving the synthetic
+    runner_status frame that ``serve_session_stream`` always sends).
+    """
+    factory, _runners = _capturing_factory()
+    app = create_app(runner_factory=factory, heartbeat_interval_s=_TEST_HEARTBEAT_S)
+    valid_id = "ses_964ba5f9e44145e093fdb4bd2d086568"
+
+    with (
+        TestClient(app) as client,
+        client.websocket_connect(f"/ws/sessions/{valid_id}") as ws,
+    ):
+        # The runner emits no buffered events; the first frame is the
+        # synthetic runner_status frame serve_session_stream always sends
+        # after the replay drain -- confirms handshake succeeded.
+        frame_text = ws.receive_text()
+        ws.close()
+
+    assert frame_text  # non-empty JSON -- 101 handshake succeeded, not 4400
 
 
 # ---------------------------------------------------------------------------

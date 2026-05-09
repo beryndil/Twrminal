@@ -6061,8 +6061,18 @@
           "import"
         ],
         "summary": "Post Import Bearings",
-        "description": "Import all data from the original Bearings database.\n\nReads from ~/.local/share/bearings/db.sqlite and copies all sessions,\nmessages, tags, and related data into the current Bearings-v1 database.\n\nRows with duplicate IDs are silently skipped (INSERT OR IGNORE).\nThe entire operation is wrapped in a transaction \u2014 on any error,\nthe import rolls back completely.\n\nReturns:\n    ImportResultOut with counts of imported/skipped rows per table.\n    If errors occurred, they are listed in the errors field (but\n    the operation was rolled back, so no partial state persists).\n\nRaises:\n    404: If the source database file does not exist\n    503: If db_connection is not configured on app.state",
+        "description": "Import all data from the original Bearings database.\n\n``payload.confirm`` must be ``True``; omitting it or passing ``False``\nreturns 400 without touching any data.  ``payload.source_dir`` overrides\nthe default source location (``~/.local/share/bearings/``); when\n``None``, the default is used and the database is read from\n``<source_dir>/db.sqlite``.\n\nRows with duplicate IDs are silently skipped (INSERT OR IGNORE).\nThe entire operation is wrapped in a transaction \u2014 on any error,\nthe import rolls back completely.\n\nReturns:\n    ImportResultOut with counts of imported/skipped rows per table.\n    If errors occurred, they are listed in the errors field (but\n    the operation was rolled back, so no partial state persists).\n\nRaises:\n    400: If confirm is False or not provided.\n    404: If the source database file does not exist.\n    503: If db_connection is not configured on app.state.",
         "operationId": "import-bearings-db",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BearingsImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -6070,6 +6080,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ImportResultOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -6931,6 +6981,31 @@
         ],
         "title": "AutoDriverRunOut",
         "description": "Response shape for the auto-driver run row."
+      },
+      "BearingsImportRequest": {
+        "properties": {
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "default": false
+          },
+          "source_dir": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "path"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Dir"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BearingsImportRequest",
+        "description": "Request body for the POST /api/import/bearings endpoint.\n\nThe ``confirm`` flag is an explicit acknowledgement that a potentially\ndestructive mass-import will run.  Omitting it or passing ``False``\ncauses the route to return 400 without touching any data."
       },
       "Body_create-avatar": {
         "properties": {

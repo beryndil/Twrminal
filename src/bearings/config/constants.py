@@ -225,6 +225,16 @@ STREAM_HEARTBEAT_INTERVAL_S: Final[float] = WS_IDLE_PING_INTERVAL_S
 # ~256 x ~300 bytes ~= 75 KiB in the worst case.
 SESSIONS_BROADCAST_QUEUE_MAX: Final[int] = 256
 
+# WebSocket application close codes (4000-4999 range is reserved for
+# application-defined close codes per RFC 6455 §7.4.2).
+#
+# 4400 - invalid session id format. Sent by the per-session stream
+# endpoint when the ``session_id`` path parameter does not match the
+# ``ses_<32hex>`` Bearings format (e.g. bare-32-hex legacy ids that
+# pre-date the ``ses_`` prefix). The endpoint rejects the upgrade
+# pre-handshake so no 101 is ever sent.
+WS_CLOSE_INVALID_SESSION_ID: Final[int] = 4400
+
 # ---------------------------------------------------------------------------
 # Session module vocabulary (arch §4.1, §4.8; SDK shapes verified via
 # context7 ``/anthropics/claude-agent-sdk-python`` queried 2026-04-28)
@@ -1838,6 +1848,7 @@ __all__ = [
     "VAULT_SEARCH_MAX_LINES_PER_DOC",
     "VAULT_SEARCH_RESULT_CAP",
     "VAULT_SEARCH_SNIPPET_MAX_CHARS",
+    "WS_CLOSE_INVALID_SESSION_ID",
     "WS_IDLE_PING_INTERVAL",
     "WS_IDLE_PING_INTERVAL_S",
 ]
