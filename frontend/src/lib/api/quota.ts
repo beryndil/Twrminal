@@ -10,14 +10,14 @@
  *   (``src/bearings/web/routes/quota.py:62``);
  * * response — :class:`bearings.web.models.quota.QuotaSnapshotOut`.
  *
- * Status codes the caller should branch on (raised as
- * :class:`ApiError`):
+ * Documented empty-state responses (never log to console):
  *
  * * 404 — the poller has never succeeded (no snapshot yet);
  * * 503 — quota poller not configured (test apps; bare runtime);
  * * 502 — upstream ``/usage`` poll failed (transient).
  *
- * In every error case the dialog falls back to the
+ * In every empty-state case the caller receives ``null`` from
+ * :func:`getCurrentQuotaSafe`; the dialog falls back to the
  * ``quota_state`` block on the routing-preview response, so a
  * failure here never blocks session creation.
  */
@@ -26,7 +26,7 @@ import {
   API_QUOTA_HISTORY_ENDPOINT,
   USAGE_HEADROOM_WINDOW_DAYS,
 } from "../config";
-import { getJson, type RequestOptions } from "./client";
+import { ApiError, getJson, type RequestOptions } from "./client";
 
 /**
  * Wire shape for one snapshot — one-to-one with
@@ -51,8 +51,8 @@ export interface QuotaSnapshot {
  * Fetch the latest quota snapshot.
  *
  * @throws :class:`ApiError` on non-2xx (404 / 502 / 503 — see module
- *   docstring); callers handle the 404 / 503 cases by falling back
- *   to the routing-preview's ``quota_state`` block.
+ *   docstring); prefer :func:`getCurrentQuotaSafe` for UI paths that
+ *   must stay console-clean on documented empty-state responses.
  */
 export async function getCurrentQuota(
   options: { signal?: AbortSignal } = {},
@@ -62,6 +62,31 @@ export async function getCurrentQuota(
     requestOptions.signal = options.signal;
   }
   return await getJson<QuotaSnapshot>(API_QUOTA_CURRENT_ENDPOINT, requestOptions);
+}
+
+/** HTTP status codes that indicate "no snapshot available yet" — not errors. */
+const QUOTA_EMPTY_STATE_STATUSES: ReadonlySet<number> = new Set([404, 502, 503]);
+
+/**
+ * Fetch the latest quota snapshot, resolving to ``null`` on the
+ * documented empty-state responses (404 — no snapshot yet; 503 — no
+ * poller configured; 502 — upstream poll blip).
+ *
+ * UI components should call this variant so these expected conditions
+ * never surface as a ``console.error``.  Unexpected errors (5xx other
+ * than 502, network failures, …) are still re-thrown.
+ */
+export async function getCurrentQuotaSafe(
+  options: { signal?: AbortSignal } = {},
+): Promise<QuotaSnapshot | null> {
+  try {
+    return await getCurrentQuota(options);
+  } catch (err) {
+    if (err instanceof ApiError && QUOTA_EMPTY_STATE_STATUSES.has(err.status)) {
+      return null;
+    }
+    throw err;
+  }
 }
 
 /**

@@ -63,9 +63,8 @@
     type SessionKind,
   } from "../../config";
   import { previewRouting as previewRoutingDefault, type RoutingPreview } from "../../api/routing";
-  import { getCurrentQuota as getCurrentQuotaDefault } from "../../api/quota";
+  import { getCurrentQuotaSafe as getCurrentQuotaDefault } from "../../api/quota";
   import { listTemplates, type TemplateOut } from "../../api/templates";
-  import { ApiError } from "../../api/client";
   import QuotaBars, { type QuotaBarsSnapshot } from "./QuotaBars.svelte";
   import RoutingPreviewLine, { type RoutingPreviewState } from "./RoutingPreview.svelte";
   import RecostDialog from "./RecostDialog.svelte";
@@ -346,21 +345,18 @@
   });
 
   async function hydrateQuotaOnMount(): Promise<void> {
-    try {
-      const snapshot = await getCurrentQuota();
+    // getCurrentQuota (bound to getCurrentQuotaSafe by default) resolves
+    // null on 404/503/502 so these documented empty-states never surface
+    // as console.error.  Leave quota null when no snapshot is available
+    // yet; the preview's quota_state hydrates the bars on first preview.
+    const snapshot = await getCurrentQuota();
+    if (snapshot !== null) {
       quota = {
         overallUsedPct: snapshot.overall_used_pct,
         sonnetUsedPct: snapshot.sonnet_used_pct,
         overallResetsAt: snapshot.overall_resets_at,
         sonnetResetsAt: snapshot.sonnet_resets_at,
       };
-    } catch (error) {
-      // 404 / 502 / 503 → leave quota null; the preview's
-      // ``quota_state`` will hydrate the bars on the first preview.
-      if (!(error instanceof ApiError)) {
-        // Re-raise unexpected errors so a real bug isn't swallowed.
-        throw error;
-      }
     }
   }
 

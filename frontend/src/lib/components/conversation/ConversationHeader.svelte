@@ -51,7 +51,7 @@
     apiChecklistItemEndpoint,
   } from "../../config";
   import { getJson } from "../../api/client";
-  import { getCurrentQuota } from "../../api/quota";
+  import { getCurrentQuotaSafe } from "../../api/quota";
   import { TAG_CLASS_SEVERITY } from "../../api/tags";
   import { sessionsStore } from "../../stores/sessions.svelte";
   import { conversationStore } from "../../stores/conversation.svelte";
@@ -229,21 +229,19 @@
     }
     let cancelled = false;
     void (async () => {
-      try {
-        const q = await getCurrentQuota();
-        if (!cancelled) {
-          quotaSnapshot = {
-            overallUsedPct: q.overall_used_pct,
-            sonnetUsedPct: q.sonnet_used_pct,
-            overallResetsAt: q.overall_resets_at,
-            sonnetResetsAt: q.sonnet_resets_at,
-          };
-        }
-      } catch {
-        // Non-fatal — QuotaBars renders an "unavailable" state when
-        // snapshot is null. 404 / 503 / 502 are all normal during
-        // early setup (no poller configured yet).
-        if (!cancelled) quotaSnapshot = null;
+      // getCurrentQuotaSafe resolves null on 404/503/502 (documented
+      // empty-state responses) so these never surface as console.error.
+      const q = await getCurrentQuotaSafe();
+      if (!cancelled) {
+        quotaSnapshot =
+          q !== null
+            ? {
+                overallUsedPct: q.overall_used_pct,
+                sonnetUsedPct: q.sonnet_used_pct,
+                overallResetsAt: q.overall_resets_at,
+                sonnetResetsAt: q.sonnet_resets_at,
+              }
+            : null;
       }
     })();
     return () => {

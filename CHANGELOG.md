@@ -9,6 +9,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **Console-clean quota + pending-ops empty states (console-replay-001-FE,
+  console-replay-012-FE):** Two fetch paths logged to console on documented
+  empty-state responses. `GET /api/quota/current` returns 404 when no snapshot
+  has been recorded yet; `GET /api/fs/read` returns 403 when `allow-roots` is
+  empty. Both are expected conditions, not errors. Fix: added
+  `getCurrentQuotaSafe()` to `frontend/src/lib/api/quota.ts` — wraps
+  `getCurrentQuota` and resolves `null` on 404 / 503 / 502 without throwing.
+  Extended `fetchPendingOps` in `frontend/src/lib/api/pendingOps.ts` to treat
+  403 identically to 404 (empty ops list). `ConversationHeader.svelte` and
+  `NewSessionForm.svelte` updated to call the safe variant. Tests added
+  asserting `console.error` is not called and helpers resolve to soft-empty.
+
 - **OpenAPI undocumented-status bundle (BUG-NET-10/11/20):** Four
   endpoints legitimately return 4xx responses that were absent from
   the OpenAPI specification, causing clients and the frontend to treat

@@ -121,6 +121,8 @@ interface FsReadOut {
  *
  * - Returns ``[]`` when the file does not exist (404 from the FS
  *   route is treated as "no pending ops").
+ * - Returns ``[]`` when ``allow-roots`` is empty and the backend
+ *   returns 403 — a documented empty-state, not an access error.
  * - Propagates other :class:`ApiError` values to the caller.
  */
 export async function fetchPendingOps(
@@ -134,7 +136,9 @@ export async function fetchPendingOps(
       signal: options.signal,
     });
   } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
+    if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
+      // 404 — file does not exist (no pending ops).
+      // 403 — allow-roots not configured; treat as empty pending list.
       return [];
     }
     throw err;
