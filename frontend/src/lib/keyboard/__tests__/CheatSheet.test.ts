@@ -5,6 +5,7 @@
  */
 import { fireEvent, render } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { tick } from "svelte";
 
 import {
   KEYBINDING_ACTION_NEW_CHAT_DEFAULTS,
@@ -81,6 +82,77 @@ describe("CheatSheet", () => {
     const onClose = vi.fn();
     const { getByTestId } = render(CheatSheet, { props: { open: true, onClose } });
     await fireEvent.click(getByTestId("cheat-sheet-backdrop"));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  // ---- KBD-52 / KBD-04: focus-on-open + Tab trap --------------------------
+
+  it("focuses the dialog wrapper immediately on open (KBD-52)", async () => {
+    const { getByTestId } = render(CheatSheet, {
+      props: { open: true, onClose: vi.fn() },
+    });
+    // Flush Svelte reactivity then wait for the requestAnimationFrame.
+    await tick();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    expect(document.activeElement).toBe(getByTestId("cheat-sheet"));
+  });
+
+  it("Tab from dialog wrapper moves focus to the close button (KBD-04)", async () => {
+    const { getByTestId } = render(CheatSheet, {
+      props: { open: true, onClose: vi.fn() },
+    });
+    await tick();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const dialog = getByTestId("cheat-sheet");
+    const closeBtn = getByTestId("cheat-sheet-close");
+    dialog.focus();
+    const tabEvt = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    dialog.dispatchEvent(tabEvt);
+    expect(tabEvt.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(closeBtn);
+  });
+
+  it("Tab from the close button (last focusable) wraps back (KBD-04)", async () => {
+    const { getByTestId } = render(CheatSheet, {
+      props: { open: true, onClose: vi.fn() },
+    });
+    await tick();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const dialog = getByTestId("cheat-sheet");
+    const closeBtn = getByTestId("cheat-sheet-close");
+    closeBtn.focus();
+    const tabEvt = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    // Tab from the last (and only) focusable element must wrap to the first.
+    dialog.dispatchEvent(tabEvt);
+    expect(tabEvt.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(closeBtn);
+  });
+
+  it("Shift+Tab from close button wraps to last focusable (KBD-04)", async () => {
+    const { getByTestId } = render(CheatSheet, {
+      props: { open: true, onClose: vi.fn() },
+    });
+    await tick();
+    const closeBtn = getByTestId("cheat-sheet-close");
+    closeBtn.focus();
+    const shiftTab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    getByTestId("cheat-sheet").dispatchEvent(shiftTab);
+    expect(shiftTab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(closeBtn);
+  });
+
+  it("? key pressed inside dialog closes the cheat sheet (KBD-52 allowInModalContext)", async () => {
+    const onClose = vi.fn();
+    const { getByTestId } = render(CheatSheet, { props: { open: true, onClose } });
+    await tick();
+    const dialog = getByTestId("cheat-sheet");
+    dialog.focus();
+    await fireEvent.keyDown(dialog, { key: "?" });
     expect(onClose).toHaveBeenCalledOnce();
   });
 

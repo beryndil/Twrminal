@@ -306,6 +306,62 @@ describe("CommandPalette", () => {
   });
 });
 
+// ---- KBD-53 / KBD-07: Ctrl+Shift+P propagates past panel ----------------
+
+describe("CommandPalette — global chord propagation (KBD-53)", () => {
+  it("Ctrl+Shift+P keydown on the search input reaches window listeners (KBD-53)", async () => {
+    const { getByTestId } = render(CommandPalette, {
+      props: { open: true, onClose: vi.fn() },
+    });
+    const input = getByTestId("command-palette-search");
+
+    let windowSaw = false;
+    const listener = (e: KeyboardEvent): void => {
+      if (e.ctrlKey && e.shiftKey && e.code === "KeyP") windowSaw = true;
+    };
+    window.addEventListener("keydown", listener);
+    try {
+      await fireEvent.keyDown(input, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    } finally {
+      window.removeEventListener("keydown", listener);
+    }
+    expect(windowSaw).toBe(true);
+  });
+});
+
+// ---- KBD-15: Tab is trapped within the panel -----------------------------
+
+describe("CommandPalette — Tab focus trap (KBD-15)", () => {
+  it("Tab from the search input (only focusable element) is prevented from leaving panel", async () => {
+    const { getByTestId } = render(CommandPalette, {
+      props: { open: true, onClose: vi.fn() },
+    });
+    const panel = getByTestId("command-palette-panel");
+    const input = getByTestId("command-palette-search");
+    input.focus();
+    const tabEvt = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    panel.dispatchEvent(tabEvt);
+    expect(tabEvt.defaultPrevented).toBe(true);
+  });
+
+  it("Shift+Tab from the search input is also trapped", async () => {
+    const { getByTestId } = render(CommandPalette, {
+      props: { open: true, onClose: vi.fn() },
+    });
+    const panel = getByTestId("command-palette-panel");
+    const input = getByTestId("command-palette-search");
+    input.focus();
+    const shiftTab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    panel.dispatchEvent(shiftTab);
+    expect(shiftTab.defaultPrevented).toBe(true);
+  });
+});
+
 // ---- gap-cycle-13-005: per-session cwd scoping --------------------------
 
 describe("CommandPalette — slash command scoping (gap-cycle-13-005)", () => {

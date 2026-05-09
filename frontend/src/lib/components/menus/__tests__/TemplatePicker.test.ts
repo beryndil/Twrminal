@@ -9,6 +9,7 @@
  */
 import { fireEvent, render, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { tick } from "svelte";
 
 vi.mock("$app/navigation", () => ({
   goto: vi.fn().mockResolvedValue(undefined),
@@ -258,5 +259,51 @@ describe("TemplatePicker — open state", () => {
     });
     const errEl = await findByTestId("template-picker-load-error");
     expect(errEl).toBeInTheDocument();
+  });
+});
+
+// ---- KBD-24: focus-on-open + Tab trap ------------------------------------
+
+describe("TemplatePicker — focus management (KBD-24)", () => {
+  it("focuses the panel wrapper immediately on open", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResp([]));
+    const { getByTestId } = render(TemplatePicker, {
+      props: { open: true, onClose: vi.fn() },
+    });
+    await tick();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    expect(document.activeElement).toBe(getByTestId("template-picker"));
+  });
+
+  it("Tab from the last focusable element wraps to the first (trap cycle)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResp([]));
+    const { getByTestId, findByTestId } = render(TemplatePicker, {
+      props: { open: true, onClose: vi.fn() },
+    });
+    // Wait for the close button to appear.
+    const closeBtn = await findByTestId("template-picker-close");
+    const panel = getByTestId("template-picker");
+    closeBtn.focus();
+    const tabEvt = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    panel.dispatchEvent(tabEvt);
+    expect(tabEvt.defaultPrevented).toBe(true);
+  });
+
+  it("Shift+Tab from the first focusable element wraps to the last (trap cycle)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResp([]));
+    const { getByTestId, findByTestId } = render(TemplatePicker, {
+      props: { open: true, onClose: vi.fn() },
+    });
+    const closeBtn = await findByTestId("template-picker-close");
+    const panel = getByTestId("template-picker");
+    closeBtn.focus();
+    const shiftTab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    panel.dispatchEvent(shiftTab);
+    expect(shiftTab.defaultPrevented).toBe(true);
   });
 });

@@ -9,6 +9,36 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **fix(keyboard): resolve 8 keyboard-nav bugs — focus-trap, Ctrl+Shift+P
+  toggle, Ctrl+K dispatcher (KBD-04/07/15/24/28/52/53/54):**
+  Three root-cause fixes:
+  (1) *Ctrl+K dispatcher* — `bindings.ts` had `displayOnly: true` on the
+  `KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH` entry, causing `dispatch.ts` to
+  skip it when building the registry so `lookupBindingForEvent` always
+  returned `undefined` and `SidebarSearch.svelte`'s `openOverlay` handler
+  never fired. Fix: removed `displayOnly: true`; the binding now routes
+  through the global dispatcher to the already-registered handler (KBD-28,
+  KBD-54).
+  (2) *CommandPalette stop-propagation* — `CommandPalette.svelte`'s panel
+  `<div>` had `onkeydown={(e) => e.stopPropagation()}` which ate every
+  keydown before it could bubble to the window-level `KeybindingsProvider`
+  listener, so a second `Ctrl+Shift+P` inside the palette never reached the
+  toggle handler. Fix: replaced the blanket stop with `handlePanelKeyDown`
+  that only traps `Tab`/`Shift+Tab` within the panel and lets all other
+  keys propagate (KBD-07, KBD-53, KBD-15).
+  (3) *Modal focus-on-open* — `CheatSheet.svelte`, `CommandPalette.svelte`,
+  and `TemplatePicker.svelte` all set `tabindex="-1"` on their dialog
+  wrappers but never called `.focus()` on open, so Tab walked document
+  order to outer-page elements (WCAG 2.4.3 violation). Fix: added
+  `$effect`-driven `requestAnimationFrame(() => el.focus())` on open and
+  a `handleDialogKeyDown` / `handlePanelKeyDown` Tab-trap in each modal
+  (KBD-04, KBD-15, KBD-24, KBD-52). `CheatSheet.svelte` also handles `?`
+  inside the dialog so a second press closes the sheet even though
+  `stopPropagation` prevents the event reaching the window listener.
+  Vitest coverage: 14 new test cases across `CheatSheet.test.ts`,
+  `CommandPalette.test.ts`, `TemplatePicker.test.ts`, and
+  `dispatch.test.ts`.
+
 - **chore: fix pre-existing vulture + codespell pre-commit gate failures
   (A7):** Three `urlopen` mock parameters in
   `tests/test_preflight_openapi_match.py` were flagged by vulture as unused

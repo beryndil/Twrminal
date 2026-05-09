@@ -38,6 +38,8 @@
 
   const { open, onClose }: Props = $props();
 
+  let panelEl = $state<HTMLElement | null>(null);
+
   // ---- inline instantiation error -----------------------------------------
 
   let instantiateError = $state<string | null>(null);
@@ -55,6 +57,10 @@
       deleteError = null;
       confirmDeleteId = null;
       void refreshTemplates();
+      // Move focus into the panel on open (WCAG 2.4.3 / ARIA dialog
+      // pattern) so Tab cycles within the modal rather than walking
+      // document order to the outer page (KBD-24 root fix).
+      requestAnimationFrame(() => panelEl?.focus());
     }
   });
 
@@ -109,9 +115,39 @@
 
   // ---- keyboard trap inside the panel -------------------------------------
 
+  /**
+   * Panel-level keydown handler. Stops all propagation (prevents
+   * background page bindings from firing) and traps Tab/Shift+Tab
+   * within focusable descendants for WCAG 2.4.3 compliance (KBD-24).
+   */
   function handlePanelKeyDown(event: KeyboardEvent): void {
-    // Stop Esc from escaping the cascade — the cascade entry handles it.
     event.stopPropagation();
+    if (event.key !== "Tab") return;
+    const focusable =
+      panelEl !== null
+        ? Array.from(
+            panelEl.querySelectorAll<HTMLElement>(
+              'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+            ),
+          ).filter((el) => !el.hasAttribute("disabled"))
+        : [];
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    if (event.shiftKey) {
+      if (document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
   }
 </script>
 
@@ -132,6 +168,7 @@
       tabindex="-1"
       aria-label={TEMPLATE_PICKER_STRINGS.ariaLabel}
       data-testid="template-picker"
+      bind:this={panelEl}
       onclick={(e) => e.stopPropagation()}
       onkeydown={handlePanelKeyDown}
     >

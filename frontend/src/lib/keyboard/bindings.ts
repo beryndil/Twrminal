@@ -59,9 +59,10 @@ export interface KeybindingSpec {
    */
   readonly global: boolean;
   /**
-   * Display-only — the chord is wired by a colocated component (e.g.
-   * ``Ctrl+K`` lives on the sidebar search). The cheat sheet shows it
-   * for discoverability; the global dispatcher does NOT consume it.
+   * Display-only — the chord is shown in the cheat sheet for
+   * discoverability, but the global dispatcher does NOT consume it.
+   * Use sparingly; prefer letting the dispatcher route the chord to a
+   * registered handler via :func:`bindHandler` instead.
    */
   readonly displayOnly?: boolean;
   /**
@@ -186,7 +187,6 @@ export const KEYBINDINGS: readonly KeybindingSpec[] = [
     chord: { code: "KeyK", ctrl: true, display: ["⌘/Ctrl", "K"] },
     section: KEYBINDING_SECTION_COMMAND_PALETTE,
     global: false,
-    displayOnly: true,
   },
 ];
 

@@ -77,6 +77,7 @@
   let activeIndex = $state(0);
   let inputEl = $state<HTMLInputElement | null>(null);
   let listEl = $state<HTMLUListElement | null>(null);
+  let panelEl = $state<HTMLElement | null>(null);
 
   $effect(() => {
     if (open) {
@@ -156,6 +157,42 @@
     onClose();
   }
 
+  /**
+   * Panel-level keydown handler. Traps Tab/Shift+Tab within the panel
+   * for WCAG 2.4.3 focus management (KBD-15). Does NOT call
+   * ``stopPropagation`` for non-Tab keys so that global chords like
+   * ``Ctrl+Shift+P`` can reach the window-level ``KeybindingsProvider``
+   * listener — the missing propagation was KBD-53's root cause.
+   */
+  function handlePanelKeyDown(event: KeyboardEvent): void {
+    if (event.key !== "Tab") return;
+    const focusable =
+      panelEl !== null
+        ? Array.from(
+            panelEl.querySelectorAll<HTMLElement>(
+              'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+            ),
+          ).filter((el) => !el.hasAttribute("disabled"))
+        : [];
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    if (event.shiftKey) {
+      if (document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  }
+
   function handleKeydown(event: KeyboardEvent): void {
     if (event.key === "Escape") {
       event.stopPropagation();
@@ -204,13 +241,15 @@
       if (e.key === "Escape") onClose();
     }}
   >
-    <!-- Panel — stop propagation so clicks inside don't close -->
+    <!-- Panel — stop click propagation so backdrop-click doesn't close;
+         keydown is handled by handlePanelKeyDown (Tab trap only). -->
     <div
       class="flex w-full max-w-lg flex-col rounded-lg border border-border bg-surface-1 shadow-2xl"
       data-testid="command-palette-panel"
       role="presentation"
+      bind:this={panelEl}
       onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.stopPropagation()}
+      onkeydown={handlePanelKeyDown}
     >
       <!-- Header -->
       <div class="flex items-center gap-2 border-b border-border px-3 py-2">

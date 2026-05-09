@@ -53,6 +53,61 @@
     );
   }
 
+  let dialogEl = $state<HTMLElement | null>(null);
+
+  // Move focus into the dialog when it opens (WCAG 2.4.3 / ARIA dialog
+  // pattern). Without this, Tab walks document order starting from the
+  // previously-focused outer-page element (KBD-52 root fix).
+  $effect(() => {
+    if (open && dialogEl !== null) {
+      requestAnimationFrame(() => dialogEl?.focus());
+    }
+  });
+
+  /**
+   * Dialog-level keydown handler.
+   *
+   * - Stops propagation for all keys so background page bindings don't
+   *   fire while the modal is open.
+   * - Traps Tab/Shift+Tab within focusable descendants (KBD-04).
+   * - Handles ``?`` directly so a second press closes the sheet even
+   *   though stopPropagation prevents it reaching the window listener
+   *   (mirrors the ``allowInModalContext`` flag on the ``?`` binding).
+   */
+  function handleDialogKeyDown(event: KeyboardEvent): void {
+    event.stopPropagation();
+    if (event.key === "Tab") {
+      const focusable =
+        dialogEl !== null
+          ? Array.from(
+              dialogEl.querySelectorAll<HTMLElement>(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+              ),
+            ).filter((el) => !el.hasAttribute("disabled"))
+          : [];
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey) {
+        if (document.activeElement === first || document.activeElement === dialogEl) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last || document.activeElement === dialogEl) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    } else if (event.key === "?") {
+      // Close on second ? press while focus is inside the modal.
+      onClose();
+    }
+  }
+
   onMount(() => {
     return registerEscEntry({
       priority: ESC_PRIORITY_OVERLAY,
@@ -78,8 +133,9 @@
       tabindex="-1"
       aria-label={KEYBOARD_SHORTCUT_STRINGS.cheatSheetAriaLabel}
       data-testid="cheat-sheet"
+      bind:this={dialogEl}
       onclick={(event) => event.stopPropagation()}
-      onkeydown={(event) => event.stopPropagation()}
+      onkeydown={handleDialogKeyDown}
     >
       <header class="cheat-sheet__header">
         <h2 class="cheat-sheet__title">{KEYBOARD_SHORTCUT_STRINGS.cheatSheetTitle}</h2>

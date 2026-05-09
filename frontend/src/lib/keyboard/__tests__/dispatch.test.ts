@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH,
   KEYBINDING_ACTION_NEW_CHAT_DEFAULTS,
   KEYBINDING_ACTION_SIDEBAR_DOWN_FORCE,
   KEYBINDING_ACTION_SIDEBAR_JUMP_PREFIX,
@@ -119,6 +120,13 @@ describe("lookupBindingForEvent", () => {
   it("returns undefined for unbound chords", () => {
     const event = new KeyboardEvent("keydown", { code: "KeyZ", key: "z" });
     expect(lookupBindingForEvent(event)).toBeUndefined();
+  });
+
+  // KBD-54: Ctrl+K must be in the live registry (not skipped as displayOnly).
+  it("Ctrl+K resolves to KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH in the live registry (KBD-54)", () => {
+    const event = new KeyboardEvent("keydown", { code: "KeyK", key: "k", ctrlKey: true });
+    const spec = lookupBindingForEvent(event);
+    expect(spec?.id).toBe(KEYBINDING_ACTION_FOCUS_SIDEBAR_SEARCH);
   });
 });
 
