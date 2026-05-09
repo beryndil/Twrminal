@@ -93,6 +93,18 @@ def test_get_current_returns_404_when_empty(
     assert response.status_code == 404
 
 
+def test_get_current_404_body_shape(
+    app_client_no_poller: TestClient,
+) -> None:
+    """404 body matches the declared DetailError schema (``{"detail": str}``)."""
+    response = app_client_no_poller.get("/api/quota/current")
+    assert response.status_code == 404
+    body = response.json()
+    assert "detail" in body
+    assert isinstance(body["detail"], str)
+    assert body["detail"] == "no quota snapshot recorded yet"
+
+
 def test_get_current_returns_persisted_snapshot(
     tmp_path: Path,
 ) -> None:

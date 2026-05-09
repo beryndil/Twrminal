@@ -30,6 +30,7 @@ from bearings.agent.fs import (
     validate_path,
 )
 from bearings.config.settings import FsCfg
+from bearings.web.models.errors import DetailError
 from bearings.web.models.fs import FsEntryOut, FsListOut, FsPickIn, FsPickOut, FsReadOut
 
 router = APIRouter()
@@ -48,7 +49,17 @@ def _cfg(request: Request) -> FsCfg:
     return cfg
 
 
-@router.get("/api/fs/list", response_model=FsListOut, operation_id="fs-list")
+@router.get(
+    "/api/fs/list",
+    response_model=FsListOut,
+    responses={
+        403: {
+            "model": DetailError,
+            "description": "Path outside allow-roots or no allow-roots configured.",
+        }
+    },
+    operation_id="fs-list",
+)
 async def get_list(
     request: Request,
     path: str = Query(..., description="Absolute path to list."),
@@ -76,7 +87,17 @@ async def get_list(
     )
 
 
-@router.get("/api/fs/read", response_model=FsReadOut, operation_id="fs-read")
+@router.get(
+    "/api/fs/read",
+    response_model=FsReadOut,
+    responses={
+        403: {
+            "model": DetailError,
+            "description": "Path outside allow-roots or no allow-roots configured.",
+        }
+    },
+    operation_id="fs-read",
+)
 async def get_read(
     request: Request,
     path: str = Query(..., description="Absolute path to read as utf-8 text."),

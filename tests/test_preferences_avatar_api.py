@@ -163,6 +163,19 @@ def test_get_avatar_404_when_not_set(
     assert client.get("/api/preferences/avatar").status_code == 404
 
 
+def test_get_avatar_404_body_shape(
+    app_client: tuple[TestClient, Path],
+) -> None:
+    """404 body matches the declared DetailError schema (``{"detail": str}``)."""
+    client, _ = app_client
+    response = client.get("/api/preferences/avatar")
+    assert response.status_code == 404
+    body = response.json()
+    assert "detail" in body
+    assert isinstance(body["detail"], str)
+    assert body["detail"] == "no avatar set"
+
+
 # ---------------------------------------------------------------------------
 # 4. DELETE /api/preferences/avatar
 # ---------------------------------------------------------------------------

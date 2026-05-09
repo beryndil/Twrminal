@@ -4510,6 +4510,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "No quota snapshot recorded yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailError"
+                }
+              }
+            }
           }
         }
       }
@@ -5251,6 +5261,16 @@
                 "schema": {}
               }
             }
+          },
+          "404": {
+            "description": "No avatar has been set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailError"
+                }
+              }
+            }
           }
         }
       },
@@ -5743,6 +5763,16 @@
               }
             }
           },
+          "403": {
+            "description": "Path outside allow-roots or no allow-roots configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailError"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -5784,6 +5814,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FsReadOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Path outside allow-roots or no allow-roots configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailError"
                 }
               }
             }
@@ -7410,6 +7450,21 @@
         ],
         "title": "CommandOut",
         "description": "One slash-command entry returned by ``GET /api/commands``."
+      },
+      "DetailError": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "DetailError",
+        "description": "Body returned by ``HTTPException`` raises throughout Bearings routes.\n\nAll ``raise HTTPException(status_code=N, detail=\"...\")`` calls produce\nthis JSON shape.  Declaring it explicitly in the ``responses`` map of\nroute decorators causes FastAPI to emit the schema in the OpenAPI spec\nrather than leaving the status code undocumented."
       },
       "DirectoryHistoryEntry": {
         "properties": {

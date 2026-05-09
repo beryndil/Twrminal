@@ -22,6 +22,7 @@ from bearings.agent.quota import (
     load_latest,
 )
 from bearings.config.constants import USAGE_HEADROOM_WINDOW_DAYS
+from bearings.web.models.errors import DetailError
 from bearings.web.models.quota import QuotaSnapshotOut
 from bearings.web.routes._deps import _db, _quota_poller
 
@@ -42,6 +43,7 @@ def _to_out(snapshot: QuotaSnapshot) -> QuotaSnapshotOut:
 @router.get(
     "/api/quota/current",
     response_model=QuotaSnapshotOut,
+    responses={404: {"model": DetailError, "description": "No quota snapshot recorded yet."}},
     operation_id="get-quota-current",
 )
 async def get_current(request: Request) -> QuotaSnapshotOut:

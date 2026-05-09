@@ -56,6 +56,7 @@ from bearings.config.constants import (
 )
 from bearings.db import preferences as prefs_db
 from bearings.db.preferences import Preferences
+from bearings.web.models.errors import DetailError
 from bearings.web.models.preferences import PreferencesOut, PreferencesPatch
 
 # URL path prefix for serving the avatar — kept as a constant so the
@@ -141,7 +142,11 @@ async def patch_preferences(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/api/preferences/avatar", operation_id="get-avatar")
+@router.get(
+    "/api/preferences/avatar",
+    responses={404: {"model": DetailError, "description": "No avatar has been set."}},
+    operation_id="get-avatar",
+)
 async def get_avatar(request: Request) -> Response:
     """Serve the current avatar image bytes.
 

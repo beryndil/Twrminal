@@ -123,6 +123,33 @@ def test_get_list_no_allow_roots_403() -> None:
         assert response.status_code == 403
 
 
+def test_get_list_403_body_shape(app_client: TestClient, tmp_path: Path) -> None:
+    """403 body matches the declared DetailError schema (``{"detail": str}``)."""
+    response = app_client.get("/api/fs/list", params={"path": str(tmp_path)})
+    assert response.status_code == 403
+    body = response.json()
+    assert "detail" in body
+    assert isinstance(body["detail"], str)
+
+
+def test_get_read_403_no_allow_roots() -> None:
+    """A fresh ``FsCfg()`` with empty ``allow_roots`` → ``GET /api/fs/read`` returns 403."""
+    app = create_app(heartbeat_interval_s=_HEARTBEAT_S, fs_cfg=FsCfg())
+    with TestClient(app) as client:
+        response = client.get("/api/fs/read", params={"path": "/tmp/some-file.txt"})
+        assert response.status_code == 403
+
+
+def test_get_read_403_body_shape(app_client: TestClient, tmp_path: Path) -> None:
+    """403 body matches the declared DetailError schema (``{"detail": str}``)."""
+    # ``tmp_path`` is the parent of ``fs-root`` and not in the allow-roots.
+    response = app_client.get("/api/fs/read", params={"path": str(tmp_path / "outside.txt")})
+    assert response.status_code == 403
+    body = response.json()
+    assert "detail" in body
+    assert isinstance(body["detail"], str)
+
+
 # ---------------------------------------------------------------------------
 # POST /api/fs/pick  (item 3.1 — folder picker)
 # ---------------------------------------------------------------------------
