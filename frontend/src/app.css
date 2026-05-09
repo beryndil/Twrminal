@@ -13,6 +13,27 @@
  * automatically when `data-theme` flips.
  */
 
+/*
+ * Per-theme visual treatments — glass panels, aurora wash, flat
+ * surface variants.  MUST come before the @tailwind directives so
+ * postcss-import can inline them; the CSS spec forbids the @import
+ * at-rule after any non-@import rule, and placing them last caused
+ * PostCSS to silently discard them in the production build
+ * (theme-sweep-001).  The unlayered [data-theme="…"] selectors in
+ * each treatment file have higher specificity than @layer utilities
+ * rules, so they still win even though they now precede Tailwind.
+ *
+ * Source of truth for each theme's effects:
+ *   frontend/src/lib/themes/midnight-glass.css  — glass + aurora
+ *   frontend/src/lib/themes/evergreen.css       — flat, forest-green
+ *   frontend/src/lib/themes/paper-light.css     — flat, cream
+ *   frontend/src/lib/themes/default.css         — flat, Tailwind dark
+ */
+@import "./lib/themes/midnight-glass.css";
+@import "./lib/themes/evergreen.css";
+@import "./lib/themes/paper-light.css";
+@import "./lib/themes/default.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -30,6 +51,11 @@
     --bearings-accent: 37 136 70; /* emerald-500: forest green brand */
     --bearings-accent-muted: 30 110 56; /* emerald-600 */
     --bearings-border: 56 65 75; /* slate-700 */
+    /* Semantic state tokens — used by charts, error bubbles, status indicators. */
+    --bearings-accent-info: 56 189 248; /* sky-400 */
+    --bearings-accent-ok: 74 222 128; /* green-400 */
+    --bearings-accent-warn: 250 204 21; /* yellow-400 */
+    --bearings-accent-error: 239 68 68; /* red-500 */
     /* Scrollbar palette — thumb lighter than dark surface (slate-700 / slate-500). */
     --bearings-scrollbar-thumb: 51 65 85; /* slate-700 */
     --bearings-scrollbar-thumb-hover: 100 116 139; /* slate-500 */
@@ -58,6 +84,11 @@
     --bearings-accent: 110 168 254;
     --bearings-accent-muted: 64 110 200;
     --bearings-border: 48 64 96;
+    /* Semantic state tokens — used by charts, error bubbles, status indicators. */
+    --bearings-accent-info: 56 189 248; /* sky-400 */
+    --bearings-accent-ok: 74 222 128; /* green-400 */
+    --bearings-accent-warn: 250 204 21; /* yellow-400 */
+    --bearings-accent-error: 239 68 68; /* red-500 */
     /* Scrollbar palette — thumb lighter than dark surface (slate-700 / slate-500). */
     --bearings-scrollbar-thumb: 51 65 85; /* slate-700 */
     --bearings-scrollbar-thumb-hover: 100 116 139; /* slate-500 */
@@ -86,6 +117,11 @@
     --bearings-accent: 96 165 250;
     --bearings-accent-muted: 59 130 246;
     --bearings-border: 75 85 99;
+    /* Semantic state tokens — used by charts, error bubbles, status indicators. */
+    --bearings-accent-info: 56 189 248; /* sky-400 */
+    --bearings-accent-ok: 74 222 128; /* green-400 */
+    --bearings-accent-warn: 250 204 21; /* yellow-400 */
+    --bearings-accent-error: 239 68 68; /* red-500 */
     /* Scrollbar palette — thumb lighter than dark surface (slate-700 / slate-500). */
     --bearings-scrollbar-thumb: 51 65 85; /* slate-700 */
     --bearings-scrollbar-thumb-hover: 100 116 139; /* slate-500 */
@@ -114,6 +150,11 @@
     --bearings-accent: 25 91 168;
     --bearings-accent-muted: 70 130 180;
     --bearings-border: 196 188 168;
+    /* Semantic state tokens — darker shades for contrast on the cream background. */
+    --bearings-accent-info: 2 132 199; /* sky-600 */
+    --bearings-accent-ok: 22 163 74; /* green-600 */
+    --bearings-accent-warn: 180 83 9; /* amber-700 */
+    --bearings-accent-error: 220 38 38; /* red-600 */
     /* Scrollbar palette — thumb darker than cream surface (slate-500 / slate-600). */
     --bearings-scrollbar-thumb: 100 116 139; /* slate-500 */
     --bearings-scrollbar-thumb-hover: 71 85 105; /* slate-600 */
@@ -136,23 +177,6 @@
     @apply h-full bg-surface-0 text-fg antialiased;
   }
 }
-
-/*
- * Per-theme visual treatments — glass panels, aurora wash, flat
- * surface variants.  Imported after all Tailwind layers so the
- * unlayered selectors win by cascade position; each file is also
- * more specific than any competing Tailwind utility class.
- *
- * Source of truth for each theme's effects:
- *   frontend/src/lib/themes/midnight-glass.css  — glass + aurora
- *   frontend/src/lib/themes/evergreen.css       — flat, forest-green
- *   frontend/src/lib/themes/paper-light.css     — flat, cream
- *   frontend/src/lib/themes/default.css         — flat, Tailwind dark
- */
-@import "./lib/themes/midnight-glass.css";
-@import "./lib/themes/evergreen.css";
-@import "./lib/themes/paper-light.css";
-@import "./lib/themes/default.css";
 
 /*
  * Global reduced-motion guard (gap-cycle-14-001).

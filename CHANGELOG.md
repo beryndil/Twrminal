@@ -9,6 +9,54 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **Theme-sweep bundle (theme-sweep-001 through 004):** Four related theme
+  bugs filled in a single bundle.
+
+  - **theme-sweep-001 / theme-sweep-003 — Per-theme treatment CSS files now
+    land in the production bundle:** The four `@import` directives in
+    `frontend/src/app.css` were placed after the `@tailwind` directives;
+    the CSS spec forbids `@import` after any non-`@import` rule, so
+    `postcss-import` silently discarded them during the production build.
+    All per-theme structural effects (aurora wash, glass panels,
+    `[data-theme]`-scoped gradients, active-row accents, per-theme
+    `focus-visible` rings — theme-sweep-003) were absent from every served
+    bundle. Fix: moved the four `@import` lines to before `@tailwind base`.
+    The unlayered `[data-theme="…"]` selectors retain cascade precedence
+    over `@layer utilities` rules by specificity, so moving them earlier
+    has no visual regressions. Verified: `[data-theme=midnight-glass]`
+    appears 10 times in `0.DvjN9Whz.css`; radial-gradient and
+    backdrop-filter are present; 6 per-theme `focus-visible` rules land.
+
+  - **theme-sweep-002 — Conversation error bubble now respects Bearings
+    themes:** The error-state `<div>` in `Conversation.svelte` used
+    `dark:bg-red-900/20 dark:text-red-300 dark:text-red-400` Tailwind
+    modifiers. Because `tailwind.config.js` had no `darkMode` key (defaults
+    to `'media'`), those classes fired on OS `prefers-color-scheme: dark`
+    rather than on the Bearings `[data-theme]` attribute, making the error
+    bubble ignore the active Bearings theme entirely. Fix: removed all
+    `dark:` modifiers from the error bubble; replaced with
+    `border-error / bg-error/10 / text-error / text-error/80` Tailwind
+    tokens backed by the new `--bearings-accent-error` CSS variable.
+    Verified: `prefers-color-scheme:dark` count in served bundle = 0.
+
+  - **theme-sweep-004 — `--bearings-accent-{info,ok,warn,error}` tokens
+    now defined per theme:** `InspectorUsage.svelte` (headroom chart,
+    advisor-effectiveness chart) consumed these four tokens via
+    `var(--bearings-accent-info, #hex)` fallbacks. Because no `[data-theme]`
+    block defined them, the chart always painted the raw hex fallback
+    regardless of theme. Fix: added all four tokens to every `[data-theme]`
+    block in `app.css`. Dark themes (evergreen, midnight-glass, default)
+    use 400-range Tailwind palette values (sky-400, green-400, yellow-400,
+    red-500) for contrast on dark surfaces; `paper-light` uses 600–700-range
+    values (sky-600, green-600, amber-700, red-600) for contrast on the
+    cream background. Wired as `info / ok / warn / error` Tailwind color
+    tokens in `tailwind.config.js`. Verified: 4 `--bearings-accent-error`
+    definitions in the bundle; 0 fallback-hex-only consumers remain.
+
+  Contract tests added to
+  `frontend/src/lib/themes/__tests__/treatments.test.ts`: `@import`
+  placement, per-theme state-token presence, and `dark:`-free error bubble.
+
 - **Console-clean quota + pending-ops empty states (console-replay-001-FE,
   console-replay-012-FE):** Two fetch paths logged to console on documented
   empty-state responses. `GET /api/quota/current` returns 404 when no snapshot

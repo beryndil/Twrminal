@@ -37,6 +37,12 @@ export default {
         },
         // Borders + dividers.
         border: "rgb(var(--bearings-border) / <alpha-value>)",
+        // Semantic state tokens — theme-aware; light on dark themes, dark on paper-light.
+        // Defined per [data-theme] in src/app.css (theme-sweep-004).
+        info: "rgb(var(--bearings-accent-info) / <alpha-value>)",
+        ok: "rgb(var(--bearings-accent-ok) / <alpha-value>)",
+        warn: "rgb(var(--bearings-accent-warn) / <alpha-value>)",
+        error: "rgb(var(--bearings-accent-error) / <alpha-value>)",
       },
       fontFamily: {
         // System UI stack; per behavior/themes.md the theme picker

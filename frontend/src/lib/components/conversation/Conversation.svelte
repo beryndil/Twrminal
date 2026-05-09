@@ -328,13 +328,13 @@
         </p>
       {:else if conversationStore.error !== null}
         <div
-          class="flex flex-col gap-2 border-l-4 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300"
+          class="flex flex-col gap-2 border-l-4 border-error bg-error/10 px-4 py-3 text-sm text-error"
           data-testid="conversation-error"
           role="alert"
         >
           <p class="font-medium">{CONVERSATION_STRINGS.errorBubbleLabel}</p>
           <p class="text-xs">{conversationStore.error.message}</p>
-          <p class="text-xs text-red-600 dark:text-red-400">
+          <p class="text-xs text-error/80">
             {CONVERSATION_STRINGS.errorHintLabel}
           </p>
           {#if sessionId !== null}

@@ -1,3 +1,0 @@
-import{A as e,H as t,M as n,S as r,q as i}from"../chunks/BJWgpuDn.js";import"../chunks/t62M88qj.js";import"../chunks/BYKWPCMi.js";var a=n(`<div class="flex h-full flex-col items-center justify-center gap-2 p-8 text-center" data-testid="paired-page"><h1 class="text-lg font-semibold text-fg-strong">Paired Chats</h1> <p class="max-w-md text-sm text-fg-muted">A paired chat is a 1:1 link between a checklist leaf item and a chat session. Open a
-    checklist and press <strong>💬 Work on this</strong> on any leaf item to spawn or continue
-    its paired chat.</p></div>`);function o(n){var o=a();r(`ycr442`,e=>{t(()=>{i.title=`Paired Chats — Bearings`})}),e(n,o)}export{o as component};
