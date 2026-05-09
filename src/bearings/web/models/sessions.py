@@ -23,6 +23,7 @@ from bearings.config.constants import (
     SESSION_DESCRIPTION_MAX_LENGTH,
     SESSION_TITLE_MAX_LENGTH,
 )
+from bearings.web.models.tags import TagOut
 
 
 class PromptIn(BaseModel):
@@ -106,6 +107,12 @@ class SessionOut(BaseModel):
     # session that was not created via spawn_from_reply.
     pivot_message_id: str | None = None
     parent_session_id: str | None = None
+    # Embedded tag list (PERF-NET-01). Populated by GET /api/sessions via a
+    # single batch JOIN; empty list for sessions with no tags. Callers should
+    # treat an absent field the same as an empty list for back-compat; the
+    # dedicated GET /api/sessions/{id}/tags endpoint remains authoritative for
+    # single-session refresh-after-edit.
+    tags: list[TagOut] = Field(default_factory=list)
 
 
 class SessionTitleUpdate(BaseModel):

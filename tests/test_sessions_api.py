@@ -1318,6 +1318,69 @@ async def test_paired_chat_info_200_null_for_unpaired_session(
     assert response.json() is None
 
 
+# ---------------------------------------------------------------------------
+# PERF-NET-01 — GET /api/sessions embeds tags (single batch query)
+# ---------------------------------------------------------------------------
+
+
+async def test_list_sessions_embeds_tags_matching_per_session_endpoint(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """PERF-NET-01 regression: GET /api/sessions embeds each session's tags.
+
+    Verifies two properties:
+    1. Every session object in the list carries a ``tags`` field.
+    2. The embedded tag ids match the authoritative
+       ``GET /api/sessions/{id}/tags`` response for the same session.
+
+    Two sessions are used: one with tags (confirms population) and one
+    without (confirms the empty-list path does not drop the field).
+    """
+    from bearings.db import tags as tags_db
+
+    app, conn = app_and_db
+    tag_a = await tags_db.create(conn, name="proj-perf", class_="project")
+    tag_b = await tags_db.create(conn, name="label-perf")
+
+    tagged_id = await _new_chat(conn, "tagged-perf")
+    await tags_db.attach(conn, session_id=tagged_id, tag_id=tag_a.id)
+    await tags_db.attach(conn, session_id=tagged_id, tag_id=tag_b.id)
+
+    untagged_id = await _new_chat(conn, "untagged-perf")
+
+    with TestClient(app) as client:
+        list_resp = client.get("/api/sessions")
+        tagged_tags_resp = client.get(f"/api/sessions/{tagged_id}/tags")
+        untagged_tags_resp = client.get(f"/api/sessions/{untagged_id}/tags")
+
+    assert list_resp.status_code == 200
+    assert tagged_tags_resp.status_code == 200
+    assert untagged_tags_resp.status_code == 200
+
+    sessions_by_id = {row["id"]: row for row in list_resp.json()}
+
+    # Every session in the list must carry a "tags" key.
+    for sid, row in sessions_by_id.items():
+        assert "tags" in row, f"session {sid!r} is missing the 'tags' field"
+        assert isinstance(row["tags"], list), f"session {sid!r} tags is not a list"
+
+    # Tagged session: embedded ids must match the per-session tags endpoint.
+    tagged_session = sessions_by_id[tagged_id]
+    embedded_ids = {t["id"] for t in tagged_session["tags"]}
+    canonical_ids = {t["id"] for t in tagged_tags_resp.json()}
+    assert embedded_ids == canonical_ids, (
+        f"embedded tag ids {embedded_ids} differ from /tags endpoint {canonical_ids}"
+    )
+    assert len(tagged_session["tags"]) == 2
+
+    # Untagged session: embedded tags must be an empty list.
+    untagged_session = sessions_by_id[untagged_id]
+    assert untagged_session["tags"] == []
+
+    # The dedicated per-session tags endpoint still works (not removed).
+    assert untagged_tags_resp.json() == []
+
+
 async def test_paired_chat_info_200_data_for_paired_session(
     app_and_db: tuple[FastAPI, aiosqlite.Connection],
 ) -> None:

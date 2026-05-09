@@ -98,6 +98,7 @@ from bearings.web.models.sessions import (
     TokenTotalsOut,
     ToolCallOut,
 )
+from bearings.web.models.tags import TagOut
 from bearings.web.routes.tags import _validate_tag_cardinality
 from bearings.web.routes.ws_sessions import SessionsBroadcaster
 from bearings.web.runner_factory import InProcessRunnerRegistry
@@ -161,8 +162,17 @@ def _sessions_broadcaster(request: Request) -> SessionsBroadcaster | None:
     )
 
 
-def _to_out(session: Session, paired_parent_title: str | None = None) -> SessionOut:
-    """Wire shape for a session row."""
+def _to_out(
+    session: Session,
+    paired_parent_title: str | None = None,
+    tags: list[TagOut] | None = None,
+) -> SessionOut:
+    """Wire shape for a session row.
+
+    ``tags`` is the pre-fetched tag list to embed; ``None`` is treated
+    as an empty list so callers that do not need embedded tags (e.g.
+    sessions_bulk export helpers) can omit the argument without change.
+    """
     return SessionOut(
         id=session.id,
         kind=session.kind,
@@ -190,7 +200,85 @@ def _to_out(session: Session, paired_parent_title: str | None = None) -> Session
         paired_parent_title=paired_parent_title,
         pivot_message_id=session.pivot_message_id,
         parent_session_id=session.parent_session_id,
+        tags=tags if tags is not None else [],
     )
+
+
+def _tag_to_out(tag: tags_db.Tag) -> TagOut:
+    """Convert a :class:`~bearings.db.tags.Tag` dataclass to :class:`TagOut`."""
+    return TagOut(
+        id=tag.id,
+        name=tag.name,
+        color=tag.color,
+        default_model=tag.default_model,
+        working_dir=tag.working_dir,
+        pinned=tag.pinned,
+        class_=tag.class_,  # type: ignore[arg-type]
+        sort_order=tag.sort_order,
+        group=tag.group,
+        created_at=tag.created_at,
+        updated_at=tag.updated_at,
+    )
+
+
+async def _fetch_tags_out(
+    db: aiosqlite.Connection,
+    session_id: str,
+) -> list[TagOut]:
+    """Fetch and convert the tag list for a single session.
+
+    One SQL round-trip per call — appropriate for single-session
+    endpoints where N+1 is not a concern.
+    """
+    raw = await tags_db.list_for_session(db, session_id)
+    return [_tag_to_out(t) for t in raw]
+
+
+async def _batch_fetch_tags_out(
+    db: aiosqlite.Connection,
+    session_ids: list[str],
+) -> dict[str, list[TagOut]]:
+    """Single SQL batch-fetch of tags for the ``GET /api/sessions`` list.
+
+    Returns ``{session_id: [TagOut, …], …}`` for every id in
+    ``session_ids``. Sessions with no tags map to ``[]``. One round-trip
+    replaces the N+1 fan-out that caused 1115+ sequential tag requests
+    at the frontend layer (PERF-NET-01).
+    """
+    if not session_ids:
+        return {}
+    placeholders = ",".join("?" * len(session_ids))
+    cursor = await db.execute(
+        "SELECT st.session_id, t.id, t.name, t.color, t.default_model, "
+        "t.working_dir, t.pinned, t.class, t.sort_order, t.created_at, t.updated_at "
+        "FROM session_tags st "
+        "INNER JOIN tags t ON t.id = st.tag_id "
+        f"WHERE st.session_id IN ({placeholders}) "
+        "ORDER BY st.session_id ASC, t.name ASC",
+        session_ids,
+    )
+    try:
+        rows = await cursor.fetchall()
+    finally:
+        await cursor.close()
+    result: dict[str, list[TagOut]] = {sid: [] for sid in session_ids}
+    for row in rows:
+        sid = str(row[0])
+        tag = tags_db.Tag(
+            id=int(str(row[1])),
+            name=str(row[2]),
+            color=None if row[3] is None else str(row[3]),
+            default_model=None if row[4] is None else str(row[4]),
+            working_dir=None if row[5] is None else str(row[5]),
+            pinned=bool(row[6]),
+            class_=str(row[7]),
+            sort_order=int(str(row[8])),
+            created_at=str(row[9]),
+            updated_at=str(row[10]),
+        )
+        if sid in result:
+            result[sid].append(_tag_to_out(tag))
+    return result
 
 
 _DISPATCH_OUTCOME_QUEUED_BODY: dict[str, object] = {
@@ -438,7 +526,16 @@ async def list_sessions(
         severity_none=severity_none,
     )
     paired_info_map = await _build_paired_info_map(db, rows)
-    return [_to_out(row, paired_parent_title=paired_info_map.get(row.id)) for row in rows]
+    session_ids = [row.id for row in rows]
+    tags_map = await _batch_fetch_tags_out(db, session_ids)
+    return [
+        _to_out(
+            row,
+            paired_parent_title=paired_info_map.get(row.id),
+            tags=tags_map.get(row.id),
+        )
+        for row in rows
+    ]
 
 
 @router.post(
@@ -516,7 +613,8 @@ async def create_session(
         ) from exc
     if tag_ids:
         await tags_db.set_for_session(db, session_id=row.id, tag_ids=tag_ids)
-    out = _to_out(row)
+    embedded_tags = await _fetch_tags_out(db, row.id)
+    out = _to_out(row, tags=embedded_tags)
     broadcaster = _sessions_broadcaster(request)
     if broadcaster is not None:
         broadcaster.publish_upsert(out)
@@ -539,7 +637,8 @@ async def get_session(session_id: str, request: Request) -> SessionOut:
     if row.kind == "chat" and row.checklist_item_id is not None:
         info = await sessions_db.get_paired_chat_info(db, session_id)
         paired_parent_title = info[0] if info else None
-    return _to_out(row, paired_parent_title=paired_parent_title)
+    tags = await _fetch_tags_out(db, session_id)
+    return _to_out(row, paired_parent_title=paired_parent_title, tags=tags)
 
 
 @router.patch("/api/sessions/{session_id}", response_model=SessionOut, operation_id="patch-session")
@@ -579,7 +678,8 @@ async def patch_session(
     if new_tag_ids is not None:
         await tags_db.set_for_session(db, session_id=session_id, tag_ids=new_tag_ids)
 
-    out = _to_out(row)
+    tags = await _fetch_tags_out(db, session_id)
+    out = _to_out(row, tags=tags)
     broadcaster = _sessions_broadcaster(request)
     if broadcaster is not None:
         broadcaster.publish_upsert(out)
@@ -640,7 +740,8 @@ async def close_session(session_id: str, request: Request) -> SessionOut:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no session matches {session_id!r}",
         )
-    out = _to_out(row)
+    tags = await _fetch_tags_out(db, session_id)
+    out = _to_out(row, tags=tags)
     broadcaster = _sessions_broadcaster(request)
     if broadcaster is not None:
         broadcaster.publish_upsert(out)
@@ -697,7 +798,8 @@ async def patch_session_model(
     factory = getattr(request.app.state, "runner_factory", None)
     if isinstance(factory, InProcessRunnerRegistry):
         await factory.recycle(session_id)
-    out = _to_out(row)
+    tags = await _fetch_tags_out(db, session_id)
+    out = _to_out(row, tags=tags)
     broadcaster = _sessions_broadcaster(request)
     if broadcaster is not None:
         broadcaster.publish_upsert(out)
@@ -737,7 +839,8 @@ async def patch_session_permission_mode(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no session matches {session_id!r}",
         )
-    out = _to_out(row)
+    tags = await _fetch_tags_out(db, session_id)
+    out = _to_out(row, tags=tags)
     broadcaster = _sessions_broadcaster(request)
     if broadcaster is not None:
         broadcaster.publish_upsert(out)
@@ -767,7 +870,8 @@ async def patch_session_pinned(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no session matches {session_id!r}",
         )
-    out = _to_out(row)
+    tags = await _fetch_tags_out(db, session_id)
+    out = _to_out(row, tags=tags)
     broadcaster = _sessions_broadcaster(request)
     if broadcaster is not None:
         broadcaster.publish_upsert(out)
@@ -788,7 +892,8 @@ async def reopen_session(session_id: str, request: Request) -> SessionOut:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no session matches {session_id!r}",
         )
-    out = _to_out(row)
+    tags = await _fetch_tags_out(db, session_id)
+    out = _to_out(row, tags=tags)
     broadcaster = _sessions_broadcaster(request)
     if broadcaster is not None:
         broadcaster.publish_upsert(out)
@@ -818,7 +923,8 @@ async def update_session_viewed(session_id: str, request: Request) -> SessionOut
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no session matches {session_id!r}",
         )
-    out = _to_out(row)
+    tags = await _fetch_tags_out(db, session_id)
+    out = _to_out(row, tags=tags)
     broadcaster = _sessions_broadcaster(request)
     if broadcaster is not None:
         broadcaster.publish_upsert(out)
@@ -855,7 +961,8 @@ async def resume_session(session_id: str, request: Request) -> SessionOut:
     factory = getattr(request.app.state, "runner_factory", None)
     if isinstance(factory, InProcessRunnerRegistry):
         await factory(session_id)
-    out = _to_out(row)
+    tags = await _fetch_tags_out(db, session_id)
+    out = _to_out(row, tags=tags)
     broadcaster = _sessions_broadcaster(request)
     if broadcaster is not None:
         broadcaster.publish_upsert(out)
@@ -1202,9 +1309,10 @@ async def export_session(session_id: str, request: Request) -> Response:
     messages = await messages_db.list_for_session(db, session_id)
     tool_calls = await sdk_entries_db.load(db, session_id=session_id)
     checkpoints = await checkpoints_db.list_for_session(db, session_id)
+    export_tags = await _fetch_tags_out(db, session_id)
 
     export = SessionExport(
-        session=_to_out(row, paired_parent_title=paired_parent_title),
+        session=_to_out(row, paired_parent_title=paired_parent_title, tags=export_tags),
         messages=[
             MessageExport(
                 id=m.id,
@@ -1329,7 +1437,8 @@ async def import_session(
     await _import_messages_and_checkpoints(db, body)
     if body.tool_calls:
         await sdk_entries_db.append(db, session_id=session_id, entries=body.tool_calls)
-    out = _to_out(row)
+    imported_tags = await _fetch_tags_out(db, session_id)
+    out = _to_out(row, tags=imported_tags)
     broadcaster = _sessions_broadcaster(request)
     if broadcaster is not None:
         broadcaster.publish_upsert(out)

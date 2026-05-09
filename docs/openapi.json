@@ -10457,6 +10457,13 @@
               }
             ],
             "title": "Parent Session Id"
+          },
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/TagOut"
+            },
+            "type": "array",
+            "title": "Tags"
           }
         },
         "additionalProperties": false,
