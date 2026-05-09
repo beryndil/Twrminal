@@ -21,6 +21,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `NewSessionForm.svelte` updated to call the safe variant. Tests added
   asserting `console.error` is not called and helpers resolve to soft-empty.
 
+- **Sidebar row hydration (F1-RT-06/07/08):** 311 `.virtual-item`
+  placeholders never hydrated because the scrolling
+  `<nav class="flex-1 overflow-y-auto">` inside `SessionList` reported
+  `clientHeight: 0` at common viewports. Root cause: `app-shell__sidebar-body`
+  was an `overflow-y: auto` block container whose flex-allocated height is not
+  always treated as a "definite" size for children's `height: 100%` resolution.
+  `session-list` used `h-full` which silently resolved to `height: auto`; with
+  no definite container height the inner `nav.flex-1` had 0 px to fill.
+  `IntersectionObserver` then classified every row as off-screen and replaced
+  all content with placeholders. Fix: converted `app-shell__sidebar-body` to a
+  flex column pass-through (`display: flex; flex-direction: column;
+  min-height: 0; overflow: hidden`) and changed `session-list` from `h-full`
+  to `flex-1 min-h-0`. All sizing now lives in the flex domain; no percentage
+  heights. Inline rename (double-click + Enter/Esc) and blur-commit (RT-07/08)
+  are unblocked as rows now hydrate correctly. Regression test added to
+  `layout.test.ts`.
+
 - **OpenAPI undocumented-status bundle (BUG-NET-10/11/20):** Four
   endpoints legitimately return 4xx responses that were absent from
   the OpenAPI specification, causing clients and the frontend to treat

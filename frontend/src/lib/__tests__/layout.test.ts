@@ -121,6 +121,43 @@ describe("sidebar templates button (gap-cycle-08-007)", () => {
   });
 });
 
+describe("sidebar row hydration layout (F1-RT-06 regression)", () => {
+  /**
+   * The session-list outer div must use ``flex-1`` (flex child sizing)
+   * rather than ``h-full`` (percentage-height sizing).  A flex item
+   * inside an ``overflow: hidden`` flex container has a definite height
+   * from the flex algorithm; ``height: 100%`` (h-full) may not resolve
+   * against that definite height in some Chromium builds, leaving the
+   * nav inside with ``clientHeight: 0`` and causing every VirtualItem
+   * to be classified as off-screen by IntersectionObserver.
+   *
+   * This test pins the class shape so a future refactor cannot silently
+   * regress back to ``h-full``.
+   */
+  it("session-list outer div has flex-1 class (not h-full)", () => {
+    const { getByTestId } = render(Layout);
+
+    const sessionList = getByTestId("session-list");
+    expect(sessionList).toHaveClass("flex-1");
+    expect(sessionList).not.toHaveClass("h-full");
+  });
+
+  it("session-list outer div has min-h-0 class to allow flex shrinking", () => {
+    const { getByTestId } = render(Layout);
+
+    const sessionList = getByTestId("session-list");
+    expect(sessionList).toHaveClass("min-h-0");
+  });
+
+  it("session-list-body nav exists inside the sidebar body", () => {
+    const { getByTestId } = render(Layout);
+
+    const nav = getByTestId("session-list-body");
+    expect(nav).toBeInTheDocument();
+    expect(nav.tagName.toLowerCase()).toBe("nav");
+  });
+});
+
 describe("sidebar identity block (gap-cycle-08-002)", () => {
   it("renders user-identity-block inside the sidebar", () => {
     const { getByTestId } = render(Layout);

@@ -871,8 +871,36 @@
   }
 
   .app-shell__sidebar-body {
+    /*
+     * Flex pass-through: the sidebar body must be a flex column so that
+     * SessionList's outer div can use ``flex: 1`` (flex child sizing)
+     * rather than ``height: 100%`` (percentage child sizing).
+     *
+     * The ``height: 100%`` / ``h-full`` approach fails in some Chromium
+     * builds because a flex item's allocated height is not always treated
+     * as a "definite" size for children's percentage resolution when the
+     * parent is an ``overflow-y: auto`` scroll container. Converting the
+     * sidebar body into a flex column eliminates the ``height: 100%``
+     * dependency entirely — SessionList uses ``flex: 1`` to fill the
+     * available space, and the nav inside it uses ``flex: 1`` to fill the
+     * remaining space below the filter panel and sort bar. All sizing
+     * stays in the flex domain; no percentages.
+     *
+     * ``min-height: 0`` prevents the flex item from refusing to shrink
+     * below its content's min-content size (the default ``min-height:
+     * auto`` on flex items). ``overflow: hidden`` clips any transient
+     * layout overshoot (the nav scroll container inside provides the
+     * user-visible scrolling).
+     *
+     * Fixes: F1-RT-06 — sidebar row hydration (clientHeight: 0 on the
+     * scrolling nav collapsed the virtual-list viewport, so
+     * IntersectionObserver saw all 311 rows as off-screen).
+     */
     flex: 1;
-    overflow-y: auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .app-shell__main {
