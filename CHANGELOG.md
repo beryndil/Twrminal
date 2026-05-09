@@ -9,6 +9,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Phase 2 QA — Doctor preflight OpenAPI cross-check
+  (`scripts/preflight_openapi_match.py`):** The Phase 2 Doctor
+  preflight check #7 only verified that the served `dist/` tree
+  matched HEAD; it never confirmed the *live API surface* matched the
+  routes declared at HEAD. Bug F1-RT-00 (blocker) exposed this gap:
+  a uvicorn worker launched on 2026-05-05 from HEAD `ba158917`
+  predated all Phase 1 fix commits, so the live server lacked
+  `/api/sessions/bulk`, `/api/sessions/{id}/export`, and
+  `/api/sessions/import` even though source and dist were both
+  current. All Wave 2 and Wave 3 feature surveys hitting those
+  endpoints received 404/405. Fix: new script
+  `scripts/preflight_openapi_match.py` that fetches
+  `/openapi.json` from the running server, generates the HEAD path
+  set via `create_app().openapi()`, and diffs them — exit 0 on
+  match, exit 1 on mismatch ("live API stale vs HEAD"), exit 2
+  when the server is unreachable. 15 unit tests covering
+  `_extract_paths`, `get_live_paths` (urlopen mock), and
+  `check_openapi_match` (match / mismatch fixture / unreachable /
+  extra-in-live). Server restarted; all three previously-missing
+  paths now respond correctly.
+
 - **Analytics Phase 3 — usage routes extended:** The three existing
   `/api/usage/` endpoints now expose the full token picture from the
   Phase 0/1 analytics schema:
