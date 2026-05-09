@@ -117,7 +117,7 @@ from bearings.web.runner_factory import (
     InProcessRunnerRegistry,
     build_in_process_factory,
 )
-from bearings.web.static import mount_static_bundle
+from bearings.web.static import mount_static_bundle, spa_fallback_handler
 from bearings.web.streaming import SINCE_SEQ_QUERY_PARAM, serve_session_stream
 
 _LOG = logging.getLogger(__name__)
@@ -456,6 +456,17 @@ def create_app(
     if extra_routers is not None:
         for extra in extra_routers:
             app.include_router(extra)
+    # SPA catch-all (BUG-NET-23) — registered after every API / WS /
+    # metrics router so those routes always resolve first, and before the
+    # static-bundle mount so navigation paths reach the handler before
+    # the filesystem layer.  Excluded from the OpenAPI schema because it
+    # is a UI-serving concern, not an API endpoint.
+    app.add_api_route(
+        "/{path:path}",
+        spa_fallback_handler,
+        methods=["GET"],
+        include_in_schema=False,
+    )
     # SvelteKit static bundle — mounted last so every API/WS route
     # registered above takes precedence (item 2.1; arch §1.1.5
     # ``web/static.py``). Idempotent on a missing ``dist/`` so

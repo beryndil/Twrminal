@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.types import Scope
@@ -96,6 +96,69 @@ class _BundleStaticFiles(StaticFiles):
         return candidate if candidate.is_file() else None
 
 
+# Prefixes and exact paths that must never be swallowed by the SPA
+# catch-all.  API / WS / metrics / OpenAPI surfaces always take
+# precedence because their routers are registered first; the catch-all
+# never fires for those paths in normal operation.  This set is a
+# defensive guard for unmatched sub-paths that fall through (e.g. a
+# typo'd ``/api/…`` route with no handler).
+_SPA_EXCLUDED_PREFIXES: tuple[str, ...] = (
+    "/api/",
+    "/ws/",
+    "/metrics",
+    "/openapi.json",
+    "/docs",
+    "/redoc",
+    "/static/",
+)
+
+
+def _spa_path_excluded(path: str) -> bool:
+    """Return ``True`` when *path* must bypass the SPA catch-all.
+
+    Matches both the bare prefix (``/metrics``) and any sub-path below
+    it (``/metrics/foo``).
+    """
+    for prefix in _SPA_EXCLUDED_PREFIXES:
+        bare = prefix.rstrip("/")
+        if path == bare or path.startswith(bare + "/"):
+            return True
+    return False
+
+
+async def spa_fallback_handler(request: Request) -> Response:
+    """Serve the SvelteKit shell for any non-API navigation path.
+
+    Registered as ``GET /{path:path}`` in
+    :func:`bearings.web.app.create_app` after all API / WS / metrics
+    routers but *before* the static-bundle mount, so named API routes
+    always resolve through their own handlers first.
+
+    Serving rules:
+
+    * Paths matching an excluded prefix (``/api/``, ``/ws/``, etc.)
+      raise HTTP 404 — the caller expected an API response, not an
+      SPA shell.
+    * Paths whose last segment contains a ``.`` are treated as asset
+      references; they also raise HTTP 404 so a JS loader is never
+      fed an HTML body.
+    * All other paths receive ``dist/index.html`` with
+      ``Content-Type: text/html`` so the SvelteKit client-side router
+      resolves the route.
+    * If the bundle is absent (backend-only test run) HTTP 404 is
+      raised so tests that do not build the frontend see a clear miss.
+    """
+    path = request.url.path
+    if _spa_path_excluded(path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    if "." in Path(path).name:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    index = bundle_dir() / _FALLBACK_HTML
+    if not index.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return FileResponse(str(index), media_type="text/html")
+
+
 def bundle_dir() -> Path:
     """Return the on-disk path the static bundle is served from.
 
@@ -123,4 +186,4 @@ def mount_static_bundle(app: FastAPI) -> None:
     )
 
 
-__all__ = ["bundle_dir", "mount_static_bundle"]
+__all__ = ["bundle_dir", "mount_static_bundle", "spa_fallback_handler"]

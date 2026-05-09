@@ -97,6 +97,52 @@ def test_health_endpoint_is_not_shadowed(client: TestClient) -> None:
     assert response.headers["content-type"].startswith("application/json")
 
 
+@pytest.mark.skipif(
+    not _INDEX_HTML.is_file(),
+    reason="bundle not built — run `npm run build` in frontend/ first",
+)
+def test_spa_catch_all_serves_html_for_deep_link(client: TestClient) -> None:
+    """BUG-NET-23: direct navigation to SPA routes returns the SvelteKit shell.
+
+    Verifies that paths like ``/tags``, ``/vault``, ``/settings`` etc.
+    return HTTP 200 + ``text/html`` with the hydration marker instead
+    of the FastAPI JSON 404 that fired when no API route matched.
+    """
+    spa_paths = [
+        "/tags",
+        "/memories",
+        "/vault",
+        "/analytics",
+        "/settings",
+        "/sessions/new",
+    ]
+    for path in spa_paths:
+        response = client.get(path)
+        assert response.status_code == 200, f"Expected 200 for {path}, got {response.status_code}"
+        assert response.headers["content-type"].startswith("text/html"), (
+            f"Expected text/html for {path}"
+        )
+        assert "<title>Bearings</title>" in response.text, (
+            f"SvelteKit hydration marker missing for {path}"
+        )
+
+
+def test_api_404_not_shadowed_by_spa_catch_all() -> None:
+    """BUG-NET-23: unknown ``/api/*`` paths still return JSON 404, not the SPA shell.
+
+    The catch-all's excluded-prefix guard must prevent the SvelteKit
+    shell from being served in place of a genuine API 404 response.
+    Runs without a built bundle — the path exclusion fires before any
+    filesystem check.
+    """
+    app = create_app()
+    with TestClient(app) as tc:
+        response = tc.get("/api/nonsense")
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json() == {"detail": "Not Found"}
+
+
 def test_factory_tolerates_missing_bundle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Backend-only test runs can construct the app even with no dist/."""
     nonexistent = tmp_path / "no-bundle-here"
