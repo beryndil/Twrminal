@@ -78,10 +78,21 @@ def _db(request: Request) -> aiosqlite.Connection:
 
 
 def _avatars_root(request: Request) -> Path:
-    """Return the on-disk avatars directory, creating it when absent."""
-    root: Path = getattr(request.app.state, "avatars_root", DEFAULT_AVATARS_STORAGE_ROOT)
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+    """Return the on-disk avatars directory, creating it when absent.
+
+    Falls through to :data:`~bearings.config.constants.DEFAULT_AVATARS_STORAGE_ROOT`
+    when ``app.state.avatars_root`` is ``None`` *or* absent — e.g. when the
+    caller omits ``avatars_root`` from :func:`~bearings.web.app.create_app`.
+
+    The plain ``getattr(..., DEFAULT)`` idiom is intentionally NOT used here:
+    :func:`~bearings.web.app._configure_app_state` always sets the attribute
+    (even to ``None``), so the ``getattr`` default would never fire and
+    ``root.mkdir()`` would crash with ``AttributeError`` on ``None``.
+    """
+    raw: Path | None = getattr(request.app.state, "avatars_root", None)
+    effective: Path = raw if raw is not None else DEFAULT_AVATARS_STORAGE_ROOT
+    effective.mkdir(parents=True, exist_ok=True)
+    return effective
 
 
 def _to_out(prefs: Preferences) -> PreferencesOut:

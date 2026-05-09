@@ -363,3 +363,99 @@ def test_patch_display_name_over_max_length_returns_422(
     name_over_limit = "A" * (DISPLAY_NAME_MAX_LENGTH + 1)
     response = client.patch("/api/preferences", json={"display_name": name_over_limit})
     assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# F8-rt-04/rt-05 regression — avatars_root=None must not return 500
+#
+# When create_app() is called without avatars_root (or with avatars_root=None),
+# _configure_app_state() sets app.state.avatars_root = None.  The old
+# _avatars_root() helper used getattr(..., DEFAULT) which silently returned
+# None (not DEFAULT) because the attribute *existed* on state.  Subsequent
+# root.mkdir() then crashed → 500 for ALL avatar/sync_from_system calls.
+#
+# The fix: getattr returns None explicitly; a separate fallback to
+# DEFAULT_AVATARS_STORAGE_ROOT is applied only when the result is None.
+# ---------------------------------------------------------------------------
+
+
+def test_create_avatar_avatars_root_none_does_not_500(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /api/preferences/avatar must return 200 when app.state.avatars_root is None.
+
+    Regression for F8-rt-04: avatars_root omitted from create_app() sets
+    state.avatars_root to None, triggering a crash in the old _avatars_root()
+    helper.  The fix falls through to DEFAULT_AVATARS_STORAGE_ROOT.
+    """
+    import bearings.web.routes.preferences as prefs_mod
+
+    # Redirect the module-level fallback into tmp_path so the test stays isolated.
+    monkeypatch.setattr(prefs_mod, "DEFAULT_AVATARS_STORAGE_ROOT", tmp_path / "avatars")
+
+    db_path = tmp_path / "prefs.db"
+
+    async def _open() -> aiosqlite.Connection:
+        factory = get_connection_factory(db_path)
+        conn = await factory()
+        await load_schema(conn)
+        return conn
+
+    loop = asyncio.new_event_loop()
+    try:
+        conn = loop.run_until_complete(_open())
+        # avatars_root intentionally omitted → app.state.avatars_root = None
+        app = create_app(heartbeat_interval_s=_HEARTBEAT_S, db_connection=conn)
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/preferences/avatar",
+                files={"file": ("photo.png", io.BytesIO(_PNG_1X1), "image/png")},
+            )
+        loop.run_until_complete(conn.close())
+    finally:
+        loop.close()
+
+    assert response.status_code == 200, (
+        f"Expected 200 (not 500) when avatars_root=None; "
+        f"got {response.status_code}: {response.text}"
+    )
+
+
+def test_sync_from_system_avatars_root_none_does_not_500(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /api/preferences/sync_from_system must return 200 when avatars_root is None.
+
+    Regression for F8-rt-05: same root cause as F8-rt-04.
+    """
+    import bearings.web.routes.preferences as prefs_mod
+
+    monkeypatch.setattr(prefs_mod, "DEFAULT_AVATARS_STORAGE_ROOT", tmp_path / "avatars")
+    monkeypatch.setenv("USER", "testuser")
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    db_path = tmp_path / "prefs2.db"
+
+    async def _open() -> aiosqlite.Connection:
+        factory = get_connection_factory(db_path)
+        conn = await factory()
+        await load_schema(conn)
+        return conn
+
+    loop = asyncio.new_event_loop()
+    try:
+        conn = loop.run_until_complete(_open())
+        # avatars_root intentionally omitted → app.state.avatars_root = None
+        app = create_app(heartbeat_interval_s=_HEARTBEAT_S, db_connection=conn)
+        with TestClient(app) as client:
+            response = client.post("/api/preferences/sync_from_system")
+        loop.run_until_complete(conn.close())
+    finally:
+        loop.close()
+
+    assert response.status_code == 200, (
+        f"Expected 200 (not 500) when avatars_root=None; "
+        f"got {response.status_code}: {response.text}"
+    )

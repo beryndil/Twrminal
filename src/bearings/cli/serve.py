@@ -21,7 +21,7 @@ from pathlib import Path
 import aiosqlite
 import uvicorn
 
-from bearings.config.constants import CLI_EXIT_OK
+from bearings.config.constants import CLI_EXIT_OK, DEFAULT_AVATARS_STORAGE_ROOT
 from bearings.config.settings import Settings
 from bearings.db.connection import load_schema
 from bearings.web.app import create_app
@@ -79,6 +79,7 @@ def _run(args: argparse.Namespace) -> int:
         enable_driver_dispatch=True,
         billing_mode=settings.billing.mode,
         data_dir=settings.db_path.parent,
+        avatars_root=DEFAULT_AVATARS_STORAGE_ROOT,
     )
 
     @app.on_event("shutdown")
