@@ -7,7 +7,61 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **OpenAPI undocumented-status bundle (BUG-NET-10/11/20):** Four
+  endpoints legitimately return 4xx responses that were absent from
+  the OpenAPI specification, causing clients and the frontend to treat
+  them as unexpected errors.
+  - `GET /api/quota/current` — 404 (`no quota snapshot recorded yet`)
+    now declared with a typed `DetailError` schema. This is the root
+    cause of `console-replay-001` (frontend `console.error` on every
+    cold-cache page load); the backend contract change is shipped here.
+    Frontend soft-empty wrap for this 404 is handed off to Orch A
+    (console-replay-001).
+  - `GET /api/preferences/avatar` — 404 (`no avatar set`) now declared
+    with a typed `DetailError` schema. Empty-state is a documented and
+    expected condition.
+  - `GET /api/fs/list` — 403 (`no fs allow-roots configured` or path
+    outside roots) now declared with a typed `DetailError` schema.
+  - `GET /api/fs/read` — 403 now declared; same root cause as
+    `/api/fs/list`. Frontend soft-empty wrap for the 403 on
+    session-detail render is handed off to Orch A (console-replay-012).
+  - Shared `DetailError` model added at
+    `src/bearings/web/models/errors.py` — exposes the `{"detail": str}`
+    shape that `HTTPException` raises produce throughout all Bearings
+    routes.
+  - `docs/openapi.json` regenerated (all four status codes now appear
+    in the spec with typed schemas).
+  - Regression tests added for all four body shapes; `GET /api/fs/read`
+    403 (no allow-roots) is also newly covered.
+
 ### Added
+
+- **Documentation set — concepts overview, task-oriented guides,
+  master cross-reference index, curated API reference.** Plan at
+  `~/.claude/plans/sunny-churning-catmull.md`. The repo carried
+  reference-grade docs already (16 behavior specs, 1005-line
+  architecture decomposition, routing-v1 spec, OpenAPI export, two
+  audit registers) but no task-oriented user docs and no
+  cross-reference matrix. New files: `docs/README.md` (master
+  index with six lookup paths), `docs/concepts.md` (connected
+  mental model + glossary), `docs/api.md` (121 endpoints across
+  25 route groups, curated by prefix with curl examples and links
+  to `openapi.json` for full schemas), and 10 task-oriented
+  walkthroughs under `docs/guide/`: `getting-started.md`,
+  `sessions.md`, `routing.md`, `inspector.md`, `checklists.md`,
+  `paired-chats.md`, `vault-and-memories.md`, `analytics.md`,
+  `settings.md`, `cli.md`. Root `README.md` rewritten to point
+  at the new front door. Inspector "five-tab" mention in the
+  highlights updated to the actual eight tabs (Agent, Context,
+  Instructions, Files, Changes, Metrics, Routing, Usage); the
+  five-tab text was a stale claim from an earlier release. No
+  code changes in this commit set — surgical drift fixes for
+  the OpenAPI 202 schema gap (`/prompt`, `/regenerate`,
+  `/regenerate_from`) and the stale Stop-undo entry in
+  `V1_FEATURE_AUDIT.md` ship in parallel commits dispatched to
+  audit-fix session `714700c04b7f4d48820b3f05d63a35af`.
 
 - **Phase 2 QA — Doctor preflight OpenAPI cross-check
   (`scripts/preflight_openapi_match.py`):** The Phase 2 Doctor
