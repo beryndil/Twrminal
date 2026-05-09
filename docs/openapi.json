@@ -3381,7 +3381,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PromptAck"
+                }
               }
             }
           },
@@ -3431,7 +3433,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PromptAck"
+                }
               }
             }
           },
@@ -3518,7 +3522,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PromptAck"
+                }
               }
             }
           },
@@ -9051,6 +9057,26 @@
         ],
         "title": "PromoteToTagMemoryOut",
         "description": "Response for ``POST /api/analytics/plug-blocks/{hash}/promote-to-tag-memory`` (\u00a79.3)."
+      },
+      "PromptAck": {
+        "properties": {
+          "queued": {
+            "type": "boolean",
+            "title": "Queued"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "queued",
+          "session_id"
+        ],
+        "title": "PromptAck",
+        "description": "Response shape for the 202 Accepted ack.\n\nPer behavior doc \u00a7\"202 semantics\" \u2014 ``{ \"queued\": true,\n\"session_id\": \"<id>\" }``. The two fields are pinned by the doc;\nkeeping them on a Pydantic model gives the FastAPI OpenAPI surface\nautomatic discovery."
       },
       "PromptIn": {
         "properties": {

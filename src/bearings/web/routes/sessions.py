@@ -82,6 +82,7 @@ from bearings.web.models.sessions import (
     CheckpointExport,
     MessageExport,
     PairedChatInfo,
+    PromptAck,
     PromptIn,
     SessionCreate,
     SessionExport,
@@ -1330,6 +1331,7 @@ async def import_session(
     "/api/sessions/{session_id}/regenerate",
     status_code=status.HTTP_202_ACCEPTED,
     operation_id="regenerate-session",
+    responses={202: {"model": PromptAck}},
 )
 async def regenerate_session(session_id: str, request: Request) -> Response:
     """Re-enqueue the latest user prompt for ``session_id``.
@@ -1377,6 +1379,7 @@ async def regenerate_session(session_id: str, request: Request) -> Response:
     "/api/sessions/{session_id}/regenerate_from/{message_id}",
     status_code=status.HTTP_202_ACCEPTED,
     operation_id="regenerate-session-from-message",
+    responses={202: {"model": PromptAck}},
 )
 async def regenerate_from_message(
     session_id: str,
@@ -1494,6 +1497,7 @@ async def stop_session_turn(session_id: str, request: Request) -> None:
     "/api/sessions/{session_id}/prompt",
     status_code=status.HTTP_202_ACCEPTED,
     operation_id="prompt-session",
+    responses={202: {"model": PromptAck}},
 )
 async def prompt_session(
     session_id: str,

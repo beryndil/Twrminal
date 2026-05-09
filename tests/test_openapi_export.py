@@ -110,6 +110,29 @@ def test_openapi_every_operation_has_tags(app_client: TestClient) -> None:
     assert not untagged, f"untagged operations: {untagged}"
 
 
+def test_openapi_queued_endpoints_have_202_schema(app_client: TestClient) -> None:
+    """202 responses on the three queued endpoints must declare a non-empty schema.
+
+    Regression guard for the audit finding: FastAPI emits ``schema: {}`` when
+    a route returns a raw ``Response`` without ``responses={202: {"model": ...}}``.
+    SDK clients rely on the ``$ref`` to auto-generate typed response shapes.
+    Per ``docs/behavior/prompt-endpoint.md`` §"202 semantics".
+    """
+    spec = app_client.get("/openapi.json").json()
+    queued_paths = [
+        "/api/sessions/{session_id}/prompt",
+        "/api/sessions/{session_id}/regenerate",
+        "/api/sessions/{session_id}/regenerate_from/{message_id}",
+    ]
+    for path in queued_paths:
+        response_202 = spec["paths"][path]["post"]["responses"]["202"]
+        schema = response_202["content"]["application/json"]["schema"]
+        assert schema, f"202 schema is empty for POST {path}"
+        assert "$ref" in schema or "properties" in schema, (
+            f"202 schema has no $ref or properties for POST {path}: {schema!r}"
+        )
+
+
 def test_openapi_misc_api_schemas_referenced(app_client: TestClient) -> None:
     spec = app_client.get("/openapi.json").json()
     schemas = spec["components"]["schemas"]
