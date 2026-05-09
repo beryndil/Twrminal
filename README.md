@@ -23,9 +23,10 @@ past Phase 0.
   [`docs/model-routing-v1-spec.md`](docs/model-routing-v1-spec.md).
 * **Per-message routing/usage** persisted on every assistant turn:
   executor + advisor model usage, source, reason, matched rule.
-* **Five-tab inspector** (Agent / Context / Instructions / Routing /
-  Usage) with 7-day headroom chart, by-model table, advisor-effectiveness
-  widget, and rules-to-review list.
+* **Eight-tab inspector** (Agent / Context / Instructions / Files /
+  Changes / Metrics / Routing / Usage) with 7-day headroom chart,
+  by-model table, advisor-effectiveness widget, and rules-to-review
+  list. See [`docs/guide/inspector.md`](docs/guide/inspector.md).
 * **Checklists + auto-driver** — paired chats spawn from checklist items;
   sentinels surface item state in the sidebar.
 * **Vault + memories** — system-prompt overlays per tag, vault search.
@@ -69,12 +70,40 @@ runtime.
 
 ## Documentation
 
-| Concern | Location |
+The doc set has a single front door — start there:
+
+* **[`docs/README.md`](docs/README.md)** — master index with
+  six lookup paths (by concept · task · API route group · code
+  package · frontend route · behavior topic).
+* **[`docs/concepts.md`](docs/concepts.md)** — the connected
+  mental model (sessions, tags, routing, paired chats, vault,
+  memories). Read this first.
+* **[`docs/guide/`](docs/guide/)** — task-oriented walkthroughs:
+  [getting-started](docs/guide/getting-started.md),
+  [sessions](docs/guide/sessions.md),
+  [routing](docs/guide/routing.md),
+  [inspector](docs/guide/inspector.md),
+  [checklists](docs/guide/checklists.md),
+  [paired-chats](docs/guide/paired-chats.md),
+  [vault-and-memories](docs/guide/vault-and-memories.md),
+  [analytics](docs/guide/analytics.md),
+  [settings](docs/guide/settings.md),
+  [cli](docs/guide/cli.md).
+* **[`docs/api.md`](docs/api.md)** — curated HTTP/WS API
+  reference grouped by route prefix (121 endpoints across 25
+  groups). Wire shapes live in
+  [`docs/openapi.json`](docs/openapi.json).
+* **[`docs/architecture-v1.md`](docs/architecture-v1.md)** —
+  package decomposition, class boundaries, import graph. The
+  implementation reference.
+* **[`docs/model-routing-v1-spec.md`](docs/model-routing-v1-spec.md)**
+  — routing v1 numeric thresholds and dataclass shapes.
+* **[`docs/behavior/`](docs/behavior/)** — observable behavior
+  per subsystem (16 files). The reference layer the guide pages
+  cross-link into.
+
+| Operational | Location |
 |---|---|
-| Architectural decomposition | [`docs/architecture-v1.md`](docs/architecture-v1.md) |
-| Model-routing v1 specification | [`docs/model-routing-v1-spec.md`](docs/model-routing-v1-spec.md) |
-| Per-subsystem observable behavior | [`docs/behavior/`](docs/behavior/) — chat, checklists, vault, paired chats, themes, keyboard shortcuts, context menus, tool-output streaming, prompt endpoint, bearings CLI |
-| FastAPI OpenAPI export | [`docs/openapi.json`](docs/openapi.json) |
 | Project + agent contract | [`CLAUDE.md`](CLAUDE.md) |
 | Release history | [`CHANGELOG.md`](CHANGELOG.md) |
 | Deferred / orphaned work | [`TODO.md`](TODO.md) |
