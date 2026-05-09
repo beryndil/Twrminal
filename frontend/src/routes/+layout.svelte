@@ -910,6 +910,25 @@
     overflow: hidden;
   }
 
+  /*
+   * PERF-BUG-003/004 — CLS prevention.
+   *
+   * On ``/sessions/<id>`` the header is empty while the bootstrap
+   * ``GET /api/sessions`` is in flight (``activeSession === null``).
+   * When the fetch resolves the title row, model badge, and tag chips
+   * appear simultaneously, growing the header from ~1 rem (just py-2
+   * padding) to ~2.75 rem — pushing ``app-shell__main-body`` down and
+   * producing measurable CLS (observed 0.102, budget 0.10).
+   *
+   * Reserving a minimum height eliminates the growth for the common
+   * single-line title case.  The header can still grow taller when a
+   * long description or multiple tag-chip rows wrap, but the dominant
+   * zero-to-content shift is absorbed.
+   */
+  .app-shell__main-header {
+    min-height: 2.75rem;
+  }
+
   .app-shell__main-body {
     overflow-y: auto;
   }

@@ -50,26 +50,20 @@ describe("renderMarkdown", () => {
 
 describe("renderMarkdownWithLinkifier (F7-RT-01)", () => {
   it("auto-links bare https:// URLs in Markdown body", async () => {
-    const html = await renderMarkdownWithLinkifier(
-      "See https://example.com for details.",
-    );
+    const html = await renderMarkdownWithLinkifier("See https://example.com for details.");
     expect(html).toContain('href="https://example.com"');
     expect(html).toContain('target="_blank"');
   });
 
   it("auto-links ses_<hex> session-id references to /sessions/<id>", async () => {
     const sessionId = "ses_19a99d945d553189176f00be1afb3e6b";
-    const html = await renderMarkdownWithLinkifier(
-      `Check ${sessionId} in the sidebar.`,
-    );
+    const html = await renderMarkdownWithLinkifier(`Check ${sessionId} in the sidebar.`);
     expect(html).toContain(`href="/sessions/${sessionId}"`);
     expect(html).toContain(sessionId);
   });
 
   it("still renders normal Markdown (bold, links) correctly", async () => {
-    const html = await renderMarkdownWithLinkifier(
-      "**bold** and [click](https://x.com)",
-    );
+    const html = await renderMarkdownWithLinkifier("**bold** and [click](https://x.com)");
     expect(html).toContain("<strong>bold</strong>");
     expect(html).toContain('href="https://x.com"');
   });

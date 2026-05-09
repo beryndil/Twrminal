@@ -792,6 +792,26 @@
 
 <style>
   /*
+   * PERF-BUG-003/004 — CLS prevention.
+   *
+   * Session rows contain a title line (always present) and optionally
+   * tag chips (loaded after the ``GET /api/sessions`` bootstrap fetch).
+   * Without a minimum height, rows start at ~2.25 rem (title only,
+   * py-2 padding) and grow to ~3.5 rem when tag chips render in
+   * one row below — a ~1.25 rem shift for every visible row, which
+   * contributes measurable CLS.
+   *
+   * Reserving ``min-height: 3.5rem`` absorbs the tag-row arrival so
+   * visible rows do not reflow.  The value matches ``py-2`` padding
+   * (0.5 rem × 2) + title line (1.25 rem) + gap (0.25 rem) + chip row
+   * (1 rem) ≈ 3.5 rem; rows with no tags simply show whitespace below
+   * the title until siblings grow.
+   */
+  .session-row {
+    min-height: 3.5rem;
+  }
+
+  /*
    * Selected-row accent — Tailwind handles bg + text via utility
    * classes; this rule supplies the inset focus ring the keyboard-nav
    * `j`/`k` selection (item 2.9) will rely on. Theme-aware via the

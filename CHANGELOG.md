@@ -9,6 +9,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **perf(frontend): code-split shiki via dynamic import (PERF-BUG-005/006 frontend):**
+  `render.ts` statically imported shiki at module load time. Changed to `import("shiki")`
+  inside `getHighlighter()` so shiki only loads when the first code block needs
+  highlighting. Routes that never render fenced code pay zero shiki parse cost at startup.
+
+- **fix(frontend): eliminate duplicate GET /api/sessions on /sessions/new warm loads (PERF-BUG-002):**
+  `hydrateDefaults()` called `getMostRecentSession()` → `GET /api/sessions?include_closed=true`,
+  duplicating the layout's bootstrap fetch. Now reads `sessionsStore.sessions[0]` when
+  the store is already populated (warm navigation); cold loads fall back to the API as before.
+
+- **fix(frontend): reserve min-height on layout header and sidebar rows to prevent CLS (PERF-BUG-003/004):**
+  `/sessions/<id>` CLS = 0.102 (budget 0.10) was driven by the main-header growing from
+  near-zero to ~2.75 rem when `activeSession` populated on bootstrap fetch resolve. Added
+  `min-height: 2.75rem` to `.app-shell__main-header` and `min-height: 3.5rem` to
+  `.session-row` (absorbs tag-chip row arrival). PERF-BUG-001 and PERF-BUG-005 require
+  Orch B's backend pagination to reach the ≥90 envelope; flagged DONE_WITH_CONCERNS.
+
+- **fix(frontend): quota mock and sessions store stub in /sessions/new tests:**
+  `NewSessionForm.svelte` uses `getCurrentQuotaSafe` but the test mock only exposed
+  `getCurrentQuota`, causing 5 pre-existing failures. Fixed the mock; added a
+  `sessionsStore` stub to prevent WebSocket-in-jsdom errors.
+
+- **fix(preferences): POST /api/preferences/avatar and sync_from_system returned
+  500 for all inputs (F8-rt-04/05/12):** `_avatars_root()` in
+  `web/routes/preferences.py` used `getattr(state, "avatars_root", DEFAULT)`,
+  which silently returned `None` (not `DEFAULT`) because
+  `_configure_app_state()` always sets the attribute — even to `None` when no
+  path is injected. Subsequent `None.mkdir()` crashed with `AttributeError` →
+  HTTP 500.  Fixed by replacing the bare `getattr` default with an explicit
+  `None`-check: `raw = getattr(..., None); effective = raw if raw is not None
+  else DEFAULT_AVATARS_STORAGE_ROOT`.  Additionally wired
+  `DEFAULT_AVATARS_STORAGE_ROOT` into the `bearings serve` CLI's `create_app`
+  call so the production path is always populated.  UI error-badge symptom
+  (F8-rt-12) resolves once the backend fix is live.
+
 - **fix(vault): row metadata — parent-dir subtitle + relative mtime
   (F7-RT-00):** Vault list rows were rendering the entry label alone.
   Now each plan/todo row renders a subtitle line showing the parent

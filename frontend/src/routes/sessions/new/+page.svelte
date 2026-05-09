@@ -43,8 +43,9 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
 
-  import { createSession, getMostRecentSession } from "$lib/api/sessions";
+  import { createSession, getMostRecentSession, type SessionOut } from "$lib/api/sessions";
   import { createTag, listTags, type TagOut } from "$lib/api/tags";
+  import { sessionsStore } from "$lib/stores/sessions.svelte";
   import { sendPrompt } from "$lib/api/prompt";
   import { getPreferences } from "$lib/api/preferences";
   import { ApiError } from "$lib/api/client";
@@ -143,9 +144,29 @@
    * Pre-fill ``workingDir`` + ``initialExecutor`` from the most-recently-
    * updated session (item 3.4).  Falls back to the preferences-API
    * defaults (item 3.2) when no prior session exists.
+   *
+   * PERF-BUG-002 mitigation: read from the shared sessions store first.
+   * When the user navigates here from the sidebar (warm load), the layout
+   * has already fetched ``GET /api/sessions`` and the store is populated;
+   * using it avoids a second 2.49 MiB ``GET /api/sessions?include_closed=true``
+   * request.  For cold loads (direct URL navigation) the store is still
+   * empty when this runs, so we fall back to the API and the cost is the
+   * same as before.
    */
   async function hydrateDefaults(): Promise<void> {
-    // Primary source: most-recent session.
+    // Primary source: shared sessions store (populated by layout bootstrap,
+    // free on warm navigations; empty on cold loads → fall through to API).
+    const storeFirst: SessionOut | undefined = sessionsStore.sessions[0];
+    if (storeFirst !== undefined) {
+      if (storeFirst.working_dir.trim() !== "") {
+        workingDir = storeFirst.working_dir;
+      }
+      if ((KNOWN_EXECUTOR_MODELS as readonly string[]).includes(storeFirst.model)) {
+        initialExecutor = storeFirst.model as ExecutorModel;
+      }
+      return;
+    }
+    // Store not yet populated (cold load) — fetch the most recent session.
     try {
       const recent = await getMostRecentSession();
       if (recent !== null) {

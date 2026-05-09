@@ -61,25 +61,45 @@ vi.mock("../../../../lib/api/routing", () => ({
     quota_state: { overall_used_pct: 0, sonnet_used_pct: 0 },
   }),
 }));
-vi.mock("../../../../lib/api/quota", () => ({
-  getCurrentQuota: vi.fn().mockResolvedValue({
+vi.mock("../../../../lib/api/quota", () => {
+  const mockQuotaRow = {
     captured_at: 0,
     overall_used_pct: 0,
     sonnet_used_pct: 0,
     overall_resets_at: null,
     sonnet_resets_at: null,
     raw_payload: "{}",
-  }),
-}));
+  };
+  return {
+    getCurrentQuota: vi.fn().mockResolvedValue(mockQuotaRow),
+    // NewSessionForm uses the safe wrapper; expose it alongside the raw fn.
+    getCurrentQuotaSafe: vi.fn().mockResolvedValue(mockQuotaRow),
+  };
+});
 vi.mock("../../../../lib/api/templates", () => ({
   listTemplates: vi.fn().mockResolvedValue([]),
 }));
 
-// ---- Stub heavy child components that pull in stores / WS infra -------------
+// ---- Stub heavy child components + stores that pull in WS infra -------------
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 vi.mock("../../../../lib/components/new_session/FolderPicker.svelte", () => ({
   default: function FolderPickerStub(_anchor: any, _props: any) {},
+}));
+// The sessions store opens a WebSocket that jsdom cannot handle; stub it out
+// so importing the store in +page.svelte does not throw during test setup.
+vi.mock("../../../../lib/stores/sessions.svelte", () => ({
+  sessionsStore: {
+    sessions: [],
+    tagsBySessionId: {},
+    loading: false,
+    error: null,
+    running: new Set(),
+    awaiting: new Set(),
+  },
+  refreshSessions: vi.fn().mockResolvedValue(undefined),
+  indicatorState: vi.fn().mockReturnValue(null),
+  wsConnectionStatus: { state: "closed", lastCloseCode: null },
 }));
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
