@@ -9,6 +9,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **chore: fix pre-existing vulture + codespell pre-commit gate failures
+  (A7):** Three `urlopen` mock parameters in
+  `tests/test_preflight_openapi_match.py` were flagged by vulture as unused
+  variables (100 % confidence). Root cause: the lambdas and inner `_raise`
+  function accepted a positional `timeout` param that matched `urlopen`'s
+  positional signature but was never referenced in the body. Fix: replaced
+  with `**_kw` (variadic keyword catch-all) so the mocks correctly absorb
+  `urlopen(url, timeout=…)` keyword-arg calls while suppressing vulture.
+  Codespell failure: `.playwright-mcp/` snapshot files contain snapshot text
+  with typos (`subsytem`, `followin`) in MCP-managed fixtures we do not own.
+  Fix: added `.playwright-mcp` to the `skip` list in `[tool.codespell]` in
+  `pyproject.toml`. Both `pre-commit run vulture` and `pre-commit run
+  codespell` now pass.
+
 - **chore: bump frontend devDependencies for 10 CVEs (vite 8.x, vitest 4.x,
   @sveltejs/* latest):** Package upgrade already committed in `2894ad40`;
   this commit fixes the vitest@4 / Svelte 5.55.5 test compatibility regressions
