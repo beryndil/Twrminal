@@ -14,10 +14,13 @@ behavior docs, and tests; findings were posted back to orchestrator session
 ## Executive summary
 
 - **14 features audited; 3 formally closed, 11 with findings awaiting close.**
-- **~80 distinct findings.** One is shipped-but-inverted (the Stop-undo
-  inversion in #2). One is shipped-but-dead-suspected (memories→model
+- **~80 distinct findings.** One originally shipped-but-inverted (the
+  Stop-undo inversion in #2 — superseded by gap-cycle-11-002, see §2
+  finding 5). One is shipped-but-dead-suspected (memories→model
   injection in #7). One is whole-modules-claimed-shipped-but-absent
   (`bearings_dir/`, `cli/gc.py`, MCP tools in #10).
+- **Superseded findings:** 1 — #2 Stop-undo inversion (gap-cycle-11-002
+  redesigned the flow; spec and implementation now match).
 - **Eleven distinct defect classes** found, ranging from "spec-only / correctly
   framed" to "feature inverted." See [§Defect typology](#defect-typology).
 - **Visibility-or-test-density rule** validated across all 14 audits: clean
@@ -109,6 +112,15 @@ Mixed shipment. Five sev-1 findings.
    pre-stop cancel (Undo prevents the stop POST). Spec says: stop fires, then
    Undo re-issues the same prompt. Opposite behavior. **Distinct defect
    class — feature inverted.**
+
+   **STATUS: SUPERSEDED (gap-cycle-11-002)** — the original spec described
+   post-stop Undo re-issue. The redesign at gap-cycle-11-002 changed the flow
+   to a grace-window pre-stop cancel: clicking Stop arms a `STOP_UNDO_GRACE_MS`
+   window, Undo within the window cancels with no POST, expiry posts `/stop`
+   once. `docs/behavior/chat.md` §"Stopping or interrupting a turn" (lines
+   193-213) and `frontend/src/lib/components/conversation/StopUndoInline.svelte`
+   (header docstring cites gap-cycle-11-002) are in sync. No code or
+   behavior-doc fix needed.
 
 **Sev-2 — ambiguous / incomplete:**
 
@@ -679,7 +691,7 @@ in parens.
 | Frontend-only / spec gap | Frontend uses N PATCHes because backend lacks a bulk endpoint. | 1 | #3 system-rule reorder |
 | Module exists, unwired | Modules + tests exist; integration point doesn't import. | 1 (suspected) | #2 `BearingsSessionStore` |
 | Behavior partial | Orchestration code paths exist, full state-machine doesn't fire. | 5 | #5 WS broadcasts, #6 followup recursion + cascade-close, #7 memories injection, #8 theme write-only, #11 routing.md missing |
-| Feature inverted | Behavior present and wrong-direction. | 1 | #2 stop-undo |
+| Feature inverted | Behavior present and wrong-direction. | 0 | (originally #2 stop-undo, superseded by gap-cycle-11-002) |
 | Validator drift POST↔PATCH | Validator runs on POST, not on PATCH. | 3 | #1.2 = #5.1, #8.2 |
 | Constants drift backend↔frontend | Enum set diverges across boundary. | 1 | #8 `KNOWN_EXECUTOR_MODELS` |
 | Inert gates | CI step exists, doesn't enforce. | 2+ | #12 radon cosmetic, #12 mypy skips scripts/ |
@@ -706,7 +718,8 @@ substantially cheaper.
 - `routing.md` missing entirely (#11).
 - Memories injection doc lies (#7 P0 #2).
 - Spawn-from-reply: backend endpoint shipped, no behavior doc (#6).
-- Stop-undo semantics are spec'd one way, shipped opposite (#2 sev-1 #5).
+- ~~Stop-undo semantics are spec'd one way, shipped opposite (#2 sev-1 #5).~~
+  **Superseded by gap-cycle-11-002** — spec and implementation now match.
 - ANSI / soft-cap / copy-text / `[stopped]` (#2 sev-1 #1–4) — four spec
   divergences inside `tool-output-streaming.md` and `chat.md` alone.
 - Context-menu action IDs `session.merge_into` and `session.export_json`
@@ -826,9 +839,11 @@ else is P1.
 4. **#10 finding 3 — Restore MCP tools** (`bearings__bash`,
    `bearings__dir_init`, `bearings__get_tool_output`) OR remove their
    advertisement from the v1 MCP surface description.
-5. **#2 sev-1 finding 5 — Fix Stop-undo inversion** OR update the spec to
-   match shipped behavior. Currently the user-visible action does the
-   opposite of what `chat.md` describes.
+5. ~~**#2 sev-1 finding 5 — Fix Stop-undo inversion**~~ **SUPERSEDED
+   (gap-cycle-11-002)** — gap-cycle-11-002 redesigned the flow to a
+   grace-window pre-stop cancel; `chat.md` §"Stopping or interrupting a turn"
+   and `StopUndoInline.svelte` are now in sync. No fix needed. See §2 finding
+   5 status annotation.
 6. **#13 — All ten changes from the SemVer closeout.** Without these, the
    v1.0.0 stability commitment is unenforced. Especially: pin
    `operation_id=` on 133 routes, add `deprecated=True` to back-compat
