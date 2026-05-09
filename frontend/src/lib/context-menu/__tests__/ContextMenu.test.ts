@@ -212,7 +212,7 @@ describe("ContextMenu", () => {
 
   it("destructive action label has the destructive marker", () => {
     const { getAllByTestId } = render(ContextMenu);
-    openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_DELETE]: vi.fn() } });
+    openCheckpointMenu({ handlers: { [MENU_ACTION_CHECKPOINT_DELETE]: vi.fn() as () => void } });
     const deleteRow = getAllByTestId("context-menu-row").find(
       (el) => el.getAttribute("data-action") === MENU_ACTION_CHECKPOINT_DELETE,
     );
@@ -396,9 +396,9 @@ describe("ContextMenu", () => {
       const { getAllByTestId } = render(ContextMenu);
       openCheckpointMenu({
         handlers: {
-          [MENU_ACTION_CHECKPOINT_FORK]: vi.fn(),
-          [MENU_ACTION_CHECKPOINT_COPY_LABEL]: vi.fn(),
-          [MENU_ACTION_CHECKPOINT_DELETE]: vi.fn(),
+          [MENU_ACTION_CHECKPOINT_FORK]: vi.fn() as () => void,
+          [MENU_ACTION_CHECKPOINT_COPY_LABEL]: vi.fn() as () => void,
+          [MENU_ACTION_CHECKPOINT_DELETE]: vi.fn() as () => void,
         },
       });
 
@@ -417,9 +417,9 @@ describe("ContextMenu", () => {
       const { getAllByTestId } = render(ContextMenu);
       openCheckpointMenu({
         handlers: {
-          [MENU_ACTION_CHECKPOINT_FORK]: vi.fn(),
-          [MENU_ACTION_CHECKPOINT_COPY_LABEL]: vi.fn(),
-          [MENU_ACTION_CHECKPOINT_DELETE]: vi.fn(),
+          [MENU_ACTION_CHECKPOINT_FORK]: vi.fn() as () => void,
+          [MENU_ACTION_CHECKPOINT_COPY_LABEL]: vi.fn() as () => void,
+          [MENU_ACTION_CHECKPOINT_DELETE]: vi.fn() as () => void,
         },
       });
 
@@ -435,8 +435,8 @@ describe("ContextMenu", () => {
       // FORK disabled (no handler), COPY_LABEL and DELETE enabled.
       openCheckpointMenu({
         handlers: {
-          [MENU_ACTION_CHECKPOINT_COPY_LABEL]: vi.fn(),
-          [MENU_ACTION_CHECKPOINT_DELETE]: vi.fn(),
+          [MENU_ACTION_CHECKPOINT_COPY_LABEL]: vi.fn() as () => void,
+          [MENU_ACTION_CHECKPOINT_DELETE]: vi.fn() as () => void,
         },
       });
 
@@ -455,8 +455,8 @@ describe("ContextMenu", () => {
       // FORK and COPY_LABEL enabled; DELETE disabled (no handler).
       openCheckpointMenu({
         handlers: {
-          [MENU_ACTION_CHECKPOINT_FORK]: vi.fn(),
-          [MENU_ACTION_CHECKPOINT_COPY_LABEL]: vi.fn(),
+          [MENU_ACTION_CHECKPOINT_FORK]: vi.fn() as () => void,
+          [MENU_ACTION_CHECKPOINT_COPY_LABEL]: vi.fn() as () => void,
         },
       });
 

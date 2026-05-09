@@ -54,18 +54,18 @@ interface PanelProps {
   selectedSeverityIds: ReadonlySet<number>;
   selectedOtherIds: ReadonlySet<number>;
   selectedSeverityNone: boolean;
-  onToggle: ReturnType<typeof vi.fn>;
-  onToggleSeverityNone: ReturnType<typeof vi.fn>;
-  onClear: ReturnType<typeof vi.fn>;
+  onToggle: (tagId: number, klass: TagClass) => void;
+  onToggleSeverityNone: () => void;
+  onClear: () => void;
 }
 
 function baseProps(overrides: Partial<PanelProps> = {}): PanelProps {
   return {
     tags: [tag(1, "bearings", "project")],
     ...emptySets(),
-    onToggle: vi.fn(),
-    onToggleSeverityNone: vi.fn(),
-    onClear: vi.fn(),
+    onToggle: vi.fn<(tagId: number, klass: TagClass) => void>(),
+    onToggleSeverityNone: vi.fn<() => void>(),
+    onClear: vi.fn<() => void>(),
     ...overrides,
   };
 }
