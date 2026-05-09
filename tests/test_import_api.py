@@ -210,7 +210,7 @@ async def test_post_import_success(
     monkeypatch.setattr(import_module, "_source_db_path", lambda: src_path)
 
     with TestClient(app) as client:
-        response = client.post("/api/import/bearings")
+        response = client.post("/api/import/bearings", json={"confirm": True})
 
     assert response.status_code == 200
     data = response.json()
@@ -235,7 +235,7 @@ async def test_post_import_no_source_file(
     monkeypatch.setattr(import_module, "_source_db_path", lambda: tmp_path / "missing.db")
 
     with TestClient(app) as client:
-        response = client.post("/api/import/bearings")
+        response = client.post("/api/import/bearings", json={"confirm": True})
 
     assert response.status_code == 404
 
@@ -257,7 +257,7 @@ async def test_post_import_idempotent(
 
     with TestClient(app) as client:
         # First import
-        response1 = client.post("/api/import/bearings")
+        response1 = client.post("/api/import/bearings", json={"confirm": True})
         assert response1.status_code == 200
         data1 = response1.json()
         assert data1["tags_imported"] == 1
@@ -265,7 +265,7 @@ async def test_post_import_idempotent(
         assert data1["messages_imported"] == 1
 
         # Second import (same source)
-        response2 = client.post("/api/import/bearings")
+        response2 = client.post("/api/import/bearings", json={"confirm": True})
         assert response2.status_code == 200
         data2 = response2.json()
         # All rows should be skipped (duplicate keys)
@@ -277,9 +277,54 @@ async def test_post_import_idempotent(
         assert data2["messages_skipped"] == 1
 
 
+async def test_post_import_no_confirm_empty_body(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection, Path],
+) -> None:
+    """POST with no body (confirm defaults to False) returns 400."""
+    app, _dest_conn, _tmp_path = app_and_db
+
+    with TestClient(app) as client:
+        response = client.post("/api/import/bearings", json={})
+
+    assert response.status_code == 400
+    assert "confirm" in response.json()["detail"]
+
+
+async def test_post_import_confirm_false(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection, Path],
+) -> None:
+    """POST with confirm=False returns 400 without touching any data."""
+    app, _dest_conn, _tmp_path = app_and_db
+
+    with TestClient(app) as client:
+        response = client.post("/api/import/bearings", json={"confirm": False})
+
+    assert response.status_code == 400
+    assert "confirm" in response.json()["detail"]
+
+
+async def test_post_import_nonexistent_source_dir(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection, Path],
+) -> None:
+    """POST with confirm=True and a non-existent source_dir returns 404."""
+    app, _dest_conn, _tmp_path = app_and_db
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/import/bearings",
+            json={"confirm": True, "source_dir": "/nonexistent"},
+        )
+
+    assert response.status_code == 404
+    assert "Source database not found" in response.json()["detail"]
+
+
 __all__ = [
     "app_and_db",
+    "test_post_import_confirm_false",
     "test_post_import_idempotent",
+    "test_post_import_no_confirm_empty_body",
     "test_post_import_no_source_file",
+    "test_post_import_nonexistent_source_dir",
     "test_post_import_success",
 ]

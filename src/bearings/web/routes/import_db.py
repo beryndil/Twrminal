@@ -11,6 +11,8 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from bearings.db.import_bearings import import_from_bearings
+from bearings.web.models.errors import DetailError
+from bearings.web.models.import_bearings import BearingsImportRequest
 
 
 class ImportResultOut(BaseModel):
@@ -54,12 +56,20 @@ router = APIRouter()
     "/api/import/bearings",
     response_model=ImportResultOut,
     operation_id="import-bearings-db",
+    responses={
+        400: {"model": DetailError},
+        404: {"model": DetailError},
+        503: {"model": DetailError},
+    },
 )
-async def post_import_bearings(request: Request) -> ImportResultOut:
+async def post_import_bearings(payload: BearingsImportRequest, request: Request) -> ImportResultOut:
     """Import all data from the original Bearings database.
 
-    Reads from ~/.local/share/bearings/db.sqlite and copies all sessions,
-    messages, tags, and related data into the current Bearings-v1 database.
+    ``payload.confirm`` must be ``True``; omitting it or passing ``False``
+    returns 400 without touching any data.  ``payload.source_dir`` overrides
+    the default source location (``~/.local/share/bearings/``); when
+    ``None``, the default is used and the database is read from
+    ``<source_dir>/db.sqlite``.
 
     Rows with duplicate IDs are silently skipped (INSERT OR IGNORE).
     The entire operation is wrapped in a transaction — on any error,
@@ -71,12 +81,21 @@ async def post_import_bearings(request: Request) -> ImportResultOut:
         the operation was rolled back, so no partial state persists).
 
     Raises:
-        404: If the source database file does not exist
-        503: If db_connection is not configured on app.state
+        400: If confirm is False or not provided.
+        404: If the source database file does not exist.
+        503: If db_connection is not configured on app.state.
     """
+    if not payload.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="confirm must be true to proceed with import",
+        )
+
     db = _db(request)
 
-    source_path = _source_db_path()
+    source_path = (
+        payload.source_dir / "db.sqlite" if payload.source_dir is not None else _source_db_path()
+    )
 
     if not source_path.exists():
         raise HTTPException(
