@@ -9,6 +9,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **BUG-NET-24-FE — Five missing SvelteKit route stubs:** Direct navigation to
+  `/dashboard`, `/chat`, `/history`, `/preferences`, and `/paired` produced
+  in-app 404s because the SvelteKit client router had no component for those
+  paths (the backend SPA catch-all landed in commit `661a473e` but the frontend
+  routes were absent). Added `+page.svelte` for all five paths:
+  `/dashboard`, `/chat`, `/history` — minimal "coming soon" stubs with correct
+  `<title>` elements; `/preferences` — replace-redirect to `/settings` (the
+  canonical preferences surface per `docs/behavior/preferences.md`); `/paired`
+  — informational stub explaining the paired-chat spawn workflow per
+  `docs/behavior/paired-chats.md`. Five vitest smoke tests added under
+  `frontend/tests/route-stubs.test.ts`. Frontend dist rebuilt and synced.
+
 - **Theme-sweep bundle (theme-sweep-001 through 004):** Four related theme
   bugs filled in a single bundle.
 
