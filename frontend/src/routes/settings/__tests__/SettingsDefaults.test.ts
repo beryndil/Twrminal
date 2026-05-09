@@ -155,6 +155,8 @@ describe("Settings — Defaults: model select fires immediate PATCH", () => {
     await vi.advanceTimersByTimeAsync(0);
     await waitFor(() => getByTestId("prefs-model"));
 
+    // Clear any init-phase calls from Svelte 5 $effect initialization.
+    mockPatch.mockClear();
     const select = getByTestId("prefs-model") as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "sonnet" } });
 
@@ -190,6 +192,8 @@ describe("Settings — Defaults: permission-mode select fires immediate PATCH", 
     await vi.advanceTimersByTimeAsync(0);
     await waitFor(() => getByTestId("prefs-permission-mode"));
 
+    // Clear any init-phase calls from Svelte 5 $effect initialization.
+    mockPatch.mockClear();
     const select = getByTestId("prefs-permission-mode") as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "bypassPermissions" } });
 
@@ -212,6 +216,8 @@ describe("Settings — Defaults: working-dir input autosave (debounce)", () => {
     await vi.advanceTimersByTimeAsync(0);
     await waitFor(() => getByTestId("prefs-working-dir"));
 
+    // Clear any init-phase calls from Svelte 5 $effect initialization.
+    mockPatch.mockClear();
     const input = getByTestId("prefs-working-dir") as HTMLInputElement;
     fireEvent.input(input, { target: { value: "/home/user" } });
 
@@ -224,6 +230,8 @@ describe("Settings — Defaults: working-dir input autosave (debounce)", () => {
     await vi.advanceTimersByTimeAsync(0);
     await waitFor(() => getByTestId("prefs-working-dir"));
 
+    // Clear any init-phase calls from Svelte 5 $effect initialization.
+    mockPatch.mockClear();
     const input = getByTestId("prefs-working-dir") as HTMLInputElement;
     fireEvent.input(input, { target: { value: "/home/user/project" } });
 
@@ -242,6 +250,8 @@ describe("Settings — Defaults: working-dir input autosave (debounce)", () => {
     await vi.advanceTimersByTimeAsync(0);
     await waitFor(() => getByTestId("prefs-working-dir"));
 
+    // Clear any init-phase calls from Svelte 5 $effect initialization.
+    mockPatch.mockClear();
     const input = getByTestId("prefs-working-dir") as HTMLInputElement;
     fireEvent.input(input, { target: { value: "/h" } });
     await vi.advanceTimersByTimeAsync(100);

@@ -42,7 +42,9 @@ let activeObservedEl: Element | null = null;
 let mockDisconnect: ReturnType<typeof vi.fn> | null = null;
 
 function buildMockIO(): typeof IntersectionObserver {
-  return vi.fn().mockImplementation((cb: IOCallback, _options: object) => {
+  // vitest@4: mockImplementation must be a regular function (not arrow) so
+  // `new IntersectionObserver(...)` in component code works as a constructor.
+  return vi.fn().mockImplementation(function (cb: IOCallback, _options: object) {
     activeCallback = cb;
     mockDisconnect = vi.fn();
     const instance = {

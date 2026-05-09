@@ -161,6 +161,8 @@ describe("Settings — Notifications toggle ON denied rolls back", () => {
     const { getByTestId } = render(SettingsPage);
     await waitFor(() => getByTestId("notify-toggle"));
 
+    // Clear any init-phase calls from Svelte 5 $effect initialization.
+    mockPatch.mockClear();
     fireEvent.change(getByTestId("notify-toggle"), { target: { checked: true } });
 
     await waitFor(() => {

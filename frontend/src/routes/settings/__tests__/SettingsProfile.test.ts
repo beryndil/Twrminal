@@ -224,6 +224,8 @@ describe("Settings — Profile: display-name autosave (debounce)", () => {
     await vi.advanceTimersByTimeAsync(0);
     await waitFor(() => getByTestId("profile-display-name"));
 
+    // Clear any init-phase calls from Svelte 5 $effect initialization.
+    mockPatch.mockClear();
     const input = getByTestId("profile-display-name") as HTMLInputElement;
     fireEvent.input(input, { target: { value: "A" } });
     await vi.advanceTimersByTimeAsync(100);

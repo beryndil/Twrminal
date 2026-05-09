@@ -9,6 +9,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **chore: bump frontend devDependencies for 10 CVEs (vite 8.x, vitest 4.x,
+  @sveltejs/* latest):** Package upgrade already committed in `2894ad40`;
+  this commit fixes the vitest@4 / Svelte 5.55.5 test compatibility regressions
+  introduced by that bump. Changes: (1) VirtualItem.test.ts — arrow-function
+  mock replaced with regular function so `new IntersectionObserver()` works as
+  constructor in vitest@4; (2) sanitize.ts — cross-realm `instanceof Element`
+  guard replaced with `"tagName" in node` duck-check, fixing DOMPurify
+  `afterSanitizeAttributes` hook under vite@8 Node.js conditions; (3) vitest@4
+  Mock type compatibility fixes in TagFilterPanel.test.ts, ContextMenu.test.ts;
+  (4) Svelte 5.55.5 $effect init-phase mock-call isolation fixes
+  (`mockClear()`) in SettingsDefaults, SettingsProfile, SettingsAuth,
+  SettingsNotifications; (5) templates.svelte.test.ts — resilient fetch-call
+  matching for Svelte 5 reactive re-fetches. CVEs resolved (7 moderate): vite
+  path-traversal (GHSA-4w7w-66w2-5vf9), esbuild dev-server CORS
+  (GHSA-67mh-4wv8-2f99), and transitive vitest/vite-node chain. Remaining 3
+  low-severity CVEs (GHSA-pxg6-pf52-xh8x cookie via @sveltejs/kit@2.59.1) have
+  no upstream fix available — @sveltejs/kit@latest still pins cookie@^0.6.0.
+  Frontend dist rebuilt.
+
 - **BUG-NET-24-FE — Five missing SvelteKit route stubs:** Direct navigation to
   `/dashboard`, `/chat`, `/history`, `/preferences`, and `/paired` produced
   in-app 404s because the SvelteKit client router had no component for those

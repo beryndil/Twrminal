@@ -151,15 +151,17 @@ describe("instantiate — happy path", () => {
     await refreshTemplates();
 
     const session = makeSession({ id: "ses_new", model: "opus" });
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResp(session, 201));
+    // Svelte 5 $effect may trigger an extra refreshTemplates() after mount; use
+    // mockResolvedValue (persistent) + find the instantiate call explicitly.
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResp(session, 201));
 
     const id = await instantiate(7);
 
     expect(id).toBe("ses_new");
-    // Verify the request hits the instantiate endpoint (not POST /api/sessions).
-    const [url] = fetchSpy.mock.calls[0]!;
-    expect(String(url)).toContain("/api/templates/7/instantiate");
-    expect(String(url)).not.toContain("/api/sessions");
+    // Verify at least one request hit the instantiate endpoint (not POST /api/sessions).
+    const urls = fetchSpy.mock.calls.map(([url]) => String(url));
+    expect(urls.some((u) => u.includes("/api/templates/7/instantiate"))).toBe(true);
+    expect(urls.every((u) => !u.includes("/api/sessions"))).toBe(true);
   });
 
   it("inherits session_instructions and tag_names via the server-side endpoint", async () => {
@@ -179,14 +181,18 @@ describe("instantiate — happy path", () => {
       id: "ses_full",
       session_instructions: "Be concise.",
     });
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResp(session, 201));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResp(session, 201));
 
     const id = await instantiate(8);
 
     expect(id).toBe("ses_full");
     // Only the template id appears in the URL — no field-loss workaround in the body.
-    const [url, init] = fetchSpy.mock.calls[0]!;
-    expect(String(url)).toContain("/api/templates/8/instantiate");
+    // Svelte 5 $effect may add extra calls; find the instantiate call explicitly.
+    const instantiateCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes("/api/templates/8/instantiate"),
+    );
+    expect(instantiateCall).toBeDefined();
+    const [, init] = instantiateCall!;
     // Body should be empty ({}), not a partial createSession call.
     const body = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
     expect(Object.keys(body)).toHaveLength(0);

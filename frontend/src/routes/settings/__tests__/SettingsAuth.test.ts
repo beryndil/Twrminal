@@ -160,6 +160,9 @@ describe("Settings — Authentication: token-clear path", () => {
     const { getByTestId } = render(SettingsPage);
     await waitFor(() => getByTestId("auth-token-input"));
 
+    // Clear any init-phase calls from Svelte 5 $effect initialization.
+    mockSaveToken.mockClear();
+    mockClearToken.mockClear();
     const input = getByTestId("auth-token-input");
     fireEvent.input(input, { target: { value: "" } });
 

@@ -102,7 +102,9 @@ function installAnchorHook(): void {
   // ``rel`` security attribute; ``file://`` and in-app links keep
   // their attributes as authored.
   DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-    if (!(node instanceof Element) || node.tagName.toLowerCase() !== "a") {
+    // Avoid cross-realm `instanceof Element` (fails when isomorphic-dompurify
+    // uses its own JSDOM internally under vite@8 / Node.js conditions).
+    if (!("tagName" in node) || (node as Element).tagName.toLowerCase() !== "a") {
       return;
     }
     const href = node.getAttribute("href") ?? "";
