@@ -16,6 +16,7 @@ from bearings.config.constants import (
     SESSION_KIND_CHAT,
     SESSION_KIND_CHECKLIST,
 )
+from bearings.db import checklists as checklists_db
 from bearings.db import messages as messages_db
 from bearings.db import sessions as sessions_db
 from bearings.db.connection import load_schema
@@ -1280,3 +1281,67 @@ async def test_list_sessions_severity_none_or_with_tag_ids_severity(
     # OR: sessions with no severity OR sessions tagged high.
     assert ids == {no_sev, has_high}
     assert has_low not in ids
+
+
+# ---- paired-chat-info null contract (BUG-NET-21) ----------------------------
+
+
+async def test_paired_chat_info_404_for_nonexistent_session(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """GET /api/sessions/<nonexistent_id>/paired-chat-info must return 404.
+
+    Regression for BUG-NET-21: previously the handler collapsed
+    "session not found" and "session exists but unpaired" into the same
+    200/null response, masking invalid ids.
+    """
+    app, _conn = app_and_db
+    with TestClient(app) as client:
+        response = client.get("/api/sessions/ses_DEADBEEF12345/paired-chat-info")
+    assert response.status_code == 404
+    assert "detail" in response.json()
+
+
+async def test_paired_chat_info_200_null_for_unpaired_session(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """GET /api/sessions/<existing_unpaired_id>/paired-chat-info returns 200 null.
+
+    A chat session with no checklist_item_id is valid — the breadcrumb
+    chip is simply hidden.  This must remain 200/null (not 404).
+    """
+    app, conn = app_and_db
+    chat_id = await _new_chat(conn, "unpaired")
+    with TestClient(app) as client:
+        response = client.get(f"/api/sessions/{chat_id}/paired-chat-info")
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+async def test_paired_chat_info_200_data_for_paired_session(
+    app_and_db: tuple[FastAPI, aiosqlite.Connection],
+) -> None:
+    """GET /api/sessions/<paired_id>/paired-chat-info returns 200 with fields."""
+    app, conn = app_and_db
+    checklist = await sessions_db.create(
+        conn,
+        kind=SESSION_KIND_CHECKLIST,
+        title="My Checklist",
+        working_dir="/wd",
+        model="sonnet",
+    )
+    item = await checklists_db.create(conn, checklist_id=checklist.id, label="Step one")
+    chat = await sessions_db.create(
+        conn,
+        kind=SESSION_KIND_CHAT,
+        title="paired chat",
+        working_dir="/wd",
+        model="sonnet",
+        checklist_item_id=item.id,
+    )
+    with TestClient(app) as client:
+        response = client.get(f"/api/sessions/{chat.id}/paired-chat-info")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["parent_title"] == "My Checklist"
+    assert body["item_label"] == "Step one"

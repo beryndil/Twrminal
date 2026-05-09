@@ -3014,7 +3014,7 @@
           "sessions"
         ],
         "summary": "Get Paired Chat Info Route",
-        "description": "Fetch paired-chat metadata for a chat session.\n\nPer ``docs/behavior/paired-chats.md`` \u00a7\"From the chat side\" \u2014 when a\nchat session is paired to a checklist item, the breadcrumb shows\n``<parent checklist title> > <item label>``. This endpoint returns\nthose two fields when a pairing exists, or ``None`` when the chat is\nunpaired.\n\nReturns 200 with ``{parent_title, item_label}`` when paired, or\n200 with ``null`` when unpaired or the session is absent. (Returning\n200 for both cases avoids the cognitive overhead of decoding a 404\nas \"not paired\" vs \"session missing\" \u2014 the UI reads the None value\nand hides the breadcrumb.)",
+        "description": "Fetch paired-chat metadata for a chat session.\n\nPer ``docs/behavior/paired-chats.md`` \u00a7\"From the chat side\" \u2014 when a\nchat session is paired to a checklist item, the breadcrumb shows\n``<parent checklist title> > <item label>``. This endpoint returns\nthose two fields when a pairing exists, or ``None`` when the chat is\nunpaired.\n\nContract (mirrors sibling endpoints ``/messages`` and ``/export``):\n\n* ``200`` with ``{parent_title, item_label}`` \u2014 session exists and is\n  paired to a checklist item.\n* ``200`` with ``null`` \u2014 session exists but carries no pairing\n  (``checklist_item_id`` is ``NULL``).  The UI reads the ``null`` value\n  and hides the breadcrumb chip.\n* ``404`` \u2014 no session row matches ``session_id``.  Callers can\n  distinguish \"session missing\" from \"session unpaired\" via this\n  status code; previously both collapsed into 200/null (BUG-NET-21).",
         "operationId": "get-session-paired-chat-info",
         "parameters": [
           {
@@ -3042,6 +3042,16 @@
                     }
                   ],
                   "title": "Response Get-Session-Paired-Chat-Info"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailError"
                 }
               }
             }

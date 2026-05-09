@@ -78,6 +78,7 @@ from bearings.db import sessions as sessions_db
 from bearings.db import tags as tags_db
 from bearings.db import tool_calls as tool_calls_db
 from bearings.db.sessions import Session
+from bearings.web.models.errors import DetailError
 from bearings.web.models.sessions import (
     CheckpointExport,
     MessageExport,
@@ -864,6 +865,7 @@ async def resume_session(session_id: str, request: Request) -> SessionOut:
 @router.get(
     "/api/sessions/{session_id}/paired-chat-info",
     operation_id="get-session-paired-chat-info",
+    responses={404: {"model": DetailError, "description": "Session not found."}},
 )
 async def get_paired_chat_info_route(session_id: str, request: Request) -> PairedChatInfo | None:
     """Fetch paired-chat metadata for a chat session.
@@ -874,13 +876,24 @@ async def get_paired_chat_info_route(session_id: str, request: Request) -> Paire
     those two fields when a pairing exists, or ``None`` when the chat is
     unpaired.
 
-    Returns 200 with ``{parent_title, item_label}`` when paired, or
-    200 with ``null`` when unpaired or the session is absent. (Returning
-    200 for both cases avoids the cognitive overhead of decoding a 404
-    as "not paired" vs "session missing" — the UI reads the None value
-    and hides the breadcrumb.)
+    Contract (mirrors sibling endpoints ``/messages`` and ``/export``):
+
+    * ``200`` with ``{parent_title, item_label}`` — session exists and is
+      paired to a checklist item.
+    * ``200`` with ``null`` — session exists but carries no pairing
+      (``checklist_item_id`` is ``NULL``).  The UI reads the ``null`` value
+      and hides the breadcrumb chip.
+    * ``404`` — no session row matches ``session_id``.  Callers can
+      distinguish "session missing" from "session unpaired" via this
+      status code; previously both collapsed into 200/null (BUG-NET-21).
     """
     db = _db(request)
+    row = await sessions_db.get(db, session_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no session matches {session_id!r}",
+        )
     info = await sessions_db.get_paired_chat_info(db, session_id)
     if info is None:
         return None
