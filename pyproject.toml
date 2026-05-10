@@ -183,6 +183,9 @@ skip = "*.lock,*.svg,*.min.*,docs/model-routing-v1-spec.md,docs/openapi.json,*/n
 # the typo risk.
 # ``firey`` suppresses the ``fireY`` coordinate-variable false-positive
 # in frontend/src/lib/context-menu/touch.ts.
-ignore-words-list = "promptin,firey"
+# ``subsytem``, ``followin`` appear verbatim in CHANGELOG.md (quoting typos
+# that live in .playwright-mcp/ snapshot YAML we do not own); suppress here
+# so the documented examples don't re-trigger the very check they describe.
+ignore-words-list = "promptin,firey,subsytem,followin"
 check-filenames = true
 check-hidden = true

@@ -9,6 +9,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **chore(quality-gate): F12-rt-05/12 — codespell and vulture clean-pass (A14):**
+  Two residual quality-gate failures cleared:
+  (1) `tests/test_preflight_openapi_match.py` — renamed `url` → `_url` in three
+  `monkeypatch.setattr(urllib.request, "urlopen", …)` call sites (lines 122, 132, 138)
+  so vulture's unused-variable detector skips them per PEP-8 underscore convention.
+  (2) `pyproject.toml [tool.codespell]` — added `subsytem,followin` to
+  `ignore-words-list`; both words appear verbatim in CHANGELOG.md quoting typos that
+  live in `.playwright-mcp/` snapshot YAML we do not own. The `.playwright-mcp`
+  directory-level skip (landed in A7, commit `9d947784`) already handles the source
+  files; this entry suppresses the CHANGELOG self-documentation references.
+  Xenon rank-C blocks in `sdk_loop.py` and `analytics.py` remain open (feature-14
+  / analytics-feature territory; HANDOFF to orchestrator).
+
 - **fix(frontend): F9-rt-01 — per-theme treatment CSS now in dist bundle:**
   `[data-theme=midnight-glass]` radial-gradient, backdrop-filter, and aside treatments
   were absent from the served CSS bundle because the four `@import` statements in

@@ -119,7 +119,7 @@ class TestGetLivePaths:
         monkeypatch.setattr(
             urllib.request,
             "urlopen",
-            lambda url, **_kw: _FakeResponse(fake_body),
+            lambda _url, **_kw: _FakeResponse(fake_body),
         )
         paths = pom.get_live_paths()
         assert paths == frozenset({"/api/sessions"})
@@ -129,13 +129,13 @@ class TestGetLivePaths:
         monkeypatch.setattr(
             urllib.request,
             "urlopen",
-            lambda url, **_kw: _FakeResponse(b"[]"),
+            lambda _url, **_kw: _FakeResponse(b"[]"),
         )
         paths = pom.get_live_paths()
         assert paths == frozenset()
 
     def test_unreachable_propagates_url_error(self, monkeypatch) -> None:
-        def _raise(url: str, **_kw: object) -> _FakeResponse:
+        def _raise(_url: str, **_kw: object) -> _FakeResponse:
             raise urllib.error.URLError("connection refused")
 
         monkeypatch.setattr(urllib.request, "urlopen", _raise)
