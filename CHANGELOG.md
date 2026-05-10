@@ -9,6 +9,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **fix(checklists): F6-rt-18/19/20/24 — /link kind+closed+nonexistent validation + /run/start 404 (A16):**
+  Four input-validation gaps in `src/bearings/web/routes/checklists.py` closed:
+  (F6-rt-18) `POST /api/checklist-items/{id}/link` now validates that the target
+  session has `kind == "chat"`; non-chat targets return 422.
+  (F6-rt-19) Same handler also gates on `closed_at IS NULL`; linking to a closed
+  chat returns 422 with `"session is closed"`.
+  (F6-rt-20) Missing target session now returns 404 (was 500 IntegrityError);
+  an `aiosqlite.IntegrityError` fallback catch added for defence-in-depth.
+  (F6-rt-24) `POST /api/checklists/{id}/run/start` now validates the checklist
+  session exists before creating a run row; missing checklist returns 404 (was 500).
+  Four regression tests added to `tests/test_routes_checklists.py`.
+
 - **chore(quality-gate): F12-rt-05/12 — codespell and vulture clean-pass (A14):**
   Two residual quality-gate failures cleared:
   (1) `tests/test_preflight_openapi_match.py` — renamed `url` → `_url` in three

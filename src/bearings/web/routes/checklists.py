@@ -62,6 +62,7 @@ from bearings.config.constants import (
     KNOWN_ITEM_OUTCOMES,
     KNOWN_PAIRED_CHAT_SPAWNED_BY,
     PAIRED_CHAT_SPAWNED_BY_USER,
+    SESSION_KIND_CHAT,
 )
 from bearings.db import auto_driver_runs as runs_db
 from bearings.db import checklists as checklists_db
@@ -471,6 +472,25 @@ async def link_chat(
                 f"spawned_by {payload.spawned_by!r} not in {sorted(KNOWN_PAIRED_CHAT_SPAWNED_BY)}"
             ),
         )
+    # F6-rt-20: validate the target session exists.
+    chat_session = await sessions_db.get(db, payload.chat_session_id)
+    if chat_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"session {payload.chat_session_id!r} not found",
+        )
+    # F6-rt-18: target must be a chat-kind session.
+    if chat_session.kind != SESSION_KIND_CHAT:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"session {payload.chat_session_id!r} is not a chat session",
+        )
+    # F6-rt-19: target must not be closed.
+    if chat_session.closed_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="session is closed",
+        )
     try:
         item = await checklists_db.set_paired_chat(
             db, item_id, chat_session_id=payload.chat_session_id
@@ -478,6 +498,11 @@ async def link_chat(
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except aiosqlite.IntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="session reference constraint failed",
         ) from exc
     if item is None:
         raise HTTPException(
@@ -623,6 +648,13 @@ async def start_run(
     checklist at a time.
     """
     db = _db(request)
+    # F6-rt-24: validate checklist session exists before creating a run.
+    checklist = await sessions_db.get(db, checklist_id)
+    if checklist is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"checklist {checklist_id!r} not found",
+        )
     if payload.failure_policy not in KNOWN_AUTO_DRIVER_FAILURE_POLICIES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

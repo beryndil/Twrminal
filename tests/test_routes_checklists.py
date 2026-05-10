@@ -456,3 +456,62 @@ def test_uncheck_does_not_reopen_closed_parent(app_client: TestClient) -> None:
     app_client.post(f"/api/checklist-items/{child}/uncheck")
     parent_after = app_client.get(f"/api/checklist-items/{parent}").json()
     assert parent_after["checked_at"] is not None, "parent must remain checked after uncheck"
+
+
+# ---------------------------------------------------------------------------
+# F6-rt-18/19/20: /link input-validation gates
+# F6-rt-24: /run/start 404 for missing checklist
+# ---------------------------------------------------------------------------
+
+
+def test_link_rejects_non_chat_kind_session(app_client: TestClient) -> None:
+    """F6-rt-18 — /link must reject a non-chat-kind session_id with 422."""
+    item_id = _create_item(app_client, "leaf-rt18")
+    # _CHECKLIST_ID is kind=checklist — not a valid link target.
+    response = app_client.post(
+        f"/api/checklist-items/{item_id}/link",
+        json={
+            "chat_session_id": _CHECKLIST_ID,
+            "spawned_by": PAIRED_CHAT_SPAWNED_BY_USER,
+        },
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_link_rejects_closed_chat(app_client: TestClient) -> None:
+    """F6-rt-19 — /link must reject a closed chat session with 422."""
+    item_id = _create_item(app_client, "leaf-rt19")
+    _insert_chat_session(app_client, "chat_closed_rt19", closed=True)
+    response = app_client.post(
+        f"/api/checklist-items/{item_id}/link",
+        json={
+            "chat_session_id": "chat_closed_rt19",
+            "spawned_by": PAIRED_CHAT_SPAWNED_BY_USER,
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert "closed" in response.json()["detail"]
+
+
+def test_link_nonexistent_chat_returns_404(app_client: TestClient) -> None:
+    """F6-rt-20 — /link to a nonexistent chat_session_id must return 404."""
+    item_id = _create_item(app_client, "leaf-rt20")
+    response = app_client.post(
+        f"/api/checklist-items/{item_id}/link",
+        json={
+            "chat_session_id": "ses_does_not_exist",
+            "spawned_by": PAIRED_CHAT_SPAWNED_BY_USER,
+        },
+    )
+    assert response.status_code == 404, response.text
+
+
+def test_run_start_404_for_missing_checklist(app_client: TestClient) -> None:
+    """F6-rt-24 — /run/start on a nonexistent checklist_id must return 404."""
+    from bearings.config.constants import AUTO_DRIVER_FAILURE_POLICY_HALT
+
+    response = app_client.post(
+        "/api/checklists/ses_does_not_exist/run/start",
+        json={"failure_policy": AUTO_DRIVER_FAILURE_POLICY_HALT},
+    )
+    assert response.status_code == 404, response.text
